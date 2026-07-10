@@ -4581,6 +4581,16 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._deleteStatsChart(statsDeleteBtn.getAttribute('data-wf-dash-stats-chart-delete'));
                 return;
             }
+            const statsMoveUpBtn = e.target.closest('[data-wf-dash-stats-chart-move-up]');
+            if (statsMoveUpBtn && modal.contains(statsMoveUpBtn) && !statsMoveUpBtn.disabled) {
+                dash._moveStatsChart(statsMoveUpBtn.getAttribute('data-wf-dash-stats-chart-move-up'), -1);
+                return;
+            }
+            const statsMoveDownBtn = e.target.closest('[data-wf-dash-stats-chart-move-down]');
+            if (statsMoveDownBtn && modal.contains(statsMoveDownBtn) && !statsMoveDownBtn.disabled) {
+                dash._moveStatsChart(statsMoveDownBtn.getAttribute('data-wf-dash-stats-chart-move-down'), 1);
+                return;
+            }
             const statsEditBtn = e.target.closest('[data-wf-dash-stats-chart-edit]');
             if (statsEditBtn && modal.contains(statsEditBtn)) {
                 dash._openStatsBuilder(statsEditBtn.getAttribute('data-wf-dash-stats-chart-edit'));
@@ -5099,7 +5109,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.21',
+    _version: '7.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

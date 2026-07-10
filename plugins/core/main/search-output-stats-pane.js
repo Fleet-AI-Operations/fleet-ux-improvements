@@ -438,17 +438,24 @@ const searchOutputStatsPaneMethods = {
         void this._renderStatsPanel();
     },
 
-    _reorderStatsChart(dragId, targetId) {
-        if (!dragId || !targetId || dragId === targetId) return;
+    _moveStatsChart(chartId, delta) {
+        const step = delta === -1 || delta === 1 ? delta : 0;
+        if (!chartId || !step) return;
         const dash = this._activeStatsDashboard();
-        if (!dash || !dash.charts) return;
-        const from = dash.charts.findIndex((c) => c.id === dragId);
-        const to = dash.charts.findIndex((c) => c.id === targetId);
-        if (from < 0 || to < 0) return;
+        if (!dash || !dash.charts || dash.charts.length < 2) return;
+        const from = dash.charts.findIndex((c) => c.id === chartId);
+        if (from < 0) return;
+        const to = from + step;
+        if (to < 0 || to >= dash.charts.length) return;
         const [moved] = dash.charts.splice(from, 1);
         dash.charts.splice(to, 0, moved);
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: charts reordered');
+        Logger.log(
+            'search-output-stats-pane: chart moved '
+            + (step < 0 ? 'up' : 'down')
+            + ' — '
+            + (moved.title || chartId)
+        );
         void this._renderStatsPanel();
     },
 
@@ -1064,12 +1071,22 @@ const searchOutputStatsPaneMethods = {
         return kind === 'circular-row' ? STATS_CIRCULAR_ROW_MIN_WIDTH_PX : STATS_SCORECARD_ROW_MIN_WIDTH_PX;
     },
 
-    _statsChartCardHeaderHtml(chart) {
+    _statsChartCardHeaderHtml(chart, moveState) {
         const btnStyle = 'padding: 2px 8px; font-size: 10px;';
+        const moveBtnStyle = 'padding: 0 4px; min-width: 20px; font-size: 11px; line-height: 1.2;';
+        const canMoveUp = !!(moveState && moveState.canMoveUp);
+        const canMoveDown = !!(moveState && moveState.canMoveDown);
         return ''
             + '<div class="wf-dash-stats-chart-header">'
             + '<div class="wf-dash-stats-chart-header-title">'
-            + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-drag" title="Drag to reorder" aria-hidden="true">⠿</span>'
+            + '<span class="wf-dash-stats-chart-move" role="group" aria-label="Reorder chart">'
+            + '<button type="button" data-wf-dash-stats-chart-move-up="' + dashEscHtml(chart.id) + '" class="'
+            + this._dashBtnClass('basic', 'nav') + '" style="' + moveBtnStyle + '" title="Move up" aria-label="Move chart up"'
+            + (canMoveUp ? '' : ' disabled') + '>↑</button>'
+            + '<button type="button" data-wf-dash-stats-chart-move-down="' + dashEscHtml(chart.id) + '" class="'
+            + this._dashBtnClass('basic', 'nav') + '" style="' + moveBtnStyle + '" title="Move down" aria-label="Move chart down"'
+            + (canMoveDown ? '' : ' disabled') + '>↓</button>'
+            + '</span>'
             + '<div class="wf-dash-stats-chart-header-text">' + dashEscHtml(chart.title) + '</div>'
             + '</div>'
             + '<div class="wf-dash-stats-chart-header-actions">'
@@ -1100,7 +1117,7 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _statsChartCardHtml(chart, validation, inStackRow, stackMinWidth) {
+    _statsChartCardHtml(chart, validation, inStackRow, stackMinWidth, moveState) {
         const box = this._panelBoxStyle();
         const height = this._statsResolvedChartHeight(chart);
         const disabled = validation && !validation.ok;
@@ -1131,7 +1148,7 @@ const searchOutputStatsPaneMethods = {
             ? ('flex: 1 1 ' + minWidth + 'px; min-width: min(' + minWidth + 'px, 100%); max-width: 100%; box-sizing: border-box;')
             : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
         return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative;">'
-            + this._statsChartCardHeaderHtml(chart)
+            + this._statsChartCardHeaderHtml(chart, moveState)
             + filterSubtitle
             + '<div style="position: relative; height: ' + height + 'px; max-width: 100%;' + canvasOpacity + '">'
             + overlay
@@ -1167,8 +1184,16 @@ const searchOutputStatsPaneMethods = {
     _statsBuildChartListHtml(validations) {
         const byId = new Map(validations.map((entry) => [entry.chart.id, entry]));
         const dash = this._activeStatsDashboard();
+        const charts = dash.charts || [];
+        const moveStateFor = (chartId) => {
+            const idx = charts.findIndex((c) => c.id === chartId);
+            return {
+                canMoveUp: idx > 0,
+                canMoveDown: idx >= 0 && idx < charts.length - 1
+            };
+        };
         let html = '';
-        for (const group of this._statsChartLayoutGroups(dash.charts || [])) {
+        for (const group of this._statsChartLayoutGroups(charts)) {
             if (group.kind === 'scorecard-row' || group.kind === 'circular-row') {
                 const minWidth = this._statsStackRowMinWidth(group.kind);
                 const rowClass = group.kind === 'circular-row'
@@ -1181,13 +1206,29 @@ const searchOutputStatsPaneMethods = {
                     + STATS_SCORECARD_ROW_GAP_PX + 'px; width: 100%; align-items: stretch; box-sizing: border-box;">';
                 for (const chart of group.charts) {
                     const entry = byId.get(chart.id);
-                    if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, true, minWidth);
+                    if (entry) {
+                        html += this._statsChartCardHtml(
+                            entry.chart,
+                            entry.validation,
+                            true,
+                            minWidth,
+                            moveStateFor(chart.id)
+                        );
+                    }
                 }
                 html += '</div>';
                 continue;
             }
             const entry = byId.get(group.charts[0].id);
-            if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, false);
+            if (entry) {
+                html += this._statsChartCardHtml(
+                    entry.chart,
+                    entry.validation,
+                    false,
+                    null,
+                    moveStateFor(entry.chart.id)
+                );
+            }
         }
         return html;
     },
@@ -2292,29 +2333,6 @@ const searchOutputStatsPaneMethods = {
         return barConfig;
     },
 
-    _attachStatsChartReorder(listEl) {
-        if (!listEl || listEl.dataset.wfStatsReorderBound === 'true') return;
-        listEl.dataset.wfStatsReorderBound = 'true';
-        const dash = this;
-        let dragId = null;
-        listEl.addEventListener('pointerdown', (e) => {
-            const handle = e.target.closest('[data-wf-dash-stats-chart-drag]');
-            if (!handle || !listEl.contains(handle)) return;
-            dragId = handle.getAttribute('data-wf-dash-stats-chart-drag');
-            handle.setPointerCapture(e.pointerId);
-        });
-        listEl.addEventListener('pointerup', (e) => {
-            if (!dragId) return;
-            const card = e.target.closest('[data-chart-id]');
-            const targetId = card ? card.getAttribute('data-chart-id') : null;
-            if (targetId && targetId !== dragId) {
-                dash._reorderStatsChart(dragId, targetId);
-            }
-            dragId = null;
-        });
-        listEl.addEventListener('pointercancel', () => { dragId = null; });
-    },
-
     _ensureStatsChartCardStyles() {
         if (typeof document === 'undefined') return;
         if (document.getElementById(STATS_CHART_CARD_STYLE_ID)) return;
@@ -2325,7 +2343,8 @@ const searchOutputStatsPaneMethods = {
             + '.wf-dash-stats-chart-header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 6px; margin-bottom: 8px; }'
             + '.wf-dash-stats-chart-header-title { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; max-width: 100%; }'
             + '.wf-dash-stats-chart-header-text { font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }'
-            + '.wf-dash-stats-chart-drag { cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1; flex-shrink: 0; }'
+            + '.wf-dash-stats-chart-move { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; flex-shrink: 0; }'
+            + '.wf-dash-stats-chart-move button:disabled { opacity: 0.35; cursor: not-allowed; }'
             + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
             + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 8px; max-width: 100%; }'
             + '.wf-dash-stats-chart-copy-select { cursor: pointer; }'
@@ -3678,7 +3697,6 @@ const searchOutputStatsPaneMethods = {
             validations.push({ chart, validation });
         }
         listEl.innerHTML = this._statsBuildChartListHtml(validations);
-        this._attachStatsChartReorder(listEl);
         this._attachStatsChartHeaderLayout(listEl);
 
         const renderGen = (this._state.statsRenderGen || 0) + 1;
@@ -4835,7 +4853,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '6.3',
+    _version: '6.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
