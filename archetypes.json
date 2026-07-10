@@ -1,7 +1,7 @@
 {
   "version": "11.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.111",
+  "archetypesVersion": "13.112",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -102,8 +102,8 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "5.36",
-      "hash": "sha256-e24120c3109541b1911ee187e22b193827a7fde8cdbb1e6b8288a73b9a81ad45",
+      "version": "5.37",
+      "hash": "sha256-165b432a54be4198e5f430e8147ac74d07b0f78b6f97aeef77a0380386a8d1e3",
       "log": false
     },
     {

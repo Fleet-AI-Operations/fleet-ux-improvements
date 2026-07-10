@@ -2,7 +2,9 @@
 
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 const STATS_SCORECARD_ROW_MIN_WIDTH_PX = 180;
+const STATS_CIRCULAR_ROW_MIN_WIDTH_PX = 240;
 const STATS_SCORECARD_ROW_GAP_PX = 12;
+const STATS_CIRCULAR_CHART_TYPES = new Set(['pie', 'polarArea', 'radar']);
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 const STATS_LINE_BORDER_WIDTH = 2.25;
 
@@ -852,6 +854,17 @@ const searchOutputStatsPaneMethods = {
         return parts.join(' · ');
     },
 
+    _statsChartStackKind(chart) {
+        if (!chart) return null;
+        if (chart.type === 'scorecard') return 'scorecard-row';
+        if (STATS_CIRCULAR_CHART_TYPES.has(chart.type)) return 'circular-row';
+        return null;
+    },
+
+    _statsStackRowMinWidth(kind) {
+        return kind === 'circular-row' ? STATS_CIRCULAR_ROW_MIN_WIDTH_PX : STATS_SCORECARD_ROW_MIN_WIDTH_PX;
+    },
+
     _statsChartCardHeaderHtml(chart) {
         const btnStyle = 'padding: 2px 8px; font-size: 10px;';
         return ''
@@ -862,14 +875,21 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '<div class="wf-dash-stats-chart-header-actions">'
             + '<button type="button" data-wf-dash-stats-chart-edit="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Edit</button>'
-            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export settings</button>'
-            + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export image</button>'
             + '<button type="button" data-wf-dash-stats-chart-delete="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-delete" title="Delete chart" aria-label="Delete chart">×</button>'
             + '</div>'
             + '</div>';
     },
 
-    _statsChartCardHtml(chart, validation, inScorecardRow) {
+    _statsChartCardFooterHtml(chart) {
+        const btnStyle = 'padding: 2px 8px; font-size: 10px;';
+        return ''
+            + '<div class="wf-dash-stats-chart-footer">'
+            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export settings</button>'
+            + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export image</button>'
+            + '</div>';
+    },
+
+    _statsChartCardHtml(chart, validation, inStackRow, stackMinWidth) {
         const box = this._panelBoxStyle();
         const height = this._statsResolvedChartHeight(chart);
         const disabled = validation && !validation.ok;
@@ -895,8 +915,9 @@ const searchOutputStatsPaneMethods = {
         const bellSubtitle = chart.type === 'bellCurve'
             ? ('<div data-wf-dash-stats-chart-subtitle="' + dashEscHtml(chart.id) + '" style="display: none; font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px; text-align: center; line-height: 1.35;"></div>')
             : '';
-        const cardLayout = inScorecardRow
-            ? ('flex: 1 1 ' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px; min-width: min(' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px, 100%); max-width: 100%; box-sizing: border-box;')
+        const minWidth = stackMinWidth || STATS_SCORECARD_ROW_MIN_WIDTH_PX;
+        const cardLayout = inStackRow
+            ? ('flex: 1 1 ' + minWidth + 'px; min-width: min(' + minWidth + 'px, 100%); max-width: 100%; box-sizing: border-box;')
             : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
         return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative;">'
             + this._statsChartCardHeaderHtml(chart)
@@ -906,21 +927,26 @@ const searchOutputStatsPaneMethods = {
             + bodyContent
             + '</div>'
             + bellSubtitle
+            + this._statsChartCardFooterHtml(chart)
             + '</div>';
     },
 
     _statsChartLayoutGroups(charts) {
         const groups = [];
-        let scorecardCharts = null;
+        let stackKind = null;
+        let stackCharts = null;
         for (const chart of charts || []) {
-            if (chart.type === 'scorecard') {
-                if (!scorecardCharts) {
-                    scorecardCharts = [];
-                    groups.push({ kind: 'scorecard-row', charts: scorecardCharts });
+            const kind = this._statsChartStackKind(chart);
+            if (kind) {
+                if (stackKind !== kind) {
+                    stackKind = kind;
+                    stackCharts = [];
+                    groups.push({ kind, charts: stackCharts });
                 }
-                scorecardCharts.push(chart);
+                stackCharts.push(chart);
             } else {
-                scorecardCharts = null;
+                stackKind = null;
+                stackCharts = null;
                 groups.push({ kind: 'chart', charts: [chart] });
             }
         }
@@ -932,12 +958,19 @@ const searchOutputStatsPaneMethods = {
         const layout = this._ensureStatsLayout();
         let html = '';
         for (const group of this._statsChartLayoutGroups(layout.charts)) {
-            if (group.kind === 'scorecard-row') {
-                html += '<div class="wf-dash-stats-scorecard-row" data-wf-dash-stats-scorecard-row="1" style="display: flex; flex-wrap: wrap; gap: '
+            if (group.kind === 'scorecard-row' || group.kind === 'circular-row') {
+                const minWidth = this._statsStackRowMinWidth(group.kind);
+                const rowClass = group.kind === 'circular-row'
+                    ? 'wf-dash-stats-circular-row'
+                    : 'wf-dash-stats-scorecard-row';
+                const rowAttr = group.kind === 'circular-row'
+                    ? 'data-wf-dash-stats-circular-row="1"'
+                    : 'data-wf-dash-stats-scorecard-row="1"';
+                html += '<div class="' + rowClass + '" ' + rowAttr + ' style="display: flex; flex-wrap: wrap; gap: '
                     + STATS_SCORECARD_ROW_GAP_PX + 'px; width: 100%; align-items: stretch; box-sizing: border-box;">';
                 for (const chart of group.charts) {
                     const entry = byId.get(chart.id);
-                    if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, true);
+                    if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, true, minWidth);
                 }
                 html += '</div>';
                 continue;
@@ -1918,6 +1951,7 @@ const searchOutputStatsPaneMethods = {
             + '.wf-dash-stats-chart-header-text { font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }'
             + '.wf-dash-stats-chart-drag { cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
+            + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 8px; max-width: 100%; }'
             + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-actions { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }'
@@ -1926,6 +1960,8 @@ const searchOutputStatsPaneMethods = {
             + '@container (max-width: 260px) {'
             + '.wf-dash-stats-chart-header-actions { flex-direction: column; align-items: stretch; }'
             + '.wf-dash-stats-chart-header-actions button { width: 100%; box-sizing: border-box; justify-content: center; }'
+            + '.wf-dash-stats-chart-footer { flex-direction: column; align-items: stretch; }'
+            + '.wf-dash-stats-chart-footer button { width: 100%; box-sizing: border-box; justify-content: center; }'
             + '}';
         document.head.appendChild(style);
     },
@@ -2250,9 +2286,10 @@ const searchOutputStatsPaneMethods = {
         const groups = this._statsChartLayoutGroups(layout.charts);
         const images = [];
         for (const group of groups) {
-            if (group.kind === 'scorecard-row' && group.charts.length > 1) {
+            if ((group.kind === 'scorecard-row' || group.kind === 'circular-row') && group.charts.length > 1) {
+                const rowMinWidth = this._statsStackRowMinWidth(group.kind);
                 const cardWidth = Math.max(
-                    STATS_SCORECARD_ROW_MIN_WIDTH_PX,
+                    rowMinWidth,
                     Math.floor((exportCssWidth - STATS_SCORECARD_ROW_GAP_PX * (group.charts.length - 1)) / group.charts.length)
                 );
                 const rowImgs = [];
@@ -4355,7 +4392,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.36',
+    _version: '5.37',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
