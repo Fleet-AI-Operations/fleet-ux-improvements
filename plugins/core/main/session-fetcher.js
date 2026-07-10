@@ -20,7 +20,32 @@ const SF_TABLES = {
     }
 };
 
+/** Optional PostgREST eq filters — empty values are omitted. */
+const SF_SHARED_FILTERS = [
+    { key: 'team_id', label: 'team_id', placeholder: 'UUID', tables: ['sessions', 'qa_session_results'] }
+];
+
+const SF_SESSIONS_FILTERS = [
+    { key: 'status', label: 'status', placeholder: 'completed / cancelled / …', tables: ['sessions'] },
+    { key: 'eval_task', label: 'eval_task', placeholder: 'UUID', tables: ['sessions'] },
+    { key: 'eval_task_version_id', label: 'eval_task_version_id', placeholder: 'UUID', tables: ['sessions'] },
+    { key: 'job_id', label: 'job_id', placeholder: 'UUID', tables: ['sessions'] },
+    { key: 'model', label: 'model', placeholder: 'model id string', tables: ['sessions'] },
+    { key: 'instance', label: 'instance', placeholder: 'UUID', tables: ['sessions'] }
+];
+
+const SF_QA_FILTERS = [
+    { key: 'session_id', label: 'session_id', placeholder: 'UUID', tables: ['qa_session_results'] },
+    { key: 'qa_project_id', label: 'qa_project_id', placeholder: 'UUID', tables: ['qa_session_results'] },
+    { key: 'reviewer_id', label: 'reviewer_id', placeholder: 'UUID', tables: ['qa_session_results'] },
+    { key: 'difficulty', label: 'difficulty', placeholder: 'string or leave empty', tables: ['qa_session_results'] }
+];
+
+const SF_ALL_TEXT_FILTERS = SF_SHARED_FILTERS.concat(SF_SESSIONS_FILTERS, SF_QA_FILTERS);
+
 function sfDefaultState() {
+    const filters = {};
+    SF_ALL_TEXT_FILTERS.forEach((f) => { filters[f.key] = ''; });
     return {
         table: 'sessions',
         mode: 'latest',
@@ -29,6 +54,9 @@ function sfDefaultState() {
         idValue: '',
         since: '',
         limit: SF_DEFAULT_LIMIT,
+        archived: 'any',
+        verdict: 'any',
+        filters,
         lastJson: '',
         lastStatus: ''
     };
@@ -41,7 +69,15 @@ function sfReadState() {
         if (!raw) return defaults;
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (!parsed || typeof parsed !== 'object') return defaults;
-        return Object.assign(defaults, parsed);
+        const merged = Object.assign({}, defaults, parsed);
+        merged.filters = Object.assign({}, defaults.filters, parsed.filters || {});
+        // Migrate older flat keys if present
+        SF_ALL_TEXT_FILTERS.forEach((f) => {
+            if (parsed[f.key] != null && merged.filters[f.key] === '') {
+                merged.filters[f.key] = String(parsed[f.key] || '');
+            }
+        });
+        return merged;
     } catch (_e) {
         return defaults;
     }
@@ -53,6 +89,13 @@ function sfWriteState(state) {
     } catch (err) {
         Logger.warn('session-fetcher: failed to persist state', err);
     }
+}
+
+function sfEscAttr(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;');
 }
 
 function sfEnsureStyles() {
@@ -86,6 +129,12 @@ function sfEnsureStyles() {
         '}',
         '#wf-dash-modal .sf-seg-btn:not([aria-pressed="true"]):hover {',
         '  background: color-mix(in srgb, var(--foreground, #0f172a) 6%, transparent);',
+        '}',
+        '#wf-dash-modal .sf-filter-grid {',
+        '  display: grid;',
+        '  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));',
+        '  gap: 8px 12px;',
+        '  margin-bottom: 10px;',
         '}'
     ].join('\n');
     document.head.appendChild(style);
@@ -100,6 +149,14 @@ function sfToggleCell(labelStyle, title, innerHtml) {
     return `<div style="display:flex;flex-direction:column;gap:6px;min-width:0;">
         <div style="${labelStyle}">${title}</div>
         ${innerHtml}
+    </div>`;
+}
+
+function sfFilterFieldHtml(styles, monoInput, def, value) {
+    const id = 'wf-sf-filter-' + def.key;
+    return `<div data-sf-filter-wrap="${def.key}" data-sf-tables="${def.tables.join(',')}" style="display:flex;flex-direction:column;gap:4px;min-width:0;">
+        <label for="${id}" style="${styles.label}">${def.label}</label>
+        <input type="text" id="${id}" data-sf-filter="${def.key}" placeholder="${sfEscAttr(def.placeholder)}" autocomplete="off" value="${sfEscAttr(value)}" style="${monoInput}">
     </div>`;
 }
 
@@ -137,16 +194,23 @@ function sessionFetcherPanelHtml() {
     const mode = state.mode === 'by_id' || state.mode === 'since' ? state.mode : 'latest';
     const select = state.select === 'all' ? 'all' : 'slim';
     const idField = state.idField === 'session_id' ? 'session_id' : 'id';
+    const archived = state.archived === 'true' || state.archived === 'false' ? state.archived : 'any';
+    const verdict = ['pass', 'fail', 'review_needed'].includes(state.verdict) ? state.verdict : 'any';
     const limit = Math.min(SF_MAX_LIMIT, Math.max(1, parseInt(state.limit, 10) || SF_DEFAULT_LIMIT));
+    const filterVals = state.filters || {};
+
+    const filterFieldsHtml = SF_ALL_TEXT_FILTERS.map((def) =>
+        sfFilterFieldHtml(styles, monoInput, def, filterVals[def.key] || '')
+    ).join('');
 
     return `
             <div id="wf-ops-session-fetcher-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; gap: 10px;">
-                <div style="flex-shrink: 0;">
+                <div style="flex-shrink: 0; max-height: 48%; overflow: auto;">
                     <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
                         Session Fetcher
                     </h3>
                     <p style="${styles.hint} margin: 0 0 12px 0; line-height: 1.45;">
-                        Explore <code>sessions</code> / <code>qa_session_results</code> via PostgREST. Results render as raw JSON.
+                        Explore <code>sessions</code> / <code>qa_session_results</code> via PostgREST. Optional filters are AND’d as <code>eq.</code> when non-empty — leave blank to skip.
                     </p>
                     <div style="display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; margin-bottom: 10px;">
                         ${sfToggleCell(styles.label, 'Table', `<div class="sf-seg-group">${sfSegBtn('data-sf-table', 'sessions', 'sessions', table === 'sessions', true)}${sfSegBtn('data-sf-table', 'qa_session_results', 'qa_session_results', table === 'qa_session_results', false)}</div>`)}
@@ -156,21 +220,34 @@ function sessionFetcherPanelHtml() {
                             <div style="${styles.label}">ID field</div>
                             <div class="sf-seg-group">${sfSegBtn('data-sf-id-field', 'id', 'id', idField === 'id', true)}${sfSegBtn('data-sf-id-field', 'session_id', 'session_id', idField === 'session_id', false)}</div>
                         </div>
+                        <div id="wf-sf-archived-wrap" data-sf-tables="sessions" style="display: ${table === 'sessions' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; min-width: 0;">
+                            <div style="${styles.label}">archived</div>
+                            <div class="sf-seg-group">${sfSegBtn('data-sf-archived', 'any', 'any', archived === 'any', true)}${sfSegBtn('data-sf-archived', 'false', 'false', archived === 'false', true)}${sfSegBtn('data-sf-archived', 'true', 'true', archived === 'true', false)}</div>
+                        </div>
+                        <div id="wf-sf-verdict-wrap" data-sf-tables="qa_session_results" style="display: ${table === 'qa_session_results' ? 'flex' : 'none'}; flex-direction: column; gap: 6px; min-width: 0;">
+                            <div style="${styles.label}">verdict</div>
+                            <div class="sf-seg-group">${sfSegBtn('data-sf-verdict', 'any', 'any', verdict === 'any', true)}${sfSegBtn('data-sf-verdict', 'pass', 'pass', verdict === 'pass', true)}${sfSegBtn('data-sf-verdict', 'fail', 'fail', verdict === 'fail', true)}${sfSegBtn('data-sf-verdict', 'review_needed', 'review_needed', verdict === 'review_needed', false)}</div>
+                        </div>
                         <div style="display: flex; flex-direction: column; gap: 6px; width: 5.5rem;">
                             <label for="wf-sf-limit" style="${styles.label}">Limit</label>
                             <input type="number" id="wf-sf-limit" min="1" max="${SF_MAX_LIMIT}" value="${limit}" style="${styles.input}">
                         </div>
                     </div>
                     <div id="wf-sf-id-row" style="display: ${mode === 'by_id' ? 'flex' : 'none'}; gap: 8px; align-items: stretch; margin-bottom: 8px;">
-                        <input type="text" id="wf-sf-id-input" placeholder="UUID" autocomplete="off" value="${String(state.idValue || '').replace(/"/g, '&quot;')}" style="${monoInput} flex: 1; min-width: 0;">
+                        <input type="text" id="wf-sf-id-input" placeholder="UUID" autocomplete="off" value="${sfEscAttr(state.idValue)}" style="${monoInput} flex: 1; min-width: 0;">
                     </div>
                     <div id="wf-sf-since-row" style="display: ${mode === 'since' ? 'flex' : 'none'}; gap: 8px; align-items: stretch; margin-bottom: 8px;">
-                        <input type="date" id="wf-sf-since-input" value="${String(state.since || '').replace(/"/g, '&quot;')}" style="${styles.input} flex: 1; min-width: 0; max-width: 16rem;">
+                        <input type="date" id="wf-sf-since-input" value="${sfEscAttr(state.since)}" style="${styles.input} flex: 1; min-width: 0; max-width: 16rem;">
+                    </div>
+                    <div style="${styles.label} margin-bottom: 6px;">Optional filters (eq.)</div>
+                    <div class="sf-filter-grid" id="wf-sf-filter-grid">
+                        ${filterFieldsHtml}
                     </div>
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <button type="button" id="wf-sf-fetch" class="${sfBtnClass('primary', 'regular')}" style="flex-shrink: 0;">Fetch</button>
                         <button type="button" id="wf-sf-copy" class="${sfBtnClass('secondary', 'nav')}" style="flex-shrink: 0; display: ${state.lastJson ? 'inline-flex' : 'none'};">Copy JSON</button>
-                        <span id="wf-sf-status" style="${styles.hint} line-height: 1.45;">${String(state.lastStatus || '').replace(/</g, '&lt;')}</span>
+                        <button type="button" id="wf-sf-clear-filters" class="${sfBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear filters</button>
+                        <span id="wf-sf-status" style="${styles.hint} line-height: 1.45;">${sfEscAttr(state.lastStatus).replace(/&quot;/g, '"')}</span>
                     </div>
                 </div>
                 <pre id="wf-sf-output" style="
@@ -205,6 +282,8 @@ function sfCollectUiState(modal) {
     const mode = pressed('data-sf-mode') || state.mode;
     const select = pressed('data-sf-select') || state.select;
     const idField = pressed('data-sf-id-field') || state.idField;
+    const archived = pressed('data-sf-archived') || state.archived;
+    const verdict = pressed('data-sf-verdict') || state.verdict;
     const idInput = modal.querySelector('#wf-sf-id-input');
     const sinceInput = modal.querySelector('#wf-sf-since-input');
     const limitInput = modal.querySelector('#wf-sf-limit');
@@ -215,6 +294,12 @@ function sfCollectUiState(modal) {
     if (!Number.isFinite(limit) || limit < 1) limit = SF_DEFAULT_LIMIT;
     limit = Math.min(SF_MAX_LIMIT, limit);
 
+    const filters = Object.assign({}, state.filters || {});
+    modal.querySelectorAll('[data-sf-filter]').forEach((input) => {
+        const key = input.getAttribute('data-sf-filter');
+        if (key) filters[key] = String(input.value || '').trim();
+    });
+
     return {
         table: SF_TABLES[table] ? table : 'sessions',
         mode: mode === 'by_id' || mode === 'since' ? mode : 'latest',
@@ -223,6 +308,9 @@ function sfCollectUiState(modal) {
         idValue: idInput ? String(idInput.value || '').trim() : '',
         since: sinceInput ? String(sinceInput.value || '').trim() : '',
         limit,
+        archived: archived === 'true' || archived === 'false' ? archived : 'any',
+        verdict: ['pass', 'fail', 'review_needed'].includes(verdict) ? verdict : 'any',
+        filters,
         lastJson: output ? output.textContent : state.lastJson,
         lastStatus: status ? status.textContent : state.lastStatus
     };
@@ -234,6 +322,8 @@ function sfSyncModeFields(modal) {
     const idRow = modal.querySelector('#wf-sf-id-row');
     const sinceRow = modal.querySelector('#wf-sf-since-row');
     const idFieldWrap = modal.querySelector('#wf-sf-id-field-wrap');
+    const archivedWrap = modal.querySelector('#wf-sf-archived-wrap');
+    const verdictWrap = modal.querySelector('#wf-sf-verdict-wrap');
     if (idRow) idRow.style.display = state.mode === 'by_id' ? 'flex' : 'none';
     if (sinceRow) sinceRow.style.display = state.mode === 'since' ? 'flex' : 'none';
     if (idFieldWrap) {
@@ -241,6 +331,13 @@ function sfSyncModeFields(modal) {
             ? 'flex'
             : 'none';
     }
+    if (archivedWrap) archivedWrap.style.display = state.table === 'sessions' ? 'flex' : 'none';
+    if (verdictWrap) verdictWrap.style.display = state.table === 'qa_session_results' ? 'flex' : 'none';
+
+    modal.querySelectorAll('[data-sf-filter-wrap]').forEach((wrap) => {
+        const tables = String(wrap.getAttribute('data-sf-tables') || '').split(',');
+        wrap.style.display = tables.includes(state.table) ? 'flex' : 'none';
+    });
 }
 
 function sfSetSegGroup(modal, attrName, value) {
@@ -267,9 +364,37 @@ function sfPersistFromModal(modal) {
     return state;
 }
 
+function sfClearFilters(modal) {
+    modal.querySelectorAll('[data-sf-filter]').forEach((input) => { input.value = ''; });
+    sfSetSegGroup(modal, 'data-sf-archived', 'any');
+    sfSetSegGroup(modal, 'data-sf-verdict', 'any');
+    sfPersistFromModal(modal);
+    Logger.log('session-fetcher: filters cleared');
+}
+
 function sfTimeColumn(_table) {
-    // Both tables expose created_at; sessions.started_at is often null (cancelled / never-started).
     return 'created_at';
+}
+
+function sfApplyOptionalFilters(overrides, state) {
+    const table = state.table;
+    const filters = state.filters || {};
+
+    SF_ALL_TEXT_FILTERS.forEach((def) => {
+        if (!def.tables.includes(table)) return;
+        const raw = String(filters[def.key] || '').trim();
+        if (!raw) return;
+        // Avoid double-setting when By ID already set the same column
+        if (overrides[def.key] != null) return;
+        overrides[def.key] = 'eq.' + raw;
+    });
+
+    if (table === 'sessions' && (state.archived === 'true' || state.archived === 'false')) {
+        overrides.archived = 'eq.' + state.archived;
+    }
+    if (table === 'qa_session_results' && state.verdict && state.verdict !== 'any') {
+        overrides.verdict = 'eq.' + state.verdict;
+    }
 }
 
 function sfBuildQuery(state) {
@@ -277,6 +402,7 @@ function sfBuildQuery(state) {
     const queryKey = state.select === 'all' ? tableCfg.allKey : tableCfg.slimKey;
     const overrides = {};
     const timeCol = sfTimeColumn(state.table);
+    const limit = Math.min(SF_MAX_LIMIT, Math.max(1, state.limit || SF_DEFAULT_LIMIT));
 
     if (state.mode === 'by_id') {
         const id = String(state.idValue || '').trim();
@@ -287,7 +413,7 @@ function sfBuildQuery(state) {
             ? 'session_id'
             : 'id';
         overrides[field] = 'eq.' + id;
-        overrides.limit = Math.min(SF_MAX_LIMIT, Math.max(1, state.limit || SF_DEFAULT_LIMIT));
+        overrides.limit = limit;
     } else if (state.mode === 'since') {
         const since = String(state.since || '').trim();
         if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) {
@@ -295,12 +421,13 @@ function sfBuildQuery(state) {
         }
         overrides[timeCol] = 'gte.' + since;
         overrides.order = timeCol + '.desc';
-        overrides.limit = Math.min(SF_MAX_LIMIT, Math.max(1, state.limit || SF_DEFAULT_LIMIT));
+        overrides.limit = limit;
     } else {
         overrides.order = timeCol + '.desc';
-        overrides.limit = Math.min(SF_MAX_LIMIT, Math.max(1, state.limit || SF_DEFAULT_LIMIT));
+        overrides.limit = limit;
     }
 
+    sfApplyOptionalFilters(overrides, state);
     return { queryKey, overrides };
 }
 
@@ -325,8 +452,13 @@ async function sfHandleFetch(modal) {
 
     const fetchBtn = modal.querySelector('#wf-sf-fetch');
     if (fetchBtn) fetchBtn.disabled = true;
+    const filterKeys = Object.keys(overrides).filter((k) => k !== 'order' && k !== 'limit' && k !== 'select');
     sfSetStatus(modal, 'Fetching…');
-    Logger.log('session-fetcher: fetch start — ' + queryKey + ' mode=' + state.mode);
+    Logger.log(
+        'session-fetcher: fetch start — ' + queryKey
+        + ' mode=' + state.mode
+        + ' filters=[' + filterKeys.join(',') + ']'
+    );
 
     try {
         if (typeof ops.whenOpsBundleReady === 'function') {
@@ -415,11 +547,24 @@ function attachSessionFetcherListeners(modal) {
         if (idFieldBtn && modal.contains(idFieldBtn)) {
             sfSetSegGroup(modal, 'data-sf-id-field', idFieldBtn.getAttribute('data-sf-id-field'));
             sfPersistFromModal(modal);
+            return;
+        }
+        const archivedBtn = e.target.closest('[data-sf-archived]');
+        if (archivedBtn && modal.contains(archivedBtn)) {
+            sfSetSegGroup(modal, 'data-sf-archived', archivedBtn.getAttribute('data-sf-archived'));
+            sfPersistFromModal(modal);
+            return;
+        }
+        const verdictBtn = e.target.closest('[data-sf-verdict]');
+        if (verdictBtn && modal.contains(verdictBtn)) {
+            sfSetSegGroup(modal, 'data-sf-verdict', verdictBtn.getAttribute('data-sf-verdict'));
+            sfPersistFromModal(modal);
         }
     });
 
     const fetchBtn = modal.querySelector('#wf-sf-fetch');
     const copyBtn = modal.querySelector('#wf-sf-copy');
+    const clearBtn = modal.querySelector('#wf-sf-clear-filters');
     const idInput = modal.querySelector('#wf-sf-id-input');
     const sinceInput = modal.querySelector('#wf-sf-since-input');
     const limitInput = modal.querySelector('#wf-sf-limit');
@@ -429,6 +574,9 @@ function attachSessionFetcherListeners(modal) {
     }
     if (copyBtn) {
         copyBtn.addEventListener('click', () => { void sfHandleCopy(modal, copyBtn); });
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => sfClearFilters(modal));
     }
     const onEnterFetch = (e) => {
         if (e.key === 'Enter') {
@@ -447,13 +595,17 @@ function attachSessionFetcherListeners(modal) {
     if (limitInput) {
         limitInput.addEventListener('change', () => sfPersistFromModal(modal));
     }
+    modal.querySelectorAll('[data-sf-filter]').forEach((input) => {
+        input.addEventListener('keydown', onEnterFetch);
+        input.addEventListener('change', () => sfPersistFromModal(modal));
+    });
 }
 
 const plugin = {
     id: 'session-fetcher',
     name: 'Session Fetcher',
     description: 'Dev-only PostgREST session / QA session results explorer for the Ops dashboard',
-    _version: '1.1',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
