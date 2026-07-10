@@ -157,6 +157,20 @@ function statsNormalizeLineAreaLayout(raw) {
     return raw === 'stacked' ? 'stacked' : 'origin';
 }
 
+function statsNormalizeLabelFormat(raw) {
+    if (raw === 'percent' || raw === 'both') return raw;
+    return 'absolute';
+}
+
+function statsNormalizeLabelsAlwaysVisible(raw) {
+    return raw === true || raw === 'true' || raw === 1 || raw === '1';
+}
+
+function statsChartSupportsLabelOptions(type) {
+    const t = statsNormalizeChartType(type);
+    return t === 'pie' || t === 'polarArea' || t === 'radar' || t === 'barLine' || t === 'histogram';
+}
+
 function statsNormalizeSpread(raw) {
     return raw === 'stddevBand' ? 'stddevBand' : 'none';
 }
@@ -356,6 +370,10 @@ function statsNormalizeChartEntry(c) {
     }
     if (meta.needsBarLayout) {
         chart.categorySort = statsNormalizeCategorySort(c.categorySort, series.length);
+    }
+    if (statsChartSupportsLabelOptions(type)) {
+        chart.labelFormat = statsNormalizeLabelFormat(c.labelFormat);
+        chart.labelsAlwaysVisible = statsNormalizeLabelsAlwaysVisible(c.labelsAlwaysVisible);
     }
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
@@ -1788,6 +1806,8 @@ function statsDefaultBuilderDraft(catalog) {
         lineAreaLayout: 'origin',
         categorySort: null,
         presetKey: null,
+        labelFormat: 'absolute',
+        labelsAlwaysVisible: false,
         chartFilters: statsEmptyChartFilters()
     };
 }
@@ -1796,7 +1816,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1857,6 +1877,8 @@ const plugin = {
             countShadedLineDatasets: (chart, catalog) => statsCountShadedLineDatasets(chart, catalog),
             seriesAllowsSegment: (chartType, seriesEntry) => statsSeriesAllowsSegment(chartType, seriesEntry),
             normalizeCategorySort: (raw, seriesCount) => statsNormalizeCategorySort(raw, seriesCount),
+            normalizeLabelFormat: (raw) => statsNormalizeLabelFormat(raw),
+            chartSupportsLabelOptions: (type) => statsChartSupportsLabelOptions(type),
         };
         if (state) state.registered = true;
         Logger.log('search-output-stats-engine: registered (Context.statsEngine)');

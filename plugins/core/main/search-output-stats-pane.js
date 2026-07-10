@@ -54,10 +54,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;">'
             + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 0 1 auto;"></div>'
             + '<div id="wf-dash-stats-dashboard-switcher" style="display: none; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;">'
-            + '<label style="display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0;">'
-            + '<span style="flex-shrink: 0;">Dashboard</span>'
-            + '<select id="wf-dash-stats-dashboard-select" data-wf-dash-stats-dashboard-select="1" style="max-width: 160px; min-width: 100px; box-sizing: border-box; padding: 2px 6px; font-size: 11px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);"></select>'
-            + '</label>'
+            + '<select id="wf-dash-stats-dashboard-select" data-wf-dash-stats-dashboard-select="1" aria-label="Dashboard" style="max-width: 160px; min-width: 100px; box-sizing: border-box; padding: 2px 6px; font-size: 11px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);"></select>'
             + '<button type="button" data-wf-dash-stats-dashboard-rename="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Rename dashboard">Rename</button>'
             + '<button type="button" data-wf-dash-stats-dashboard-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Add dashboard">Add</button>'
             + '<button type="button" data-wf-dash-stats-dashboard-delete="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Delete dashboard">Delete</button>'
@@ -362,6 +359,12 @@ const searchOutputStatsPaneMethods = {
         }
         if (engineMeta.needsBarLayout && engine.normalizeCategorySort) {
             chart.categorySort = engine.normalizeCategorySort(draft.categorySort, chart.series.length);
+        }
+        if (engine.chartSupportsLabelOptions && engine.chartSupportsLabelOptions(draft.type)) {
+            chart.labelFormat = engine.normalizeLabelFormat
+                ? engine.normalizeLabelFormat(draft.labelFormat)
+                : (draft.labelFormat === 'percent' || draft.labelFormat === 'both' ? draft.labelFormat : 'absolute');
+            chart.labelsAlwaysVisible = !!draft.labelsAlwaysVisible;
         }
         return chart;
     },
@@ -693,7 +696,8 @@ const searchOutputStatsPaneMethods = {
             muted: this._statsResolvedColor('--muted-foreground', '#64748b'),
             border: this._statsResolvedColor('--border', '#e2e8f0'),
             brand: this._statsResolvedColor('--brand', '#2563eb'),
-            brandAlt: this._statsResolvedColor('--primary', '#16a34a')
+            brandAlt: this._statsResolvedColor('--primary', '#16a34a'),
+            card: this._statsResolvedColor('--card', '#ffffff')
         };
     },
 
@@ -907,7 +911,11 @@ const searchOutputStatsPaneMethods = {
             }
             const theme = this._statsChartTheme();
             const containerWidth = wrapEl.clientWidth || 0;
-            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
+            const config = this._statsFinalizeChartJsConfig(
+                this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog),
+                chart,
+                theme
+            );
             this._state.statsBuilderPreviewChart = new Chart(canvas, config);
             if (chart.type === 'bellCurve') {
                 this._renderBellCurveStatsSubtitle('builder', aggData);
@@ -1486,22 +1494,187 @@ const searchOutputStatsPaneMethods = {
                     const ds = item.chart.data.datasets[item.datasetIndex];
                     return !(ds && ds.statsSpreadBand);
                 },
-                label: (ctx) => {
-                    const ds = ctx.dataset || {};
-                    const horizontal = ctx.chart.options.indexAxis === 'y';
-                    const rawVal = horizontal ? ctx.parsed.x : ctx.parsed.y;
-                    let text = (ds.label || '') + ': ' + dash._formatStatsScorecardValue(rawVal);
-                    const idx = ctx.dataIndex;
-                    if (Array.isArray(ds.statsSpreadLow) && Array.isArray(ds.statsSpreadHigh)
-                        && ds.statsSpreadLow[idx] != null && ds.statsSpreadHigh[idx] != null
-                        && Number.isFinite(ds.statsSpreadLow[idx]) && Number.isFinite(ds.statsSpreadHigh[idx])) {
-                        text += ' (±σ ' + dash._formatStatsScorecardValue(ds.statsSpreadLow[idx])
-                            + '–' + dash._formatStatsScorecardValue(ds.statsSpreadHigh[idx]) + ')';
-                    }
-                    return text;
-                }
+                label: (ctx) => dash._statsTooltipLabelText(ctx.chart.$statsChartModel || null, ctx)
             }
         };
+    },
+
+    _statsChartSupportsLabelOptions(chart) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.chartSupportsLabelOptions === 'function') {
+            return engine.chartSupportsLabelOptions(chart && chart.type);
+        }
+        const type = this._statsNormalizeChartType(chart && chart.type);
+        return type === 'pie' || type === 'polarArea' || type === 'radar'
+            || type === 'barLine' || type === 'histogram';
+    },
+
+    _statsNormalizeLabelFormat(raw) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.normalizeLabelFormat === 'function') {
+            return engine.normalizeLabelFormat(raw);
+        }
+        if (raw === 'percent' || raw === 'both') return raw;
+        return 'absolute';
+    },
+
+    _statsDatasetNumericTotal(data) {
+        let sum = 0;
+        for (const v of data || []) {
+            const n = typeof v === 'number' ? v : Number(v);
+            if (Number.isFinite(n)) sum += n;
+        }
+        return sum;
+    },
+
+    _statsFormatChartDatumLabel(value, total, format) {
+        const abs = this._formatStatsScorecardValue(value);
+        const pct = total > 0 && Number.isFinite(value)
+            ? (Math.round((value / total) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%'
+            : '0%';
+        const mode = this._statsNormalizeLabelFormat(format);
+        if (mode === 'percent') return pct;
+        if (mode === 'both') return abs + ' (' + pct + ')';
+        return abs;
+    },
+
+    _statsTooltipParsedValue(ctx) {
+        if (!ctx) return null;
+        const chartType = ctx.chart && ctx.chart.config && ctx.chart.config.type;
+        if (chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut') {
+            const n = typeof ctx.parsed === 'number' ? ctx.parsed : Number(ctx.raw);
+            return Number.isFinite(n) ? n : null;
+        }
+        if (chartType === 'radar') {
+            const n = ctx.parsed && typeof ctx.parsed.r === 'number' ? ctx.parsed.r : Number(ctx.raw);
+            return Number.isFinite(n) ? n : null;
+        }
+        const horizontal = ctx.chart && ctx.chart.options && ctx.chart.options.indexAxis === 'y';
+        const n = horizontal
+            ? (ctx.parsed && ctx.parsed.x)
+            : (ctx.parsed && ctx.parsed.y);
+        return n != null && Number.isFinite(n) ? n : null;
+    },
+
+    _statsTooltipLabelText(chartModel, ctx) {
+        const dash = this;
+        const ds = ctx.dataset || {};
+        if (ds.statsSpreadBand || ds.statsLegendHidden || ds.statsBellBand) return '';
+        const value = dash._statsTooltipParsedValue(ctx);
+        if (value == null) return '';
+        const total = dash._statsDatasetNumericTotal(ds.data);
+        const format = chartModel && chartModel.labelFormat ? chartModel.labelFormat : 'absolute';
+        const formatted = dash._statsFormatChartDatumLabel(value, total, format);
+        const chartType = ctx.chart && ctx.chart.config && ctx.chart.config.type;
+        if (chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut') {
+            const name = ctx.label || ds.label || '';
+            return name ? name + ': ' + formatted : formatted;
+        }
+        if (chartModel && chartModel.type === 'histogram') {
+            if (format === 'percent') return formatted;
+            if (format === 'both') {
+                const abs = dash._formatStatsScorecardValue(value);
+                const tasks = value === 1 ? '1 task' : abs + ' tasks';
+                return tasks + ' (' + dash._statsFormatChartDatumLabel(value, total, 'percent') + ')';
+            }
+            return value === 1 ? '1 task' : dash._formatStatsScorecardValue(value) + ' tasks';
+        }
+        const seriesLabel = ds.label || '';
+        let text = seriesLabel ? seriesLabel + ': ' + formatted : formatted;
+        const idx = ctx.dataIndex;
+        if (Array.isArray(ds.statsSpreadLow) && Array.isArray(ds.statsSpreadHigh)
+            && ds.statsSpreadLow[idx] != null && ds.statsSpreadHigh[idx] != null
+            && Number.isFinite(ds.statsSpreadLow[idx]) && Number.isFinite(ds.statsSpreadHigh[idx])) {
+            text += ' (±σ ' + dash._formatStatsScorecardValue(ds.statsSpreadLow[idx])
+                + '–' + dash._formatStatsScorecardValue(ds.statsSpreadHigh[idx]) + ')';
+        }
+        return text;
+    },
+
+    _statsValueLabelsPlugin(chartModel, theme) {
+        const dash = this;
+        return {
+            id: 'wfStatsValueLabels',
+            afterDatasetsDraw(chart) {
+                if (!chartModel || !chartModel.labelsAlwaysVisible) return;
+                if (!dash._statsChartSupportsLabelOptions(chartModel)) return;
+                const ctx = chart.ctx;
+                if (!ctx) return;
+                chart.data.datasets.forEach((dataset, datasetIndex) => {
+                    if (!dataset || dataset.statsSpreadBand || dataset.statsLegendHidden
+                        || dataset.statsBellBand || dataset.statsShadedFillLayer
+                        || dataset.segmentFillOnly) {
+                        return;
+                    }
+                    if (!chart.isDatasetVisible(datasetIndex)) return;
+                    const meta = chart.getDatasetMeta(datasetIndex);
+                    if (!meta || !meta.data) return;
+                    const total = dash._statsDatasetNumericTotal(dataset.data);
+                    meta.data.forEach((el, index) => {
+                        if (!el || el.skip || el.hidden) return;
+                        const raw = dataset.data[index];
+                        const value = typeof raw === 'number' ? raw : Number(raw);
+                        if (!Number.isFinite(value)) return;
+                        const text = dash._statsFormatChartDatumLabel(value, total, chartModel.labelFormat);
+                        if (!text) return;
+                        const pos = typeof el.tooltipPosition === 'function'
+                            ? el.tooltipPosition()
+                            : { x: el.x, y: el.y };
+                        if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return;
+                        ctx.save();
+                        ctx.font = '600 10px system-ui, -apple-system, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        const width = ctx.measureText(text).width;
+                        const padX = 4;
+                        const padY = 2;
+                        const boxW = width + padX * 2;
+                        const boxH = 14;
+                        ctx.fillStyle = theme && theme.card
+                            ? theme.card
+                            : 'rgba(255,255,255,0.85)';
+                        ctx.strokeStyle = theme && theme.border ? theme.border : 'rgba(0,0,0,0.12)';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        if (typeof ctx.roundRect === 'function') {
+                            ctx.roundRect(pos.x - boxW / 2, pos.y - boxH / 2, boxW, boxH, 3);
+                        } else {
+                            ctx.rect(pos.x - boxW / 2, pos.y - boxH / 2, boxW, boxH);
+                        }
+                        ctx.fill();
+                        ctx.stroke();
+                        ctx.fillStyle = theme && theme.foreground ? theme.foreground : '#0f172a';
+                        ctx.fillText(text, pos.x, pos.y);
+                        ctx.restore();
+                    });
+                });
+            }
+        };
+    },
+
+    _statsFinalizeChartJsConfig(config, chart, theme) {
+        if (!config || !chart) return config;
+        config.$statsChartModel = chart;
+        if (config.options) {
+            // Chart.js does not copy unknown root fields onto the instance; stash on options for callbacks.
+            config.options.$statsChartModel = chart;
+        }
+        if (!this._statsChartSupportsLabelOptions(chart)) return config;
+        if (!config.options) config.options = {};
+        if (!config.options.plugins) config.options.plugins = {};
+        const existingTooltip = config.options.plugins.tooltip || {};
+        const existingCallbacks = existingTooltip.callbacks || {};
+        const dash = this;
+        config.options.plugins.tooltip = Object.assign({}, existingTooltip, {
+            callbacks: Object.assign({}, existingCallbacks, {
+                label: (ctx) => dash._statsTooltipLabelText(chart, ctx)
+            })
+        });
+        if (chart.labelsAlwaysVisible) {
+            const plugin = this._statsValueLabelsPlugin(chart, theme || this._statsChartTheme());
+            config.plugins = (config.plugins || []).concat([plugin]);
+        }
+        return config;
     },
 
     _statsCartesianScales(chart, theme) {
@@ -2822,7 +2995,28 @@ const searchOutputStatsPaneMethods = {
                 { styles })
             : '';
 
-        return { chartSettingsHtml, layoutOptionsHtml, pointModeHtml };
+        const supportsLabels = this._statsChartSupportsLabelOptions(draft);
+        const labelFormat = this._statsNormalizeLabelFormat(draft.labelFormat);
+        const labelsAlwaysVisible = !!draft.labelsAlwaysVisible;
+        const labelOptionsHtml = supportsLabels
+            ? ('<div style="' + styles.gridAuto + '">'
+                + this._statsBuilderField('Tooltip values',
+                    '<select data-wf-dash-stats-draft="labelFormat" style="' + styles.inputStyle + '">'
+                    + '<option value="absolute"' + (labelFormat === 'absolute' ? ' selected' : '') + '>Absolute</option>'
+                    + '<option value="percent"' + (labelFormat === 'percent' ? ' selected' : '') + '>Percent of total</option>'
+                    + '<option value="both"' + (labelFormat === 'both' ? ' selected' : '') + '>Absolute + percent</option>'
+                    + '</select>',
+                    { styles, hint: 'Percent is of that series’ total' })
+                + this._statsBuilderField('Always show labels',
+                    '<label style="display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--foreground, #0f172a);">'
+                    + '<input type="checkbox" data-wf-dash-stats-draft="labelsAlwaysVisible"'
+                    + (labelsAlwaysVisible ? ' checked' : '') + '>'
+                    + 'Show values on chart</label>',
+                    { styles })
+                + '</div>')
+            : '';
+
+        return { chartSettingsHtml, layoutOptionsHtml, pointModeHtml, labelOptionsHtml };
     },
 
     _statsBuilderSeriesCard(i, s, ctx) {
@@ -3026,6 +3220,7 @@ const searchOutputStatsPaneMethods = {
             + chartSettings.chartSettingsHtml
             + chartSettings.layoutOptionsHtml
             + chartSettings.pointModeHtml
+            + (chartSettings.labelOptionsHtml || '')
             + '<div><div style="' + styles.sectionLabel + '">' + seriesSectionLabel + '</div>'
             + seriesStackHtml + seriesActions + '</div>'
             + '<details style="margin-top: 2px;">'
@@ -3056,6 +3251,8 @@ const searchOutputStatsPaneMethods = {
         const categorySortEl = this._q('[data-wf-dash-stats-draft="categorySort"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
+        const labelFormatEl = this._q('[data-wf-dash-stats-draft="labelFormat"]');
+        const labelsAlwaysVisibleEl = this._q('[data-wf-dash-stats-draft="labelsAlwaysVisible"]');
         if (titleEl) draft.title = titleEl.value;
         if (dashboardEl) {
             draft.dashboardId = dashboardEl.value;
@@ -3079,6 +3276,13 @@ const searchOutputStatsPaneMethods = {
             heightEl.value = String(draft.height);
         }
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
+        if (this._statsChartSupportsLabelOptions(draft)) {
+            if (labelFormatEl) draft.labelFormat = this._statsNormalizeLabelFormat(labelFormatEl.value);
+            draft.labelsAlwaysVisible = !!(labelsAlwaysVisibleEl && labelsAlwaysVisibleEl.checked);
+        } else {
+            draft.labelFormat = 'absolute';
+            draft.labelsAlwaysVisible = false;
+        }
         const series = [];
         const draftSeries = draft.series || [];
         this._modal.querySelectorAll('[data-wf-dash-stats-series-row]').forEach((row) => {
@@ -3530,7 +3734,11 @@ const searchOutputStatsPaneMethods = {
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
             if (!this._statsChartHasRenderableData(chart, aggData)) continue;
             const containerWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 0;
-            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
+            const config = this._statsFinalizeChartJsConfig(
+                this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog),
+                chart,
+                theme
+            );
             charts[chart.id] = new Chart(canvas, config);
             if (chart.type === 'bellCurve') {
                 this._renderBellCurveStatsSubtitle(chart.id, aggData);
@@ -4631,7 +4839,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '6.0',
+    _version: '6.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
