@@ -1,7 +1,7 @@
 {
   "version": "11.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.127",
+  "archetypesVersion": "13.128",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -132,8 +132,8 @@
     },
     {
       "name": "session-fetcher.js",
-      "version": "2.0",
-      "hash": "sha256-6f18241539e75d8ca0941e5e8f664a388b3d815e8ece6a82b36a5012e0120b37",
+      "version": "2.1",
+      "hash": "sha256-aaa686af251b83e49b1ff5c465eb750161ae4c2249fe660853324eabde8fd9e3",
       "log": false
     }
   ],

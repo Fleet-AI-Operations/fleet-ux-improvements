@@ -37,8 +37,7 @@ const SF_SESSIONS_FILTERS = [
 const SF_QA_FILTERS = [
     { key: 'session_id', label: 'session_id', placeholder: 'UUID', tables: ['qa_session_results'] },
     { key: 'qa_project_id', label: 'qa_project_id', placeholder: 'UUID', tables: ['qa_session_results'] },
-    { key: 'reviewer_id', label: 'reviewer_id', placeholder: 'UUID', tables: ['qa_session_results'] },
-    { key: 'difficulty', label: 'difficulty', placeholder: 'string or leave empty', tables: ['qa_session_results'] }
+    { key: 'reviewer_id', label: 'reviewer_id', placeholder: 'UUID', tables: ['qa_session_results'] }
 ];
 
 const SF_ALL_TEXT_FILTERS = SF_SHARED_FILTERS.concat(SF_SESSIONS_FILTERS, SF_QA_FILTERS);
@@ -605,7 +604,7 @@ const plugin = {
     id: 'session-fetcher',
     name: 'Session Fetcher',
     description: 'Dev-only PostgREST session / QA session results explorer for the Ops dashboard',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
