@@ -1624,6 +1624,14 @@ const searchOutputStatsPaneMethods = {
 
     _statsValueLabelsPlugin(chartModel, theme) {
         const dash = this;
+        const labelFont = '600 10px system-ui, -apple-system, sans-serif';
+        const padX = 4;
+        const boxH = 14;
+        const boxesOverlap = (a, b) =>
+            a.x - a.boxW / 2 < b.x + b.boxW / 2
+            && a.x + a.boxW / 2 > b.x - b.boxW / 2
+            && a.y - a.boxH / 2 < b.y + b.boxH / 2
+            && a.y + a.boxH / 2 > b.y - b.boxH / 2;
         return {
             id: 'wfStatsValueLabels',
             afterDatasetsDraw(chart) {
@@ -1631,6 +1639,7 @@ const searchOutputStatsPaneMethods = {
                 if (!dash._statsChartSupportsLabelOptions(chartModel)) return;
                 const ctx = chart.ctx;
                 if (!ctx) return;
+                const candidates = [];
                 chart.data.datasets.forEach((dataset, datasetIndex) => {
                     if (!dataset || dataset.statsSpreadBand || dataset.statsLegendHidden
                         || dataset.statsBellBand || dataset.statsShadedFillLayer
@@ -1652,33 +1661,52 @@ const searchOutputStatsPaneMethods = {
                             ? el.tooltipPosition()
                             : { x: el.x, y: el.y };
                         if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return;
-                        ctx.save();
-                        ctx.font = '600 10px system-ui, -apple-system, sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        const width = ctx.measureText(text).width;
-                        const padX = 4;
-                        const padY = 2;
-                        const boxW = width + padX * 2;
-                        const boxH = 14;
-                        ctx.fillStyle = theme && theme.card
-                            ? theme.card
-                            : 'rgba(255,255,255,0.85)';
-                        ctx.strokeStyle = theme && theme.border ? theme.border : 'rgba(0,0,0,0.12)';
-                        ctx.lineWidth = 1;
-                        ctx.beginPath();
-                        if (typeof ctx.roundRect === 'function') {
-                            ctx.roundRect(pos.x - boxW / 2, pos.y - boxH / 2, boxW, boxH, 3);
-                        } else {
-                            ctx.rect(pos.x - boxW / 2, pos.y - boxH / 2, boxW, boxH);
-                        }
-                        ctx.fill();
-                        ctx.stroke();
-                        ctx.fillStyle = theme && theme.foreground ? theme.foreground : '#0f172a';
-                        ctx.fillText(text, pos.x, pos.y);
-                        ctx.restore();
+                        ctx.font = labelFont;
+                        const boxW = ctx.measureText(text).width + padX * 2;
+                        candidates.push({
+                            text,
+                            x: pos.x,
+                            y: pos.y,
+                            value,
+                            boxW,
+                            boxH,
+                            order: candidates.length
+                        });
                     });
                 });
+                // Prefer larger values; on ties keep earlier index (same idea as datalabels display:'auto').
+                const ranked = candidates.slice().sort((a, b) => {
+                    if (b.value !== a.value) return b.value - a.value;
+                    return a.order - b.order;
+                });
+                const visible = [];
+                for (const cand of ranked) {
+                    if (visible.some((v) => boxesOverlap(cand, v))) continue;
+                    visible.push(cand);
+                }
+                const fill = theme && theme.card ? theme.card : 'rgba(255,255,255,0.85)';
+                const stroke = theme && theme.border ? theme.border : 'rgba(0,0,0,0.12)';
+                const fg = theme && theme.foreground ? theme.foreground : '#0f172a';
+                for (const label of visible) {
+                    ctx.save();
+                    ctx.font = labelFont;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillStyle = fill;
+                    ctx.strokeStyle = stroke;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    if (typeof ctx.roundRect === 'function') {
+                        ctx.roundRect(label.x - label.boxW / 2, label.y - label.boxH / 2, label.boxW, label.boxH, 3);
+                    } else {
+                        ctx.rect(label.x - label.boxW / 2, label.y - label.boxH / 2, label.boxW, label.boxH);
+                    }
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = fg;
+                    ctx.fillText(label.text, label.x, label.y);
+                    ctx.restore();
+                }
             }
         };
     },
@@ -4847,7 +4875,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '6.5',
+    _version: '6.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
