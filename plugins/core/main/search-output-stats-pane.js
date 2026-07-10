@@ -24,6 +24,7 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const statsTab = this._state ? (this._state.statsTab || 'stats') : 'stats';
         const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
+        const statsPanel = 'flex: 1; min-height: 0; overflow: hidden; padding: 14px; flex-direction: column; gap: 12px;';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
             + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
@@ -34,7 +35,7 @@ const searchOutputStatsPaneMethods = {
             + '</nav>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
             + '</div>'
-            + '<div id="wf-dash-stats-panel-stats" style="' + panelScroll + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
+            + '<div id="wf-dash-stats-panel-stats" style="' + statsPanel + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
             + this._statsChartsPanelContentHtml()
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
@@ -69,7 +70,7 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '</div>'
             + '<div id="wf-dash-stats-empty" style="display: none; flex: 1; min-height: 0; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;"></div>'
-            + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0;">'
+            + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">'
             + '<div id="wf-dash-stats-chart-list" data-wf-dash-stats-chart-list="1" style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px;"></div>'
             + '</div>'
             + '<div id="wf-dash-stats-builder" style="display: none; flex: 1; min-height: 0; flex-direction: column; overflow: hidden;"></div>';
@@ -493,13 +494,8 @@ const searchOutputStatsPaneMethods = {
             builderEl.style.display = (tab === 'stats' && mode === 'builder') ? 'flex' : 'none';
         }
         if (panelStats && tab === 'stats') {
-            if (mode === 'builder') {
-                panelStats.style.overflowY = 'hidden';
-                panelStats.style.overflowX = 'hidden';
-            } else {
-                panelStats.style.overflowY = 'auto';
-                panelStats.style.overflowX = 'auto';
-            }
+            panelStats.style.overflowY = 'hidden';
+            panelStats.style.overflowX = 'hidden';
         }
         const summaryEl = this._q('#wf-dash-stats-scope-summary');
         const switcherEl = this._q('#wf-dash-stats-dashboard-switcher');
@@ -4839,7 +4835,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
