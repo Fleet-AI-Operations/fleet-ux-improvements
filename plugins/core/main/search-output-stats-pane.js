@@ -47,10 +47,22 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsChartsPanelContentHtml() {
+        const btnStyle = 'padding: 2px 8px; font-size: 10px;';
         return ''
             + '<div id="wf-dash-stats-warnings" style="display: none; flex-direction: column; gap: 6px; flex-shrink: 0;"></div>'
             + '<div id="wf-dash-stats-toolbar" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0;">'
-            + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 1 1 auto;"></div>'
+            + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;">'
+            + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 0 1 auto;"></div>'
+            + '<div id="wf-dash-stats-dashboard-switcher" style="display: none; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;">'
+            + '<label style="display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0;">'
+            + '<span style="flex-shrink: 0;">Dashboard</span>'
+            + '<select id="wf-dash-stats-dashboard-select" data-wf-dash-stats-dashboard-select="1" style="max-width: 160px; min-width: 100px; box-sizing: border-box; padding: 2px 6px; font-size: 11px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);"></select>'
+            + '</label>'
+            + '<button type="button" data-wf-dash-stats-dashboard-rename="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Rename dashboard">Rename</button>'
+            + '<button type="button" data-wf-dash-stats-dashboard-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Add dashboard">Add</button>'
+            + '<button type="button" data-wf-dash-stats-dashboard-delete="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Delete dashboard">Delete</button>'
+            + '</div>'
+            + '</div>'
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; flex: 1 1 auto; min-width: 0;">'
             + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Reset</button>'
             + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export settings</button>'
@@ -68,9 +80,15 @@ const searchOutputStatsPaneMethods = {
 
     _ensureStatsLayout() {
         const engine = Context.statsEngine;
-        if (!engine) return { schemaVersion: 1, charts: [] };
+        if (!engine) {
+            return { schemaVersion: 6, activeDashboardId: '', dashboards: [] };
+        }
         if (!this._state.statsLayout) {
-            this._state.statsLayout = engine.loadLayout();
+            this._state.statsLayout = typeof engine.normalizeStore === 'function'
+                ? engine.normalizeStore(engine.loadLayout())
+                : engine.loadLayout();
+        } else if (typeof engine.normalizeStore === 'function') {
+            this._state.statsLayout = engine.normalizeStore(this._state.statsLayout);
         }
         return this._state.statsLayout;
     },
@@ -79,6 +97,119 @@ const searchOutputStatsPaneMethods = {
         const engine = Context.statsEngine;
         if (!engine || !this._state.statsLayout) return;
         this._state.statsLayout = engine.saveLayout(this._state.statsLayout) || this._state.statsLayout;
+    },
+
+    _activeStatsDashboard() {
+        const engine = Context.statsEngine;
+        const store = this._ensureStatsLayout();
+        if (engine && typeof engine.getActiveDashboard === 'function') {
+            return engine.getActiveDashboard(store);
+        }
+        const dashboards = (store && store.dashboards) || [];
+        return dashboards.find((d) => d.id === store.activeDashboardId) || dashboards[0] || {
+            id: '',
+            name: 'Dashboard 1',
+            charts: []
+        };
+    },
+
+    _statsDashboardOptionsHtml(selectedId) {
+        const store = this._ensureStatsLayout();
+        const selected = selectedId != null ? String(selectedId) : String(store.activeDashboardId || '');
+        return ((store && store.dashboards) || []).map((d) =>
+            '<option value="' + dashEscHtml(d.id) + '"' + (d.id === selected ? ' selected' : '') + '>'
+            + dashEscHtml(d.name) + '</option>'
+        ).join('');
+    },
+
+    _setActiveStatsDashboard(dashboardId) {
+        const engine = Context.statsEngine;
+        if (!engine || typeof engine.setActiveDashboardId !== 'function') return;
+        const next = engine.setActiveDashboardId(this._ensureStatsLayout(), dashboardId);
+        this._state.statsLayout = next;
+        this._persistStatsLayout();
+        Logger.log('search-output-stats-pane: active dashboard set — ' + dashboardId);
+        void this._renderStatsPanel();
+    },
+
+    _renameActiveStatsDashboard() {
+        const engine = Context.statsEngine;
+        const active = this._activeStatsDashboard();
+        if (!engine || !active || typeof engine.renameDashboard !== 'function') return;
+        const nextName = window.prompt('Rename dashboard', active.name || '');
+        if (nextName == null) return;
+        const trimmed = String(nextName).trim();
+        if (!trimmed) {
+            Logger.warn('search-output-stats-pane: dashboard rename skipped — empty name');
+            return;
+        }
+        this._state.statsLayout = engine.renameDashboard(this._ensureStatsLayout(), active.id, trimmed);
+        this._persistStatsLayout();
+        Logger.log('search-output-stats-pane: dashboard renamed — ' + trimmed);
+        this._syncStatsToolbarUi();
+        void this._renderStatsPanel();
+    },
+
+    _addStatsDashboard() {
+        const engine = Context.statsEngine;
+        if (!engine || typeof engine.addDashboard !== 'function') return;
+        const store = this._ensureStatsLayout();
+        const max = engine.maxDashboards || 5;
+        if ((store.dashboards || []).length >= max) {
+            Logger.warn('search-output-stats-pane: add dashboard blocked — at limit ' + max);
+            return;
+        }
+        this._state.statsLayout = engine.addDashboard(store);
+        this._persistStatsLayout();
+        const active = this._activeStatsDashboard();
+        Logger.log('search-output-stats-pane: dashboard added — ' + (active && active.name));
+        void this._renderStatsPanel();
+    },
+
+    _deleteActiveStatsDashboard() {
+        const engine = Context.statsEngine;
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        if (!engine || !active || typeof engine.deleteDashboard !== 'function') return;
+        if ((store.dashboards || []).length <= 1) {
+            Logger.warn('search-output-stats-pane: delete dashboard blocked — last remaining');
+            return;
+        }
+        const confirmed = confirm(
+            'Delete dashboard "' + (active.name || 'Dashboard') + '"? Its charts will be removed. This cannot be undone.'
+        );
+        if (!confirmed) return;
+        this._state.statsLayout = engine.deleteDashboard(store, active.id);
+        this._persistStatsLayout();
+        Logger.log('search-output-stats-pane: dashboard deleted — ' + active.id);
+        void this._renderStatsPanel();
+    },
+
+    _copyStatsChartToDashboard(chartId, toDashboardId) {
+        const engine = Context.statsEngine;
+        if (!engine || !chartId || !toDashboardId || typeof engine.copyChartToDashboard !== 'function') return;
+        const active = this._activeStatsDashboard();
+        const result = engine.copyChartToDashboard(
+            this._ensureStatsLayout(),
+            chartId,
+            active && active.id,
+            toDashboardId
+        );
+        if (!result || !result.chart) {
+            Logger.warn('search-output-stats-pane: copy chart failed — ' + chartId + ' → ' + toDashboardId);
+            return;
+        }
+        this._state.statsLayout = result.store;
+        this._persistStatsLayout();
+        const target = engine.findDashboard
+            ? engine.findDashboard(result.store, toDashboardId)
+            : null;
+        Logger.log(
+            'search-output-stats-pane: chart copied — '
+            + (result.chart.title || chartId)
+            + ' → '
+            + (target && target.name ? target.name : toDashboardId)
+        );
     },
 
     _statsCatalogCtx(items) {
@@ -118,6 +249,7 @@ const searchOutputStatsPaneMethods = {
             this._destroyStatsBuilderPreview();
             this._state.statsBuilderDraft = null;
             this._state.statsBuilderEditId = null;
+            this._state.statsBuilderDashboardId = null;
             void this._renderStatsPanel();
         } else {
             void this._renderStatsBuilder();
@@ -127,27 +259,43 @@ const searchOutputStatsPaneMethods = {
 
     _openStatsBuilder(chartId) {
         const engine = Context.statsEngine;
-        const layout = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const store = this._ensureStatsLayout();
         const items = this._getStatsScopeItems();
         const catalog = engine ? engine.buildCatalog(this._statsCatalogCtx(items)) : null;
         if (chartId) {
-            const existing = layout.charts.find((c) => c.id === chartId);
+            let existing = null;
+            let sourceDashboardId = active && active.id;
+            for (const dash of (store.dashboards || [])) {
+                const found = (dash.charts || []).find((c) => c.id === chartId);
+                if (found) {
+                    existing = found;
+                    sourceDashboardId = dash.id;
+                    break;
+                }
+            }
             this._state.statsBuilderDraft = existing
                 ? JSON.parse(JSON.stringify(existing))
                 : (engine ? engine.defaultBuilderDraft(catalog) : null);
             this._state.statsBuilderEditId = chartId;
+            this._state.statsBuilderDashboardId = sourceDashboardId;
         } else {
             this._state.statsBuilderDraft = engine ? engine.defaultBuilderDraft(catalog) : null;
             this._state.statsBuilderEditId = null;
+            this._state.statsBuilderDashboardId = active && active.id;
         }
         if (this._state.statsBuilderDraft) {
             this._ensureStatsBuilderChartFilters(this._state.statsBuilderDraft);
+            if (this._state.statsBuilderDashboardId) {
+                this._state.statsBuilderDraft.dashboardId = this._state.statsBuilderDashboardId;
+            }
         }
         this._setStatsViewMode('builder');
         void this._renderStatsBuilder();
     },
 
     _closeStatsBuilder() {
+        this._state.statsBuilderDashboardId = null;
         this._setStatsViewMode('dashboard');
     },
 
@@ -232,7 +380,15 @@ const searchOutputStatsPaneMethods = {
             this._renderStatsBuilderValidation(validation.missing);
             return;
         }
-        const layout = this._ensureStatsLayout();
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const targetId = String(draft.dashboardId || this._state.statsBuilderDashboardId || (active && active.id) || '');
+        const targetDash = (store.dashboards || []).find((d) => d.id === targetId)
+            || active;
+        if (!targetDash) {
+            Logger.warn('search-output-stats-pane: builder save blocked — no target dashboard');
+            return;
+        }
         chart.id = draft.id || engine.newChartId();
         chart.title = String(draft.title || 'Chart').trim() || 'Chart';
         const listBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
@@ -241,21 +397,38 @@ const searchOutputStatsPaneMethods = {
             : (draft.chartFilters || {});
         const editId = this._state.statsBuilderEditId;
         if (editId) {
-            const idx = layout.charts.findIndex((c) => c.id === editId);
-            if (idx >= 0) layout.charts[idx] = chart;
-            else layout.charts.push(chart);
+            let removed = false;
+            for (const dash of store.dashboards || []) {
+                const idx = (dash.charts || []).findIndex((c) => c.id === editId);
+                if (idx >= 0) {
+                    dash.charts.splice(idx, 1);
+                    removed = true;
+                    break;
+                }
+            }
+            targetDash.charts.push(chart);
+            if (!removed) {
+                Logger.debug('search-output-stats-pane: edited chart id not found — appended to target');
+            }
         } else {
-            layout.charts.push(chart);
+            targetDash.charts.push(chart);
+        }
+        if (typeof engine.setActiveDashboardId === 'function') {
+            this._state.statsLayout = engine.setActiveDashboardId(store, targetDash.id);
+        } else {
+            store.activeDashboardId = targetDash.id;
+            this._state.statsLayout = store;
         }
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: chart saved — ' + chart.title);
+        Logger.log('search-output-stats-pane: chart saved — ' + chart.title + ' → ' + targetDash.name);
         this._closeStatsBuilder();
     },
 
     _deleteStatsChart(chartId) {
         if (!chartId) return;
-        const layout = this._ensureStatsLayout();
-        layout.charts = layout.charts.filter((c) => c.id !== chartId);
+        const dash = this._activeStatsDashboard();
+        if (!dash) return;
+        dash.charts = (dash.charts || []).filter((c) => c.id !== chartId);
         this._persistStatsLayout();
         Logger.log('search-output-stats-pane: chart deleted — ' + chartId);
         void this._renderStatsPanel();
@@ -263,12 +436,13 @@ const searchOutputStatsPaneMethods = {
 
     _reorderStatsChart(dragId, targetId) {
         if (!dragId || !targetId || dragId === targetId) return;
-        const layout = this._ensureStatsLayout();
-        const from = layout.charts.findIndex((c) => c.id === dragId);
-        const to = layout.charts.findIndex((c) => c.id === targetId);
+        const dash = this._activeStatsDashboard();
+        if (!dash || !dash.charts) return;
+        const from = dash.charts.findIndex((c) => c.id === dragId);
+        const to = dash.charts.findIndex((c) => c.id === targetId);
         if (from < 0 || to < 0) return;
-        const [moved] = layout.charts.splice(from, 1);
-        layout.charts.splice(to, 0, moved);
+        const [moved] = dash.charts.splice(from, 1);
+        dash.charts.splice(to, 0, moved);
         this._persistStatsLayout();
         Logger.log('search-output-stats-pane: charts reordered');
         void this._renderStatsPanel();
@@ -325,6 +499,11 @@ const searchOutputStatsPaneMethods = {
             }
         }
         const summaryEl = this._q('#wf-dash-stats-scope-summary');
+        const switcherEl = this._q('#wf-dash-stats-dashboard-switcher');
+        const selectEl = this._q('#wf-dash-stats-dashboard-select');
+        const renameBtn = this._q('[data-wf-dash-stats-dashboard-rename]');
+        const addBtn = this._q('[data-wf-dash-stats-dashboard-add]');
+        const deleteBtn = this._q('[data-wf-dash-stats-dashboard-delete]');
         if (summaryEl && tab === 'stats' && mode === 'dashboard') {
             const items = this._getStatsScopeItems();
             const scopeLabel = this._state.statsUseFiltered !== false ? 'Filtered' : 'All';
@@ -333,6 +512,22 @@ const searchOutputStatsPaneMethods = {
         } else if (summaryEl) {
             summaryEl.textContent = mode === 'builder' ? 'Chart builder' : '';
             summaryEl.style.display = tab === 'stats' && mode === 'builder' ? '' : 'none';
+        }
+        const showSwitcher = tab === 'stats' && mode === 'dashboard' && this._state.hasSearched && this._state.cachedItems;
+        if (switcherEl) {
+            switcherEl.style.display = showSwitcher ? 'inline-flex' : 'none';
+        }
+        if (showSwitcher) {
+            const store = this._ensureStatsLayout();
+            const engine = Context.statsEngine;
+            const max = (engine && engine.maxDashboards) || 5;
+            const count = (store.dashboards || []).length;
+            if (selectEl) {
+                selectEl.innerHTML = this._statsDashboardOptionsHtml(store.activeDashboardId);
+            }
+            if (addBtn) addBtn.disabled = count >= max;
+            if (deleteBtn) deleteBtn.disabled = count <= 1;
+            if (renameBtn) renameBtn.disabled = count < 1;
         }
     },
 
@@ -882,8 +1077,20 @@ const searchOutputStatsPaneMethods = {
 
     _statsChartCardFooterHtml(chart) {
         const btnStyle = 'padding: 2px 8px; font-size: 10px;';
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const otherDashboards = ((store && store.dashboards) || []).filter((d) => d.id !== (active && active.id));
+        const copySelect = otherDashboards.length
+            ? ('<select data-wf-dash-stats-chart-copy-to="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-copy-select" title="Copy chart to another dashboard" aria-label="Copy chart to another dashboard" style="' + btnStyle + ' max-width: 140px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);">'
+                + '<option value="">Copy to…</option>'
+                + otherDashboards.map((d) =>
+                    '<option value="' + dashEscHtml(d.id) + '">' + dashEscHtml(d.name) + '</option>'
+                ).join('')
+                + '</select>')
+            : '';
         return ''
             + '<div class="wf-dash-stats-chart-footer">'
+            + copySelect
             + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export settings</button>'
             + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export image</button>'
             + '</div>';
@@ -955,9 +1162,9 @@ const searchOutputStatsPaneMethods = {
 
     _statsBuildChartListHtml(validations) {
         const byId = new Map(validations.map((entry) => [entry.chart.id, entry]));
-        const layout = this._ensureStatsLayout();
+        const dash = this._activeStatsDashboard();
         let html = '';
-        for (const group of this._statsChartLayoutGroups(layout.charts)) {
+        for (const group of this._statsChartLayoutGroups(dash.charts || [])) {
             if (group.kind === 'scorecard-row' || group.kind === 'circular-row') {
                 const minWidth = this._statsStackRowMinWidth(group.kind);
                 const rowClass = group.kind === 'circular-row'
@@ -1952,6 +2159,7 @@ const searchOutputStatsPaneMethods = {
             + '.wf-dash-stats-chart-drag { cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
             + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 8px; max-width: 100%; }'
+            + '.wf-dash-stats-chart-copy-select { cursor: pointer; }'
             + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-actions { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }'
@@ -2052,19 +2260,25 @@ const searchOutputStatsPaneMethods = {
 
     _resetStatsDashboard() {
         const engine = Context.statsEngine;
-        if (!engine || typeof engine.defaultLayout !== 'function') {
+        if (!engine || typeof engine.resetDashboardCharts !== 'function') {
             Logger.warn('search-output-stats-pane: dashboard reset skipped — stats engine unavailable');
             return;
         }
+        const active = this._activeStatsDashboard();
         const confirmed = confirm(
-            'Reset dashboard to the default layout? All custom charts will be removed. This cannot be undone.'
+            'Reset dashboard "' + ((active && active.name) || 'Dashboard')
+            + '" to the default chart set? Custom charts on this dashboard will be removed. This cannot be undone.'
         );
         if (!confirmed) return;
-        this._state.statsLayout = engine.defaultLayout();
+        this._state.statsLayout = engine.resetDashboardCharts(this._ensureStatsLayout(), active && active.id);
         this._persistStatsLayout();
         this._state.statsPanelDirty = false;
         void this._renderStatsPanel();
-        Logger.log('search-output-stats-pane: dashboard reset to default — ' + this._state.statsLayout.charts.length + ' chart(s)');
+        const next = this._activeStatsDashboard();
+        Logger.log(
+            'search-output-stats-pane: dashboard reset to default — '
+            + ((next && next.charts) ? next.charts.length : 0) + ' chart(s)'
+        );
     },
 
     _exportStatsDashboard() {
@@ -2073,10 +2287,14 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output-stats-pane: dashboard export skipped — stats engine unavailable');
             return;
         }
-        const layout = this._ensureStatsLayout();
-        const payload = engine.exportLayoutObject(layout);
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const payload = engine.exportLayoutObject(store);
         const date = typeof engine.exportDateSlug === 'function' ? engine.exportDateSlug() : 'export';
-        const filename = 'fleet-stats-dashboard-' + date + '.json';
+        const slug = typeof engine.sanitizeExportSlug === 'function'
+            ? engine.sanitizeExportSlug(active && active.name)
+            : 'dashboard';
+        const filename = 'fleet-stats-dashboard-' + slug + '-' + date + '.json';
         const json = JSON.stringify(payload, null, 2);
         this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
         Logger.log('search-output-stats-pane: dashboard exported — ' + payload.charts.length + ' chart(s)');
@@ -2088,8 +2306,8 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output-stats-pane: chart export skipped — missing chart or engine');
             return;
         }
-        const layout = this._ensureStatsLayout();
-        const chart = layout.charts.find((c) => c.id === chartId);
+        const dash = this._activeStatsDashboard();
+        const chart = (dash.charts || []).find((c) => c.id === chartId);
         if (!chart) {
             Logger.warn('search-output-stats-pane: chart export skipped — chart not found ' + chartId);
             return;
@@ -2136,9 +2354,9 @@ const searchOutputStatsPaneMethods = {
     _statsDashboardExportCssWidth() {
         const list = this._q('#wf-dash-stats-chart-list');
         if (list && list.clientWidth > 0) return Math.max(320, list.clientWidth);
-        const layout = this._ensureStatsLayout();
+        const dash = this._activeStatsDashboard();
         let max = 0;
-        for (const chart of layout.charts) {
+        for (const chart of (dash.charts || [])) {
             const width = this._statsChartBodyCssWidth(chart);
             if (width > max) max = width;
         }
@@ -2282,8 +2500,8 @@ const searchOutputStatsPaneMethods = {
         return canvas.toDataURL('image/png');
     },
 
-    async _composeStatsDashboardExportImages(layout, exportCssWidth) {
-        const groups = this._statsChartLayoutGroups(layout.charts);
+    async _composeStatsDashboardExportImages(dashboard, exportCssWidth) {
+        const groups = this._statsChartLayoutGroups((dashboard && dashboard.charts) || []);
         const images = [];
         for (const group of groups) {
             if ((group.kind === 'scorecard-row' || group.kind === 'circular-row') && group.charts.length > 1) {
@@ -2328,8 +2546,8 @@ const searchOutputStatsPaneMethods = {
 
     async _exportStatsChartImage(chartId) {
         const chartIdStr = String(chartId || '');
-        const layout = this._ensureStatsLayout();
-        const chart = layout.charts.find((c) => c.id === chartIdStr);
+        const dash = this._activeStatsDashboard();
+        const chart = (dash.charts || []).find((c) => c.id === chartIdStr);
         if (!chart) {
             Logger.warn('search-output-stats-pane: chart image export skipped — chart not found ' + chartIdStr);
             return;
@@ -2345,15 +2563,15 @@ const searchOutputStatsPaneMethods = {
     },
 
     async _exportStatsDashboardImage() {
-        const layout = this._ensureStatsLayout();
-        if (!layout.charts.length) {
+        const dash = this._activeStatsDashboard();
+        if (!(dash.charts || []).length) {
             Logger.warn('search-output-stats-pane: dashboard image export skipped — no charts');
             return;
         }
         const exportCssWidth = this._statsDashboardExportCssWidth();
         let imgs;
         try {
-            imgs = await this._composeStatsDashboardExportImages(layout, exportCssWidth);
+            imgs = await this._composeStatsDashboardExportImages(dash, exportCssWidth);
         } catch (e) {
             Logger.warn('search-output-stats-pane: dashboard image export failed — compose error', e);
             return;
@@ -2380,7 +2598,7 @@ const searchOutputStatsPaneMethods = {
             ctx.drawImage(img, 0, y);
             y += img.height + gap;
         }
-        const filename = this._statsExportImageFilename('fleet-stats-dashboard', 'dashboard');
+        const filename = this._statsExportImageFilename('fleet-stats-dashboard', (dash && dash.name) || 'dashboard');
         this._downloadDataUrl(filename, canvas.toDataURL('image/png'));
         Logger.log('search-output-stats-pane: dashboard image exported — ' + imgs.length + ' chart(s)');
     },
@@ -2406,14 +2624,14 @@ const searchOutputStatsPaneMethods = {
                     Logger.warn('search-output-stats-pane: stats import rejected — invalid payload');
                     return;
                 }
-                const layout = this._ensureStatsLayout();
+                const dash = this._activeStatsDashboard();
                 let added = 0;
                 for (const raw of payload.charts) {
                     const chart = typeof engine.prepareImportedChart === 'function'
                         ? engine.prepareImportedChart(raw)
                         : null;
                     if (!chart) continue;
-                    layout.charts.push(chart);
+                    dash.charts.push(chart);
                     added += 1;
                 }
                 if (!added) {
@@ -2463,12 +2681,17 @@ const searchOutputStatsPaneMethods = {
     _statsBuilderFieldStyles() {
         return {
             fieldLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 4px;',
-            inputStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
-            inputDisabledStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a); opacity: 0.55; cursor: not-allowed;',
+            inputStyle: 'width: 100%; max-width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
+            inputCompactStyle: 'width: 100%; max-width: 180px; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
+            inputDisabledStyle: 'width: 100%; max-width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a); opacity: 0.55; cursor: not-allowed;',
             hintStyle: 'font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;',
-            cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 10px; background: var(--muted, #f1f5f9);',
-            grid2: 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;',
-            grid3: 'display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;',
+            cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 8px; background: var(--muted, #f1f5f9);',
+            gridAuto: 'display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: start;',
+            grid2: 'display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: start;',
+            grid3: 'display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: start;',
+            titleRow: 'display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;',
+            titleField: 'flex: 1 1 180px; min-width: 0;',
+            dashboardField: 'flex: 0 1 180px; min-width: 140px; max-width: 200px;',
             sectionLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 6px;'
         };
     },
@@ -2486,9 +2709,10 @@ const searchOutputStatsPaneMethods = {
         opts = opts || {};
         const styles = opts.styles || this._statsBuilderFieldStyles();
         const spanStyle = opts.span ? ('grid-column: span ' + opts.span + ';') : '';
+        const widthStyle = opts.maxWidth ? ('max-width: ' + opts.maxWidth + ';') : '';
         const fieldOpacity = opts.disabled ? ' opacity: 0.65;' : '';
         const hint = opts.hint ? ('<div style="' + styles.hintStyle + '">' + opts.hint + '</div>') : '';
-        return '<div style="' + spanStyle + fieldOpacity + '"><div style="' + styles.fieldLabel + '">' + label + '</div>'
+        return '<div style="' + spanStyle + widthStyle + fieldOpacity + '"><div style="' + styles.fieldLabel + '">' + label + '</div>'
             + innerHtml + hint + '</div>';
     },
 
@@ -2524,12 +2748,10 @@ const searchOutputStatsPaneMethods = {
         const heightCfg = catalog.chartHeight || this._statsChartHeightConfig();
         const heightValue = this._statsNormalizeChartHeight(draft.height, heightCfg.default);
         const heightField = this._statsBuilderField('Height (px)',
-            '<input type="number" data-wf-dash-stats-draft="height" min="' + heightCfg.min + '" max="' + heightCfg.max + '" step="' + heightCfg.step + '" value="' + heightValue + '" style="' + styles.inputStyle + '">',
-            { styles, hint: heightCfg.min + '–' + heightCfg.max + ' px in steps of ' + heightCfg.step });
+            '<input type="number" data-wf-dash-stats-draft="height" min="' + heightCfg.min + '" max="' + heightCfg.max + '" step="' + heightCfg.step + '" value="' + heightValue + '" style="' + styles.inputCompactStyle + '">',
+            { styles, hint: heightCfg.min + '–' + heightCfg.max + ' px in steps of ' + heightCfg.step, maxWidth: '180px' });
         const chartSettingsCells = [chartTypeField, groupByField, heightField].filter(Boolean);
-        const chartColCount = chartSettingsCells.length;
-        const chartGridStyle = chartColCount === 3 ? styles.grid3 : styles.grid2;
-        const chartSettingsHtml = '<div style="' + chartGridStyle + '">' + chartSettingsCells.join('') + '</div>';
+        const chartSettingsHtml = '<div style="' + styles.gridAuto + '">' + chartSettingsCells.join('') + '</div>';
 
         const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
         const barDatasetCount = engine.countBarDatasets ? engine.countBarDatasets(draft, catalog) : 0;
@@ -2587,8 +2809,7 @@ const searchOutputStatsPaneMethods = {
         const layoutCells = [orientationField, barLayoutField, lineAreaLayoutField, categorySortField].filter(Boolean);
         let layoutOptionsHtml = '';
         if (layoutCells.length) {
-            const layoutGridStyle = layoutCells.length >= 3 ? styles.grid3 : styles.grid2;
-            layoutOptionsHtml = '<div style="' + layoutGridStyle + '">' + layoutCells.join('') + '</div>';
+            layoutOptionsHtml = '<div style="' + styles.gridAuto + '">' + layoutCells.join('') + '</div>';
         }
 
         const pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
@@ -2647,16 +2868,16 @@ const searchOutputStatsPaneMethods = {
                 ).join('')
                 + '</select>',
                 { styles, disabled: segmentDisabled });
-            row1Html = '<div style="' + styles.grid3 + '">' + metricField + aggField + segmentField + '</div>';
+            row1Html = '<div style="' + styles.gridAuto + '">' + metricField + aggField + segmentField + '</div>';
         } else if (typeMeta.skipAggregation) {
-            row1Html = '<div>' + metricField + '</div>';
+            row1Html = '<div style="' + styles.gridAuto + '">' + metricField + '</div>';
         } else {
-            row1Html = '<div style="' + styles.grid2 + '">' + metricField + aggField + '</div>';
+            row1Html = '<div style="' + styles.gridAuto + '">' + metricField + aggField + '</div>';
         }
 
         let row2Html = '';
         if (showSeriesLabel) {
-            row2Html = '<div style="margin-top: 8px;">'
+            row2Html = '<div style="margin-top: 8px; max-width: 280px;">'
                 + this._statsBuilderField('Series label',
                     '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + styles.inputStyle + '">',
                     { styles })
@@ -2700,7 +2921,7 @@ const searchOutputStatsPaneMethods = {
                     disabled: spreadDisabled,
                     hint: 'Shows mean ± 1 sample std dev per category. Requires Average aggregation.'
                 });
-            row3Html = '<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px;">'
+            row3Html = '<div style="' + styles.gridAuto + '; margin-top: 8px;">'
                 + renderField + lineStyleField + yAxisField + spreadField + '</div>';
         }
 
@@ -2768,7 +2989,7 @@ const searchOutputStatsPaneMethods = {
             seriesHtml += this._statsBuilderSeriesCard(i, series[i], seriesCtx);
         }
         const seriesStackHtml = seriesHtml
-            ? ('<div style="display: flex; flex-direction: column; gap: 10px;">' + seriesHtml + '</div>')
+            ? ('<div style="display: flex; flex-direction: column; gap: 8px;">' + seriesHtml + '</div>')
             : '';
         const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries
             ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 8px;">Add series</button>'
@@ -2784,11 +3005,24 @@ const searchOutputStatsPaneMethods = {
             chartFiltersHtml += this._multiSelectHtml(chartScopeKey, label, 'No options in scope', false);
         }
         const seriesSectionLabel = typeMeta.skipGroupBy ? 'Metric' : 'Series';
-        formEl.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 12px;">'
+        const selectedDashboardId = draft.dashboardId
+            || this._state.statsBuilderDashboardId
+            || (this._activeStatsDashboard() && this._activeStatsDashboard().id)
+            || '';
+        const titleField = this._statsBuilderField('Title',
+            '<input type="text" data-wf-dash-stats-draft="title" value="' + dashEscHtml(draft.title || '') + '" style="' + styles.inputStyle + '">',
+            { styles });
+        const dashboardField = this._statsBuilderField('Dashboard',
+            '<select data-wf-dash-stats-draft="dashboardId" style="' + styles.inputStyle + '">'
+            + this._statsDashboardOptionsHtml(selectedDashboardId)
+            + '</select>',
+            { styles });
+        formEl.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 8px;">'
             + '<div id="wf-dash-stats-builder-validation" style="display: none; font-size: 11px; color: #dc2626;"></div>'
-            + this._statsBuilderField('Title',
-                '<input type="text" data-wf-dash-stats-draft="title" value="' + dashEscHtml(draft.title || '') + '" style="' + styles.inputStyle + '">',
-                { styles })
+            + '<div style="' + styles.titleRow + '">'
+            + '<div style="' + styles.titleField + '">' + titleField + '</div>'
+            + '<div style="' + styles.dashboardField + '">' + dashboardField + '</div>'
+            + '</div>'
             + chartSettings.chartSettingsHtml
             + chartSettings.layoutOptionsHtml
             + chartSettings.pointModeHtml
@@ -2813,6 +3047,7 @@ const searchOutputStatsPaneMethods = {
         const draft = this._state.statsBuilderDraft;
         if (!draft) return;
         const titleEl = this._q('[data-wf-dash-stats-draft="title"]');
+        const dashboardEl = this._q('[data-wf-dash-stats-draft="dashboardId"]');
         const typeEl = this._q('[data-wf-dash-stats-draft="type"]');
         const groupEl = this._q('[data-wf-dash-stats-draft="groupBy"]');
         const barLayoutEl = this._q('[data-wf-dash-stats-draft="barLayout"]');
@@ -2822,6 +3057,10 @@ const searchOutputStatsPaneMethods = {
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
         if (titleEl) draft.title = titleEl.value;
+        if (dashboardEl) {
+            draft.dashboardId = dashboardEl.value;
+            this._state.statsBuilderDashboardId = dashboardEl.value;
+        }
         if (typeEl) draft.type = typeEl.value;
         if (groupEl) draft.groupBy = groupEl.value;
         if (barLayoutEl) draft.barLayout = barLayoutEl.value === 'stacked' ? 'stacked' : 'grouped';
@@ -3223,7 +3462,7 @@ const searchOutputStatsPaneMethods = {
         this._destroyStatsCharts();
 
         const engine = Context.statsEngine;
-        const layout = this._ensureStatsLayout();
+        const dash = this._activeStatsDashboard();
         const ctx = this._statsCatalogCtx(items);
         const catalog = engine ? engine.buildCatalog(ctx) : null;
 
@@ -3234,7 +3473,7 @@ const searchOutputStatsPaneMethods = {
 
         let cardsHtml = '';
         const validations = [];
-        for (const chart of layout.charts) {
+        for (const chart of (dash.charts || [])) {
             const validation = engine.validateChart(chart, catalog, items, ctx);
             validations.push({ chart, validation });
         }
@@ -3265,7 +3504,7 @@ const searchOutputStatsPaneMethods = {
         const chartApi = Context.chartJs;
         if (!chartApi || typeof chartApi.ensureLoaded !== 'function') {
             this._renderStatsWarnings([...warnings, 'Chart.js loader not available. Reload the page and try again.']);
-            this._renderStatsFallbackText(layout, catalog, items, ctx);
+            this._renderStatsFallbackText(dash, catalog, items, ctx);
             return;
         }
 
@@ -3274,7 +3513,7 @@ const searchOutputStatsPaneMethods = {
             Chart = await chartApi.ensureLoaded();
         } catch (e) {
             this._renderStatsWarnings([...warnings, 'Chart.js failed to load — showing text summary only.']);
-            this._renderStatsFallbackText(layout, catalog, items, ctx);
+            this._renderStatsFallbackText(dash, catalog, items, ctx);
             Logger.warn('search-output-stats-pane: Chart.js load failed', e);
             return;
         }
@@ -4392,7 +4631,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.37',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

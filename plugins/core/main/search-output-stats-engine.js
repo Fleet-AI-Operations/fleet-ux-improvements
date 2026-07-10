@@ -1,7 +1,8 @@
 // search-output-stats-engine.js — Worker Output Search stats dashboard catalog, aggregation, persistence
 
 const STATS_LAYOUT_STORAGE_KEY = 'fleet-ux:dash-stats-dashboard';
-const STATS_LAYOUT_SCHEMA_VERSION = 5;
+const STATS_LAYOUT_SCHEMA_VERSION = 6;
+const STATS_MAX_DASHBOARDS = 5;
 
 const STATS_DEFAULT_LAYOUT_JSON = '{"schemaVersion":5,"charts":[{"id":"chart-mr9if575-n0g8zx2","title":"Current Task Status","type":"pie","groupBy":"statuses","series":[{"metricId":"count","agg":"count","label":"Count"}],"height":220,"presetKey":"status","chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9l3yl0-ne9fwit","title":"Return Reasons","type":"polarArea","groupBy":"taskIssues","series":[{"metricId":"count","agg":"count","label":""}],"height":140,"presetKey":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":["returned"],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9mmfih-7eeey9y","title":"Avg # Task Versions/Workflow Time vs Environment","type":"barLine","groupBy":"envKeys","series":[{"metricId":"prompt_version_count","agg":"avg","label":"Avg Task Versions","renderAs":"bar","yAxis":"y","segmentBy":null},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"Avg v1 Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"},{"metricId":"qa_time_minutes","agg":"avg","label":"Avg QA Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"}],"height":280,"presetKey":null,"barLayout":"grouped","orientation":"vertical","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9n8ud7-liveetc","title":"Count of Tasks by Env vs Current Status","type":"barLine","groupBy":"envKeys","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"horizontal","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9y70g0-qrk1ewp","title":"Tasks by Week and Status vs Avg v1 Creation Time","type":"barLine","groupBy":"taskCreatedWeek","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"","renderAs":"line","yAxis":"y1","lineStyle":"shaded","segmentBy":null}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"vertical","lineAreaLayout":"origin","categorySort":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}}]}';
 
@@ -120,6 +121,10 @@ function statsNormalizeChartHeight(raw, fallback) {
 
 function statsNewChartId() {
     return 'chart-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+}
+
+function statsNewDashboardId() {
+    return 'dash-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
 }
 
 function statsLegacyChartType(type) {
@@ -356,19 +361,205 @@ function statsNormalizeChartEntry(c) {
     return chart;
 }
 
-function statsDefaultLayout() {
-    return statsNormalizeLayout(JSON.parse(STATS_DEFAULT_LAYOUT_JSON));
-}
-
-function statsNormalizeLayout(raw) {
-    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.charts)) {
-        return statsDefaultLayout();
-    }
-    const charts = raw.charts
+function statsNormalizeChartsList(rawCharts) {
+    if (!Array.isArray(rawCharts)) return [];
+    return rawCharts
         .filter((c) => c && c.id && c.groupBy && c.type && Array.isArray(c.series) && c.series.length > 0)
         .map((c) => statsNormalizeChartEntry(c));
-    if (charts.length === 0) return statsDefaultLayout();
-    return { schemaVersion: STATS_LAYOUT_SCHEMA_VERSION, charts };
+}
+
+function statsDefaultCharts() {
+    try {
+        const parsed = JSON.parse(STATS_DEFAULT_LAYOUT_JSON);
+        const charts = statsNormalizeChartsList(parsed && parsed.charts);
+        return charts.length ? charts : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function statsMakeDashboard(raw, index) {
+    const idx = Number.isFinite(index) ? index : 0;
+    const id = raw && raw.id != null && String(raw.id).trim()
+        ? String(raw.id).trim()
+        : statsNewDashboardId();
+    const fallbackName = 'Dashboard ' + (idx + 1);
+    const name = raw && raw.name != null && String(raw.name).trim()
+        ? String(raw.name).trim().slice(0, 80)
+        : fallbackName;
+    return {
+        id,
+        name,
+        charts: statsNormalizeChartsList(raw && raw.charts)
+    };
+}
+
+function statsDefaultStore() {
+    const dashboard = statsMakeDashboard({
+        id: statsNewDashboardId(),
+        name: 'Dashboard 1',
+        charts: statsDefaultCharts()
+    }, 0);
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        activeDashboardId: dashboard.id,
+        dashboards: [dashboard]
+    };
+}
+
+function statsWrapLegacyLayout(raw) {
+    const charts = statsNormalizeChartsList(raw && raw.charts);
+    const dashboard = statsMakeDashboard({
+        id: statsNewDashboardId(),
+        name: 'Dashboard 1',
+        charts: charts.length ? charts : statsDefaultCharts()
+    }, 0);
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        activeDashboardId: dashboard.id,
+        dashboards: [dashboard]
+    };
+}
+
+/** @deprecated Prefer statsNormalizeStore — kept for charts-only export/import helpers. */
+function statsNormalizeLayout(raw) {
+    if (raw && typeof raw === 'object' && Array.isArray(raw.dashboards)) {
+        const active = statsGetActiveDashboard(raw);
+        return {
+            schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+            charts: (active && active.charts) ? active.charts.slice() : []
+        };
+    }
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.charts)) {
+        return { schemaVersion: STATS_LAYOUT_SCHEMA_VERSION, charts: statsDefaultCharts() };
+    }
+    const charts = statsNormalizeChartsList(raw.charts);
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        charts: charts.length ? charts : statsDefaultCharts()
+    };
+}
+
+function statsDefaultLayout() {
+    return statsDefaultStore();
+}
+
+function statsNormalizeStore(raw) {
+    if (!raw || typeof raw !== 'object') return statsDefaultStore();
+    if (Array.isArray(raw.charts) && !Array.isArray(raw.dashboards)) {
+        return statsWrapLegacyLayout(raw);
+    }
+    if (!Array.isArray(raw.dashboards) || !raw.dashboards.length) {
+        return statsDefaultStore();
+    }
+    const dashboards = raw.dashboards
+        .slice(0, STATS_MAX_DASHBOARDS)
+        .map((d, i) => statsMakeDashboard(d, i))
+        .filter((d) => d && d.id);
+    if (!dashboards.length) return statsDefaultStore();
+    let activeDashboardId = raw.activeDashboardId != null ? String(raw.activeDashboardId) : dashboards[0].id;
+    if (!dashboards.some((d) => d.id === activeDashboardId)) {
+        activeDashboardId = dashboards[0].id;
+    }
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        activeDashboardId,
+        dashboards
+    };
+}
+
+function statsGetActiveDashboard(store) {
+    const normalized = statsNormalizeStore(store);
+    return normalized.dashboards.find((d) => d.id === normalized.activeDashboardId) || normalized.dashboards[0];
+}
+
+function statsFindDashboard(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const id = dashboardId != null ? String(dashboardId) : '';
+    return normalized.dashboards.find((d) => d.id === id) || null;
+}
+
+function statsSetActiveDashboardId(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const id = dashboardId != null ? String(dashboardId) : '';
+    if (!normalized.dashboards.some((d) => d.id === id)) return normalized;
+    normalized.activeDashboardId = id;
+    return normalized;
+}
+
+function statsNextDashboardName(store) {
+    const normalized = statsNormalizeStore(store);
+    const used = new Set(normalized.dashboards.map((d) => d.name));
+    for (let n = 1; n <= STATS_MAX_DASHBOARDS + 5; n += 1) {
+        const name = 'Dashboard ' + n;
+        if (!used.has(name)) return name;
+    }
+    return 'Dashboard';
+}
+
+function statsAddDashboard(store, name) {
+    const normalized = statsNormalizeStore(store);
+    if (normalized.dashboards.length >= STATS_MAX_DASHBOARDS) return normalized;
+    const trimmed = name != null ? String(name).trim().slice(0, 80) : '';
+    const dashboard = statsMakeDashboard({
+        id: statsNewDashboardId(),
+        name: trimmed || statsNextDashboardName(normalized),
+        charts: []
+    }, normalized.dashboards.length);
+    normalized.dashboards.push(dashboard);
+    normalized.activeDashboardId = dashboard.id;
+    return normalized;
+}
+
+function statsRenameDashboard(store, dashboardId, name) {
+    const normalized = statsNormalizeStore(store);
+    const trimmed = name != null ? String(name).trim().slice(0, 80) : '';
+    if (!trimmed) return normalized;
+    const dash = normalized.dashboards.find((d) => d.id === String(dashboardId));
+    if (!dash) return normalized;
+    dash.name = trimmed;
+    return normalized;
+}
+
+function statsDeleteDashboard(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    if (normalized.dashboards.length <= 1) return normalized;
+    const id = String(dashboardId);
+    const next = normalized.dashboards.filter((d) => d.id !== id);
+    if (next.length === normalized.dashboards.length) return normalized;
+    normalized.dashboards = next;
+    if (normalized.activeDashboardId === id) {
+        normalized.activeDashboardId = next[0].id;
+    }
+    return normalized;
+}
+
+function statsCopyChartToDashboard(store, chartId, fromDashboardId, toDashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const fromId = String(fromDashboardId || '');
+    const toId = String(toDashboardId || '');
+    if (!chartId || !toId || fromId === toId) return { store: normalized, chart: null };
+    const fromDash = normalized.dashboards.find((d) => d.id === fromId)
+        || (fromId ? null : statsGetActiveDashboard(normalized));
+    const toDash = normalized.dashboards.find((d) => d.id === toId);
+    if (!fromDash || !toDash) return { store: normalized, chart: null };
+    const source = fromDash.charts.find((c) => c.id === String(chartId));
+    if (!source) return { store: normalized, chart: null };
+    const clone = statsNormalizeChartEntry(Object.assign({}, JSON.parse(JSON.stringify(source)), {
+        id: statsNewChartId()
+    }));
+    toDash.charts.push(clone);
+    return { store: normalized, chart: clone };
+}
+
+function statsResetDashboardCharts(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const dash = normalized.dashboards.find((d) => d.id === String(dashboardId || normalized.activeDashboardId));
+    if (!dash) return normalized;
+    dash.charts = statsDefaultCharts().map((c) => statsNormalizeChartEntry(Object.assign({}, JSON.parse(JSON.stringify(c)), {
+        id: statsNewChartId()
+    })));
+    return normalized;
 }
 
 function statsIsImportableChartShape(c) {
@@ -396,11 +587,17 @@ function statsPrepareImportedChart(raw) {
     return statsNormalizeChartEntry(Object.assign({}, raw, { id: statsNewChartId() }));
 }
 
-function statsExportLayoutObject(layout) {
-    const normalized = statsNormalizeLayout(layout);
+function statsExportLayoutObject(layoutOrStore) {
+    let charts = [];
+    if (layoutOrStore && Array.isArray(layoutOrStore.dashboards)) {
+        const active = statsGetActiveDashboard(layoutOrStore);
+        charts = (active && active.charts) || [];
+    } else if (layoutOrStore && Array.isArray(layoutOrStore.charts)) {
+        charts = statsNormalizeChartsList(layoutOrStore.charts);
+    }
     return {
-        schemaVersion: normalized.schemaVersion,
-        charts: normalized.charts.map((chart) => JSON.parse(JSON.stringify(chart)))
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        charts: charts.map((chart) => JSON.parse(JSON.stringify(chart)))
     };
 }
 
@@ -1599,7 +1796,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.12',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1612,11 +1809,26 @@ const plugin = {
         const self = this;
         Context.statsEngine = {
             storageKey: STATS_LAYOUT_STORAGE_KEY,
+            maxDashboards: STATS_MAX_DASHBOARDS,
             loadLayout: () => self._loadLayout(),
             saveLayout: (layout) => self._saveLayout(layout),
-            defaultLayout: () => statsDefaultLayout(),
+            defaultLayout: () => statsDefaultStore(),
+            defaultStore: () => statsDefaultStore(),
+            defaultCharts: () => statsDefaultCharts(),
             normalizeLayout: (raw) => statsNormalizeLayout(raw),
+            normalizeStore: (raw) => statsNormalizeStore(raw),
             newChartId: () => statsNewChartId(),
+            newDashboardId: () => statsNewDashboardId(),
+            getActiveDashboard: (store) => statsGetActiveDashboard(store),
+            findDashboard: (store, dashboardId) => statsFindDashboard(store, dashboardId),
+            setActiveDashboardId: (store, dashboardId) => statsSetActiveDashboardId(store, dashboardId),
+            addDashboard: (store, name) => statsAddDashboard(store, name),
+            renameDashboard: (store, dashboardId, name) => statsRenameDashboard(store, dashboardId, name),
+            deleteDashboard: (store, dashboardId) => statsDeleteDashboard(store, dashboardId),
+            copyChartToDashboard: (store, chartId, fromDashboardId, toDashboardId) => (
+                statsCopyChartToDashboard(store, chartId, fromDashboardId, toDashboardId)
+            ),
+            resetDashboardCharts: (store, dashboardId) => statsResetDashboardCharts(store, dashboardId),
             buildCatalog: (ctx) => statsBuildCatalog(ctx),
             validateChart: (chart, catalog, items, ctx) => statsValidateChart(chart, catalog, items, ctx),
             aggregateChart: (chart, items, catalog, ctx) => statsAggregateChart(chart, items, catalog, ctx),
@@ -1653,20 +1865,26 @@ const plugin = {
     _loadLayout() {
         try {
             const raw = Storage.getData(STATS_LAYOUT_STORAGE_KEY, null);
-            if (!raw) return statsDefaultLayout();
+            if (!raw) return statsDefaultStore();
             const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            return statsNormalizeLayout(parsed);
+            return statsNormalizeStore(parsed);
         } catch (e) {
             Logger.warn('search-output-stats-engine: loadLayout failed — using defaults', e);
-            return statsDefaultLayout();
+            return statsDefaultStore();
         }
     },
 
     _saveLayout(layout) {
         try {
-            const normalized = statsNormalizeLayout(layout);
+            const normalized = statsNormalizeStore(layout);
             Storage.setData(STATS_LAYOUT_STORAGE_KEY, JSON.stringify(normalized));
-            Logger.log('search-output-stats-engine: layout saved — ' + normalized.charts.length + ' chart(s)');
+            const active = statsGetActiveDashboard(normalized);
+            Logger.log(
+                'search-output-stats-engine: layout saved — '
+                + normalized.dashboards.length + ' dashboard(s), active "'
+                + (active && active.name ? active.name : '') + '" has '
+                + ((active && active.charts) ? active.charts.length : 0) + ' chart(s)'
+            );
             return normalized;
         } catch (e) {
             Logger.error('search-output-stats-engine: saveLayout failed', e);

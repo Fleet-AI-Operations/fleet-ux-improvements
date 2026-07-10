@@ -4561,6 +4561,21 @@ function attachSearchOutputListeners(modal, dash) {
                 }
                 return;
             }
+            const statsDashRename = e.target.closest('[data-wf-dash-stats-dashboard-rename]');
+            if (statsDashRename && modal.contains(statsDashRename)) {
+                dash._renameActiveStatsDashboard();
+                return;
+            }
+            const statsDashAdd = e.target.closest('[data-wf-dash-stats-dashboard-add]');
+            if (statsDashAdd && modal.contains(statsDashAdd)) {
+                dash._addStatsDashboard();
+                return;
+            }
+            const statsDashDelete = e.target.closest('[data-wf-dash-stats-dashboard-delete]');
+            if (statsDashDelete && modal.contains(statsDashDelete)) {
+                dash._deleteActiveStatsDashboard();
+                return;
+            }
             const statsDeleteBtn = e.target.closest('[data-wf-dash-stats-chart-delete]');
             if (statsDeleteBtn && modal.contains(statsDeleteBtn)) {
                 dash._deleteStatsChart(statsDeleteBtn.getAttribute('data-wf-dash-stats-chart-delete'));
@@ -4984,6 +4999,21 @@ function attachSearchOutputListeners(modal, dash) {
                 else dash._scheduleStatsBuilderPreview();
                 return;
             }
+            const statsDashSelect = e.target.closest('[data-wf-dash-stats-dashboard-select]');
+            if (statsDashSelect && modal.contains(statsDashSelect)) {
+                dash._setActiveStatsDashboard(statsDashSelect.value);
+                return;
+            }
+            const statsCopyTo = e.target.closest('[data-wf-dash-stats-chart-copy-to]');
+            if (statsCopyTo && modal.contains(statsCopyTo)) {
+                const chartId = statsCopyTo.getAttribute('data-wf-dash-stats-chart-copy-to');
+                const toId = statsCopyTo.value;
+                if (chartId && toId) {
+                    dash._copyStatsChartToDashboard(chartId, toId);
+                    statsCopyTo.value = '';
+                }
+                return;
+            }
             const sel = e.target;
             if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
             const itemId = sel.getAttribute('data-item-id');
@@ -5069,7 +5099,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.20',
+    _version: '7.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
