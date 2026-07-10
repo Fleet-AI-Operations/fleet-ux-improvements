@@ -267,9 +267,9 @@ function sfPersistFromModal(modal) {
     return state;
 }
 
-function sfTimeColumn(table) {
-    // sessions: started_at; qa_session_results: created_at (see local/PostgREST/message-2.md)
-    return table === 'qa_session_results' ? 'created_at' : 'started_at';
+function sfTimeColumn(_table) {
+    // Both tables expose created_at; sessions.started_at is often null (cancelled / never-started).
+    return 'created_at';
 }
 
 function sfBuildQuery(state) {
@@ -453,7 +453,7 @@ const plugin = {
     id: 'session-fetcher',
     name: 'Session Fetcher',
     description: 'Dev-only PostgREST session / QA session results explorer for the Ops dashboard',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
