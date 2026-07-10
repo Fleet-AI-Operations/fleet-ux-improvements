@@ -356,9 +356,16 @@ const searchOutputStatsPaneMethods = {
             chart.categorySort = engine.normalizeCategorySort(draft.categorySort, chart.series.length);
         }
         if (engine.chartSupportsLabelOptions && engine.chartSupportsLabelOptions(draft.type)) {
-            chart.labelFormat = engine.normalizeLabelFormat
-                ? engine.normalizeLabelFormat(draft.labelFormat)
-                : (draft.labelFormat === 'percent' || draft.labelFormat === 'both' ? draft.labelFormat : 'absolute');
+            const showAbsolute = !!draft.labelShowAbsolute;
+            const showPercent = !!draft.labelShowPercent;
+            chart.labelShowAbsolute = showAbsolute;
+            chart.labelShowPercent = showPercent;
+            chart.labelsShowName = engine.normalizeLabelsShowName
+                ? engine.normalizeLabelsShowName(draft.labelsShowName)
+                : !!draft.labelsShowName;
+            chart.labelFormat = engine.labelFormatFromShowFlags
+                ? engine.labelFormatFromShowFlags(showAbsolute, showPercent)
+                : (showAbsolute && showPercent ? 'both' : (showPercent ? 'percent' : 'absolute'));
             chart.labelsAlwaysVisible = !!draft.labelsAlwaysVisible;
         }
         return chart;
@@ -1549,13 +1556,23 @@ const searchOutputStatsPaneMethods = {
         return 'absolute';
     },
 
-    _statsDatasetNumericTotal(data) {
-        let sum = 0;
-        for (const v of data || []) {
-            const n = typeof v === 'number' ? v : Number(v);
-            if (Number.isFinite(n)) sum += n;
+    _statsLabelShowFlags(chartOrDraft) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.labelShowFlagsFromChart === 'function') {
+            return engine.labelShowFlagsFromChart(chartOrDraft || {});
         }
-        return sum;
+        const format = this._statsNormalizeLabelFormat(chartOrDraft && chartOrDraft.labelFormat);
+        const hasAbsKey = chartOrDraft && Object.prototype.hasOwnProperty.call(chartOrDraft, 'labelShowAbsolute');
+        const hasPctKey = chartOrDraft && Object.prototype.hasOwnProperty.call(chartOrDraft, 'labelShowPercent');
+        return {
+            showAbsolute: hasAbsKey
+                ? !!chartOrDraft.labelShowAbsolute
+                : (format === 'absolute' || format === 'both'),
+            showPercent: hasPctKey
+                ? !!chartOrDraft.labelShowPercent
+                : (format === 'percent' || format === 'both'),
+            showName: !!(chartOrDraft && chartOrDraft.labelsShowName)
+        };
     },
 
     _statsFormatChartDatumLabel(value, total, format) {
@@ -1567,6 +1584,44 @@ const searchOutputStatsPaneMethods = {
         if (mode === 'percent') return pct;
         if (mode === 'both') return abs + ' (' + pct + ')';
         return abs;
+    },
+
+    _statsComposeOnChartLabel(value, total, categoryName, chartModel) {
+        const flags = this._statsLabelShowFlags(chartModel);
+        const bits = [];
+        const name = categoryName != null ? String(categoryName).trim() : '';
+        if (flags.showName && name) bits.push(name);
+        let valueText = '';
+        if (flags.showAbsolute && flags.showPercent) {
+            valueText = this._statsFormatChartDatumLabel(value, total, 'both');
+        } else if (flags.showPercent) {
+            valueText = this._statsFormatChartDatumLabel(value, total, 'percent');
+        } else if (flags.showAbsolute) {
+            valueText = this._statsFormatChartDatumLabel(value, total, 'absolute');
+        } else if (!flags.showName) {
+            // Nothing selected — fall back to absolute so labels still render.
+            valueText = this._statsFormatChartDatumLabel(value, total, 'absolute');
+        }
+        if (valueText) bits.push(valueText);
+        return bits.join(': ');
+    },
+
+    _statsCategoryLabelForPoint(chart, dataset, index) {
+        const labels = chart && chart.data && chart.data.labels;
+        if (Array.isArray(labels) && labels[index] != null && String(labels[index]).trim()) {
+            return String(labels[index]);
+        }
+        if (dataset && dataset.label) return String(dataset.label);
+        return '';
+    },
+
+    _statsDatasetNumericTotal(data) {
+        let sum = 0;
+        for (const v of data || []) {
+            const n = typeof v === 'number' ? v : Number(v);
+            if (Number.isFinite(n)) sum += n;
+        }
+        return sum;
     },
 
     _statsTooltipParsedValue(ctx) {
@@ -1655,7 +1710,12 @@ const searchOutputStatsPaneMethods = {
                         const raw = dataset.data[index];
                         const value = typeof raw === 'number' ? raw : Number(raw);
                         if (!Number.isFinite(value)) return;
-                        const text = dash._statsFormatChartDatumLabel(value, total, chartModel.labelFormat);
+                        const text = dash._statsComposeOnChartLabel(
+                            value,
+                            total,
+                            dash._statsCategoryLabelForPoint(chart, dataset, index),
+                            chartModel
+                        );
                         if (!text) return;
                         const pos = typeof el.tooltipPosition === 'function'
                             ? el.tooltipPosition()
@@ -3033,22 +3093,32 @@ const searchOutputStatsPaneMethods = {
             : '';
 
         const supportsLabels = this._statsChartSupportsLabelOptions(draft);
-        const labelFormat = this._statsNormalizeLabelFormat(draft.labelFormat);
+        const labelFlags = this._statsLabelShowFlags(draft);
         const labelsAlwaysVisible = !!draft.labelsAlwaysVisible;
+        const labelCheckStyle = 'display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--foreground, #0f172a);';
         const labelOptionsHtml = supportsLabels
             ? ('<div style="' + styles.gridAuto + '">'
-                + this._statsBuilderField('Tooltip values',
-                    '<select data-wf-dash-stats-draft="labelFormat" style="' + styles.inputStyle + '">'
-                    + '<option value="absolute"' + (labelFormat === 'absolute' ? ' selected' : '') + '>Absolute</option>'
-                    + '<option value="percent"' + (labelFormat === 'percent' ? ' selected' : '') + '>Percent of total</option>'
-                    + '<option value="both"' + (labelFormat === 'both' ? ' selected' : '') + '>Absolute + percent</option>'
-                    + '</select>',
-                    { styles, hint: 'Percent is of that series’ total' })
+                + this._statsBuilderField('Label contents',
+                    '<div style="display: flex; flex-wrap: wrap; gap: 10px 16px;">'
+                    + '<label style="' + labelCheckStyle + '">'
+                    + '<input type="checkbox" data-wf-dash-stats-draft="labelShowAbsolute"'
+                    + (labelFlags.showAbsolute ? ' checked' : '') + '>'
+                    + 'Absolute</label>'
+                    + '<label style="' + labelCheckStyle + '">'
+                    + '<input type="checkbox" data-wf-dash-stats-draft="labelShowPercent"'
+                    + (labelFlags.showPercent ? ' checked' : '') + '>'
+                    + 'Percent of total</label>'
+                    + '<label style="' + labelCheckStyle + '">'
+                    + '<input type="checkbox" data-wf-dash-stats-draft="labelsShowName"'
+                    + (labelFlags.showName ? ' checked' : '') + '>'
+                    + 'Category name</label>'
+                    + '</div>',
+                    { styles, hint: 'Percent is of that series’ total. Category name is the group label (e.g. slice name).' })
                 + this._statsBuilderField('Always show labels',
-                    '<label style="display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--foreground, #0f172a);">'
+                    '<label style="' + labelCheckStyle + '">'
                     + '<input type="checkbox" data-wf-dash-stats-draft="labelsAlwaysVisible"'
                     + (labelsAlwaysVisible ? ' checked' : '') + '>'
-                    + 'Show values on chart</label>',
+                    + 'Show on chart</label>',
                     { styles })
                 + '</div>')
             : '';
@@ -3288,7 +3358,9 @@ const searchOutputStatsPaneMethods = {
         const categorySortEl = this._q('[data-wf-dash-stats-draft="categorySort"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
-        const labelFormatEl = this._q('[data-wf-dash-stats-draft="labelFormat"]');
+        const labelShowAbsoluteEl = this._q('[data-wf-dash-stats-draft="labelShowAbsolute"]');
+        const labelShowPercentEl = this._q('[data-wf-dash-stats-draft="labelShowPercent"]');
+        const labelsShowNameEl = this._q('[data-wf-dash-stats-draft="labelsShowName"]');
         const labelsAlwaysVisibleEl = this._q('[data-wf-dash-stats-draft="labelsAlwaysVisible"]');
         if (titleEl) draft.title = titleEl.value;
         if (dashboardEl) {
@@ -3314,10 +3386,21 @@ const searchOutputStatsPaneMethods = {
         }
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
         if (this._statsChartSupportsLabelOptions(draft)) {
-            if (labelFormatEl) draft.labelFormat = this._statsNormalizeLabelFormat(labelFormatEl.value);
+            const showAbsolute = !!(labelShowAbsoluteEl && labelShowAbsoluteEl.checked);
+            const showPercent = !!(labelShowPercentEl && labelShowPercentEl.checked);
+            const engine = Context.statsEngine;
+            draft.labelShowAbsolute = showAbsolute;
+            draft.labelShowPercent = showPercent;
+            draft.labelsShowName = !!(labelsShowNameEl && labelsShowNameEl.checked);
+            draft.labelFormat = engine && typeof engine.labelFormatFromShowFlags === 'function'
+                ? engine.labelFormatFromShowFlags(showAbsolute, showPercent)
+                : (showAbsolute && showPercent ? 'both' : (showPercent ? 'percent' : 'absolute'));
             draft.labelsAlwaysVisible = !!(labelsAlwaysVisibleEl && labelsAlwaysVisibleEl.checked);
         } else {
             draft.labelFormat = 'absolute';
+            draft.labelShowAbsolute = true;
+            draft.labelShowPercent = false;
+            draft.labelsShowName = false;
             draft.labelsAlwaysVisible = false;
         }
         const series = [];
@@ -4875,7 +4958,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '6.6',
+    _version: '6.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
