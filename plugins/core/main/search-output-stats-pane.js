@@ -2788,13 +2788,10 @@ const searchOutputStatsPaneMethods = {
             + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-actions { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }'
-            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-stack .wf-dash-stats-chart-header-actions { flex-direction: column; align-items: stretch; }'
-            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-stack .wf-dash-stats-chart-header-actions button { width: 100%; box-sizing: border-box; justify-content: center; }'
+            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-stack .wf-dash-stats-chart-header-actions { flex-direction: column; align-items: flex-end; }'
             + '@container (max-width: 260px) {'
-            + '.wf-dash-stats-chart-header-actions { flex-direction: column; align-items: stretch; }'
-            + '.wf-dash-stats-chart-header-actions button { width: 100%; box-sizing: border-box; justify-content: center; }'
-            + '.wf-dash-stats-chart-footer { flex-direction: column; align-items: stretch; }'
-            + '.wf-dash-stats-chart-footer button { width: 100%; box-sizing: border-box; justify-content: center; }'
+            + '.wf-dash-stats-chart-header-actions { flex-direction: column; align-items: flex-end; }'
+            + '.wf-dash-stats-chart-footer { flex-direction: column; align-items: flex-end; }'
             + '}';
         document.head.appendChild(style);
     },
@@ -5330,7 +5327,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '7.1',
+    _version: '7.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
