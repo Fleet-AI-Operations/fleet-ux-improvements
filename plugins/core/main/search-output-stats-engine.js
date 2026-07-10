@@ -182,6 +182,44 @@ function statsLabelFormatFromShowFlags(showAbsolute, showPercent) {
     return 'absolute';
 }
 
+function statsLabelShowFlagsFromSeries(seriesEntry, legacyChart) {
+    const s = seriesEntry || {};
+    const hasSeriesAbs = Object.prototype.hasOwnProperty.call(s, 'labelShowAbsolute');
+    const hasSeriesPct = Object.prototype.hasOwnProperty.call(s, 'labelShowPercent');
+    const hasSeriesName = Object.prototype.hasOwnProperty.call(s, 'labelsShowName');
+    const hasSeriesAlways = Object.prototype.hasOwnProperty.call(s, 'labelsAlwaysVisible');
+    const legacy = legacyChart ? statsLabelShowFlagsFromChart(legacyChart) : {
+        showAbsolute: true,
+        showPercent: false,
+        showName: false
+    };
+    const legacyAlways = legacyChart
+        ? statsNormalizeLabelsAlwaysVisible(legacyChart.labelsAlwaysVisible)
+        : false;
+    const format = statsNormalizeLabelFormat(s.labelFormat);
+    const fromFormat = {
+        showAbsolute: format === 'absolute' || format === 'both',
+        showPercent: format === 'percent' || format === 'both'
+    };
+    const showAbsolute = hasSeriesAbs
+        ? statsNormalizeBoolFlag(s.labelShowAbsolute, fromFormat.showAbsolute)
+        : (Object.prototype.hasOwnProperty.call(s, 'labelFormat') ? fromFormat.showAbsolute : legacy.showAbsolute);
+    const showPercent = hasSeriesPct
+        ? statsNormalizeBoolFlag(s.labelShowPercent, fromFormat.showPercent)
+        : (Object.prototype.hasOwnProperty.call(s, 'labelFormat') ? fromFormat.showPercent : legacy.showPercent);
+    return {
+        showAbsolute,
+        showPercent,
+        showName: hasSeriesName
+            ? statsNormalizeLabelsShowName(s.labelsShowName)
+            : legacy.showName,
+        alwaysVisible: hasSeriesAlways
+            ? statsNormalizeLabelsAlwaysVisible(s.labelsAlwaysVisible)
+            : legacyAlways
+    };
+}
+
+/** @deprecated Prefer statsLabelShowFlagsFromSeries; kept for legacy chart-level migration. */
 function statsLabelShowFlagsFromChart(c) {
     const format = statsNormalizeLabelFormat(c && c.labelFormat);
     const fromFormat = {
@@ -198,6 +236,32 @@ function statsLabelShowFlagsFromChart(c) {
             ? statsNormalizeBoolFlag(c.labelShowPercent, fromFormat.showPercent)
             : fromFormat.showPercent,
         showName: statsNormalizeLabelsShowName(c && c.labelsShowName)
+    };
+}
+
+function statsChartHasAnyAlwaysVisibleLabels(chart) {
+    if (!chart || !statsChartSupportsLabelOptions(chart.type)) return false;
+    return (chart.series || []).some((s) => s && s.labelsAlwaysVisible);
+}
+
+function statsApplySeriesLabelFlags(entry, seriesSrc, chartType, legacyChart) {
+    if (!statsChartSupportsLabelOptions(chartType)) return entry;
+    const flags = statsLabelShowFlagsFromSeries(seriesSrc, legacyChart);
+    entry.labelShowAbsolute = flags.showAbsolute;
+    entry.labelShowPercent = flags.showPercent;
+    entry.labelsShowName = flags.showName;
+    entry.labelsAlwaysVisible = flags.alwaysVisible;
+    entry.labelFormat = statsLabelFormatFromShowFlags(flags.showAbsolute, flags.showPercent);
+    return entry;
+}
+
+function statsDefaultSeriesLabelFlags() {
+    return {
+        labelShowAbsolute: true,
+        labelShowPercent: false,
+        labelsShowName: false,
+        labelsAlwaysVisible: false,
+        labelFormat: 'absolute'
     };
 }
 
@@ -331,7 +395,7 @@ function statsFilterItemsForChart(items, chart, ctx) {
     return lib.applyClientWorkerOutputFilters(items || [], chartFilters, listBounds, sortContext);
 }
 
-function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySourceType) {
+function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySourceType, legacyChart) {
     const meta = statsGetChartTypeMeta(chartType);
     let renderAs = s.renderAs === 'line' ? 'line' : 'bar';
     if (legacySourceType === 'line') renderAs = 'line';
@@ -361,6 +425,7 @@ function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySou
             ? statsNormalizeSpread(s.spread)
             : 'none';
     }
+    statsApplySeriesLabelFlags(entry, s, chartType, legacyChart);
     return entry;
 }
 
@@ -370,16 +435,24 @@ function statsNormalizeChartEntry(c) {
     const meta = statsGetChartTypeMeta(type);
     const groupBy = meta.skipGroupBy ? STATS_SCORECARD_GROUP_BY : String(c.groupBy);
     const legacySegmentBy = c.splitBy != null ? statsNormalizeSegmentBy(c.splitBy, groupBy) : null;
+    const legacyChartLabels = statsChartSupportsLabelOptions(type) ? c : null;
     let series = (c.series || []).map((s, i) => {
         const src = legacySegmentBy && i === 0 && !s.segmentBy && !s.splitBy
             ? Object.assign({}, s, { segmentBy: legacySegmentBy })
             : s;
-        return statsNormalizeSeriesEntry(src, type, i, groupBy, legacySourceType);
+        return statsNormalizeSeriesEntry(src, type, i, groupBy, legacySourceType, legacyChartLabels);
     });
     if (series.length > meta.maxSeries) series = series.slice(0, meta.maxSeries);
     if (series.length < meta.minSeries && meta.minSeries > 0) {
         while (series.length < meta.minSeries) {
-            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type, series.length, groupBy, legacySourceType));
+            series.push(statsNormalizeSeriesEntry(
+                { metricId: 'count', agg: 'count' },
+                type,
+                series.length,
+                groupBy,
+                legacySourceType,
+                legacyChartLabels
+            ));
         }
     }
     const chart = {
@@ -406,14 +479,7 @@ function statsNormalizeChartEntry(c) {
     if (meta.needsBarLayout) {
         chart.categorySort = statsNormalizeCategorySort(c.categorySort, series.length);
     }
-    if (statsChartSupportsLabelOptions(type)) {
-        const flags = statsLabelShowFlagsFromChart(c);
-        chart.labelShowAbsolute = flags.showAbsolute;
-        chart.labelShowPercent = flags.showPercent;
-        chart.labelsShowName = flags.showName;
-        chart.labelFormat = statsLabelFormatFromShowFlags(flags.showAbsolute, flags.showPercent);
-        chart.labelsAlwaysVisible = statsNormalizeLabelsAlwaysVisible(c.labelsAlwaysVisible);
-    }
+    // Label options live on series only (legacy chart-level fields migrated above).
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
 }
@@ -1254,7 +1320,8 @@ function statsAggregateHistogram(chart, items, catalog, ctx) {
         datasets: [{
             label: metricLabel,
             data: binResult.counts,
-            metricId: s.metricId
+            metricId: s.metricId,
+            seriesIndex: 0
         }]
     };
 }
@@ -1492,7 +1559,8 @@ function statsBuildSegmentedSeriesDatasets(seriesEntry, segmentBy, segmentDim, k
             renderAs: seriesEntry.renderAs,
             lineStyle: seriesEntry.lineStyle,
             yAxis: seriesEntry.yAxis,
-            segmentSeries: true
+            segmentSeries: true,
+            seriesIndex: seriesEntry._seriesIndex != null ? seriesEntry._seriesIndex : 0
         });
     };
 
@@ -1613,12 +1681,14 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
         if (segmentBy) {
             const segmentDim = statsFindDimension(catalog, segmentBy);
             if (segmentDim) {
+                const seriesForSegment = Object.assign({}, s, { _seriesIndex: si });
                 const segmentDatasets = statsBuildSegmentedSeriesDatasets(
-                    s, segmentBy, segmentDim, keysOut, items, chart, lib, ctx, catalog
+                    seriesForSegment, segmentBy, segmentDim, keysOut, items, chart, lib, ctx, catalog
                 );
                 if (s.lineStyle === 'shaded') {
                     segmentDatasets.forEach((ds) => {
                         ds.segmentFillOnly = true;
+                        ds.seriesIndex = si;
                     });
                     const metric = statsFindMetric(catalog, s.metricId);
                     const seriesLabel = s.label || (metric && metric.label) || s.metricId;
@@ -1640,9 +1710,11 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
                         lineStyle: 'line',
                         yAxis: s.yAxis,
                         segmentOutline: true,
-                        segmentSeries: true
+                        segmentSeries: true,
+                        seriesIndex: si
                     });
                 } else {
+                    segmentDatasets.forEach((ds) => { ds.seriesIndex = si; });
                     datasets.push(...segmentDatasets);
                 }
             }
@@ -1680,7 +1752,8 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
             agg: s.agg,
             renderAs: s.renderAs,
             lineStyle: s.lineStyle,
-            yAxis: s.yAxis
+            yAxis: s.yAxis,
+            seriesIndex: si
         };
         if (spreadEnabled) {
             datasetEntry.spread = 'stddevBand';
@@ -1832,12 +1905,13 @@ function statsAggregateChart(chart, items, catalog, ctx) {
 
 function statsDefaultBuilderDraft(catalog) {
     const firstDim = (catalog && catalog.dimensions && catalog.dimensions[0]) || null;
+    const labelDefaults = statsDefaultSeriesLabelFlags();
     return {
         id: null,
         title: '',
         type: 'pie',
         groupBy: firstDim ? firstDim.key : '',
-        series: [{ metricId: 'count', agg: 'count', label: '' }],
+        series: [Object.assign({ metricId: 'count', agg: 'count', label: '' }, labelDefaults)],
         height: STATS_CHART_HEIGHT_DEFAULT,
         pointMode: 'bucket',
         barLayout: 'grouped',
@@ -1845,11 +1919,6 @@ function statsDefaultBuilderDraft(catalog) {
         lineAreaLayout: 'origin',
         categorySort: null,
         presetKey: null,
-        labelFormat: 'absolute',
-        labelShowAbsolute: true,
-        labelShowPercent: false,
-        labelsAlwaysVisible: false,
-        labelsShowName: false,
         chartFilters: statsEmptyChartFilters()
     };
 }
@@ -1858,7 +1927,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '5.2',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1923,7 +1992,10 @@ const plugin = {
             normalizeLabelsShowName: (raw) => statsNormalizeLabelsShowName(raw),
             labelFormatFromShowFlags: (showAbsolute, showPercent) =>
                 statsLabelFormatFromShowFlags(showAbsolute, showPercent),
+            labelShowFlagsFromSeries: (series) => statsLabelShowFlagsFromSeries(series, null),
             labelShowFlagsFromChart: (chart) => statsLabelShowFlagsFromChart(chart),
+            chartHasAnyAlwaysVisibleLabels: (chart) => statsChartHasAnyAlwaysVisibleLabels(chart),
+            defaultSeriesLabelFlags: () => statsDefaultSeriesLabelFlags(),
             chartSupportsLabelOptions: (type) => statsChartSupportsLabelOptions(type),
         };
         if (state) state.registered = true;

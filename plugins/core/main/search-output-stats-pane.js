@@ -334,6 +334,17 @@ const searchOutputStatsPaneMethods = {
                 if (engine.seriesAllowsSegment && engine.seriesAllowsSegment(draft.type, entry)) {
                     if (s.segmentBy) entry.segmentBy = s.segmentBy;
                 }
+                if (engine.chartSupportsLabelOptions && engine.chartSupportsLabelOptions(draft.type)) {
+                    const abs = s.labelShowAbsolute != null ? !!s.labelShowAbsolute : true;
+                    const pct = !!s.labelShowPercent;
+                    entry.labelShowAbsolute = abs;
+                    entry.labelShowPercent = pct;
+                    entry.labelsShowName = !!s.labelsShowName;
+                    entry.labelsAlwaysVisible = !!s.labelsAlwaysVisible;
+                    entry.labelFormat = engine.labelFormatFromShowFlags
+                        ? engine.labelFormatFromShowFlags(abs, pct)
+                        : (abs && pct ? 'both' : (pct ? 'percent' : 'absolute'));
+                }
                 return entry;
             }),
             height: this._statsResolvedChartHeight(draft),
@@ -354,19 +365,6 @@ const searchOutputStatsPaneMethods = {
         }
         if (engineMeta.needsBarLayout && engine.normalizeCategorySort) {
             chart.categorySort = engine.normalizeCategorySort(draft.categorySort, chart.series.length);
-        }
-        if (engine.chartSupportsLabelOptions && engine.chartSupportsLabelOptions(draft.type)) {
-            const showAbsolute = !!draft.labelShowAbsolute;
-            const showPercent = !!draft.labelShowPercent;
-            chart.labelShowAbsolute = showAbsolute;
-            chart.labelShowPercent = showPercent;
-            chart.labelsShowName = engine.normalizeLabelsShowName
-                ? engine.normalizeLabelsShowName(draft.labelsShowName)
-                : !!draft.labelsShowName;
-            chart.labelFormat = engine.labelFormatFromShowFlags
-                ? engine.labelFormatFromShowFlags(showAbsolute, showPercent)
-                : (showAbsolute && showPercent ? 'both' : (showPercent ? 'percent' : 'absolute'));
-            chart.labelsAlwaysVisible = !!draft.labelsAlwaysVisible;
         }
         return chart;
     },
@@ -1556,23 +1554,40 @@ const searchOutputStatsPaneMethods = {
         return 'absolute';
     },
 
-    _statsLabelShowFlags(chartOrDraft) {
+    _statsLabelShowFlagsFromSeries(seriesEntry) {
         const engine = Context.statsEngine;
-        if (engine && typeof engine.labelShowFlagsFromChart === 'function') {
-            return engine.labelShowFlagsFromChart(chartOrDraft || {});
+        if (engine && typeof engine.labelShowFlagsFromSeries === 'function') {
+            return engine.labelShowFlagsFromSeries(seriesEntry || {});
         }
-        const format = this._statsNormalizeLabelFormat(chartOrDraft && chartOrDraft.labelFormat);
-        const hasAbsKey = chartOrDraft && Object.prototype.hasOwnProperty.call(chartOrDraft, 'labelShowAbsolute');
-        const hasPctKey = chartOrDraft && Object.prototype.hasOwnProperty.call(chartOrDraft, 'labelShowPercent');
+        const s = seriesEntry || {};
+        const format = this._statsNormalizeLabelFormat(s.labelFormat);
         return {
-            showAbsolute: hasAbsKey
-                ? !!chartOrDraft.labelShowAbsolute
+            showAbsolute: s.labelShowAbsolute != null
+                ? !!s.labelShowAbsolute
                 : (format === 'absolute' || format === 'both'),
-            showPercent: hasPctKey
-                ? !!chartOrDraft.labelShowPercent
+            showPercent: s.labelShowPercent != null
+                ? !!s.labelShowPercent
                 : (format === 'percent' || format === 'both'),
-            showName: !!(chartOrDraft && chartOrDraft.labelsShowName)
+            showName: !!s.labelsShowName,
+            alwaysVisible: !!s.labelsAlwaysVisible
         };
+    },
+
+    _statsChartHasAlwaysVisibleLabels(chart) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.chartHasAnyAlwaysVisibleLabels === 'function') {
+            return engine.chartHasAnyAlwaysVisibleLabels(chart);
+        }
+        return (chart && chart.series || []).some((s) => s && s.labelsAlwaysVisible);
+    },
+
+    _statsStampDatasetLabelMeta(jsDataset, chart, seriesIndex) {
+        if (!jsDataset) return jsDataset;
+        const idx = seriesIndex != null && Number.isFinite(seriesIndex) ? seriesIndex : 0;
+        const series = ((chart && chart.series) || [])[idx] || ((chart && chart.series) || [])[0] || {};
+        jsDataset.statsSeriesIndex = idx;
+        jsDataset.statsLabelFlags = this._statsLabelShowFlagsFromSeries(series);
+        return jsDataset;
     },
 
     _statsFormatChartDatumLabel(value, total, format) {
@@ -1586,24 +1601,23 @@ const searchOutputStatsPaneMethods = {
         return abs;
     },
 
-    _statsComposeOnChartLabel(value, total, categoryName, chartModel) {
-        const flags = this._statsLabelShowFlags(chartModel);
-        const bits = [];
+    _statsComposeOnChartLabelLines(value, total, categoryName, flags) {
+        const f = flags || {};
+        const lines = [];
         const name = categoryName != null ? String(categoryName).trim() : '';
-        if (flags.showName && name) bits.push(name);
+        if (f.showName && name) lines.push(name);
         let valueText = '';
-        if (flags.showAbsolute && flags.showPercent) {
+        if (f.showAbsolute && f.showPercent) {
             valueText = this._statsFormatChartDatumLabel(value, total, 'both');
-        } else if (flags.showPercent) {
+        } else if (f.showPercent) {
             valueText = this._statsFormatChartDatumLabel(value, total, 'percent');
-        } else if (flags.showAbsolute) {
+        } else if (f.showAbsolute) {
             valueText = this._statsFormatChartDatumLabel(value, total, 'absolute');
-        } else if (!flags.showName) {
-            // Nothing selected — fall back to absolute so labels still render.
+        } else if (!f.showName) {
             valueText = this._statsFormatChartDatumLabel(value, total, 'absolute');
         }
-        if (valueText) bits.push(valueText);
-        return bits.join(': ');
+        if (valueText) lines.push(valueText);
+        return lines;
     },
 
     _statsCategoryLabelForPoint(chart, dataset, index) {
@@ -1649,7 +1663,14 @@ const searchOutputStatsPaneMethods = {
         const value = dash._statsTooltipParsedValue(ctx);
         if (value == null) return '';
         const total = dash._statsDatasetNumericTotal(ds.data);
-        const format = chartModel && chartModel.labelFormat ? chartModel.labelFormat : 'absolute';
+        const seriesIdx = ds.statsSeriesIndex != null
+            ? ds.statsSeriesIndex
+            : (ds.seriesIndex != null ? ds.seriesIndex : 0);
+        const series = ((chartModel && chartModel.series) || [])[seriesIdx] || {};
+        const flags = ds.statsLabelFlags || dash._statsLabelShowFlagsFromSeries(series);
+        const format = flags.showAbsolute && flags.showPercent
+            ? 'both'
+            : (flags.showPercent ? 'percent' : 'absolute');
         const formatted = dash._statsFormatChartDatumLabel(value, total, format);
         const chartType = ctx.chart && ctx.chart.config && ctx.chart.config.type;
         if (chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut') {
@@ -1681,91 +1702,313 @@ const searchOutputStatsPaneMethods = {
         const dash = this;
         const labelFont = '600 10px system-ui, -apple-system, sans-serif';
         const padX = 4;
-        const boxH = 14;
-        const boxesOverlap = (a, b) =>
-            a.x - a.boxW / 2 < b.x + b.boxW / 2
-            && a.x + a.boxW / 2 > b.x - b.boxW / 2
-            && a.y - a.boxH / 2 < b.y + b.boxH / 2
-            && a.y + a.boxH / 2 > b.y - b.boxH / 2;
+        const lineH = 12;
+        const fill = theme && theme.card ? theme.card : 'rgba(255,255,255,0.85)';
+        const stroke = theme && theme.border ? theme.border : 'rgba(0,0,0,0.12)';
+        const fg = theme && theme.foreground ? theme.foreground : '#0f172a';
+        const leaderStroke = theme && theme.muted ? theme.muted : 'rgba(100,116,139,0.85)';
+
+        const measureLines = (ctx, lines) => {
+            ctx.font = labelFont;
+            let maxW = 0;
+            for (const line of lines) {
+                maxW = Math.max(maxW, ctx.measureText(line).width);
+            }
+            return {
+                boxW: maxW + padX * 2,
+                boxH: lines.length * lineH + 4
+            };
+        };
+
+        const drawPill = (ctx, label) => {
+            const { x, y, boxW, boxH, lines, align } = label;
+            const left = align === 'left' ? x : (align === 'right' ? x - boxW : x - boxW / 2);
+            ctx.save();
+            ctx.font = labelFont;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(left, y - boxH / 2, boxW, boxH, 3);
+            } else {
+                ctx.rect(left, y - boxH / 2, boxW, boxH);
+            }
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = fg;
+            const startY = y - ((lines.length - 1) * lineH) / 2;
+            lines.forEach((line, i) => {
+                ctx.fillText(line, left + padX, startY + i * lineH);
+            });
+            ctx.restore();
+        };
+
+        const drawLeader = (ctx, ax, ay, bx, by, cx, cy) => {
+            ctx.save();
+            ctx.strokeStyle = leaderStroke;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            if (cx != null && cy != null) {
+                ctx.lineTo(bx, by);
+                ctx.lineTo(cx, cy);
+            } else {
+                ctx.lineTo(bx, by);
+            }
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        const collectCandidates = (chart, ctx) => {
+            const out = [];
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                if (!dataset || dataset.statsSpreadBand || dataset.statsLegendHidden
+                    || dataset.statsBellBand || dataset.statsShadedFillLayer
+                    || dataset.segmentFillOnly) {
+                    return;
+                }
+                const flags = dataset.statsLabelFlags
+                    || dash._statsLabelShowFlagsFromSeries(
+                        ((chartModel.series || [])[
+                            dataset.statsSeriesIndex != null
+                                ? dataset.statsSeriesIndex
+                                : (dataset.seriesIndex != null ? dataset.seriesIndex : 0)
+                        ]) || {}
+                    );
+                if (!flags.alwaysVisible) return;
+                if (!chart.isDatasetVisible(datasetIndex)) return;
+                const meta = chart.getDatasetMeta(datasetIndex);
+                if (!meta || !meta.data) return;
+                const total = dash._statsDatasetNumericTotal(dataset.data);
+                meta.data.forEach((el, index) => {
+                    if (!el || el.skip || el.hidden) return;
+                    const raw = dataset.data[index];
+                    const value = typeof raw === 'number' ? raw : Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    const lines = dash._statsComposeOnChartLabelLines(
+                        value,
+                        total,
+                        dash._statsCategoryLabelForPoint(chart, dataset, index),
+                        flags
+                    );
+                    if (!lines.length) return;
+                    const size = measureLines(ctx, lines);
+                    out.push({
+                        el,
+                        lines,
+                        value,
+                        boxW: size.boxW,
+                        boxH: size.boxH,
+                        datasetIndex,
+                        index
+                    });
+                });
+            });
+            return out;
+        };
+
+        const resolveColumnY = (items, minGap) => {
+            items.sort((a, b) => a.y - b.y);
+            for (let i = 1; i < items.length; i += 1) {
+                const prev = items[i - 1];
+                const minY = prev.y + prev.boxH / 2 + minGap + items[i].boxH / 2;
+                if (items[i].y < minY) items[i].y = minY;
+            }
+            for (let i = items.length - 2; i >= 0; i -= 1) {
+                const next = items[i + 1];
+                const maxY = next.y - next.boxH / 2 - minGap - items[i].boxH / 2;
+                if (items[i].y > maxY) items[i].y = maxY;
+            }
+            return items;
+        };
+
+        const layoutCircular = (chart, ctx, candidates) => {
+            const area = chart.chartArea || {};
+            const placed = [];
+            for (const cand of candidates) {
+                const el = cand.el;
+                let cx;
+                let cy;
+                let angle;
+                let rimR;
+                if (typeof el.startAngle === 'number' && typeof el.endAngle === 'number') {
+                    cx = el.x;
+                    cy = el.y;
+                    angle = (el.startAngle + el.endAngle) / 2;
+                    rimR = el.outerRadius != null ? el.outerRadius : 40;
+                } else {
+                    const rScale = chart.scales && chart.scales.r;
+                    cx = rScale && Number.isFinite(rScale.xCenter)
+                        ? rScale.xCenter
+                        : ((area.left + area.right) / 2);
+                    cy = rScale && Number.isFinite(rScale.yCenter)
+                        ? rScale.yCenter
+                        : ((area.top + area.bottom) / 2);
+                    const pos = typeof el.tooltipPosition === 'function'
+                        ? el.tooltipPosition()
+                        : { x: el.x, y: el.y };
+                    angle = Math.atan2(pos.y - cy, pos.x - cx);
+                    rimR = Math.hypot(pos.x - cx, pos.y - cy) || 40;
+                }
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                const anchorX = cx + rimR * cos;
+                const anchorY = cy + rimR * sin;
+                const gap = 14;
+                const elbowR = rimR + gap;
+                const elbowX = cx + elbowR * cos;
+                const elbowY = cy + elbowR * sin;
+                const side = cos >= 0 ? 'right' : 'left';
+                const labelR = rimR + gap + 10;
+                let labelX = cx + labelR * cos;
+                let labelY = cy + labelR * sin;
+                if (side === 'right') {
+                    labelX = Math.max(labelX, elbowX + 8);
+                } else {
+                    labelX = Math.min(labelX, elbowX - 8);
+                }
+                placed.push(Object.assign({}, cand, {
+                    anchorX,
+                    anchorY,
+                    elbowX,
+                    elbowY,
+                    x: labelX,
+                    y: labelY,
+                    side,
+                    align: side === 'right' ? 'left' : 'right'
+                }));
+            }
+            const left = resolveColumnY(placed.filter((p) => p.side === 'left'), 4);
+            const right = resolveColumnY(placed.filter((p) => p.side === 'right'), 4);
+            const all = left.concat(right);
+            const top = (area.top != null ? area.top : 0) + 4;
+            const bottom = (area.bottom != null ? area.bottom : chart.height) - 4;
+            const leftBound = area.left != null ? area.left : 0;
+            const rightBound = area.right != null ? area.right : chart.width;
+            if (right.length) {
+                const colX = Math.min(
+                    rightBound - 4,
+                    Math.max(...right.map((p) => p.elbowX + 10 + p.boxW))
+                );
+                for (const p of right) {
+                    p.x = colX - p.boxW;
+                    p.align = 'left';
+                }
+            }
+            if (left.length) {
+                const colX = Math.max(
+                    leftBound + 4,
+                    Math.min(...left.map((p) => p.elbowX - 10 - p.boxW))
+                );
+                for (const p of left) {
+                    p.x = colX + p.boxW;
+                    p.align = 'right';
+                }
+            }
+            for (const p of all) {
+                const half = p.boxH / 2;
+                if (p.y - half < top) p.y = top + half;
+                if (p.y + half > bottom) p.y = bottom - half;
+            }
+            return all;
+        };
+
+        const layoutCartesian = (chart, ctx, candidates) => {
+            const horizontal = !!(chart.options && chart.options.indexAxis === 'y');
+            const placed = candidates.map((cand) => {
+                const el = cand.el;
+                const pos = typeof el.tooltipPosition === 'function'
+                    ? el.tooltipPosition()
+                    : { x: el.x, y: el.y };
+                const anchorX = pos.x;
+                const anchorY = pos.y;
+                let x = anchorX;
+                let y = anchorY;
+                if (horizontal) {
+                    x = anchorX + cand.boxW / 2 + 8;
+                } else {
+                    y = anchorY - cand.boxH / 2 - 6;
+                }
+                return Object.assign({}, cand, {
+                    anchorX,
+                    anchorY,
+                    x,
+                    y,
+                    align: 'center',
+                    side: horizontal ? 'right' : 'top'
+                });
+            });
+            placed.sort((a, b) => (horizontal ? a.y - b.y : a.x - b.x));
+            const minGap = 3;
+            for (let i = 1; i < placed.length; i += 1) {
+                const prev = placed[i - 1];
+                const cur = placed[i];
+                if (horizontal) {
+                    const minY = prev.y + prev.boxH / 2 + minGap + cur.boxH / 2;
+                    if (cur.y < minY) cur.y = minY;
+                } else {
+                    const overlapsX = Math.abs(cur.x - prev.x) < (cur.boxW + prev.boxW) / 2;
+                    const overlapsY = Math.abs(cur.y - prev.y) < (cur.boxH + prev.boxH) / 2;
+                    if (overlapsX && overlapsY) {
+                        cur.y = prev.y - prev.boxH / 2 - minGap - cur.boxH / 2;
+                    }
+                }
+            }
+            return placed;
+        };
+
         return {
             id: 'wfStatsValueLabels',
             afterDatasetsDraw(chart) {
-                if (!chartModel || !chartModel.labelsAlwaysVisible) return;
-                if (!dash._statsChartSupportsLabelOptions(chartModel)) return;
+                if (!chartModel || !dash._statsChartSupportsLabelOptions(chartModel)) return;
+                if (!dash._statsChartHasAlwaysVisibleLabels(chartModel)) return;
                 const ctx = chart.ctx;
                 if (!ctx) return;
-                const candidates = [];
-                chart.data.datasets.forEach((dataset, datasetIndex) => {
-                    if (!dataset || dataset.statsSpreadBand || dataset.statsLegendHidden
-                        || dataset.statsBellBand || dataset.statsShadedFillLayer
-                        || dataset.segmentFillOnly) {
-                        return;
-                    }
-                    if (!chart.isDatasetVisible(datasetIndex)) return;
-                    const meta = chart.getDatasetMeta(datasetIndex);
-                    if (!meta || !meta.data) return;
-                    const total = dash._statsDatasetNumericTotal(dataset.data);
-                    meta.data.forEach((el, index) => {
-                        if (!el || el.skip || el.hidden) return;
-                        const raw = dataset.data[index];
-                        const value = typeof raw === 'number' ? raw : Number(raw);
-                        if (!Number.isFinite(value)) return;
-                        const text = dash._statsComposeOnChartLabel(
-                            value,
-                            total,
-                            dash._statsCategoryLabelForPoint(chart, dataset, index),
-                            chartModel
+                const candidates = collectCandidates(chart, ctx);
+                if (!candidates.length) return;
+                const chartType = chart.config && chart.config.type;
+                const modelType = chartModel.type;
+                const circular = chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut'
+                    || chartType === 'radar' || modelType === 'pie' || modelType === 'polarArea'
+                    || modelType === 'radar';
+                const placed = circular
+                    ? layoutCircular(chart, ctx, candidates)
+                    : layoutCartesian(chart, ctx, candidates);
+                for (const label of placed) {
+                    const edgeX = label.align === 'left'
+                        ? label.x
+                        : (label.align === 'right' ? label.x : label.x);
+                    const edgeY = label.y;
+                    const labelEdgeX = label.align === 'left'
+                        ? label.x
+                        : (label.align === 'right' ? label.x - label.boxW : label.x);
+                    const connectX = label.align === 'center'
+                        ? label.x
+                        : (label.align === 'left' ? label.x : label.x);
+                    // Leader: rim → elbow → label edge
+                    if (circular) {
+                        const lx = label.align === 'left' ? label.x : label.x;
+                        // For left align, label.x is left edge of pill; for right align, label.x is right edge.
+                        const pillEdgeX = label.align === 'left' ? label.x : label.x;
+                        drawLeader(
+                            ctx,
+                            label.anchorX,
+                            label.anchorY,
+                            label.elbowX,
+                            label.elbowY,
+                            pillEdgeX,
+                            label.y
                         );
-                        if (!text) return;
-                        const pos = typeof el.tooltipPosition === 'function'
-                            ? el.tooltipPosition()
-                            : { x: el.x, y: el.y };
-                        if (!pos || !Number.isFinite(pos.x) || !Number.isFinite(pos.y)) return;
-                        ctx.font = labelFont;
-                        const boxW = ctx.measureText(text).width + padX * 2;
-                        candidates.push({
-                            text,
-                            x: pos.x,
-                            y: pos.y,
-                            value,
-                            boxW,
-                            boxH,
-                            order: candidates.length
-                        });
-                    });
-                });
-                // Prefer larger values; on ties keep earlier index (same idea as datalabels display:'auto').
-                const ranked = candidates.slice().sort((a, b) => {
-                    if (b.value !== a.value) return b.value - a.value;
-                    return a.order - b.order;
-                });
-                const visible = [];
-                for (const cand of ranked) {
-                    if (visible.some((v) => boxesOverlap(cand, v))) continue;
-                    visible.push(cand);
-                }
-                const fill = theme && theme.card ? theme.card : 'rgba(255,255,255,0.85)';
-                const stroke = theme && theme.border ? theme.border : 'rgba(0,0,0,0.12)';
-                const fg = theme && theme.foreground ? theme.foreground : '#0f172a';
-                for (const label of visible) {
-                    ctx.save();
-                    ctx.font = labelFont;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillStyle = fill;
-                    ctx.strokeStyle = stroke;
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    if (typeof ctx.roundRect === 'function') {
-                        ctx.roundRect(label.x - label.boxW / 2, label.y - label.boxH / 2, label.boxW, label.boxH, 3);
                     } else {
-                        ctx.rect(label.x - label.boxW / 2, label.y - label.boxH / 2, label.boxW, label.boxH);
+                        const dist = Math.hypot(label.x - label.anchorX, label.y - label.anchorY);
+                        if (dist > 10) {
+                            drawLeader(ctx, label.anchorX, label.anchorY, label.x, label.y, null, null);
+                        }
                     }
-                    ctx.fill();
-                    ctx.stroke();
-                    ctx.fillStyle = fg;
-                    ctx.fillText(label.text, label.x, label.y);
-                    ctx.restore();
+                    drawPill(ctx, label);
                 }
             }
         };
@@ -1775,7 +2018,6 @@ const searchOutputStatsPaneMethods = {
         if (!config || !chart) return config;
         config.$statsChartModel = chart;
         if (config.options) {
-            // Chart.js does not copy unknown root fields onto the instance; stash on options for callbacks.
             config.options.$statsChartModel = chart;
         }
         if (!this._statsChartSupportsLabelOptions(chart)) return config;
@@ -1789,7 +2031,18 @@ const searchOutputStatsPaneMethods = {
                 label: (ctx) => dash._statsTooltipLabelText(chart, ctx)
             })
         });
-        if (chart.labelsAlwaysVisible) {
+        if (this._statsChartHasAlwaysVisibleLabels(chart)) {
+            const circular = chart.type === 'pie' || chart.type === 'polarArea' || chart.type === 'radar';
+            if (circular) {
+                const pad = 36;
+                const prev = config.options.layout && config.options.layout.padding;
+                const base = typeof prev === 'number' ? prev : 0;
+                config.options.layout = Object.assign({}, config.options.layout, {
+                    padding: typeof prev === 'object' && prev
+                        ? Object.assign({ top: pad, right: pad, bottom: pad, left: pad }, prev)
+                        : Math.max(base, pad)
+                });
+            }
             const plugin = this._statsValueLabelsPlugin(chart, theme || this._statsChartTheme());
             config.plugins = (config.plugins || []).concat([plugin]);
         }
@@ -1985,16 +2238,18 @@ const searchOutputStatsPaneMethods = {
 
         if (type === 'pie' || type === 'polarArea') {
             const ds = (aggData.datasets || [])[0] || { label: 'Count of results', data: [] };
+            const pieDs = this._statsStampDatasetLabelMeta({
+                label: ds.label,
+                data: ds.data,
+                backgroundColor: (aggData.labels || []).map((_, j) => palette[j % palette.length]),
+                borderColor: 'transparent',
+                seriesIndex: ds.seriesIndex != null ? ds.seriesIndex : 0
+            }, chart, ds.seriesIndex != null ? ds.seriesIndex : 0);
             return {
                 type: type === 'polarArea' ? 'polarArea' : 'pie',
                 data: {
                     labels: aggData.labels,
-                    datasets: [{
-                        label: ds.label,
-                        data: ds.data,
-                        backgroundColor: (aggData.labels || []).map((_, j) => palette[j % palette.length]),
-                        borderColor: 'transparent'
-                    }]
+                    datasets: [pieDs]
                 },
                 options: this._buildChartJsOptions(chart, theme, chartJsCtx)
             };
@@ -2004,16 +2259,18 @@ const searchOutputStatsPaneMethods = {
             const ds = (aggData.datasets || [])[0] || { label: '', data: [] };
             const histLabelCount = (aggData.labels || []).length;
             const metricLabel = ds.label || this._statsResolveSeriesLabel((chart.series || [])[0], catalog);
+            const histDs = this._statsStampDatasetLabelMeta({
+                label: ds.label,
+                data: ds.data,
+                backgroundColor: theme.brand,
+                borderColor: theme.brand,
+                seriesIndex: 0
+            }, chart, 0);
             return {
                 type: 'bar',
                 data: {
                     labels: aggData.labels,
-                    datasets: [{
-                        label: ds.label,
-                        data: ds.data,
-                        backgroundColor: theme.brand,
-                        borderColor: theme.brand
-                    }]
+                    datasets: [histDs]
                 },
                 options: {
                     responsive: true,
@@ -2179,14 +2436,16 @@ const searchOutputStatsPaneMethods = {
         if (type === 'radar') {
             const datasets = (aggData.datasets || []).map((ds, i) => {
                 const color = i === 0 ? theme.brand : (i === 1 ? theme.brandAlt : palette[i % palette.length]);
-                return {
+                const seriesIndex = ds.seriesIndex != null ? ds.seriesIndex : i;
+                return this._statsStampDatasetLabelMeta({
                     label: ds.label,
                     data: ds.data,
                     borderColor: color,
                     backgroundColor: this._statsColorWithAlpha(color, 0.2),
                     pointBackgroundColor: color,
-                    pointBorderColor: color
-                };
+                    pointBorderColor: color,
+                    seriesIndex
+                }, chart, seriesIndex);
             });
             const circularLegend = this._statsCircularChartLegend(theme, labelCount, containerWidth || 0);
             return {
@@ -2229,14 +2488,17 @@ const searchOutputStatsPaneMethods = {
             const valueScale = ds.yAxis === 'y1' ? 'y1' : 'y';
             const valueAxisID = this._statsValueAxisId(chart, ds.yAxis);
             const axisBinding = horizontal ? { xAxisID: valueAxisID } : { yAxisID: valueScale };
+            const seriesIndex = ds.seriesIndex != null ? ds.seriesIndex : i;
             const base = Object.assign({
                 type: renderAs,
                 label: ds.label,
                 data: ds.data,
                 borderColor: color,
                 backgroundColor: color,
-                order: renderAs === 'line' ? 1 : 2
+                order: renderAs === 'line' ? 1 : 2,
+                seriesIndex
             }, axisBinding);
+            this._statsStampDatasetLabelMeta(base, chart, seriesIndex);
             const hasSpreadBand = ds.spread === 'stddevBand'
                 && Array.isArray(ds.spreadLow)
                 && Array.isArray(ds.spreadHigh);
@@ -3092,38 +3354,32 @@ const searchOutputStatsPaneMethods = {
                 { styles })
             : '';
 
-        const supportsLabels = this._statsChartSupportsLabelOptions(draft);
-        const labelFlags = this._statsLabelShowFlags(draft);
-        const labelsAlwaysVisible = !!draft.labelsAlwaysVisible;
-        const labelCheckStyle = 'display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--foreground, #0f172a);';
-        const labelOptionsHtml = supportsLabels
-            ? ('<div style="' + styles.gridAuto + '">'
-                + this._statsBuilderField('Label contents',
-                    '<div style="display: flex; flex-wrap: wrap; gap: 10px 16px;">'
-                    + '<label style="' + labelCheckStyle + '">'
-                    + '<input type="checkbox" data-wf-dash-stats-draft="labelShowAbsolute"'
-                    + (labelFlags.showAbsolute ? ' checked' : '') + '>'
-                    + 'Absolute</label>'
-                    + '<label style="' + labelCheckStyle + '">'
-                    + '<input type="checkbox" data-wf-dash-stats-draft="labelShowPercent"'
-                    + (labelFlags.showPercent ? ' checked' : '') + '>'
-                    + 'Percent of total</label>'
-                    + '<label style="' + labelCheckStyle + '">'
-                    + '<input type="checkbox" data-wf-dash-stats-draft="labelsShowName"'
-                    + (labelFlags.showName ? ' checked' : '') + '>'
-                    + 'Category name</label>'
-                    + '</div>',
-                    { styles, hint: 'Percent is of that series’ total. Category name is the group label (e.g. slice name).' })
-                + this._statsBuilderField('Always show labels',
-                    '<label style="' + labelCheckStyle + '">'
-                    + '<input type="checkbox" data-wf-dash-stats-draft="labelsAlwaysVisible"'
-                    + (labelsAlwaysVisible ? ' checked' : '') + '>'
-                    + 'Show on chart</label>',
-                    { styles })
-                + '</div>')
-            : '';
+        return { chartSettingsHtml, layoutOptionsHtml, pointModeHtml, labelOptionsHtml: '' };
+    },
 
-        return { chartSettingsHtml, layoutOptionsHtml, pointModeHtml, labelOptionsHtml };
+    _statsBuilderSeriesLabelOptionsHtml(i, s, styles) {
+        const flags = this._statsLabelShowFlagsFromSeries(s);
+        const labelCheckStyle = 'display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--foreground, #0f172a);';
+        return this._statsBuilderField('Labels',
+            '<div style="display: flex; flex-wrap: wrap; gap: 10px 16px;">'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelShowAbsolute" data-series-idx="' + i + '"'
+            + (flags.showAbsolute ? ' checked' : '') + '>'
+            + 'Absolute</label>'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelShowPercent" data-series-idx="' + i + '"'
+            + (flags.showPercent ? ' checked' : '') + '>'
+            + 'Percent of total</label>'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelsShowName" data-series-idx="' + i + '"'
+            + (flags.showName ? ' checked' : '') + '>'
+            + 'Category name</label>'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelsAlwaysVisible" data-series-idx="' + i + '"'
+            + (flags.alwaysVisible ? ' checked' : '') + '>'
+            + 'Show on chart</label>'
+            + '</div>',
+            { styles, hint: 'Percent is of that series’ total. Category name is the group label (e.g. slice name), shown on its own line.' });
     },
 
     _statsBuilderSeriesCard(i, s, ctx) {
@@ -3226,6 +3482,11 @@ const searchOutputStatsPaneMethods = {
                 + renderField + lineStyleField + yAxisField + spreadField + '</div>';
         }
 
+        const supportsLabels = this._statsChartSupportsLabelOptions(draft);
+        const labelRowHtml = supportsLabels
+            ? ('<div style="margin-top: 8px;">' + this._statsBuilderSeriesLabelOptionsHtml(i, s, styles) + '</div>')
+            : '';
+
         const removeBtn = showRemove
             ? ('<button type="button" data-wf-dash-stats-series-remove="' + i + '" class="' + this._dashBtnClass('basic', 'nav') + '" title="Remove series" aria-label="Remove series" style="flex-shrink: 0; min-width: 32px; padding: 4px 8px;">×</button>')
             : '';
@@ -3242,6 +3503,7 @@ const searchOutputStatsPaneMethods = {
             + row1Html
             + row2Html
             + row3Html
+            + labelRowHtml
             + '</div>';
     },
 
@@ -3358,10 +3620,6 @@ const searchOutputStatsPaneMethods = {
         const categorySortEl = this._q('[data-wf-dash-stats-draft="categorySort"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
-        const labelShowAbsoluteEl = this._q('[data-wf-dash-stats-draft="labelShowAbsolute"]');
-        const labelShowPercentEl = this._q('[data-wf-dash-stats-draft="labelShowPercent"]');
-        const labelsShowNameEl = this._q('[data-wf-dash-stats-draft="labelsShowName"]');
-        const labelsAlwaysVisibleEl = this._q('[data-wf-dash-stats-draft="labelsAlwaysVisible"]');
         if (titleEl) draft.title = titleEl.value;
         if (dashboardEl) {
             draft.dashboardId = dashboardEl.value;
@@ -3385,24 +3643,11 @@ const searchOutputStatsPaneMethods = {
             heightEl.value = String(draft.height);
         }
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
-        if (this._statsChartSupportsLabelOptions(draft)) {
-            const showAbsolute = !!(labelShowAbsoluteEl && labelShowAbsoluteEl.checked);
-            const showPercent = !!(labelShowPercentEl && labelShowPercentEl.checked);
-            const engine = Context.statsEngine;
-            draft.labelShowAbsolute = showAbsolute;
-            draft.labelShowPercent = showPercent;
-            draft.labelsShowName = !!(labelsShowNameEl && labelsShowNameEl.checked);
-            draft.labelFormat = engine && typeof engine.labelFormatFromShowFlags === 'function'
-                ? engine.labelFormatFromShowFlags(showAbsolute, showPercent)
-                : (showAbsolute && showPercent ? 'both' : (showPercent ? 'percent' : 'absolute'));
-            draft.labelsAlwaysVisible = !!(labelsAlwaysVisibleEl && labelsAlwaysVisibleEl.checked);
-        } else {
-            draft.labelFormat = 'absolute';
-            draft.labelShowAbsolute = true;
-            draft.labelShowPercent = false;
-            draft.labelsShowName = false;
-            draft.labelsAlwaysVisible = false;
-        }
+        delete draft.labelFormat;
+        delete draft.labelShowAbsolute;
+        delete draft.labelShowPercent;
+        delete draft.labelsShowName;
+        delete draft.labelsAlwaysVisible;
         const series = [];
         const draftSeries = draft.series || [];
         this._modal.querySelectorAll('[data-wf-dash-stats-series-row]').forEach((row) => {
@@ -3414,6 +3659,10 @@ const searchOutputStatsPaneMethods = {
             const yAxisEl = row.querySelector('[data-wf-dash-stats-draft="series-yaxis"]');
             const segmentEl = row.querySelector('[data-wf-dash-stats-draft="series-segment"]');
             const spreadEl = row.querySelector('[data-wf-dash-stats-draft="series-spread"]');
+            const labelAbsEl = row.querySelector('[data-wf-dash-stats-draft="series-labelShowAbsolute"]');
+            const labelPctEl = row.querySelector('[data-wf-dash-stats-draft="series-labelShowPercent"]');
+            const labelNameEl = row.querySelector('[data-wf-dash-stats-draft="series-labelsShowName"]');
+            const labelAlwaysEl = row.querySelector('[data-wf-dash-stats-draft="series-labelsAlwaysVisible"]');
             if (!metricEl) return;
             const rowIdx = Number(row.getAttribute('data-wf-dash-stats-series-row'));
             const prev = Number.isInteger(rowIdx) && rowIdx >= 0 ? draftSeries[rowIdx] : null;
@@ -3427,6 +3676,24 @@ const searchOutputStatsPaneMethods = {
             if (yAxisEl) entry.yAxis = yAxisEl.value === 'y1' ? 'y1' : 'y';
             if (segmentEl) entry.segmentBy = segmentEl.value || null;
             if (spreadEl) entry.spread = spreadEl.value === 'stddevBand' ? 'stddevBand' : 'none';
+            if (labelAbsEl || labelPctEl || labelNameEl || labelAlwaysEl) {
+                const abs = !!(labelAbsEl && labelAbsEl.checked);
+                const pct = !!(labelPctEl && labelPctEl.checked);
+                entry.labelShowAbsolute = abs;
+                entry.labelShowPercent = pct;
+                entry.labelsShowName = !!(labelNameEl && labelNameEl.checked);
+                entry.labelsAlwaysVisible = !!(labelAlwaysEl && labelAlwaysEl.checked);
+                const eng = Context.statsEngine;
+                entry.labelFormat = eng && typeof eng.labelFormatFromShowFlags === 'function'
+                    ? eng.labelFormatFromShowFlags(abs, pct)
+                    : (abs && pct ? 'both' : (pct ? 'percent' : 'absolute'));
+            } else if (prev) {
+                entry.labelShowAbsolute = prev.labelShowAbsolute;
+                entry.labelShowPercent = prev.labelShowPercent;
+                entry.labelsShowName = prev.labelsShowName;
+                entry.labelsAlwaysVisible = prev.labelsAlwaysVisible;
+                entry.labelFormat = prev.labelFormat;
+            }
             series.push(entry);
         });
         if (series.length) draft.series = series;
@@ -3458,14 +3725,20 @@ const searchOutputStatsPaneMethods = {
                 const pick = (numeric[draft.series.length] && numeric[draft.series.length].id)
                     || (numeric[0] && numeric[0].id)
                     || 'prompt_version_count';
-                draft.series.push({
+                draft.series.push(Object.assign({
                     metricId: pick,
                     agg: 'avg',
                     label: '',
                     renderAs: draft.series.length === 0 ? 'bar' : 'line',
                     lineStyle: 'line',
                     yAxis: draft.series.length === 0 ? 'y' : 'y1'
-                });
+                }, (engine.defaultSeriesLabelFlags && engine.defaultSeriesLabelFlags()) || {
+                    labelShowAbsolute: true,
+                    labelShowPercent: false,
+                    labelsShowName: false,
+                    labelsAlwaysVisible: false,
+                    labelFormat: 'absolute'
+                }));
             }
             if (meta.needsRenderAs) {
                 draft.series.forEach((s, i) => {
@@ -3567,14 +3840,20 @@ const searchOutputStatsPaneMethods = {
         const items = this._getStatsScopeItems();
         const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
         const firstNumeric = (catalog.metrics || []).find((m) => m.id !== 'count');
-        draft.series.push({
+        draft.series.push(Object.assign({
             metricId: firstNumeric ? firstNumeric.id : 'count',
             agg: firstNumeric ? 'avg' : 'count',
             label: '',
             renderAs: draft.series.length === 0 ? 'bar' : 'line',
             lineStyle: 'line',
             yAxis: 'y'
-        });
+        }, (engine.defaultSeriesLabelFlags && engine.defaultSeriesLabelFlags()) || {
+            labelShowAbsolute: true,
+            labelShowPercent: false,
+            labelsShowName: false,
+            labelsAlwaysVisible: false,
+            labelFormat: 'absolute'
+        }));
         void this._renderStatsBuilder();
     },
 
@@ -4958,7 +5237,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '6.7',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
