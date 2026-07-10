@@ -238,6 +238,10 @@ function dashFleetDisputeUrl(disputeId) {
     const id = String(disputeId || '').trim();
     return id ? `${DASH_FLEET_ORIGIN}/work/problems/disputes/${encodeURIComponent(id)}` : '';
 }
+function dashFleetQaSessionUrl(sessionId) {
+    const id = String(sessionId || '').trim();
+    return id ? `${DASH_FLEET_ORIGIN}/work/problems/qa-session/${encodeURIComponent(id)}` : '';
+}
 
 // ── Formatting ──
 
@@ -1446,6 +1450,11 @@ const searchOutputResultsPaneMethods = {
             if (!includedIds.has(id)) newUserStoryUi[id] = this._state.userStoryUi[id];
         }
         this._state.userStoryUi = newUserStoryUi;
+        const newSessionQaUi = {};
+        for (const id of Object.keys(this._state.sessionQaUi || {})) {
+            if (!includedIds.has(id)) newSessionQaUi[id] = this._state.sessionQaUi[id];
+        }
+        this._state.sessionQaUi = newSessionQaUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' included result(s) from cache — '
             + kept.length + ' remaining');
@@ -1468,6 +1477,11 @@ const searchOutputResultsPaneMethods = {
             if (keptIds.has(id)) newUserStoryUi[id] = this._state.userStoryUi[id];
         }
         this._state.userStoryUi = newUserStoryUi;
+        const newSessionQaUi = {};
+        for (const id of Object.keys(this._state.sessionQaUi || {})) {
+            if (keptIds.has(id)) newSessionQaUi[id] = this._state.sessionQaUi[id];
+        }
+        this._state.sessionQaUi = newSessionQaUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' excluded result(s) from cache — '
             + filtered.length + ' remaining');
@@ -1483,6 +1497,7 @@ const searchOutputResultsPaneMethods = {
         this._state.cachedItems = cached.filter((it) => it.id !== id);
         if (this._state.hydrateUi) delete this._state.hydrateUi[id];
         if (this._state.userStoryUi) delete this._state.userStoryUi[id];
+        if (this._state.sessionQaUi) delete this._state.sessionQaUi[id];
         const taskId = item.task && item.task.id;
         if (taskId && this._state.cardUi) {
             const stillHasTask = this._state.cachedItems.some((it) => it.task && it.task.id === taskId);
@@ -1701,6 +1716,7 @@ const searchOutputResultsPaneMethods = {
                 message: null
             };
         }
+        if (!this._state.userStoryUi) this._state.userStoryUi = {};
         if (!this._state.userStoryUi[id]) {
             this._state.userStoryUi[id] = {
                 status: 'idle',
@@ -1712,6 +1728,28 @@ const searchOutputResultsPaneMethods = {
             };
         }
         return this._state.userStoryUi[id];
+    },
+
+    _getSessionQaUi(itemId) {
+        const id = String(itemId || '');
+        if (!id) {
+            return {
+                status: 'idle',
+                visible: false,
+                reviews: [],
+                message: null
+            };
+        }
+        if (!this._state.sessionQaUi) this._state.sessionQaUi = {};
+        if (!this._state.sessionQaUi[id]) {
+            this._state.sessionQaUi[id] = {
+                status: 'idle',
+                visible: false,
+                reviews: [],
+                message: null
+            };
+        }
+        return this._state.sessionQaUi[id];
     },
 
     _screenshotUiKey(kind, id) {
@@ -1958,70 +1996,145 @@ const searchOutputResultsPaneMethods = {
         return 'Fetch User Story';
     },
 
-    _userStorySectionHtml(itemId) {
+    _sessionQaHasReviews(ui) {
+        return Array.isArray(ui.reviews) && ui.reviews.length > 0;
+    },
+
+    _sessionQaBtnLabel(ui) {
+        if (ui.status === 'loading') return 'Fetching Session QA…';
+        if (this._sessionQaHasReviews(ui) && (ui.status === 'loaded' || ui.status === 'error')) {
+            return ui.visible ? 'Hide Session QA' : 'Show Session QA';
+        }
+        return 'Fetch Session QA';
+    },
+
+    _sessionQaInlineMessageHtml(ui) {
+        const text = ui && ui.message ? String(ui.message).trim() : '';
+        if (!text) return '';
+        return `<span class="wf-dash-session-qa-inline-msg" data-wf-dash-session-qa-message="1">${dashEscHtml(text)}</span>`;
+    },
+
+    _userStoryControlsHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
         if (this._userStoryIsAbsent(ui)) {
-            return `
-            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-wf-dash-user-story-absent="1" data-item-id="${dashEscHtml(itemId)}">
-                ${this._userStoryEmptyHtml(ui)}
-            </div>`;
+            return `<div data-wf-dash-user-story-controls="1" data-wf-dash-user-story-absent="1">${this._userStoryEmptyHtml(ui)}</div>`;
         }
         const btnLabel = this._userStoryBtnLabel(ui);
         const btnDisabled = ui.status === 'loading';
+        return `<div data-wf-dash-user-story-controls="1">`
+            + `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
+            + `</div>`;
+    },
+
+    _sessionQaControlsHtml(itemId) {
+        const ui = this._getSessionQaUi(itemId);
+        const btnLabel = this._sessionQaBtnLabel(ui);
+        const btnDisabled = ui.status === 'loading';
+        return `<div data-wf-dash-session-qa-controls="1" style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">`
+            + `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
+            + this._sessionQaInlineMessageHtml(ui)
+            + `</div>`;
+    },
+
+    _userStoryPanelHtml(itemId) {
+        const ui = this._getUserStoryUi(itemId);
         const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
+        if (!hasPanel) return '';
         const panelOpen = ui.visible && !ui.animateOpen;
-        const panelHtml = hasPanel
-            ? `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
-                + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui)}</div>`
-                + '</div>'
-            : '';
+        return `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
+            + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui)}</div>`
+            + '</div>';
+    },
+
+    _sessionQaPanelHtml(itemId) {
+        const ui = this._getSessionQaUi(itemId);
+        const hasPanel = this._sessionQaHasReviews(ui) && (ui.status === 'loaded' || ui.status === 'error');
+        if (!hasPanel) return '';
+        const panelOpen = ui.visible && !ui.animateOpen;
+        return `<div data-wf-dash-session-qa-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
+            + `<div data-wf-dash-session-qa-inner">${this._sessionQaPanelBodyHtml(itemId, ui)}</div>`
+            + '</div>';
+    },
+
+    _supplementalSectionHtml(itemId) {
         return `
-            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
-                <button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>
-                ${panelHtml}
+            <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-supplemental-section data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
+                <div data-wf-dash-supplemental-controls style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+                    ${this._userStoryControlsHtml(itemId)}
+                    ${this._sessionQaControlsHtml(itemId)}
+                </div>
+                ${this._userStoryPanelHtml(itemId)}
+                ${this._sessionQaPanelHtml(itemId)}
             </div>`;
     },
 
-    _findUserStorySection(itemId) {
+    _findSupplementalSection(itemId) {
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !itemId) return null;
         for (const card of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
             if (card.getAttribute('data-item-id') !== itemId) continue;
-            return card.querySelector('[data-wf-dash-user-story-section]');
+            return card.querySelector('[data-wf-dash-supplemental-section]');
         }
         return null;
     },
 
-    _animateUserStoryOpen(itemId) {
-        const ui = this._getUserStoryUi(itemId);
-        if (!ui.visible) return;
-        const section = this._findUserStorySection(itemId);
-        const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
+    _findUserStorySection(itemId) {
+        return this._findSupplementalSection(itemId);
+    },
+
+    _animateSupplementalPanelOpen(itemId, panelSelector, getVisible) {
+        if (!getVisible()) return;
+        const section = this._findSupplementalSection(itemId);
+        const panel = section ? section.querySelector(panelSelector) : null;
         if (!panel) return;
         panel.setAttribute('data-open', '0');
         panel.setAttribute('aria-hidden', 'true');
         const win = this._pageWindow();
         win.requestAnimationFrame(() => {
-            if (!this._getUserStoryUi(itemId).visible) return;
+            if (!getVisible()) return;
             win.requestAnimationFrame(() => {
-                if (!this._getUserStoryUi(itemId).visible) return;
+                if (!getVisible()) return;
                 panel.setAttribute('data-open', '1');
                 panel.setAttribute('aria-hidden', 'false');
             });
         });
     },
 
-    _syncUserStoryPanelOpen(itemId, visible) {
-        const section = this._findUserStorySection(itemId);
-        const panel = section ? section.querySelector('[data-wf-dash-user-story-panel]') : null;
+    _animateUserStoryOpen(itemId) {
+        this._animateSupplementalPanelOpen(
+            itemId,
+            '[data-wf-dash-user-story-panel]',
+            () => this._getUserStoryUi(itemId).visible
+        );
+    },
+
+    _animateSessionQaOpen(itemId) {
+        this._animateSupplementalPanelOpen(
+            itemId,
+            '[data-wf-dash-session-qa-panel]',
+            () => this._getSessionQaUi(itemId).visible
+        );
+    },
+
+    _syncSupplementalPanelOpen(itemId, panelSelector, visible) {
+        const section = this._findSupplementalSection(itemId);
+        const panel = section ? section.querySelector(panelSelector) : null;
         if (!panel) return;
         panel.setAttribute('data-open', visible ? '1' : '0');
         panel.setAttribute('aria-hidden', visible ? 'false' : 'true');
     },
 
+    _syncUserStoryPanelOpen(itemId, visible) {
+        this._syncSupplementalPanelOpen(itemId, '[data-wf-dash-user-story-panel]', visible);
+    },
+
+    _syncSessionQaPanelOpen(itemId, visible) {
+        this._syncSupplementalPanelOpen(itemId, '[data-wf-dash-session-qa-panel]', visible);
+    },
+
     _patchUserStoryVisibility(itemId) {
         this._ensureUserStoryStyles();
-        const section = this._findUserStorySection(itemId);
+        const section = this._findSupplementalSection(itemId);
         if (!section) return false;
         const ui = this._getUserStoryUi(itemId);
         const btn = section.querySelector('[data-wf-dash-user-story]');
@@ -2030,24 +2143,65 @@ const searchOutputResultsPaneMethods = {
         return true;
     },
 
-    _patchUserStorySection(itemId) {
+    _patchSessionQaVisibility(itemId) {
         this._ensureUserStoryStyles();
-        const section = this._findUserStorySection(itemId);
+        const section = this._findSupplementalSection(itemId);
         if (!section) return false;
+        const ui = this._getSessionQaUi(itemId);
+        const btn = section.querySelector('[data-wf-dash-session-qa]');
+        if (btn) btn.textContent = this._sessionQaBtnLabel(ui);
+        this._syncSessionQaPanelOpen(itemId, ui.visible);
+        return true;
+    },
+
+    _patchUserStoryControls(section, itemId) {
         const ui = this._getUserStoryUi(itemId);
-        if (this._userStoryIsAbsent(ui)) {
-            section.setAttribute('data-wf-dash-user-story-absent', '1');
-            section.innerHTML = this._userStoryEmptyHtml(ui);
-            return true;
+        let controls = section.querySelector('[data-wf-dash-user-story-controls]');
+        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls]');
+        if (!controlsParent) return;
+        if (!controls) {
+            controlsParent.insertAdjacentHTML('afterbegin', this._userStoryControlsHtml(itemId));
+            return;
         }
-        section.removeAttribute('data-wf-dash-user-story-absent');
-        let btn = section.querySelector('[data-wf-dash-user-story]');
+        if (this._userStoryIsAbsent(ui)) {
+            controls.setAttribute('data-wf-dash-user-story-absent', '1');
+            controls.innerHTML = this._userStoryEmptyHtml(ui);
+            return;
+        }
+        controls.removeAttribute('data-wf-dash-user-story-absent');
+        let btn = controls.querySelector('[data-wf-dash-user-story]');
         if (!btn) {
-            section.innerHTML = `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
-            btn = section.querySelector('[data-wf-dash-user-story]');
+            controls.innerHTML = `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            btn = controls.querySelector('[data-wf-dash-user-story]');
+        }
+        if (!btn) return;
+        btn.textContent = this._userStoryBtnLabel(ui);
+        if (ui.status === 'loading') {
+            btn.disabled = true;
+            btn.setAttribute('aria-busy', 'true');
+        } else {
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+        }
+    },
+
+    _patchSessionQaControls(section, itemId) {
+        const ui = this._getSessionQaUi(itemId);
+        let controls = section.querySelector('[data-wf-dash-session-qa-controls]');
+        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls]');
+        if (!controlsParent) return;
+        if (!controls) {
+            controlsParent.insertAdjacentHTML('beforeend', this._sessionQaControlsHtml(itemId));
+            controls = section.querySelector('[data-wf-dash-session-qa-controls]');
+        }
+        if (!controls) return;
+        let btn = controls.querySelector('[data-wf-dash-session-qa]');
+        if (!btn) {
+            controls.innerHTML = `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            btn = controls.querySelector('[data-wf-dash-session-qa]');
         }
         if (btn) {
-            btn.textContent = this._userStoryBtnLabel(ui);
+            btn.textContent = this._sessionQaBtnLabel(ui);
             if (ui.status === 'loading') {
                 btn.disabled = true;
                 btn.setAttribute('aria-busy', 'true');
@@ -2056,27 +2210,226 @@ const searchOutputResultsPaneMethods = {
                 btn.removeAttribute('aria-busy');
             }
         }
+        let msg = controls.querySelector('[data-wf-dash-session-qa-message]');
+        const msgHtml = this._sessionQaInlineMessageHtml(ui);
+        if (!msgHtml) {
+            if (msg) msg.remove();
+            return;
+        }
+        if (!msg) {
+            controls.insertAdjacentHTML('beforeend', msgHtml);
+        } else {
+            msg.textContent = String(ui.message || '').trim();
+        }
+    },
+
+    _patchUserStoryPanel(section, itemId) {
+        const ui = this._getUserStoryUi(itemId);
         const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
         let panel = section.querySelector('[data-wf-dash-user-story-panel]');
         if (!hasPanel) {
             if (panel) panel.remove();
-            return true;
+            return;
         }
         const bodyHtml = this._userStoryPanelBodyHtml(ui);
         if (!panel) {
-            section.insertAdjacentHTML('beforeend',
-                `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
+            const sessionPanel = section.querySelector('[data-wf-dash-session-qa-panel]');
+            const panelMarkup = `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
                 + `<div data-wf-dash-user-story-inner">${bodyHtml}</div>`
-                + '</div>');
+                + '</div>';
+            if (sessionPanel) sessionPanel.insertAdjacentHTML('beforebegin', panelMarkup);
+            else section.insertAdjacentHTML('beforeend', panelMarkup);
             panel = section.querySelector('[data-wf-dash-user-story-panel]');
         } else {
             const inner = panel.querySelector('[data-wf-dash-user-story-inner]');
             if (inner) inner.innerHTML = bodyHtml;
         }
-        if (panel) {
-            this._syncUserStoryPanelOpen(itemId, ui.visible);
+        if (panel) this._syncUserStoryPanelOpen(itemId, ui.visible);
+    },
+
+    _patchSessionQaPanel(section, itemId) {
+        const ui = this._getSessionQaUi(itemId);
+        const hasPanel = this._sessionQaHasReviews(ui) && (ui.status === 'loaded' || ui.status === 'error');
+        let panel = section.querySelector('[data-wf-dash-session-qa-panel]');
+        if (!hasPanel) {
+            if (panel) panel.remove();
+            return;
         }
+        const bodyHtml = this._sessionQaPanelBodyHtml(itemId, ui);
+        if (!panel) {
+            section.insertAdjacentHTML('beforeend',
+                `<div data-wf-dash-session-qa-panel data-open="0" aria-hidden="true">`
+                + `<div data-wf-dash-session-qa-inner">${bodyHtml}</div>`
+                + '</div>');
+            panel = section.querySelector('[data-wf-dash-session-qa-panel]');
+        } else {
+            const inner = panel.querySelector('[data-wf-dash-session-qa-inner]');
+            if (inner) inner.innerHTML = bodyHtml;
+        }
+        if (panel) this._syncSessionQaPanelOpen(itemId, ui.visible);
+    },
+
+    _patchUserStorySection(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findSupplementalSection(itemId);
+        if (!section) return false;
+        this._patchUserStoryControls(section, itemId);
+        this._patchUserStoryPanel(section, itemId);
         return true;
+    },
+
+    _patchSessionQaSection(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findSupplementalSection(itemId);
+        if (!section) return false;
+        this._patchSessionQaControls(section, itemId);
+        this._patchSessionQaPanel(section, itemId);
+        return true;
+    },
+
+    _sessionQaVerdictMeta(verdict) {
+        const key = String(verdict || '').trim().toLowerCase();
+        if (key === 'pass') {
+            return {
+                label: 'Pass',
+                badgeStyle: this._qaAcceptedBadgeStyle(),
+                blockStyle: this._qaAcceptedBlockStyle()
+            };
+        }
+        if (key === 'fail') {
+            return {
+                label: 'Fail',
+                badgeStyle: this._qaReturnedBadgeStyle(),
+                blockStyle: this._qaReturnedBlockStyle()
+            };
+        }
+        return {
+            label: key === 'review_needed' ? 'Review Needed' : (String(verdict || '').trim() || 'Unknown'),
+            badgeStyle: this._qaAlertBadgeStyle(),
+            blockStyle: this._qaOtherBlockStyle()
+        };
+    },
+
+    _sessionQaReviewBlockHtml(review, itemId) {
+        if (!review || !review.id) return '';
+        const meta = this._sessionQaVerdictMeta(review.verdict);
+        const border = meta.blockStyle.border;
+        const bg = meta.blockStyle.background;
+        const statusLabel = `<span style="${meta.badgeStyle}">${dashEscHtml(meta.label)}</span>`;
+        const submittedHtml = review.createdAt
+            ? dashTimestampWithDurationHtml(review.createdAt, null)
+            : '';
+        const difficulty = review.difficulty != null ? String(review.difficulty).trim() : '';
+        const difficultyHtml = difficulty
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Difficulty')}<span style="${this._qaAlertIssueBadgeStyle()}">${dashEscHtml(difficulty)}</span></div>`
+            : '';
+        const reviewerName = review.reviewerName || (review.reviewerId ? String(review.reviewerId).slice(0, 8) + '…' : '');
+        const reviewerHtml = review.reviewerId
+            ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(reviewerName, review.reviewerEmail || '', review.reviewerId, 'Open reviewer in Fleet', 'qa')}</div>`
+            : '';
+        const sessionUrl = dashFleetQaSessionUrl(review.sessionId);
+        const sessionLink = sessionUrl
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Session')}${this._extLinkHtml(sessionUrl, 'Open QA session in Fleet')}</div>`
+            : '';
+        const notesText = this._dashQuotedText(review.notes);
+        const notesHtml = notesText
+            ? `<div>
+                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Notes')}${this._copyIconHtml(notesText)}</div>
+                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(notesText)}</p>
+            </div>`
+            : '';
+        const blockId = 'session-qa:' + review.id;
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Session QA</span>`
+            + submittedHtml
+            + difficultyHtml;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
+        const bodyHtml = reviewerHtml + sessionLink + notesHtml;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
+    },
+
+    _sessionQaPanelBodyHtml(itemId, ui) {
+        const reviews = Array.isArray(ui.reviews) ? ui.reviews : [];
+        if (reviews.length === 0) return '';
+        return '<div class="wf-dash-session-qa-block">'
+            + reviews.map((review) => this._sessionQaReviewBlockHtml(review, itemId)).join('')
+            + '</div>';
+    },
+
+    async _fetchSessionQaReviewsForTask(taskId) {
+        const id = String(taskId || '').trim();
+        if (!id) {
+            return { reviews: [], message: 'No sessions found for this task.', reason: 'missing_task_id' };
+        }
+        const sessionRows = await this._pgQuery('sessions.select_slim', {
+            eval_task: 'eq.' + id,
+            order: 'created_at.desc',
+            limit: '1000'
+        }, 'ondemand');
+        const sessions = Array.isArray(sessionRows) ? sessionRows : [];
+        const sessionIds = [...new Set(sessions.map((row) => row && row.id).filter(Boolean).map(String))];
+        if (sessionIds.length === 0) {
+            return { reviews: [], message: 'No sessions found for this task.', reason: 'no_sessions' };
+        }
+
+        const reviewRows = [];
+        for (const chunk of dashPgInChunks(sessionIds)) {
+            const rows = await this._pgQuery('qa_session_results.select_slim', {
+                session_id: dashPgInFilter(chunk),
+                order: 'created_at.desc',
+                limit: '1000'
+            }, 'ondemand');
+            reviewRows.push(...(Array.isArray(rows) ? rows : []));
+        }
+        if (reviewRows.length === 0) {
+            return {
+                reviews: [],
+                message: 'No Session QA reviews found for this task.',
+                reason: 'no_reviews'
+            };
+        }
+
+        const reviewerIds = [...new Set(reviewRows.map((row) => row && row.reviewer_id).filter(Boolean).map(String))];
+        const profileRows = reviewerIds.length > 0
+            ? await this._fetchProfilesByIds(reviewerIds, 'ondemand')
+            : [];
+        const profilesMap = this._buildProfilesMap(profileRows);
+
+        const reviews = reviewRows.map((row) => {
+            const reviewerId = row.reviewer_id != null ? String(row.reviewer_id).trim() : '';
+            const profile = reviewerId ? profilesMap.get(reviewerId) : null;
+            return {
+                id: String(row.id || ''),
+                sessionId: row.session_id != null ? String(row.session_id) : '',
+                reviewerId,
+                reviewerName: profile
+                    ? (this._personChipName
+                        ? this._personChipName(profile, reviewerId)
+                        : (profile.full_name || ''))
+                    : '',
+                reviewerEmail: (profile && profile.email) || '',
+                verdict: row.verdict != null ? String(row.verdict) : '',
+                difficulty: row.difficulty != null && String(row.difficulty).trim()
+                    ? String(row.difficulty).trim()
+                    : null,
+                notes: row.notes != null ? String(row.notes) : '',
+                createdAt: row.created_at != null ? String(row.created_at) : ''
+            };
+        }).filter((review) => review.id);
+
+        reviews.sort((a, b) => {
+            const aTs = Date.parse(a.createdAt || '') || 0;
+            const bTs = Date.parse(b.createdAt || '') || 0;
+            if (bTs !== aTs) return bTs - aTs;
+            return String(b.id).localeCompare(String(a.id));
+        });
+
+        return { reviews, message: null, reason: null };
     },
 
     async _getVerifierFromCard(itemId) {
@@ -2188,13 +2541,81 @@ const searchOutputResultsPaneMethods = {
             ui.visible = false;
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
-        this._patchTaskCard(id);
+        if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
         if (ui.animateOpen && ui.visible) {
             delete ui.animateOpen;
             this._animateUserStoryOpen(id);
         } else {
             delete ui.animateOpen;
             this._syncUserStoryPanelOpen(id, ui.visible);
+        }
+    },
+
+    async _toggleSessionQa(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const item = this._findCachedItem(id) || this._findResultItem(id);
+        if (!item || !item.task) return;
+        const ui = this._getSessionQaUi(id);
+
+        if (this._sessionQaHasReviews(ui) && (ui.status === 'loaded' || ui.status === 'error')) {
+            ui.visible = !ui.visible;
+            delete ui.animateOpen;
+            Logger.log('dashboard: session QA ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
+            if (!this._patchSessionQaVisibility(id)) {
+                this._patchTaskCard(id);
+            }
+            return;
+        }
+        if (ui.status === 'loading') {
+            this._logDashApiSkip('session-qa-fetch', 'already loading', id);
+            return;
+        }
+
+        const taskId = String(item.task.id || '').trim();
+        if (!taskId) {
+            ui.status = 'error';
+            ui.reviews = [];
+            ui.message = 'No sessions found for this task.';
+            ui.visible = false;
+            this._logDashApiSkip('session-qa-fetch', 'missing task id', id);
+            if (!this._patchSessionQaSection(id)) this._patchTaskCard(id);
+            return;
+        }
+
+        this._logDashApiClick('session-qa-fetch', taskId.slice(0, 8) + '…');
+        ui.status = 'loading';
+        ui.message = null;
+        if (!this._patchSessionQaSection(id)) this._patchTaskCard(id);
+
+        try {
+            const result = await this._fetchSessionQaReviewsForTask(taskId);
+            ui.reviews = Array.isArray(result.reviews) ? result.reviews : [];
+            ui.message = result.message || null;
+            ui.status = 'loaded';
+            ui.visible = this._sessionQaHasReviews(ui);
+            if (ui.visible) ui.animateOpen = true;
+            if (ui.reviews.length > 0) {
+                Logger.log('dashboard: session QA fetched — ' + id + ' (' + ui.reviews.length + ' review(s))');
+            } else {
+                Logger.log('dashboard: session QA empty — ' + id + ' (' + (result.reason || 'empty') + ')');
+            }
+        } catch (err) {
+            ui.status = 'error';
+            ui.reviews = [];
+            ui.message = this._isDashSessionRefreshError(err)
+                ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
+                : 'Could not load Session QA.';
+            ui.visible = false;
+            Logger.warn('dashboard: session QA fetch failed — ' + id, err);
+        }
+        if (!this._patchSessionQaSection(id)) this._patchTaskCard(id);
+        if (ui.animateOpen && ui.visible) {
+            delete ui.animateOpen;
+            this._animateSessionQaOpen(id);
+        } else {
+            delete ui.animateOpen;
+            this._syncSessionQaPanelOpen(id, ui.visible);
         }
     },
 
@@ -4985,7 +5406,7 @@ const searchOutputResultsPaneMethods = {
             <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
                 ${this._cardHeaderMetaRowHtml(task, itemId)}
                 ${this._flagCreatePanelHtml(itemId, task.id)}
-                ${this._userStorySectionHtml(itemId)}
+                ${this._supplementalSectionHtml(itemId)}
                 <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
             </article>`;
         return this._resultCardOuterWrap(item, cardHtml);
@@ -5148,7 +5569,7 @@ const searchOutputResultsPaneMethods = {
                 ${this._cardHeaderMetaRowHtml(task, itemId)}
                 ${this._flagCreatePanelHtml(itemId, task.id)}
                 ${row2Html}
-                ${this._userStorySectionHtml(itemId)}
+                ${this._supplementalSectionHtml(itemId)}
                 ${row3Html}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
                     ${versionsInnerHtml}
@@ -5201,7 +5622,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '2.0',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

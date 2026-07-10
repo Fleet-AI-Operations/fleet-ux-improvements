@@ -4205,6 +4205,7 @@ const searchOutputCoreMethods = {
         this._state.hydrateUi = {};
         this._state.actionBlockUi = {};
         this._state.userStoryUi = {};
+        this._state.sessionQaUi = {};
         this._state.screenshotUi = {};
         this._state.taskOpenUi = {};
         this._state.resultsKindTab = 'all';
@@ -4956,6 +4957,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) void dash._toggleUserStory(itemId);
                 return;
             }
+            const sessionQaBtn = e.target.closest('[data-wf-dash-session-qa]');
+            if (sessionQaBtn && modal.contains(sessionQaBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = sessionQaBtn.getAttribute('data-item-id');
+                if (itemId) void dash._toggleSessionQa(itemId);
+                return;
+            }
             const loadScreenshotsBtn = e.target.closest('[data-wf-dash-load-screenshots]');
             if (loadScreenshotsBtn && modal.contains(loadScreenshotsBtn)) {
                 e.stopPropagation();
@@ -5109,7 +5118,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '7.22',
+    _version: '8.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
