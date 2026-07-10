@@ -100,7 +100,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '9.15',
+    _version: '9.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -3037,7 +3037,7 @@ const plugin = {
             btn.style.color = active ? 'var(--foreground, #0f172a)' : 'var(--muted-foreground, #64748b)';
             btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
         });
-        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'diff-viewer']);
+        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'diff-viewer', 'session-fetcher']);
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
             const active = panel.getAttribute('data-wf-dash-panel') === tabId;
             if (flexPanels.has(tabId)) {
