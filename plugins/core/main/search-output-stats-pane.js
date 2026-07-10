@@ -85,8 +85,6 @@ const searchOutputStatsPaneMethods = {
             this._state.statsLayout = typeof engine.normalizeStore === 'function'
                 ? engine.normalizeStore(engine.loadLayout())
                 : engine.loadLayout();
-        } else if (typeof engine.normalizeStore === 'function') {
-            this._state.statsLayout = engine.normalizeStore(this._state.statsLayout);
         }
         return this._state.statsLayout;
     },
@@ -98,11 +96,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _activeStatsDashboard() {
-        const engine = Context.statsEngine;
         const store = this._ensureStatsLayout();
-        if (engine && typeof engine.getActiveDashboard === 'function') {
-            return engine.getActiveDashboard(store);
-        }
         const dashboards = (store && store.dashboards) || [];
         return dashboards.find((d) => d.id === store.activeDashboardId) || dashboards[0] || {
             id: '',
@@ -4853,7 +4847,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '6.4',
+    _version: '6.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
