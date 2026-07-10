@@ -1810,23 +1810,136 @@ const searchOutputStatsPaneMethods = {
             return out;
         };
 
-        const resolveColumnY = (items, minGap) => {
-            items.sort((a, b) => a.y - b.y);
-            for (let i = 1; i < items.length; i += 1) {
-                const prev = items[i - 1];
-                const minY = prev.y + prev.boxH / 2 + minGap + items[i].boxH / 2;
-                if (items[i].y < minY) items[i].y = minY;
+        const boxesOverlapY = (a, b, minGap) => {
+            const aTop = a.y - a.boxH / 2;
+            const aBot = a.y + a.boxH / 2;
+            const bTop = b.y - b.boxH / 2;
+            const bBot = b.y + b.boxH / 2;
+            return aTop < bBot + minGap && aBot + minGap > bTop;
+        };
+
+        const packSideLanes = (items, side, canvasW, canvasH) => {
+            if (!items.length) return [];
+            const minGap = 4;
+            const laneGap = 10;
+            const margin = 4;
+            const top = margin;
+            const bottom = canvasH - margin;
+            const sorted = items.slice().sort((a, b) => a.y - b.y);
+            const maxW = Math.max(...sorted.map((p) => p.boxW), 40);
+            const step = maxW + laneGap;
+            const baseInner = side === 'right'
+                ? Math.max(...sorted.map((p) => p.elbowX + 10))
+                : Math.min(...sorted.map((p) => p.elbowX - 10));
+            const maxLanes = side === 'right'
+                ? Math.max(1, Math.floor((canvasW - margin - baseInner) / step) + 1)
+                : Math.max(1, Math.floor((baseInner - margin) / step) + 1);
+
+            const lanes = [];
+            const unplaced = [];
+
+            const tryFitY = (lane, item) => {
+                let y = Math.max(top + item.boxH / 2, Math.min(bottom - item.boxH / 2, item.y));
+                const ordered = lane.slice().sort((a, b) => a.y - b.y);
+                for (let n = 0; n < ordered.length + 1; n += 1) {
+                    const conflict = ordered.find((p) => boxesOverlapY({ y, boxH: item.boxH }, p, minGap));
+                    if (!conflict) {
+                        if (y - item.boxH / 2 >= top - 0.5 && y + item.boxH / 2 <= bottom + 0.5) {
+                            return y;
+                        }
+                        return null;
+                    }
+                    y = conflict.y + conflict.boxH / 2 + minGap + item.boxH / 2;
+                    if (y + item.boxH / 2 > bottom + 0.5) return null;
+                }
+                return null;
+            };
+
+            for (const item of sorted) {
+                let assigned = false;
+                for (let k = 0; k < lanes.length; k += 1) {
+                    const y = tryFitY(lanes[k], item);
+                    if (y == null) continue;
+                    item.y = y;
+                    item.lane = k;
+                    lanes[k].push(item);
+                    assigned = true;
+                    break;
+                }
+                if (assigned) continue;
+                if (lanes.length >= maxLanes) {
+                    unplaced.push(item);
+                    continue;
+                }
+                let y = Math.max(top + item.boxH / 2, Math.min(bottom - item.boxH / 2, item.y));
+                if (y - item.boxH / 2 < top - 0.5 || y + item.boxH / 2 > bottom + 0.5) {
+                    unplaced.push(item);
+                    continue;
+                }
+                item.y = y;
+                item.lane = lanes.length;
+                lanes.push([item]);
             }
-            for (let i = items.length - 2; i >= 0; i -= 1) {
-                const next = items[i + 1];
-                const maxY = next.y - next.boxH / 2 - minGap - items[i].boxH / 2;
-                if (items[i].y > maxY) items[i].y = maxY;
+
+            const placed = [];
+            for (const lane of lanes) {
+                for (const item of lane) {
+                    const k = item.lane || 0;
+                    if (side === 'right') {
+                        item.align = 'left';
+                        item.x = baseInner + k * step;
+                        if (item.x + item.boxW > canvasW - margin) {
+                            unplaced.push(item);
+                            continue;
+                        }
+                    } else {
+                        item.align = 'right';
+                        item.x = baseInner - k * step;
+                        if (item.x - item.boxW < margin) {
+                            unplaced.push(item);
+                            continue;
+                        }
+                    }
+                    placed.push(item);
+                }
             }
-            return items;
+
+            // Drop remaining collisions (prefer smaller values), then any still-unplaced.
+            const kept = [];
+            const ranked = placed.slice().sort((a, b) => {
+                if (b.value !== a.value) return b.value - a.value;
+                return (a.y - b.y);
+            });
+            for (const cand of ranked) {
+                const hit = kept.some((v) => {
+                    const sameSideOverlapX = side === 'right'
+                        ? !(cand.x + cand.boxW <= v.x || v.x + v.boxW <= cand.x)
+                        : !(cand.x <= v.x - v.boxW || v.x <= cand.x - cand.boxW);
+                    return sameSideOverlapX && boxesOverlapY(cand, v, minGap);
+                });
+                if (hit) {
+                    unplaced.push(cand);
+                    continue;
+                }
+                kept.push(cand);
+            }
+
+            if (unplaced.length) {
+                Logger.debug(
+                    'search-output-stats-pane: outlabels dropped '
+                    + unplaced.length
+                    + ' on '
+                    + side
+                    + ' (no room after lane stagger)'
+                );
+            }
+            return kept;
         };
 
         const layoutCircular = (chart, ctx, candidates) => {
             const area = chart.chartArea || {};
+            const canvasW = chart.width || ((area.right || 0) + 4);
+            const canvasH = chart.height || ((area.bottom || 0) + 4);
             const placed = [];
             for (const cand of candidates) {
                 const el = cand.el;
@@ -1881,39 +1994,19 @@ const searchOutputStatsPaneMethods = {
                     align: side === 'right' ? 'left' : 'right'
                 }));
             }
-            const left = resolveColumnY(placed.filter((p) => p.side === 'left'), 4);
-            const right = resolveColumnY(placed.filter((p) => p.side === 'right'), 4);
-            const all = left.concat(right);
-            const top = (area.top != null ? area.top : 0) + 4;
-            const bottom = (area.bottom != null ? area.bottom : chart.height) - 4;
-            const leftBound = area.left != null ? area.left : 0;
-            const rightBound = area.right != null ? area.right : chart.width;
-            if (right.length) {
-                const colX = Math.min(
-                    rightBound - 4,
-                    Math.max(...right.map((p) => p.elbowX + 10 + p.boxW))
-                );
-                for (const p of right) {
-                    p.x = colX - p.boxW;
-                    p.align = 'left';
-                }
-            }
-            if (left.length) {
-                const colX = Math.max(
-                    leftBound + 4,
-                    Math.min(...left.map((p) => p.elbowX - 10 - p.boxW))
-                );
-                for (const p of left) {
-                    p.x = colX + p.boxW;
-                    p.align = 'right';
-                }
-            }
-            for (const p of all) {
-                const half = p.boxH / 2;
-                if (p.y - half < top) p.y = top + half;
-                if (p.y + half > bottom) p.y = bottom - half;
-            }
-            return all;
+            const left = packSideLanes(
+                placed.filter((p) => p.side === 'left'),
+                'left',
+                canvasW,
+                canvasH
+            );
+            const right = packSideLanes(
+                placed.filter((p) => p.side === 'right'),
+                'right',
+                canvasW,
+                canvasH
+            );
+            return left.concat(right);
         };
 
         const layoutCartesian = (chart, ctx, candidates) => {
@@ -2034,7 +2127,7 @@ const searchOutputStatsPaneMethods = {
         if (this._statsChartHasAlwaysVisibleLabels(chart)) {
             const circular = chart.type === 'pie' || chart.type === 'polarArea' || chart.type === 'radar';
             if (circular) {
-                const pad = 36;
+                const pad = 48;
                 const prev = config.options.layout && config.options.layout.padding;
                 const base = typeof prev === 'number' ? prev : 0;
                 config.options.layout = Object.assign({}, config.options.layout, {
@@ -5237,7 +5330,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '7.0',
+    _version: '7.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
