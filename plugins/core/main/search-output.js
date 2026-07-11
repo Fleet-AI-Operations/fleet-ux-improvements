@@ -2891,18 +2891,31 @@ const searchOutputCoreMethods = {
         return reviews;
     },
 
-    async _fetchSessionRowsForSearch(afterIso, beforeIso, scope, searchLimit, loadTracker) {
+    async _fetchQaSessionResultRowsForSearch(authorIds, afterIso, beforeIso, scope, searchLimit, loadTracker) {
         const teamIds = (scope && scope.teamIds) || [];
+        const reviewerVariants = this._authorQueryVariants(authorIds);
         const teamVariants = teamIds.length > 0 ? dashPgInChunks(teamIds) : [null];
+        const variants = [];
+        for (const reviewerChunk of reviewerVariants) {
+            for (const teamChunk of teamVariants) {
+                variants.push({ reviewerChunk, teamChunk });
+            }
+        }
         const byId = new Map();
         const pageSize = searchLimit != null
             ? Math.min(DASH_SESSIONS_PAGE_SIZE, Math.max(1, searchLimit))
             : DASH_SESSIONS_PAGE_SIZE;
         const hardCap = searchLimit != null ? searchLimit : null;
+        Logger.debug('dashboard: fetching Session QA reviews — '
+            + (authorIds && authorIds.length > 0 ? authorIds.length + ' reviewer(s)' : 'all reviewers')
+            + (afterIso ? ' · after ' + afterIso : '')
+            + (beforeIso ? ' · before ' + beforeIso : '')
+            + (teamIds.length > 0 ? ' · ' + teamIds.length + ' team(s)' : '')
+            + (hardCap != null ? ' · limit ' + hardCap : ''));
         await this._fetchPaginatedQueryVariants({
-            variants: teamVariants.map((teamChunk) => ({ teamChunk })),
+            variants,
             pageSize,
-            queryKey: 'sessions.select_slim',
+            queryKey: 'qa_session_results.select_slim',
             channel: 'search',
             buildQs: (variant, offset) => {
                 if (hardCap != null && byId.size >= hardCap) return null;
@@ -2913,6 +2926,11 @@ const searchOutputCoreMethods = {
                     offset: String(offset),
                     limit: String(hardCap != null ? Math.min(pageSize, remaining) : pageSize)
                 };
+                if (variant.reviewerChunk) {
+                    const f = dashPgInFilter(variant.reviewerChunk);
+                    if (!f) return null;
+                    qs.reviewer_id = f;
+                }
                 if (variant.teamChunk) {
                     const f = dashPgInFilter(variant.teamChunk);
                     if (!f) return null;
@@ -2931,30 +2949,41 @@ const searchOutputCoreMethods = {
             }
         });
         const rows = [...byId.values()];
-        Logger.debug('dashboard: sessions fetched (' + rows.length + ' rows)');
+        Logger.debug('dashboard: Session QA reviews fetched (' + rows.length + ' rows)');
         return rows;
     },
 
-    async _fetchQaSessionResultRowsForSessionIds(sessionIds, loadTracker) {
+    async _fetchSessionRowsByIds(sessionIds, scope, loadTracker) {
         const ids = [...new Set((sessionIds || []).filter(Boolean).map(String))];
         if (ids.length === 0) return [];
-        const all = [];
-        const seen = new Set();
+        const teamIds = ((scope && scope.teamIds) || []).map(String).filter(Boolean);
+        const teamSet = teamIds.length > 0 ? new Set(teamIds) : null;
+        const teamFilterOk = teamIds.length > 0 && teamIds.length <= dashLib().PG_IN_MAX;
+        const byId = new Map();
         for (const chunk of dashPgInChunks(ids)) {
             if (this._shouldStopSearch()) break;
-            const rows = await this._pgQuery('qa_session_results.select_slim', {
-                session_id: dashPgInFilter(chunk),
+            const qs = {
+                id: dashPgInFilter(chunk),
                 order: 'created_at.desc',
                 limit: '1000'
-            }, 'search');
-            for (const row of rows || []) {
-                if (!row || !row.id || seen.has(row.id)) continue;
-                seen.add(row.id);
-                all.push(row);
+            };
+            if (teamFilterOk) {
+                const f = dashPgInFilter(teamIds);
+                if (f) qs.team_id = f;
             }
-            if (loadTracker) loadTracker.setCount(all.length);
+            const rows = await this._pgQuery('sessions.select_slim', qs, 'search');
+            for (const row of rows || []) {
+                if (!row || !row.id) continue;
+                if (teamSet) {
+                    const tid = row.team_id != null ? String(row.team_id) : '';
+                    if (!tid || !teamSet.has(tid)) continue;
+                }
+                byId.set(String(row.id), row);
+            }
+            if (loadTracker) loadTracker.setCount(byId.size, ids.length);
         }
-        return all;
+        Logger.debug('dashboard: sessions joined by id (' + byId.size + ' / ' + ids.length + ')');
+        return [...byId.values()];
     },
 
     _buildSessionMetaByTaskId(sessionRows) {
@@ -2972,6 +3001,45 @@ const searchOutputCoreMethods = {
             if (row.created_at) meta.timestamps.push(String(row.created_at));
         }
         return metaByTaskId;
+    },
+
+    _buildSessionQaSeedFromReviewRows(sessionMetaByTaskId, reviewRows, profilesMap) {
+        const sessionQaSeed = {};
+        const reviewsBySessionId = new Map();
+        for (const review of this._normalizeSessionQaReviewRows(reviewRows, profilesMap)) {
+            if (!review.sessionId) continue;
+            const list = reviewsBySessionId.get(review.sessionId) || [];
+            list.push(review);
+            reviewsBySessionId.set(review.sessionId, list);
+        }
+        for (const [taskId, meta] of (sessionMetaByTaskId || new Map()).entries()) {
+            const itemId = 'task-' + taskId;
+            const reviews = [];
+            const seenReviewIds = new Set();
+            for (const sid of meta.sessionIds || []) {
+                for (const review of reviewsBySessionId.get(sid) || []) {
+                    if (seenReviewIds.has(review.id)) continue;
+                    seenReviewIds.add(review.id);
+                    reviews.push(review);
+                }
+            }
+            reviews.sort((a, b) => {
+                const aTs = Date.parse(a.createdAt || '') || 0;
+                const bTs = Date.parse(b.createdAt || '') || 0;
+                if (bTs !== aTs) return bTs - aTs;
+                return String(b.id).localeCompare(String(a.id));
+            });
+            sessionQaSeed[itemId] = {
+                status: 'loaded',
+                visible: reviews.length > 0,
+                reviews,
+                message: reviews.length > 0
+                    ? null
+                    : 'No Session QA reviews found for this task.',
+                animateOpen: reviews.length > 0
+            };
+        }
+        return sessionQaSeed;
     },
 
     _applySearchResultLimit(items, searchLimit) {
@@ -3226,12 +3294,14 @@ const searchOutputCoreMethods = {
             : Promise.resolve([]);
         const sessionsPromise = includeSessions
             ? this._trackSearchLoadPromise(
-                'Session rows',
-                (tracker) => this._fetchSessionRowsForSearch(afterIso, beforeIso, scope, searchLimit, tracker)
+                'Session QA reviews',
+                (tracker) => this._fetchQaSessionResultRowsForSearch(
+                    authorIds, afterIso, beforeIso, scope, searchLimit, tracker
+                )
             )
             : Promise.resolve([]);
 
-        const [creationRows, feedbackRows, sessionRows] = await Promise.all([
+        const [creationRows, feedbackRows, sessionReviewRows] = await Promise.all([
             tasksPromise,
             qaPromise,
             sessionsPromise
@@ -3242,36 +3312,41 @@ const searchOutputCoreMethods = {
         let sessionQaSeed = {};
 
         if (includeSessions && !this._shouldStopSearch()) {
-            sessionMetaByTaskId = this._buildSessionMetaByTaskId(sessionRows || []);
-            let sessionTaskIds = [...sessionMetaByTaskId.keys()];
-            if (sessionTaskIds.length > 0) {
-                this._setSearchLoadPhase('Loading tasks from sessions…', sessionTaskIds.length);
-                let rows = await this._trackSearchLoadPromise(
-                    'Tasks from sessions (' + sessionTaskIds.length + ' id(s))',
-                    (tracker) => this._fetchTaskRowsByIds(sessionTaskIds, scope, undefined, tracker)
+            const reviewRows = sessionReviewRows || [];
+            const sessionIds = [...new Set(reviewRows
+                .map((row) => row && row.session_id)
+                .filter(Boolean)
+                .map(String))];
+            if (sessionIds.length > 0) {
+                this._setSearchLoadPhase('Joining sessions…', sessionIds.length);
+                const sessionRows = await this._trackSearchLoadPromise(
+                    'Sessions from reviews (' + sessionIds.length + ' id(s))',
+                    (tracker) => this._fetchSessionRowsByIds(sessionIds, scope, tracker)
                 );
-                if (authorIds && authorIds.length > 0) {
-                    const authorSet = new Set(authorIds.map(String));
-                    rows = (rows || []).filter((row) => row && authorSet.has(String(row.created_by || '')));
-                }
-                sessionTaskRows = rows || [];
-                const keptTaskIds = new Set(sessionTaskRows.map((row) => row.id));
-                const keptMeta = new Map();
-                for (const [taskId, meta] of sessionMetaByTaskId.entries()) {
-                    if (keptTaskIds.has(taskId)) keptMeta.set(taskId, meta);
-                }
-                sessionMetaByTaskId = keptMeta;
+                sessionMetaByTaskId = this._buildSessionMetaByTaskId(sessionRows || []);
+                const sessionTaskIds = [...sessionMetaByTaskId.keys()];
+                if (sessionTaskIds.length > 0 && !this._shouldStopSearch()) {
+                    this._setSearchLoadPhase('Loading tasks from sessions…', sessionTaskIds.length);
+                    sessionTaskRows = await this._trackSearchLoadPromise(
+                        'Tasks from sessions (' + sessionTaskIds.length + ' id(s))',
+                        (tracker) => this._fetchTaskRowsByIds(sessionTaskIds, scope, undefined, tracker)
+                    ) || [];
+                    const keptTaskIds = new Set(sessionTaskRows.map((row) => row.id));
+                    const keptMeta = new Map();
+                    for (const [taskId, meta] of sessionMetaByTaskId.entries()) {
+                        if (keptTaskIds.has(taskId)) keptMeta.set(taskId, meta);
+                    }
+                    sessionMetaByTaskId = keptMeta;
 
-                const keptSessionIds = [];
-                for (const meta of sessionMetaByTaskId.values()) {
-                    for (const sid of meta.sessionIds || []) keptSessionIds.push(sid);
-                }
-                if (keptSessionIds.length > 0 && !this._shouldStopSearch()) {
-                    const reviewRows = await this._trackSearchLoadPromise(
-                        'Session QA reviews (' + keptSessionIds.length + ' session(s))',
-                        (tracker) => this._fetchQaSessionResultRowsForSessionIds(keptSessionIds, tracker)
-                    );
-                    const reviewerIds = [...new Set((reviewRows || [])
+                    const keptSessionIds = new Set();
+                    for (const meta of sessionMetaByTaskId.values()) {
+                        for (const sid of meta.sessionIds || []) keptSessionIds.add(String(sid));
+                    }
+                    const keptReviewRows = reviewRows.filter((row) => {
+                        const sid = row && row.session_id != null ? String(row.session_id) : '';
+                        return sid && keptSessionIds.has(sid);
+                    });
+                    const reviewerIds = [...new Set(keptReviewRows
                         .map((row) => row && row.reviewer_id)
                         .filter(Boolean)
                         .map(String))];
@@ -3279,40 +3354,11 @@ const searchOutputCoreMethods = {
                         ? await this._fetchProfilesByIds(reviewerIds, 'search')
                         : [];
                     const profilesMap = this._buildProfilesMap(profileRows);
-                    const reviewsBySessionId = new Map();
-                    for (const review of this._normalizeSessionQaReviewRows(reviewRows, profilesMap)) {
-                        if (!review.sessionId) continue;
-                        const list = reviewsBySessionId.get(review.sessionId) || [];
-                        list.push(review);
-                        reviewsBySessionId.set(review.sessionId, list);
-                    }
-                    for (const [taskId, meta] of sessionMetaByTaskId.entries()) {
-                        const itemId = 'task-' + taskId;
-                        const reviews = [];
-                        const seenReviewIds = new Set();
-                        for (const sid of meta.sessionIds || []) {
-                            for (const review of reviewsBySessionId.get(sid) || []) {
-                                if (seenReviewIds.has(review.id)) continue;
-                                seenReviewIds.add(review.id);
-                                reviews.push(review);
-                            }
-                        }
-                        reviews.sort((a, b) => {
-                            const aTs = Date.parse(a.createdAt || '') || 0;
-                            const bTs = Date.parse(b.createdAt || '') || 0;
-                            if (bTs !== aTs) return bTs - aTs;
-                            return String(b.id).localeCompare(String(a.id));
-                        });
-                        sessionQaSeed[itemId] = {
-                            status: 'loaded',
-                            visible: reviews.length > 0,
-                            reviews,
-                            message: reviews.length > 0
-                                ? null
-                                : 'No Session QA reviews found for this task.',
-                            animateOpen: reviews.length > 0
-                        };
-                    }
+                    sessionQaSeed = this._buildSessionQaSeedFromReviewRows(
+                        sessionMetaByTaskId,
+                        keptReviewRows,
+                        profilesMap
+                    );
                 }
             }
         }
@@ -5435,7 +5481,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
