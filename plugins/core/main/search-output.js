@@ -34,6 +34,7 @@ const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
 const DASH_TASKS_PAGE_SIZE = 250;
 const DASH_QA_PAGE_SIZE = 250;
+const DASH_SESSIONS_PAGE_SIZE = 250;
 const DASH_DISPUTES_PAGE_SIZE = 250;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
@@ -112,6 +113,12 @@ const DASH_OUTPUT_KIND_CONFIG = {
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
+    },
+    sessions: {
+        label: 'Sessions',
+        tabBg: '#0891b2',
+        toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
 
@@ -1144,6 +1151,9 @@ const searchOutputCoreMethods = {
         for (const f of item.flags || []) {
             if (f.createdAt) timestamps.push(String(f.createdAt));
             if (f.resolutionAt) timestamps.push(String(f.resolutionAt));
+        }
+        for (const ts of item.sessionSearchTimestamps || []) {
+            if (ts) timestamps.push(String(ts));
         }
         return timestamps;
     },
@@ -2825,6 +2835,157 @@ const searchOutputCoreMethods = {
         }));
     },
 
+    _sessionItemsFromTasks(tasks, sessionMetaByTaskId) {
+        const metaMap = sessionMetaByTaskId || new Map();
+        return tasks.map((task) => {
+            const meta = metaMap.get(task.id) || {};
+            const timestamps = Array.isArray(meta.timestamps) ? meta.timestamps.filter(Boolean) : [];
+            const sortAt = timestamps.length > 0
+                ? timestamps.slice().sort().reverse()[0]
+                : (task.createdAt || '');
+            return {
+                id: 'task-' + task.id,
+                kind: 'sessions',
+                sortAt,
+                task,
+                selectedFeedbackId: null,
+                qaFeedback: null,
+                disputes: [],
+                flags: [],
+                hydrated: false,
+                sessionSourced: true,
+                sessionIds: Array.isArray(meta.sessionIds) ? meta.sessionIds.slice() : [],
+                sessionSearchTimestamps: timestamps
+            };
+        });
+    },
+
+    _normalizeSessionQaReviewRows(reviewRows, profilesMap) {
+        const reviews = (reviewRows || []).map((row) => {
+            const reviewerId = row.reviewer_id != null ? String(row.reviewer_id).trim() : '';
+            const profile = reviewerId && profilesMap ? profilesMap.get(reviewerId) : null;
+            return {
+                id: String(row.id || ''),
+                sessionId: row.session_id != null ? String(row.session_id) : '',
+                reviewerId,
+                reviewerName: profile
+                    ? (this._personChipName
+                        ? this._personChipName(profile, reviewerId)
+                        : (profile.full_name || ''))
+                    : '',
+                reviewerEmail: (profile && profile.email) || '',
+                verdict: row.verdict != null ? String(row.verdict) : '',
+                difficulty: row.difficulty != null && String(row.difficulty).trim()
+                    ? String(row.difficulty).trim()
+                    : null,
+                notes: row.notes != null ? String(row.notes) : '',
+                createdAt: row.created_at != null ? String(row.created_at) : ''
+            };
+        }).filter((review) => review.id);
+        reviews.sort((a, b) => {
+            const aTs = Date.parse(a.createdAt || '') || 0;
+            const bTs = Date.parse(b.createdAt || '') || 0;
+            if (bTs !== aTs) return bTs - aTs;
+            return String(b.id).localeCompare(String(a.id));
+        });
+        return reviews;
+    },
+
+    async _fetchSessionRowsForSearch(afterIso, beforeIso, scope, searchLimit, loadTracker) {
+        const teamIds = (scope && scope.teamIds) || [];
+        const teamVariants = teamIds.length > 0 ? dashPgInChunks(teamIds) : [null];
+        const byId = new Map();
+        const pageSize = searchLimit != null
+            ? Math.min(DASH_SESSIONS_PAGE_SIZE, Math.max(1, searchLimit))
+            : DASH_SESSIONS_PAGE_SIZE;
+        const hardCap = searchLimit != null ? searchLimit : null;
+        await this._fetchPaginatedQueryVariants({
+            variants: teamVariants.map((teamChunk) => ({ teamChunk })),
+            pageSize,
+            queryKey: 'sessions.select_slim',
+            channel: 'search',
+            buildQs: (variant, offset) => {
+                if (hardCap != null && byId.size >= hardCap) return null;
+                const remaining = hardCap != null ? Math.max(0, hardCap - byId.size) : pageSize;
+                if (hardCap != null && remaining <= 0) return null;
+                const qs = {
+                    order: 'created_at.desc',
+                    offset: String(offset),
+                    limit: String(hardCap != null ? Math.min(pageSize, remaining) : pageSize)
+                };
+                if (variant.teamChunk) {
+                    const f = dashPgInFilter(variant.teamChunk);
+                    if (!f) return null;
+                    qs.team_id = f;
+                }
+                this._addCreatedAtRange(qs, afterIso, beforeIso);
+                return qs;
+            },
+            onPage: (page) => {
+                for (const row of page) {
+                    if (!row || !row.id) continue;
+                    if (hardCap != null && byId.size >= hardCap && !byId.has(row.id)) continue;
+                    byId.set(row.id, row);
+                }
+                if (loadTracker) loadTracker.setCount(byId.size);
+            }
+        });
+        const rows = [...byId.values()];
+        Logger.debug('dashboard: sessions fetched (' + rows.length + ' rows)');
+        return rows;
+    },
+
+    async _fetchQaSessionResultRowsForSessionIds(sessionIds, loadTracker) {
+        const ids = [...new Set((sessionIds || []).filter(Boolean).map(String))];
+        if (ids.length === 0) return [];
+        const all = [];
+        const seen = new Set();
+        for (const chunk of dashPgInChunks(ids)) {
+            if (this._shouldStopSearch()) break;
+            const rows = await this._pgQuery('qa_session_results.select_slim', {
+                session_id: dashPgInFilter(chunk),
+                order: 'created_at.desc',
+                limit: '1000'
+            }, 'search');
+            for (const row of rows || []) {
+                if (!row || !row.id || seen.has(row.id)) continue;
+                seen.add(row.id);
+                all.push(row);
+            }
+            if (loadTracker) loadTracker.setCount(all.length);
+        }
+        return all;
+    },
+
+    _buildSessionMetaByTaskId(sessionRows) {
+        const metaByTaskId = new Map();
+        for (const row of sessionRows || []) {
+            const taskId = row && row.eval_task != null ? String(row.eval_task).trim() : '';
+            const sessionId = row && row.id != null ? String(row.id).trim() : '';
+            if (!taskId || !sessionId) continue;
+            let meta = metaByTaskId.get(taskId);
+            if (!meta) {
+                meta = { sessionIds: [], timestamps: [] };
+                metaByTaskId.set(taskId, meta);
+            }
+            if (!meta.sessionIds.includes(sessionId)) meta.sessionIds.push(sessionId);
+            if (row.created_at) meta.timestamps.push(String(row.created_at));
+        }
+        return metaByTaskId;
+    },
+
+    _applySearchResultLimit(items, searchLimit) {
+        if (searchLimit == null || !Number.isFinite(searchLimit) || searchLimit < 1) {
+            return items || [];
+        }
+        const list = Array.isArray(items) ? items.slice() : [];
+        if (list.length <= searchLimit) return list;
+        list.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
+        const trimmed = list.slice(0, searchLimit);
+        Logger.log('dashboard: search limit applied — kept ' + trimmed.length + ' of ' + list.length + ' card(s)');
+        return trimmed;
+    },
+
     _mergeBulkDisputesOntoItem(item, bulkRows, profilesMap) {
         const displays = this._disputeRowsToDisplays(bulkRows, profilesMap);
         const existing = item.disputes || [];
@@ -2857,9 +3018,13 @@ const searchOutputCoreMethods = {
             includeQa,
             includeDisputes,
             includeSeniorReview,
+            includeSessions,
             creationRows,
             feedbackRows,
             qaOnlyRows,
+            sessionTaskRows,
+            sessionMetaByTaskId,
+            sessionQaSeed,
             prefetchDisputeItems,
             prefetchFlagItems,
             afterIso,
@@ -2867,9 +3032,13 @@ const searchOutputCoreMethods = {
             openDisputesByTaskId,
             resolvedDisputeAtByTaskId,
             scope,
-            authorIds
+            authorIds,
+            searchLimit
         } = opts;
-        const allTaskRows = this._mergeSupplementalTaskRows(creationRows, qaOnlyRows);
+        const allTaskRows = this._mergeSupplementalTaskRows(
+            this._mergeSupplementalTaskRows(creationRows, qaOnlyRows),
+            sessionTaskRows
+        );
         let allFeedbackRows = Array.isArray(opts.allFeedbackRows)
             ? opts.allFeedbackRows.slice()
             : [...(feedbackRows || [])];
@@ -2899,6 +3068,13 @@ const searchOutputCoreMethods = {
             if (includeQa && (feedbackRows || []).length > 0) {
                 items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
             }
+            if (includeSessions) {
+                const sessionTasks = (sessionTaskRows || [])
+                    .map((row) => enrichedTasksById.get(row.id))
+                    .filter(Boolean);
+                items.push(...this._sessionItemsFromTasks(sessionTasks, sessionMetaByTaskId));
+                Logger.log('dashboard: session items built — ' + sessionTasks.length);
+            }
         } else if (items.length > 0) {
             this._setSearchLoadPhase('Assembling results…', items.length);
         }
@@ -2914,13 +3090,28 @@ const searchOutputCoreMethods = {
             resolvedDisputeAtByTaskId || new Map()
         );
         mergedItems = dateFilter.items;
+        mergedItems = this._applySearchResultLimit(mergedItems, searchLimit);
         const keptTaskIds = new Set(mergedItems.map((it) => it.task.id));
         allFeedbackRows = this._filterFeedbackRowsForTaskIds(allFeedbackRows, keptTaskIds);
         this._trimOpenDisputesToTarget(keptTaskIds);
 
+        const prunedSeed = {};
+        if (sessionQaSeed && typeof sessionQaSeed === 'object') {
+            for (const item of mergedItems) {
+                if (!item || !item.sessionSourced) continue;
+                const seed = sessionQaSeed[item.id];
+                if (seed) prunedSeed[item.id] = seed;
+            }
+        }
+
         const resultItems = mergedItems.map((item) => Object.assign({}, item, {
             hydrated: item.hydrated === true,
-            flags: item.flags || []
+            flags: item.flags || [],
+            sessionSourced: item.sessionSourced === true,
+            sessionIds: Array.isArray(item.sessionIds) ? item.sessionIds : [],
+            sessionSearchTimestamps: Array.isArray(item.sessionSearchTimestamps)
+                ? item.sessionSearchTimestamps
+                : []
         }));
 
         return {
@@ -2928,7 +3119,9 @@ const searchOutputCoreMethods = {
             allFeedbackRows,
             includeQa,
             includeDisputes,
-            includeSeniorReview
+            includeSeniorReview,
+            includeSessions,
+            sessionQaSeed: prunedSeed
         };
     },
 
@@ -2938,6 +3131,8 @@ const searchOutputCoreMethods = {
         includeQa,
         includeDisputes,
         includeSeniorReview,
+        includeSessions,
+        searchLimit,
         afterIso,
         beforeIso,
         scope
@@ -2966,7 +3161,8 @@ const searchOutputCoreMethods = {
             includeTaskCreation,
             includeQa,
             includeDisputes,
-            includeSeniorReview
+            includeSeniorReview,
+            includeSessions
         }));
 
         await this._awaitPrefetchKindsForSearch({ includeDisputes, includeSeniorReview });
@@ -3028,22 +3224,117 @@ const searchOutputCoreMethods = {
                 (tracker) => this._fetchQaFeedbackRowsForSearch(authorIds, afterIso, beforeIso, scope, tracker)
             )
             : Promise.resolve([]);
+        const sessionsPromise = includeSessions
+            ? this._trackSearchLoadPromise(
+                'Session rows',
+                (tracker) => this._fetchSessionRowsForSearch(afterIso, beforeIso, scope, searchLimit, tracker)
+            )
+            : Promise.resolve([]);
 
-        const [creationRows, feedbackRows] = await Promise.all([tasksPromise, qaPromise]);
+        const [creationRows, feedbackRows, sessionRows] = await Promise.all([
+            tasksPromise,
+            qaPromise,
+            sessionsPromise
+        ]);
+
+        let sessionMetaByTaskId = new Map();
+        let sessionTaskRows = [];
+        let sessionQaSeed = {};
+
+        if (includeSessions && !this._shouldStopSearch()) {
+            sessionMetaByTaskId = this._buildSessionMetaByTaskId(sessionRows || []);
+            let sessionTaskIds = [...sessionMetaByTaskId.keys()];
+            if (sessionTaskIds.length > 0) {
+                this._setSearchLoadPhase('Loading tasks from sessions…', sessionTaskIds.length);
+                let rows = await this._trackSearchLoadPromise(
+                    'Tasks from sessions (' + sessionTaskIds.length + ' id(s))',
+                    (tracker) => this._fetchTaskRowsByIds(sessionTaskIds, scope, undefined, tracker)
+                );
+                if (authorIds && authorIds.length > 0) {
+                    const authorSet = new Set(authorIds.map(String));
+                    rows = (rows || []).filter((row) => row && authorSet.has(String(row.created_by || '')));
+                }
+                sessionTaskRows = rows || [];
+                const keptTaskIds = new Set(sessionTaskRows.map((row) => row.id));
+                const keptMeta = new Map();
+                for (const [taskId, meta] of sessionMetaByTaskId.entries()) {
+                    if (keptTaskIds.has(taskId)) keptMeta.set(taskId, meta);
+                }
+                sessionMetaByTaskId = keptMeta;
+
+                const keptSessionIds = [];
+                for (const meta of sessionMetaByTaskId.values()) {
+                    for (const sid of meta.sessionIds || []) keptSessionIds.push(sid);
+                }
+                if (keptSessionIds.length > 0 && !this._shouldStopSearch()) {
+                    const reviewRows = await this._trackSearchLoadPromise(
+                        'Session QA reviews (' + keptSessionIds.length + ' session(s))',
+                        (tracker) => this._fetchQaSessionResultRowsForSessionIds(keptSessionIds, tracker)
+                    );
+                    const reviewerIds = [...new Set((reviewRows || [])
+                        .map((row) => row && row.reviewer_id)
+                        .filter(Boolean)
+                        .map(String))];
+                    const profileRows = reviewerIds.length > 0
+                        ? await this._fetchProfilesByIds(reviewerIds, 'search')
+                        : [];
+                    const profilesMap = this._buildProfilesMap(profileRows);
+                    const reviewsBySessionId = new Map();
+                    for (const review of this._normalizeSessionQaReviewRows(reviewRows, profilesMap)) {
+                        if (!review.sessionId) continue;
+                        const list = reviewsBySessionId.get(review.sessionId) || [];
+                        list.push(review);
+                        reviewsBySessionId.set(review.sessionId, list);
+                    }
+                    for (const [taskId, meta] of sessionMetaByTaskId.entries()) {
+                        const itemId = 'task-' + taskId;
+                        const reviews = [];
+                        const seenReviewIds = new Set();
+                        for (const sid of meta.sessionIds || []) {
+                            for (const review of reviewsBySessionId.get(sid) || []) {
+                                if (seenReviewIds.has(review.id)) continue;
+                                seenReviewIds.add(review.id);
+                                reviews.push(review);
+                            }
+                        }
+                        reviews.sort((a, b) => {
+                            const aTs = Date.parse(a.createdAt || '') || 0;
+                            const bTs = Date.parse(b.createdAt || '') || 0;
+                            if (bTs !== aTs) return bTs - aTs;
+                            return String(b.id).localeCompare(String(a.id));
+                        });
+                        sessionQaSeed[itemId] = {
+                            status: 'loaded',
+                            visible: reviews.length > 0,
+                            reviews,
+                            message: reviews.length > 0
+                                ? null
+                                : 'No Session QA reviews found for this task.',
+                            animateOpen: reviews.length > 0
+                        };
+                    }
+                }
+            }
+        }
 
         const assembleBase = {
             includeTaskCreation,
             includeQa,
             includeDisputes,
             includeSeniorReview,
+            includeSessions,
             creationRows: creationRows || [],
             feedbackRows: feedbackRows || [],
+            sessionTaskRows,
+            sessionMetaByTaskId,
+            sessionQaSeed,
             prefetchDisputeItems,
             prefetchFlagItems,
             afterIso,
             beforeIso,
             scope,
-            authorIds
+            authorIds,
+            searchLimit
         };
 
         if (this._shouldStopSearch()) {
@@ -3061,6 +3352,9 @@ const searchOutputCoreMethods = {
         }
 
         const creationIds = new Set((creationRows || []).map((r) => r.id));
+        for (const row of sessionTaskRows || []) {
+            if (row && row.id) creationIds.add(row.id);
+        }
         const qaTaskIds = [...new Set((feedbackRows || []).map((f) => f.eval_task_id).filter(Boolean))];
         const missingQaTaskIds = qaTaskIds.filter((id) => !creationIds.has(id));
         if (missingQaTaskIds.length > 0) {
@@ -3101,7 +3395,12 @@ const searchOutputCoreMethods = {
                     qaSortAt: '',
                     disputes: [],
                     flags: [],
-                    hydrated: item.hydrated === true
+                    hydrated: item.hydrated === true,
+                    sessionSourced: item.sessionSourced === true,
+                    sessionIds: Array.isArray(item.sessionIds) ? item.sessionIds.slice() : [],
+                    sessionSearchTimestamps: Array.isArray(item.sessionSearchTimestamps)
+                        ? item.sessionSearchTimestamps.slice()
+                        : []
                 };
                 byTask.set(taskId, merged);
             } else {
@@ -3109,6 +3408,18 @@ const searchOutputCoreMethods = {
             }
             merged.kinds.add(item.kind);
             if (item.sortAt > merged.sortAt) merged.sortAt = item.sortAt;
+            if (item.sessionSourced) merged.sessionSourced = true;
+            if (Array.isArray(item.sessionIds) && item.sessionIds.length > 0) {
+                const seen = new Set(merged.sessionIds);
+                for (const sid of item.sessionIds) {
+                    if (!sid || seen.has(sid)) continue;
+                    seen.add(sid);
+                    merged.sessionIds.push(sid);
+                }
+            }
+            if (Array.isArray(item.sessionSearchTimestamps) && item.sessionSearchTimestamps.length > 0) {
+                merged.sessionSearchTimestamps.push(...item.sessionSearchTimestamps);
+            }
             if (item.kind === 'qa') {
                 if (!merged.selectedFeedbackId || item.sortAt >= merged.qaSortAt) {
                     merged.selectedFeedbackId = item.selectedFeedbackId || null;
@@ -3149,7 +3460,10 @@ const searchOutputCoreMethods = {
                 qaFeedback: merged.qaFeedback,
                 disputes: merged.disputes,
                 flags: merged.flags,
-                hydrated: merged.hydrated === true
+                hydrated: merged.hydrated === true,
+                sessionSourced: merged.sessionSourced === true,
+                sessionIds: merged.sessionIds || [],
+                sessionSearchTimestamps: [...new Set(merged.sessionSearchTimestamps || [])]
             };
         });
         const folded = items.length - mergedItems.length;
@@ -3491,6 +3805,7 @@ const searchOutputCoreMethods = {
             includeQa: kindSet.has('qa'),
             includeDisputes: kindSet.has('dispute'),
             includeSeniorReview: kindSet.has('senior_review'),
+            includeSessions: kindSet.has('sessions'),
             authorCount: 0,
             authorLabels: [],
             searchKinds: dashKindMergeOrder().filter((k) => kindSet.has(k))
@@ -3532,6 +3847,7 @@ const searchOutputCoreMethods = {
         if (committed.includeQa) kinds.push('qa');
         if (committed.includeDisputes) kinds.push('dispute');
         if (committed.includeSeniorReview) kinds.push('senior_review');
+        if (committed.includeSessions) kinds.push('sessions');
         return kinds;
     },
 
@@ -4375,7 +4691,8 @@ function attachSearchOutputListeners(modal, dash) {
             ['#wf-dash-toggle-tasks', 'tasks'],
             ['#wf-dash-toggle-qa', 'qa'],
             ['#wf-dash-toggle-disputes', 'disputes'],
-            ['#wf-dash-toggle-senior-review', 'senior_review']
+            ['#wf-dash-toggle-senior-review', 'senior_review'],
+            ['#wf-dash-toggle-sessions', 'sessions']
         ].forEach(([selector, kind]) => {
             const toggle = dash._q(selector);
             if (toggle) toggle.addEventListener('click', () => {
@@ -5118,7 +5435,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '8.0',
+    _version: '9.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -112,6 +112,12 @@ const DASH_OUTPUT_KIND_CONFIG = {
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
+    },
+    sessions: {
+        label: 'Sessions',
+        tabBg: '#0891b2',
+        toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
 
@@ -1286,6 +1292,8 @@ const searchOutputResultsPaneMethods = {
                 includeQa: committed.includeQa,
                 includeDisputes: committed.includeDisputes,
                 includeSeniorReview: committed.includeSeniorReview,
+                includeSessions: committed.includeSessions,
+                searchLimit: committed.searchLimit,
                 afterLocal: committed.afterLocal,
                 beforeLocal: committed.beforeLocal,
                 searchKinds: committed.searchKinds,
@@ -4372,12 +4380,13 @@ const searchOutputResultsPaneMethods = {
         this._syncSearchLoadPhaseUi();
     },
 
-    _searchFetchSourcesLabel({ includeTaskCreation, includeQa, includeDisputes, includeSeniorReview }) {
+    _searchFetchSourcesLabel({ includeTaskCreation, includeQa, includeDisputes, includeSeniorReview, includeSessions }) {
         const parts = [];
         if (includeTaskCreation) parts.push('task creations');
         if (includeQa) parts.push('QA feedback');
         if (includeDisputes) parts.push('disputes');
         if (includeSeniorReview) parts.push('Sr Review flags');
+        if (includeSessions) parts.push('sessions');
         if (parts.length === 0) return 'Fetching data…';
         if (parts.length === 1) return 'Fetching ' + parts[0] + '…';
         if (parts.length === 2) return 'Fetching ' + parts[0] + ' and ' + parts[1] + '…';
@@ -4459,6 +4468,7 @@ const searchOutputResultsPaneMethods = {
             if (committed.includeQa) modes.push({ kind: 'qa', label: 'QA' });
             if (committed.includeDisputes) modes.push({ kind: 'dispute', label: 'disputes' });
             if (committed.includeSeniorReview) modes.push({ kind: 'senior_review', label: 'Sr Review' });
+            if (committed.includeSessions) modes.push({ kind: 'sessions', label: 'sessions' });
             const modeHtml = modes.map((mode, index) => {
                 const cfg = DASH_OUTPUT_KIND_CONFIG[mode.kind];
                 const hl = cfg ? cfg.textHighlight : '';
@@ -4516,7 +4526,43 @@ const searchOutputResultsPaneMethods = {
         const pageItems = this._getPaginatedViewItems();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsToolbarDerivedUi();
+        this._animateSeededSessionQaPanels(pageItems);
         this._schedulePageHydrate();
+    },
+
+    _applySessionQaSearchSeed(seedMap) {
+        if (!seedMap || typeof seedMap !== 'object') return;
+        if (!this._state.sessionQaUi) this._state.sessionQaUi = {};
+        let seeded = 0;
+        for (const [itemId, seed] of Object.entries(seedMap)) {
+            if (!itemId || !seed) continue;
+            const ui = this._getSessionQaUi(itemId);
+            ui.status = seed.status || 'loaded';
+            ui.reviews = Array.isArray(seed.reviews) ? seed.reviews.slice() : [];
+            ui.message = seed.message != null ? seed.message : null;
+            ui.visible = seed.visible === true;
+            if (seed.animateOpen && ui.visible) ui.animateOpen = true;
+            else delete ui.animateOpen;
+            seeded += 1;
+        }
+        if (seeded > 0) {
+            Logger.log('dashboard: session QA pre-seeded for ' + seeded + ' card(s)');
+        }
+    },
+
+    _animateSeededSessionQaPanels(items) {
+        const list = Array.isArray(items) ? items : [];
+        for (const item of list) {
+            if (!item || !item.id || !item.sessionSourced) continue;
+            const ui = this._getSessionQaUi(item.id);
+            if (!ui.visible || !this._sessionQaHasReviews(ui)) continue;
+            if (ui.animateOpen) {
+                delete ui.animateOpen;
+                this._animateSessionQaOpen(item.id);
+            } else {
+                this._syncSessionQaPanelOpen(item.id, true);
+            }
+        }
     },
 
     _dashCopyInnerHtml(value, highlight) {
@@ -5622,7 +5668,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '3.0',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

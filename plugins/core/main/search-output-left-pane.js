@@ -114,6 +114,12 @@ const DASH_OUTPUT_KIND_CONFIG = {
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
+    },
+    sessions: {
+        label: 'Sessions',
+        tabBg: '#0891b2',
+        toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
 
@@ -343,6 +349,7 @@ const searchOutputLeftPaneMethods = {
                                             <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
                                             <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
                                             <button type="button" id="wf-dash-toggle-senior-review" aria-pressed="false" style="${this._btnToggleStyle(false, 'senior_review')}">Sr Review</button>
+                                            <button type="button" id="wf-dash-toggle-sessions" aria-pressed="false" style="${this._btnToggleStyle(false, 'sessions')}">Sessions</button>
                                         </div>
                                     </div>
                                     <div>
@@ -381,6 +388,11 @@ const searchOutputLeftPaneMethods = {
                                             <input type="date" id="wf-dash-before" style="${input} min-width: 0;">
                                         </div>
                                         <button type="button" id="wf-dash-clear-dates" aria-label="Clear dates" title="Clear dates" style="${this._inputClearBtnStyle()} display: none;">&times;</button>
+                                    </div>
+                                    <div>
+                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;" for="wf-dash-search-limit">Limit</label>
+                                        <input type="number" id="wf-dash-search-limit" min="1" step="1" inputmode="numeric" placeholder="No limit" style="${input} width: 100%;">
+                                        <div style="${hint} margin-top: 4px;">Optional max result cards. Leave blank for no cap.</div>
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
@@ -840,6 +852,10 @@ const searchOutputLeftPaneMethods = {
             this._state.includeSeniorReview = !this._state.includeSeniorReview;
             this._syncOutputToggleUi();
             Logger.log('dashboard: Sr Review ' + (this._state.includeSeniorReview ? 'on' : 'off'));
+        } else if (kind === 'sessions') {
+            this._state.includeSessions = !this._state.includeSessions;
+            this._syncOutputToggleUi();
+            Logger.log('dashboard: Sessions ' + (this._state.includeSessions ? 'on' : 'off'));
         }
     },
 
@@ -852,6 +868,7 @@ const searchOutputLeftPaneMethods = {
         this._state.includeQa = kind === 'qa';
         this._state.includeDisputes = kind === 'dispute';
         this._state.includeSeniorReview = kind === 'senior_review';
+        this._state.includeSessions = kind === 'sessions';
         this._syncOutputToggleUi();
     },
 
@@ -860,6 +877,7 @@ const searchOutputLeftPaneMethods = {
         this._state.includeQa = true;
         this._state.includeDisputes = false;
         this._state.includeSeniorReview = false;
+        this._state.includeSessions = false;
         this._syncOutputToggleUi();
     },
 
@@ -879,6 +897,7 @@ const searchOutputLeftPaneMethods = {
         const qaBtn = this._q('#wf-dash-toggle-qa');
         const disputesBtn = this._q('#wf-dash-toggle-disputes');
         const seniorReviewBtn = this._q('#wf-dash-toggle-senior-review');
+        const sessionsBtn = this._q('#wf-dash-toggle-sessions');
         if (tasksBtn) {
             tasksBtn.setAttribute('aria-pressed', this._state.includeTasks ? 'true' : 'false');
             tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks, 'task_creation');
@@ -895,6 +914,27 @@ const searchOutputLeftPaneMethods = {
             seniorReviewBtn.setAttribute('aria-pressed', this._state.includeSeniorReview ? 'true' : 'false');
             seniorReviewBtn.style.cssText = this._btnToggleStyle(this._state.includeSeniorReview, 'senior_review');
         }
+        if (sessionsBtn) {
+            sessionsBtn.setAttribute('aria-pressed', this._state.includeSessions ? 'true' : 'false');
+            sessionsBtn.style.cssText = this._btnToggleStyle(this._state.includeSessions, 'sessions');
+        }
+    },
+
+    _readSearchLimitFromUi() {
+        const el = this._q('#wf-dash-search-limit');
+        if (!el) return null;
+        const raw = String(el.value || '').trim();
+        if (!raw) return null;
+        const n = parseInt(raw, 10);
+        if (!Number.isFinite(n) || n < 1) return null;
+        return n;
+    },
+
+    _syncSearchLimitUi() {
+        const el = this._q('#wf-dash-search-limit');
+        if (!el) return;
+        const limit = this._state.searchLimit;
+        el.value = (limit != null && Number.isFinite(limit) && limit >= 1) ? String(limit) : '';
     },
 
     async _resolveAuthorToken(raw) {
@@ -1546,7 +1586,8 @@ const searchOutputLeftPaneMethods = {
         const searchBtn = this._q('#wf-dash-search');
         if (searchBtn) {
             const noOutputTypes = !this._state.includeTasks && !this._state.includeQa
-                && !this._state.includeDisputes && !this._state.includeSeniorReview;
+                && !this._state.includeDisputes && !this._state.includeSeniorReview
+                && !this._state.includeSessions;
             const searchDisabled = this._state.loading
                 || noOutputTypes
                 || ((after || before) && !check.valid);
@@ -1804,6 +1845,8 @@ const searchOutputLeftPaneMethods = {
             includeTaskCreation: true,
             includeQa: false,
             includeDisputes: false,
+            includeSeniorReview: false,
+            includeSessions: false,
             authorCount: 0,
             authorLabels: [],
             searchKinds: ['task_creation']
@@ -1881,9 +1924,10 @@ const searchOutputLeftPaneMethods = {
             const includeQa = this._state.includeQa;
             const includeDisputes = this._state.includeDisputes;
             const includeSeniorReview = this._state.includeSeniorReview;
-            if (!includeTasks && !includeQa && !includeDisputes && !includeSeniorReview) {
+            const includeSessions = this._state.includeSessions;
+            if (!includeTasks && !includeQa && !includeDisputes && !includeSeniorReview && !includeSessions) {
                 this._logDashApiSkip('search', 'no contributor areas enabled');
-                this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, or Sr Review.');
+                this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, Sr Review, or Sessions.');
                 return;
             }
             const after = (this._q('#wf-dash-after') || {}).value || '';
@@ -1907,6 +1951,8 @@ const searchOutputLeftPaneMethods = {
             const authorLabels = everyoneMode
                 ? [DASH_EVERYONE_AUTHOR_LABEL]
                 : namedTokens.map((t) => this._personDisplayLabel(t));
+            const searchLimit = this._readSearchLimitFromUi();
+            this._state.searchLimit = searchLimit;
             const searchCommitted = {
                 authorIds,
                 authorCount: authorIds.length,
@@ -1916,13 +1962,16 @@ const searchOutputLeftPaneMethods = {
                 includeQa,
                 includeDisputes,
                 includeSeniorReview,
+                includeSessions,
+                searchLimit,
                 afterLocal: after,
                 beforeLocal: before,
                 searchKinds: [
                     includeTasks ? 'task_creation' : null,
                     includeQa ? 'qa' : null,
                     includeDisputes ? 'dispute' : null,
-                    includeSeniorReview ? 'senior_review' : null
+                    includeSeniorReview ? 'senior_review' : null,
+                    includeSessions ? 'sessions' : null
                 ].filter(Boolean)
             };
             this._state.committed = searchCommitted;
@@ -1952,20 +2001,26 @@ const searchOutputLeftPaneMethods = {
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped'); return; }
                 this._logDashApiClick('search',
                     (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-                    + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null, includeSeniorReview ? 'Sr Review' : null].filter(Boolean).join('+')
-                    + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
+                    + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null, includeSeniorReview ? 'Sr Review' : null, includeSessions ? 'sessions' : null].filter(Boolean).join('+')
+                    + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : '')
+                    + (searchLimit != null ? ' · limit ' + searchLimit : ''));
                 const searchResult = await this._fetchWorkerOutputSearch({
                     authorIds,
                     includeTaskCreation: includeTasks,
                     includeQa,
                     includeDisputes,
                     includeSeniorReview,
+                    includeSessions,
+                    searchLimit,
                     afterIso: rangeCheck.afterIso,
                     beforeIso: rangeCheck.beforeIso,
                     scope
                 });
                 const items = searchResult.items;
                 this._state.cachedItems = items;
+                if (searchResult.sessionQaSeed) {
+                    this._applySessionQaSearchSeed(searchResult.sessionQaSeed);
+                }
                 if (this._shouldStopSearch()) {
                     this._finishStoppedSearch(items);
                     return;
@@ -2029,9 +2084,13 @@ const searchOutputLeftPaneMethods = {
         this._state.includeQa = true;
         this._state.includeDisputes = false;
         this._state.includeSeniorReview = false;
+        this._state.includeSessions = false;
+        this._state.searchLimit = null;
         ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) quickRange.value = '';
+        const limitEl = this._q('#wf-dash-search-limit');
+        if (limitEl) limitEl.value = '';
         ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
             const itemsEl = this._msItemsEl(key);
             if (itemsEl) itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
@@ -2159,7 +2218,9 @@ const searchOutputLeftPaneMethods = {
         if (committed.includeQa) types.push('QA');
         if (committed.includeDisputes) types.push('disputes');
         if (committed.includeSeniorReview) types.push('Sr Review');
+        if (committed.includeSessions) types.push('sessions');
         if (types.length > 0) parts.push('types: ' + types.join('+'));
+        if (committed.searchLimit != null) parts.push('limit ' + committed.searchLimit);
         if (committed.afterLocal) parts.push('after ' + committed.afterLocal);
         if (committed.beforeLocal) parts.push('before ' + committed.beforeLocal);
         return parts.join(' · ');
@@ -2436,6 +2497,8 @@ const searchOutputLeftPaneMethods = {
             includeQa: Boolean(this._state.includeQa),
             includeDisputes: Boolean(this._state.includeDisputes),
             includeSeniorReview: Boolean(this._state.includeSeniorReview),
+            includeSessions: Boolean(this._state.includeSessions),
+            searchLimit: this._readSearchLimitFromUi(),
             teamIds: this._selectedFromList('search-teams'),
             projectIds: this._selectedFromList('search-projects'),
             envKeys: this._selectedFromList('search-envs')
@@ -2544,7 +2607,8 @@ const searchOutputLeftPaneMethods = {
         }
 
         if (!this._state.includeTasks && !this._state.includeQa
-            && !this._state.includeDisputes && !this._state.includeSeniorReview) {
+            && !this._state.includeDisputes && !this._state.includeSeniorReview
+            && !this._state.includeSessions) {
             this._setDiveProgress('Enable at least one output type on the Search tab.');
             return;
         }
@@ -2652,7 +2716,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '3.2',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

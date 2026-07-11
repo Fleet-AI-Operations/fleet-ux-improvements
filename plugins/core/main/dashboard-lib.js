@@ -15,12 +15,13 @@ const DASH_LIB_RETURN_TYPE_LABELS = {
 };
 const DASH_LIB_RETURN_TYPE_ORDER = ['accepted', 'returned', 'escalated', 'bugged'];
 const DASH_LIB_PROMPT_RATING_ORDER = ['Top 10%', 'Average', 'Bottom 10%'];
-const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review'];
+const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review', 'sessions'];
 const DASH_LIB_OUTPUT_KIND_LABELS = {
     task_creation: 'Task Creation',
     qa: 'QA',
     dispute: 'Disputes',
-    senior_review: 'Sr Review'
+    senior_review: 'Sr Review',
+    sessions: 'Sessions'
 };
 const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'dispute_resolved', 'flagged', 'senior_review_flagged', 'escalated', 'screenshots'];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
@@ -85,7 +86,7 @@ const DASH_LIB_SORT_OPTIONS = DASH_LIB_SORT_METRICS.flatMap((metric) => ([
 ]));
 
 /** Tab strip order when one task matches multiple output kinds. */
-const DASH_LIB_OUTPUT_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review'];
+const DASH_LIB_OUTPUT_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review', 'sessions'];
 
 const DASH_LIB_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
@@ -515,7 +516,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '4.2',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
