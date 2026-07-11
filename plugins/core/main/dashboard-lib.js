@@ -540,11 +540,78 @@ function dashLibRelativeAgo(iso, options) {
     return minLabel(Math.max(1, totalMins)) + ' ago';
 }
 
+const DASH_LIB_EPIC_CRITERION_LINE_RE = /^\[C\]\s+((?:\[NICE\]\s+)?.+:\s+(0\.0|1\.0)\/1\.0\s+—\s+.+)$/;
+const DASH_LIB_ACCUMULATOR_BLOCK_RE =
+    />>> (SUCCESS|FAILURE)_ACCUMULATOR >>>\s*([\s\S]*?)\s*<<< \1_ACCUMULATOR <<</g;
+
+function dashLibExtractAccumulatorChecks(blockBody) {
+    const body = String(blockBody || '');
+    const checks = [];
+    const dq = /"((?:\\.|[^"\\])*)"/g;
+    let m;
+    while ((m = dq.exec(body)) !== null) {
+        const line = String(m[1] || '')
+            .replace(/\\"/g, '"')
+            .replace(/\\'/g, "'")
+            .trim();
+        if (line.startsWith('[C]')) checks.push(line);
+    }
+    if (checks.length > 0) return checks;
+    const sq = /'((?:\\.|[^'\\])*)'/g;
+    while ((m = sq.exec(body)) !== null) {
+        const line = String(m[1] || '')
+            .replace(/\\'/g, "'")
+            .trim();
+        if (line.startsWith('[C]')) checks.push(line);
+    }
+    if (checks.length > 0) return checks;
+    for (const rawLine of body.split('\n')) {
+        const t = rawLine.trim().replace(/^["']|["'],?$/g, '').trim();
+        if (t.startsWith('[C]')) checks.push(t);
+    }
+    return checks;
+}
+
+/** Plain-text verifier stdout with ✅/❌ on check lines (caller HTML-escapes). */
+function dashLibFormatVerifierStdout(raw) {
+    const text = String(raw || '');
+    if (!text.trim()) return '';
+
+    let out = text;
+    let replacedAccum = false;
+    out = out.replace(DASH_LIB_ACCUMULATOR_BLOCK_RE, (full, kind, body) => {
+        replacedAccum = true;
+        const pass = String(kind).toUpperCase() === 'SUCCESS';
+        const emoji = pass ? '✅' : '❌';
+        const checks = dashLibExtractAccumulatorChecks(body);
+        if (checks.length === 0) return full;
+        return checks.map((c) => emoji + ' ' + c).join('\n');
+    });
+
+    const lines = out.split('\n');
+    const formatted = lines.map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        if (/^[✅❌]\s/.test(trimmed)) return line;
+        const epic = trimmed.match(DASH_LIB_EPIC_CRITERION_LINE_RE);
+        if (epic) {
+            const score = epic[2];
+            const emoji = score === '1.0' ? '✅' : '❌';
+            return emoji + ' ' + trimmed;
+        }
+        if (!replacedAccum && trimmed.startsWith('[C] ')) {
+            return '✅ ' + trimmed;
+        }
+        return line;
+    });
+    return formatted.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '6.1',
+    _version: '6.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -660,6 +727,7 @@ const plugin = {
             validateUniversalSearchRange: bind(self._validateUniversalSearchRange),
 
             qaTextBlockLabel: bind(self._qaTextBlockLabel),
+            formatVerifierStdout: dashLibFormatVerifierStdout,
 
             projectDisplayLabel: dashLibProjectDisplayLabel,
 
@@ -2437,5 +2505,13 @@ const plugin = {
         if (label === 'Task Feedback') return 'Approval Feedback';
         if (label === 'Attempted Actions') return 'Accepted Feedback';
         return label;
+    },
+
+    /**
+     * Format verifier stdout for display: SUCCESS/FAILURE_ACCUMULATOR [C] lines and
+     * Epic score lines get ✅ / ❌ prefixes. Returns plain text (caller escapes HTML).
+     */
+    _formatVerifierStdout(raw) {
+        return dashLibFormatVerifierStdout(raw);
     }
 };

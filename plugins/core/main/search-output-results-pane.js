@@ -1463,6 +1463,11 @@ const searchOutputResultsPaneMethods = {
             if (!includedIds.has(id)) newSessionQaUi[id] = this._state.sessionQaUi[id];
         }
         this._state.sessionQaUi = newSessionQaUi;
+        const newVerifierOutputUi = {};
+        for (const id of Object.keys(this._state.verifierOutputUi || {})) {
+            if (!includedIds.has(id)) newVerifierOutputUi[id] = this._state.verifierOutputUi[id];
+        }
+        this._state.verifierOutputUi = newVerifierOutputUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' included result(s) from cache — '
             + kept.length + ' remaining');
@@ -1490,6 +1495,11 @@ const searchOutputResultsPaneMethods = {
             if (keptIds.has(id)) newSessionQaUi[id] = this._state.sessionQaUi[id];
         }
         this._state.sessionQaUi = newSessionQaUi;
+        const newVerifierOutputUi = {};
+        for (const id of Object.keys(this._state.verifierOutputUi || {})) {
+            if (keptIds.has(id)) newVerifierOutputUi[id] = this._state.verifierOutputUi[id];
+        }
+        this._state.verifierOutputUi = newVerifierOutputUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' excluded result(s) from cache — '
             + filtered.length + ' remaining');
@@ -1506,6 +1516,7 @@ const searchOutputResultsPaneMethods = {
         if (this._state.hydrateUi) delete this._state.hydrateUi[id];
         if (this._state.userStoryUi) delete this._state.userStoryUi[id];
         if (this._state.sessionQaUi) delete this._state.sessionQaUi[id];
+        if (this._state.verifierOutputUi) delete this._state.verifierOutputUi[id];
         const taskId = item.task && item.task.id;
         if (taskId && this._state.cardUi) {
             const stillHasTask = this._state.cachedItems.some((it) => it.task && it.task.id === taskId);
@@ -1758,6 +1769,28 @@ const searchOutputResultsPaneMethods = {
             };
         }
         return this._state.sessionQaUi[id];
+    },
+
+    _getVerifierOutputUi(itemId) {
+        const id = String(itemId || '');
+        if (!id) {
+            return {
+                status: 'idle',
+                visible: false,
+                executions: [],
+                message: null
+            };
+        }
+        if (!this._state.verifierOutputUi) this._state.verifierOutputUi = {};
+        if (!this._state.verifierOutputUi[id]) {
+            this._state.verifierOutputUi[id] = {
+                status: 'idle',
+                visible: false,
+                executions: [],
+                message: null
+            };
+        }
+        return this._state.verifierOutputUi[id];
     },
 
     _screenshotUiKey(kind, id) {
@@ -2022,6 +2055,24 @@ const searchOutputResultsPaneMethods = {
         return `<span class="wf-dash-session-qa-inline-msg" data-wf-dash-session-qa-message="1">${dashEscHtml(text)}</span>`;
     },
 
+    _verifierOutputHasExecutions(ui) {
+        return Array.isArray(ui.executions) && ui.executions.length > 0;
+    },
+
+    _verifierOutputBtnLabel(ui) {
+        if (ui.status === 'loading') return 'Fetching Verifier Output…';
+        if (this._verifierOutputHasExecutions(ui) && (ui.status === 'loaded' || ui.status === 'error')) {
+            return ui.visible ? 'Hide Verifier Output' : 'Show Verifier Output';
+        }
+        return 'Fetch Verifier Output';
+    },
+
+    _verifierOutputInlineMessageHtml(ui) {
+        const text = ui && ui.message ? String(ui.message).trim() : '';
+        if (!text) return '';
+        return `<span class="wf-dash-verifier-output-inline-msg" data-wf-dash-verifier-output-message="1">${dashEscHtml(text)}</span>`;
+    },
+
     _userStoryControlsHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
         if (this._userStoryIsAbsent(ui)) {
@@ -2044,6 +2095,16 @@ const searchOutputResultsPaneMethods = {
             + `</div>`;
     },
 
+    _verifierOutputControlsHtml(itemId) {
+        const ui = this._getVerifierOutputUi(itemId);
+        const btnLabel = this._verifierOutputBtnLabel(ui);
+        const btnDisabled = ui.status === 'loading';
+        return `<div data-wf-dash-verifier-output-controls="1" style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">`
+            + `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
+            + this._verifierOutputInlineMessageHtml(ui)
+            + `</div>`;
+    },
+
     _userStoryPanelHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
         const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
@@ -2051,6 +2112,16 @@ const searchOutputResultsPaneMethods = {
         const panelOpen = ui.visible && !ui.animateOpen;
         return `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
             + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui)}</div>`
+            + '</div>';
+    },
+
+    _verifierOutputPanelHtml(itemId) {
+        const ui = this._getVerifierOutputUi(itemId);
+        const hasPanel = this._verifierOutputHasExecutions(ui) && (ui.status === 'loaded' || ui.status === 'error');
+        if (!hasPanel) return '';
+        const panelOpen = ui.visible && !ui.animateOpen;
+        return `<div data-wf-dash-verifier-output-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
+            + `<div data-wf-dash-verifier-output-inner">${this._verifierOutputPanelBodyHtml(itemId, ui)}</div>`
             + '</div>';
     },
 
@@ -2070,8 +2141,10 @@ const searchOutputResultsPaneMethods = {
                 <div data-wf-dash-supplemental-controls style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
                     ${this._userStoryControlsHtml(itemId)}
                     ${this._sessionQaControlsHtml(itemId)}
+                    ${this._verifierOutputControlsHtml(itemId)}
                 </div>
                 ${this._userStoryPanelHtml(itemId)}
+                ${this._verifierOutputPanelHtml(itemId)}
                 ${this._sessionQaPanelHtml(itemId)}
             </div>`;
     },
@@ -2124,6 +2197,14 @@ const searchOutputResultsPaneMethods = {
         );
     },
 
+    _animateVerifierOutputOpen(itemId) {
+        this._animateSupplementalPanelOpen(
+            itemId,
+            '[data-wf-dash-verifier-output-panel]',
+            () => this._getVerifierOutputUi(itemId).visible
+        );
+    },
+
     _syncSupplementalPanelOpen(itemId, panelSelector, visible) {
         const section = this._findSupplementalSection(itemId);
         const panel = section ? section.querySelector(panelSelector) : null;
@@ -2138,6 +2219,10 @@ const searchOutputResultsPaneMethods = {
 
     _syncSessionQaPanelOpen(itemId, visible) {
         this._syncSupplementalPanelOpen(itemId, '[data-wf-dash-session-qa-panel]', visible);
+    },
+
+    _syncVerifierOutputPanelOpen(itemId, visible) {
+        this._syncSupplementalPanelOpen(itemId, '[data-wf-dash-verifier-output-panel]', visible);
     },
 
     _patchUserStoryVisibility(itemId) {
@@ -2159,6 +2244,17 @@ const searchOutputResultsPaneMethods = {
         const btn = section.querySelector('[data-wf-dash-session-qa]');
         if (btn) btn.textContent = this._sessionQaBtnLabel(ui);
         this._syncSessionQaPanelOpen(itemId, ui.visible);
+        return true;
+    },
+
+    _patchVerifierOutputVisibility(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findSupplementalSection(itemId);
+        if (!section) return false;
+        const ui = this._getVerifierOutputUi(itemId);
+        const btn = section.querySelector('[data-wf-dash-verifier-output]');
+        if (btn) btn.textContent = this._verifierOutputBtnLabel(ui);
+        this._syncVerifierOutputPanelOpen(itemId, ui.visible);
         return true;
     },
 
@@ -2231,6 +2327,44 @@ const searchOutputResultsPaneMethods = {
         }
     },
 
+    _patchVerifierOutputControls(section, itemId) {
+        const ui = this._getVerifierOutputUi(itemId);
+        let controls = section.querySelector('[data-wf-dash-verifier-output-controls]');
+        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls]');
+        if (!controlsParent) return;
+        if (!controls) {
+            controlsParent.insertAdjacentHTML('beforeend', this._verifierOutputControlsHtml(itemId));
+            controls = section.querySelector('[data-wf-dash-verifier-output-controls]');
+        }
+        if (!controls) return;
+        let btn = controls.querySelector('[data-wf-dash-verifier-output]');
+        if (!btn) {
+            controls.innerHTML = `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
+            btn = controls.querySelector('[data-wf-dash-verifier-output]');
+        }
+        if (btn) {
+            btn.textContent = this._verifierOutputBtnLabel(ui);
+            if (ui.status === 'loading') {
+                btn.disabled = true;
+                btn.setAttribute('aria-busy', 'true');
+            } else {
+                btn.disabled = false;
+                btn.removeAttribute('aria-busy');
+            }
+        }
+        let msg = controls.querySelector('[data-wf-dash-verifier-output-message]');
+        const msgHtml = this._verifierOutputInlineMessageHtml(ui);
+        if (!msgHtml) {
+            if (msg) msg.remove();
+            return;
+        }
+        if (!msg) {
+            controls.insertAdjacentHTML('beforeend', msgHtml);
+        } else {
+            msg.textContent = String(ui.message || '').trim();
+        }
+    },
+
     _patchUserStoryPanel(section, itemId) {
         const ui = this._getUserStoryUi(itemId);
         const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
@@ -2241,11 +2375,13 @@ const searchOutputResultsPaneMethods = {
         }
         const bodyHtml = this._userStoryPanelBodyHtml(ui);
         if (!panel) {
+            const verifierPanel = section.querySelector('[data-wf-dash-verifier-output-panel]');
             const sessionPanel = section.querySelector('[data-wf-dash-session-qa-panel]');
+            const insertBefore = verifierPanel || sessionPanel;
             const panelMarkup = `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
                 + `<div data-wf-dash-user-story-inner">${bodyHtml}</div>`
                 + '</div>';
-            if (sessionPanel) sessionPanel.insertAdjacentHTML('beforebegin', panelMarkup);
+            if (insertBefore) insertBefore.insertAdjacentHTML('beforebegin', panelMarkup);
             else section.insertAdjacentHTML('beforeend', panelMarkup);
             panel = section.querySelector('[data-wf-dash-user-story-panel]');
         } else {
@@ -2253,6 +2389,30 @@ const searchOutputResultsPaneMethods = {
             if (inner) inner.innerHTML = bodyHtml;
         }
         if (panel) this._syncUserStoryPanelOpen(itemId, ui.visible);
+    },
+
+    _patchVerifierOutputPanel(section, itemId) {
+        const ui = this._getVerifierOutputUi(itemId);
+        const hasPanel = this._verifierOutputHasExecutions(ui) && (ui.status === 'loaded' || ui.status === 'error');
+        let panel = section.querySelector('[data-wf-dash-verifier-output-panel]');
+        if (!hasPanel) {
+            if (panel) panel.remove();
+            return;
+        }
+        const bodyHtml = this._verifierOutputPanelBodyHtml(itemId, ui);
+        if (!panel) {
+            const sessionPanel = section.querySelector('[data-wf-dash-session-qa-panel]');
+            const panelMarkup = `<div data-wf-dash-verifier-output-panel data-open="0" aria-hidden="true">`
+                + `<div data-wf-dash-verifier-output-inner">${bodyHtml}</div>`
+                + '</div>';
+            if (sessionPanel) sessionPanel.insertAdjacentHTML('beforebegin', panelMarkup);
+            else section.insertAdjacentHTML('beforeend', panelMarkup);
+            panel = section.querySelector('[data-wf-dash-verifier-output-panel]');
+        } else {
+            const inner = panel.querySelector('[data-wf-dash-verifier-output-inner]');
+            if (inner) inner.innerHTML = bodyHtml;
+        }
+        if (panel) this._syncVerifierOutputPanelOpen(itemId, ui.visible);
     },
 
     _patchSessionQaPanel(section, itemId) {
@@ -2292,6 +2452,15 @@ const searchOutputResultsPaneMethods = {
         if (!section) return false;
         this._patchSessionQaControls(section, itemId);
         this._patchSessionQaPanel(section, itemId);
+        return true;
+    },
+
+    _patchVerifierOutputSection(itemId) {
+        this._ensureUserStoryStyles();
+        const section = this._findSupplementalSection(itemId);
+        if (!section) return false;
+        this._patchVerifierOutputControls(section, itemId);
+        this._patchVerifierOutputPanel(section, itemId);
         return true;
     },
 
@@ -2367,6 +2536,176 @@ const searchOutputResultsPaneMethods = {
         return '<div class="wf-dash-session-qa-block">'
             + reviews.map((review) => this._sessionQaReviewBlockHtml(review, itemId)).join('')
             + '</div>';
+    },
+
+    _formatVerifierStdoutText(raw) {
+        const lib = typeof dashLib === 'function' ? dashLib() : (Context.dashboardLib || null);
+        if (lib && typeof lib.formatVerifierStdout === 'function') {
+            return lib.formatVerifierStdout(raw);
+        }
+        return String(raw || '');
+    },
+
+    _verifierOutputBlockHtml(execution, itemId) {
+        if (!execution || !execution.id) return '';
+        const passed = execution.success === true;
+        const blockStyle = passed ? this._qaAcceptedBlockStyle() : this._qaReturnedBlockStyle();
+        const badgeStyle = passed ? this._qaAcceptedBadgeStyle() : this._qaReturnedBadgeStyle();
+        const statusLabel = `<span style="${badgeStyle}">${passed ? 'Pass' : 'Fail'}</span>`;
+        const submittedHtml = execution.createdAt
+            ? dashTimestampWithDurationHtml(execution.createdAt, null)
+            : '';
+        const scoreText = execution.score != null && execution.score !== ''
+            ? String(execution.score)
+            : '';
+        const scoreHtml = scoreText
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Score')}<span>${dashEscHtml(scoreText)}</span></div>`
+            : '';
+        const timingText = execution.executionTimeMs != null && Number.isFinite(Number(execution.executionTimeMs))
+            ? String(Math.round(Number(execution.executionTimeMs))) + ' ms'
+            : '';
+        const timingHtml = timingText
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Time')}<span>${dashEscHtml(timingText)}</span></div>`
+            : '';
+        const sessionUrl = dashFleetQaSessionUrl(execution.sessionId);
+        const sessionLink = sessionUrl
+            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Session')}${this._extLinkHtml(sessionUrl, 'Open session in Fleet')}</div>`
+            : '';
+        const formatted = this._formatVerifierStdoutText(execution.stdout);
+        const stdoutHtml = formatted
+            ? `<div>
+                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Stdout')}${this._copyIconHtml(formatted)}</div>
+                <pre style="margin: 4px 0 0 0; padding: 8px 10px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.45; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--foreground, #0f172a); max-height: 320px; overflow: auto;">${dashEscHtml(formatted)}</pre>
+            </div>`
+            : '';
+        const blockId = 'verifier-output:' + execution.id;
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
+            + submittedHtml
+            + scoreHtml
+            + timingHtml;
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
+        const bodyHtml = sessionLink + stdoutHtml;
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 12px; padding: 10px 12px; border: ' + blockStyle.border + '; border-radius: 8px; background: ' + blockStyle.background + '; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            bodyHtml
+        );
+    },
+
+    _verifierOutputPanelBodyHtml(itemId, ui) {
+        const executions = Array.isArray(ui.executions) ? ui.executions : [];
+        if (executions.length === 0) return '';
+        return '<div class="wf-dash-verifier-output-block">'
+            + executions.map((execution) => this._verifierOutputBlockHtml(execution, itemId)).join('')
+            + '</div>';
+    },
+
+    _normalizeVerifierExecutionId(value) {
+        if (value == null) return '';
+        if (typeof value === 'object') {
+            if (value.id != null) return String(value.id).trim();
+            return '';
+        }
+        return String(value).trim();
+    },
+
+    async _fetchVerifierOutputsForTask(taskId) {
+        const id = String(taskId || '').trim();
+        if (!id) {
+            return { executions: [], message: 'No sessions found for this task.', reason: 'missing_task_id' };
+        }
+        const sessionRows = await this._pgQuery('sessions.select_slim', {
+            eval_task: 'eq.' + id,
+            order: 'created_at.desc',
+            limit: '1000'
+        }, 'ondemand');
+        const sessions = Array.isArray(sessionRows) ? sessionRows : [];
+        if (sessions.length === 0) {
+            return { executions: [], message: 'No sessions found for this task.', reason: 'no_sessions' };
+        }
+
+        const execIds = [];
+        const sessionByExecId = new Map();
+        const instanceFallbacks = [];
+        for (const row of sessions) {
+            const sessionId = row && row.id != null ? String(row.id).trim() : '';
+            const execId = this._normalizeVerifierExecutionId(row && row.verifier_execution);
+            if (execId && DASH_UUID_RE.test(execId)) {
+                if (!sessionByExecId.has(execId)) {
+                    execIds.push(execId);
+                    sessionByExecId.set(execId, sessionId);
+                }
+                continue;
+            }
+            const instance = row && row.instance != null ? String(row.instance).trim() : '';
+            if (instance) {
+                instanceFallbacks.push({ sessionId, instance });
+            }
+        }
+
+        const byId = new Map();
+        for (const chunk of dashPgInChunks(execIds)) {
+            const rows = await this._pgQuery('verifier_executions.select_output', {
+                id: dashPgInFilter(chunk),
+                order: 'created_at.desc',
+                limit: '1000'
+            }, 'ondemand');
+            for (const row of (Array.isArray(rows) ? rows : [])) {
+                const rid = row && row.id != null ? String(row.id).trim() : '';
+                if (!rid || byId.has(rid)) continue;
+                byId.set(rid, {
+                    id: rid,
+                    sessionId: sessionByExecId.get(rid) || '',
+                    createdAt: row.created_at != null ? String(row.created_at) : '',
+                    score: row.score,
+                    success: row.success === true,
+                    stdout: row.stdout != null ? String(row.stdout) : '',
+                    executionTimeMs: row.execution_time_ms,
+                    verifierId: row.verifier_id != null ? String(row.verifier_id) : ''
+                });
+            }
+        }
+
+        for (const fb of instanceFallbacks) {
+            const rows = await this._pgQuery('verifier_executions.select_output', {
+                environment_id: 'eq.' + fb.instance,
+                order: 'created_at.desc',
+                limit: '1'
+            }, 'ondemand');
+            const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+            if (!row) continue;
+            const rid = row.id != null ? String(row.id).trim() : '';
+            if (!rid || byId.has(rid)) continue;
+            byId.set(rid, {
+                id: rid,
+                sessionId: fb.sessionId || '',
+                createdAt: row.created_at != null ? String(row.created_at) : '',
+                score: row.score,
+                success: row.success === true,
+                stdout: row.stdout != null ? String(row.stdout) : '',
+                executionTimeMs: row.execution_time_ms,
+                verifierId: row.verifier_id != null ? String(row.verifier_id) : ''
+            });
+        }
+
+        const executions = [...byId.values()];
+        executions.sort((a, b) => {
+            const aTs = Date.parse(a.createdAt || '') || 0;
+            const bTs = Date.parse(b.createdAt || '') || 0;
+            if (bTs !== aTs) return bTs - aTs;
+            return String(b.id).localeCompare(String(a.id));
+        });
+
+        if (executions.length === 0) {
+            return {
+                executions: [],
+                message: 'No verifier runs found for this task.',
+                reason: 'no_executions'
+            };
+        }
+        return { executions, message: null, reason: null };
     },
 
     async _fetchSessionQaReviewsForTask(taskId) {
@@ -2627,6 +2966,74 @@ const searchOutputResultsPaneMethods = {
         }
         if (typeof this._refreshSessionQaFilterUi === 'function') {
             this._refreshSessionQaFilterUi();
+        }
+    },
+
+    async _toggleVerifierOutput(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return;
+        const item = this._findCachedItem(id) || this._findResultItem(id);
+        if (!item || !item.task) return;
+        const ui = this._getVerifierOutputUi(id);
+
+        if (this._verifierOutputHasExecutions(ui) && (ui.status === 'loaded' || ui.status === 'error')) {
+            ui.visible = !ui.visible;
+            delete ui.animateOpen;
+            Logger.log('dashboard: verifier output ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
+            if (!this._patchVerifierOutputVisibility(id)) {
+                this._patchTaskCard(id);
+            }
+            return;
+        }
+        if (ui.status === 'loading') {
+            this._logDashApiSkip('verifier-output-fetch', 'already loading', id);
+            return;
+        }
+
+        const taskId = String(item.task.id || '').trim();
+        if (!taskId) {
+            ui.status = 'error';
+            ui.executions = [];
+            ui.message = 'No sessions found for this task.';
+            ui.visible = false;
+            this._logDashApiSkip('verifier-output-fetch', 'missing task id', id);
+            if (!this._patchVerifierOutputSection(id)) this._patchTaskCard(id);
+            return;
+        }
+
+        this._logDashApiClick('verifier-output-fetch', taskId.slice(0, 8) + '…');
+        ui.status = 'loading';
+        ui.message = null;
+        if (!this._patchVerifierOutputSection(id)) this._patchTaskCard(id);
+
+        try {
+            const result = await this._fetchVerifierOutputsForTask(taskId);
+            ui.executions = Array.isArray(result.executions) ? result.executions : [];
+            ui.message = result.message || null;
+            ui.status = 'loaded';
+            ui.visible = this._verifierOutputHasExecutions(ui);
+            if (ui.visible) ui.animateOpen = true;
+            if (ui.executions.length > 0) {
+                Logger.log('dashboard: verifier output fetched — ' + id + ' (' + ui.executions.length + ' run(s))');
+            } else {
+                Logger.log('dashboard: verifier output empty — ' + id + ' (' + (result.reason || 'empty') + ')');
+            }
+        } catch (err) {
+            ui.status = 'error';
+            ui.executions = [];
+            ui.message = this._isDashSessionRefreshError(err)
+                ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
+                : 'Could not load Verifier Output.';
+            ui.visible = false;
+            Logger.warn('dashboard: verifier output fetch failed — ' + id, err);
+        }
+        if (!this._patchVerifierOutputSection(id)) this._patchTaskCard(id);
+        if (ui.animateOpen && ui.visible) {
+            delete ui.animateOpen;
+            this._animateVerifierOutputOpen(id);
+        } else {
+            delete ui.animateOpen;
+            this._syncVerifierOutputPanelOpen(id, ui.visible);
         }
     },
 
@@ -5671,7 +6078,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '4.1',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
