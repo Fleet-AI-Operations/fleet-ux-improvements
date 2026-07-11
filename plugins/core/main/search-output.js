@@ -40,7 +40,6 @@ const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
 const DASH_QA_SCREENSHOT_VIEW_URLS_PATH = '/orchestrator-private/v1/qa-feedback/screenshots/view-urls';
-const DASH_RESCUE_LIFECYCLE_STATUS = 'escalated-fleet-review';
 const DASH_RESCUE_LEASE_MS = 2 * 60 * 60 * 1000;
 const DASH_RESCUE_DISCARD_TEXT =
     'Rescuing and returning this task to the task writer for them to attempt to fix based on the previous QA or system feedback, or to get another pass at verifier generation if the task never made it to staging.';
@@ -5548,7 +5547,7 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) void dash._rehydrateCardFromButton(itemId);
                 return;
             }
-            const rescueBtn = e.target.closest('[data-wf-dash-attempt-rescue]');
+            const rescueBtn = e.target.closest('[data-wf-dash-rescue]');
             if (rescueBtn && modal.contains(rescueBtn)) {
                 e.stopPropagation();
                 e.preventDefault();
@@ -5742,7 +5741,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.6',
+    _version: '9.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

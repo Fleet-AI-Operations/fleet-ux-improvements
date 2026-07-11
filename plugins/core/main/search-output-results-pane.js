@@ -38,7 +38,6 @@ const DASH_DISPUTES_PAGE_SIZE = 250;
 const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
-const DASH_RESCUE_LIFECYCLE_STATUS = 'escalated-fleet-review';
 const DASH_QA_SCREENSHOT_VIEW_URLS_PATH = '/orchestrator-private/v1/qa-feedback/screenshots/view-urls';
 const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
 const DASH_FLAG_CREATE_REASON_KEYS = [
@@ -3375,20 +3374,19 @@ const searchOutputResultsPaneMethods = {
 
     _cardActionAreaHtml(itemId) {
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
-        const status = String((item && item.task && item.task.status) || '').trim().toLowerCase();
-        const showRescue = status === DASH_RESCUE_LIFECYCLE_STATUS;
+        const showRescue = this._taskEligibleForRescue(item && item.task);
         const rehydrating = Boolean(this._state.cardRehydrating && this._state.cardRehydrating[itemId]);
         const rescuing = Boolean(this._state.cardRescuing && this._state.cardRescuing[itemId]);
         const rehydrateDisabled = (rehydrating || rescuing) ? ' disabled aria-busy="true"' : '';
         const rescueDisabled = rescuing ? ' disabled aria-busy="true"' : '';
         const rehydrateTitle = rehydrating ? 'Rehydrating…' : 'Throw away and fully rehydrate this card';
         const rescueTitle = rescuing
-            ? 'Attempting rescue…'
+            ? 'Rescuing…'
             : 'Lease and discard this escalated task back to the writer (Other)';
         const rescueBtn = showRescue
-            ? `<button type="button" class="wf-dash-card-action wf-dash-card-action--attempt-rescue" data-wf-dash-attempt-rescue="1" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(rescueTitle)}" aria-label="${dashEscHtml(rescueTitle)}"${rescueDisabled}>
+            ? `<button type="button" class="wf-dash-card-action wf-dash-card-action--rescue" data-wf-dash-rescue="1" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(rescueTitle)}" aria-label="${dashEscHtml(rescueTitle)}"${rescueDisabled}>
                 <span class="wf-dash-card-action-inner">
-                    <span class="wf-dash-card-action-label">${rescuing ? 'Rescuing…' : 'Attempt Rescue'}</span>
+                    <span class="wf-dash-card-action-label">${rescuing ? 'Rescuing…' : 'Rescue'}</span>
                 </span>
             </button>`
             : '';
@@ -3417,29 +3415,45 @@ const searchOutputResultsPaneMethods = {
         </div>`;
     },
 
+    _mostRecentHumanQaFeedback(task) {
+        if (!task || !Array.isArray(task.allFeedback)) return null;
+        for (const entry of task.allFeedback) {
+            if (!entry) continue;
+            if (entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback)) continue;
+            if (entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure)) continue;
+            return entry;
+        }
+        return null;
+    },
+
+    _taskEligibleForRescue(task) {
+        const latest = this._mostRecentHumanQaFeedback(task);
+        if (!latest) return false;
+        return Boolean(latest.isEscalated || (latest.display && latest.display.isEscalated));
+    },
+
     async _attemptRescueFromCard(itemId) {
         const iid = String(itemId || '').trim();
         if (!iid) {
-            this._logDashApiSkip('attempt-rescue', 'missing item id');
+            this._logDashApiSkip('rescue', 'missing item id');
             return;
         }
         const item = this._findCachedItem(iid) || this._findResultItem(iid);
         if (!item || !item.task || !item.task.id) {
-            this._logDashApiSkip('attempt-rescue', 'task not found', iid);
+            this._logDashApiSkip('rescue', 'task not found', iid);
             return;
         }
-        const status = String(item.task.status || '').trim().toLowerCase();
-        if (status !== DASH_RESCUE_LIFECYCLE_STATUS) {
-            this._logDashApiSkip('attempt-rescue', 'status not ' + DASH_RESCUE_LIFECYCLE_STATUS, iid);
+        if (!this._taskEligibleForRescue(item.task)) {
+            this._logDashApiSkip('rescue', 'latest QA feedback is not escalated', iid);
             return;
         }
         if (!this._state.cardRescuing) this._state.cardRescuing = {};
         if (this._state.cardRescuing[iid]) {
-            this._logDashApiSkip('attempt-rescue', 'already in progress', iid);
+            this._logDashApiSkip('rescue', 'already in progress', iid);
             return;
         }
         const taskId = String(item.task.id).trim();
-        this._logDashApiClick('attempt-rescue', taskId.slice(0, 8) + '…');
+        this._logDashApiClick('rescue', taskId.slice(0, 8) + '…');
         this._state.cardRescuing[iid] = true;
         this._patchTaskCard(iid);
         try {
@@ -3451,9 +3465,9 @@ const searchOutputResultsPaneMethods = {
                 Logger.debug('search-output: rescue flag prefetch refresh failed — ' + iid, prefetchErr);
             }
             await this._rehydrateCard(iid);
-            Logger.log('search-output: attempt rescue complete — ' + taskId.slice(0, 8));
+            Logger.log('search-output: rescue complete — ' + taskId.slice(0, 8));
         } catch (e) {
-            Logger.warn('search-output: attempt rescue failed — ' + taskId.slice(0, 8), e);
+            Logger.warn('search-output: rescue failed — ' + taskId.slice(0, 8), e);
         } finally {
             delete this._state.cardRescuing[iid];
             this._patchTaskCard(iid);
@@ -6181,7 +6195,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.5',
+    _version: '5.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
