@@ -5207,16 +5207,9 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const expandLabel = expanded ? 'Collapse' : 'Expand';
 
-        const recencyActiveStyle = isRecency
-            ? 'background: var(--primary, #6366f1); color: #fff; border-color: var(--primary, #6366f1);'
-            : '';
-        const flatActiveStyle = !isRecency
-            ? 'background: var(--primary, #6366f1); color: #fff; border-color: var(--primary, #6366f1);'
-            : '';
-
-        const toggleHtml = '<div style="display: flex; gap: 0; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; overflow: hidden; flex-shrink: 0;">'
-            + '<button type="button" style="font-size: 10px; padding: 2px 7px; border: none; cursor: pointer; background: transparent; ' + recencyActiveStyle + '" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Recency</button>'
-            + '<button type="button" style="font-size: 10px; padding: 2px 7px; border: none; cursor: pointer; background: transparent; ' + flatActiveStyle + '" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Flat</button>'
+        const toggleHtml = '<div class="dv-seg-group" style="flex-shrink: 0;">'
+            + '<button type="button" class="dv-seg-btn dv-seg-btn--divider" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'true' : 'false') + '">Recency</button>'
+            + '<button type="button" class="dv-seg-btn" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'false' : 'true') + '">Flat</button>'
             + '</div>';
 
         return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
@@ -5475,7 +5468,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '8.0',
+    _version: '8.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
