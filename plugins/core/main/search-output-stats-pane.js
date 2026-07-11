@@ -1142,7 +1142,7 @@ const searchOutputStatsPaneMethods = {
             : '';
         const bodyContent = isScorecard
             ? ('<div data-wf-dash-stats-scorecard="' + dashEscHtml(chart.id) + '" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 60px; padding: 8px 12px; box-sizing: border-box;"></div>')
-            : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '"></canvas>');
+            : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '" style="display: block; width: 100%; height: 100%;"></canvas>');
         const bellSubtitle = chart.type === 'bellCurve'
             ? ('<div data-wf-dash-stats-chart-subtitle="' + dashEscHtml(chart.id) + '" style="display: none; font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px; text-align: center; line-height: 1.35;"></div>')
             : '';
@@ -2135,14 +2135,22 @@ const searchOutputStatsPaneMethods = {
         if (this._statsChartHasAlwaysVisibleLabels(chart)) {
             const circular = chart.type === 'pie' || chart.type === 'polarArea' || chart.type === 'radar';
             if (circular) {
-                const pad = 48;
+                // Side-biased padding: keep horizontal room for leader-line labels without
+                // crushing vertical space (pies are constrained by the smaller axis).
+                const sidePad = { top: 16, right: 60, bottom: 16, left: 60 };
                 const prev = config.options.layout && config.options.layout.padding;
-                const base = typeof prev === 'number' ? prev : 0;
                 config.options.layout = Object.assign({}, config.options.layout, {
                     padding: typeof prev === 'object' && prev
-                        ? Object.assign({ top: pad, right: pad, bottom: pad, left: pad }, prev)
-                        : Math.max(base, pad)
+                        ? Object.assign({}, sidePad, prev)
+                        : sidePad
                 });
+                // Out-labels carry name/value already; the bottom legend is redundant and
+                // collides with placed labels, so suppress it.
+                if (config.options.plugins.legend) {
+                    config.options.plugins.legend = Object.assign({}, config.options.plugins.legend, { display: false });
+                } else {
+                    config.options.plugins.legend = { display: false };
+                }
             }
             const plugin = this._statsValueLabelsPlugin(chart, theme || this._statsChartTheme());
             config.plugins = (config.plugins || []).concat([plugin]);
@@ -5479,7 +5487,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '8.3',
+    _version: '8.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
