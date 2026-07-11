@@ -1117,9 +1117,11 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _statsChartCardHtml(chart, validation, inStackRow, stackMinWidth, moveState) {
+    _statsChartCardHtml(chart, validation, inStackRow, stackMinWidth, moveState, visualHeightPx) {
         const box = this._panelBoxStyle();
-        const height = this._statsResolvedChartHeight(chart);
+        const height = visualHeightPx != null && Number.isFinite(visualHeightPx)
+            ? this._statsNormalizeChartHeight(visualHeightPx)
+            : this._statsResolvedChartHeight(chart);
         const disabled = validation && !validation.ok;
         const missingEntry = disabled && validation.missing[0] ? validation.missing[0] : null;
         const missingLabel = missingEntry ? missingEntry.label : '';
@@ -1202,6 +1204,9 @@ const searchOutputStatsPaneMethods = {
                 const rowAttr = group.kind === 'circular-row'
                     ? 'data-wf-dash-stats-circular-row="1"'
                     : 'data-wf-dash-stats-scorecard-row="1"';
+                const rowVisualHeight = group.charts.length > 1
+                    ? Math.max(...group.charts.map((c) => this._statsResolvedChartHeight(c)))
+                    : null;
                 html += '<div class="' + rowClass + '" ' + rowAttr + ' style="display: flex; flex-wrap: wrap; gap: '
                     + STATS_SCORECARD_ROW_GAP_PX + 'px; width: 100%; align-items: stretch; box-sizing: border-box;">';
                 for (const chart of group.charts) {
@@ -1212,7 +1217,8 @@ const searchOutputStatsPaneMethods = {
                             entry.validation,
                             true,
                             minWidth,
-                            moveStateFor(chart.id)
+                            moveStateFor(chart.id),
+                            rowVisualHeight
                         );
                     }
                 }
@@ -5468,7 +5474,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '8.1',
+    _version: '8.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
