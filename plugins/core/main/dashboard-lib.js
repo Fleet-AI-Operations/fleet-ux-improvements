@@ -8,12 +8,24 @@ const DASH_LIB_MIN_SUBSTRING_LENGTH = 3;
 const DASH_LIB_MS_PER_DAY = 86400000;
 
 const DASH_LIB_RETURN_TYPE_LABELS = {
-    accepted: 'Accepted',
-    returned: 'Returned',
-    escalated: 'Escalated',
-    bugged: 'Flagged as Bugged'
+    task_feedback: 'Task issues',
+    environment_feedback: 'Environment issues',
+    grading_feedback: 'Grading issues',
+    general_feedback: 'General feedback',
+    attempted_actions: 'Attempted actions',
+    bug_reason: 'Bug reason',
+    bug_description: 'Bug description'
 };
-const DASH_LIB_RETURN_TYPE_ORDER = ['accepted', 'returned', 'escalated', 'bugged'];
+const DASH_LIB_RETURN_TYPE_ORDER = [
+    'task_feedback',
+    'environment_feedback',
+    'grading_feedback',
+    'general_feedback',
+    'attempted_actions',
+    'bug_reason',
+    'bug_description'
+];
+const DASH_LIB_FEEDBACK_FIELD_KEYS = DASH_LIB_RETURN_TYPE_ORDER;
 const DASH_LIB_PROMPT_RATING_ORDER = ['Top 10%', 'Average', 'Bottom 10%'];
 const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review', 'sessions'];
 const DASH_LIB_OUTPUT_KIND_LABELS = {
@@ -684,7 +696,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '6.3',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -758,6 +770,7 @@ const plugin = {
             buildHighlightSegments: bind(self._buildHighlightSegments),
 
             returnTypeOf: bind(self._returnTypeOf),
+            feedbackFieldsOf: bind(self._feedbackFieldsOf),
             taskContributorIds: bind(self._taskContributorIds),
             taskPromptRatings: bind(self._taskPromptRatings),
             taskIssueLabels: bind(self._taskIssueLabels),
@@ -993,6 +1006,19 @@ const plugin = {
         return 'returned';
     },
 
+    _feedbackFieldsOf(entry) {
+        if (!entry || entry.isPositive) return [];
+        if (entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback)) return [];
+        if (entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure)) return [];
+        const fromDisplay = entry.display && Array.isArray(entry.display.feedbackFields)
+            ? entry.display.feedbackFields
+            : null;
+        if (fromDisplay) {
+            return fromDisplay.filter((key) => DASH_LIB_FEEDBACK_FIELD_KEYS.includes(key));
+        }
+        return [];
+    },
+
     _taskContributorIds(task) {
         const ids = new Set();
         if (task.author && task.author.id) ids.add(task.author.id);
@@ -1021,7 +1047,11 @@ const plugin = {
     },
 
     _taskReturnTypes(task) {
-        return [...new Set((task.allFeedback || []).map((e) => this._returnTypeOf(e)).filter(Boolean))];
+        const fields = new Set();
+        for (const entry of task.allFeedback || []) {
+            for (const key of this._feedbackFieldsOf(entry)) fields.add(key);
+        }
+        return [...fields];
     },
 
     _taskPassesFilterDimensions(task, draft, listBounds, excludeKey) {
@@ -1723,8 +1753,7 @@ const plugin = {
                 if (entry.display && entry.display.qualityRating) {
                     promptRatings.add(entry.display.qualityRating);
                 }
-                const returnType = this._returnTypeOf(entry);
-                if (returnType) returnTypes.add(returnType);
+                for (const field of this._feedbackFieldsOf(entry)) returnTypes.add(field);
                 if (!entry.isPositive) {
                     const display = entry.display;
                     if (display) {
@@ -2435,13 +2464,35 @@ const plugin = {
         }
         const data = dashLibParseFeedbackData(feedbackRow.feedback_data);
         const textBlocks = [];
-        if (data.bug_reason) textBlocks.push({ label: 'Bug Reason', text: dashLibNormalizeNewlines(data.bug_reason) });
-        if (data.bug_description) textBlocks.push({ label: 'Bug Description', text: dashLibNormalizeNewlines(data.bug_description) });
-        if (data.attempted_actions) textBlocks.push({ label: 'Attempted Actions', text: dashLibNormalizeNewlines(data.attempted_actions) });
-        if (data.task_feedback) textBlocks.push({ label: 'Task Feedback', text: dashLibNormalizeNewlines(data.task_feedback) });
-        if (data.general_feedback) textBlocks.push({ label: 'General Feedback', text: dashLibNormalizeNewlines(data.general_feedback) });
-        if (data.environment_feedback) textBlocks.push({ label: 'Environment Feedback', text: dashLibNormalizeNewlines(data.environment_feedback) });
-        if (data.grading_feedback) textBlocks.push({ label: 'Grading Feedback', text: dashLibNormalizeNewlines(data.grading_feedback) });
+        const feedbackFields = [];
+        if (data.bug_reason) {
+            textBlocks.push({ label: 'Bug Reason', text: dashLibNormalizeNewlines(data.bug_reason) });
+            feedbackFields.push('bug_reason');
+        }
+        if (data.bug_description) {
+            textBlocks.push({ label: 'Bug Description', text: dashLibNormalizeNewlines(data.bug_description) });
+            feedbackFields.push('bug_description');
+        }
+        if (data.attempted_actions) {
+            textBlocks.push({ label: 'Attempted Actions', text: dashLibNormalizeNewlines(data.attempted_actions) });
+            feedbackFields.push('attempted_actions');
+        }
+        if (data.task_feedback) {
+            textBlocks.push({ label: 'Task Feedback', text: dashLibNormalizeNewlines(data.task_feedback) });
+            feedbackFields.push('task_feedback');
+        }
+        if (data.general_feedback) {
+            textBlocks.push({ label: 'General Feedback', text: dashLibNormalizeNewlines(data.general_feedback) });
+            feedbackFields.push('general_feedback');
+        }
+        if (data.environment_feedback) {
+            textBlocks.push({ label: 'Environment Feedback', text: dashLibNormalizeNewlines(data.environment_feedback) });
+            feedbackFields.push('environment_feedback');
+        }
+        if (data.grading_feedback) {
+            textBlocks.push({ label: 'Grading Feedback', text: dashLibNormalizeNewlines(data.grading_feedback) });
+            feedbackFields.push('grading_feedback');
+        }
         const labels = Array.isArray(data.rejection_reason_labels)
             ? data.rejection_reason_labels.map(String)
             : (data.rejection_reason_label ? [String(data.rejection_reason_label)] : []);
@@ -2467,6 +2518,7 @@ const plugin = {
             versionNo: versionInfo.displayVersionNo || versionInfo.versionNo,
             totalVersions: versionInfo.totalVersions,
             textBlocks,
+            feedbackFields,
             rejectionBadges: labels.filter(Boolean),
             feedbackAt: String(feedbackRow.created_at || ''),
             qaReviewerId: String((qaReviewer && qaReviewer.id) || feedbackRow.created_by || ''),

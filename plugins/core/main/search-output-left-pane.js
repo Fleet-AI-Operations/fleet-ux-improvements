@@ -829,7 +829,7 @@ const searchOutputLeftPaneMethods = {
             'filter-prompt-ratings': 'Prompt rating',
             'filter-qa-helpfulness': 'QA Helpfulness',
             'filter-task-issues': 'Task issues',
-            'filter-return-types': 'Return types',
+            'filter-return-types': 'Issue areas',
             'filter-v1-creation-time': 'v1 Creation Time Minutes',
             'filter-qa-time': 'QA Time Minutes',
             'filter-dispute-resolution-time': 'Dispute Resolution Time Minutes'
@@ -2699,7 +2699,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.2',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
