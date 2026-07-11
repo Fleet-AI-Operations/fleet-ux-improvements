@@ -2549,7 +2549,8 @@ const searchOutputResultsPaneMethods = {
 
     _verifierOutputBlockHtml(execution, itemId) {
         if (!execution || !execution.id) return '';
-        const passed = execution.success === true;
+        // Pass/fail is the numeric score (1 / 1.0). `success` only means the verifier process ran.
+        const passed = Number(execution.score) === 1;
         const blockStyle = passed ? this._qaAcceptedBlockStyle() : this._qaReturnedBlockStyle();
         const badgeStyle = passed ? this._qaAcceptedBadgeStyle() : this._qaReturnedBadgeStyle();
         const statusLabel = `<span style="${badgeStyle}">${passed ? 'Pass' : 'Fail'}</span>`;
@@ -6080,7 +6081,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.1',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

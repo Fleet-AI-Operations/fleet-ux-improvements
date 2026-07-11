@@ -541,77 +541,150 @@ function dashLibRelativeAgo(iso, options) {
 }
 
 const DASH_LIB_EPIC_CRITERION_LINE_RE = /^\[C\]\s+((?:\[NICE\]\s+)?.+:\s+(0\.0|1\.0)\/1\.0\s+—\s+.+)$/;
-const DASH_LIB_ACCUMULATOR_BLOCK_RE =
-    />>> (SUCCESS|FAILURE)_ACCUMULATOR >>>\s*([\s\S]*?)\s*<<< \1_ACCUMULATOR <<</g;
+const DASH_LIB_VERIFY_SECTION_RE =
+    /<<<\s*VERIFY_([A-Za-z0-9_-]+)\s*<<<([\s\S]*?)>>>\s*VERIFY_\1\s*>>>/g;
+const DASH_LIB_ACCUMULATOR_IN_SECTION_RE =
+    />>>\s*(SUCCESS|ERROR|FAILURE)_ACCUMULATOR\s*>>>\s*([\s\S]*?)\s*<<<\s*\1_ACCUMULATOR\s*<</g;
+
+function dashLibCapitalizeAppLabel(appKey) {
+    const key = String(appKey || '').trim();
+    if (!key) return '';
+    return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function dashLibStripVerifierCheckPrefix(text) {
+    return String(text || '')
+        .replace(/^(?:PASS|FAIL)\s*:\s*/i, '')
+        .replace(/^\[(?:C|X)\]\s*/i, '')
+        .trim();
+}
 
 function dashLibExtractAccumulatorChecks(blockBody) {
     const body = String(blockBody || '');
     const checks = [];
+    const pushIfCheck = (line) => {
+        const raw = String(line || '').trim();
+        if (!raw) return;
+        if (/^\[(?:C|X)\]/i.test(raw) || /^(?:PASS|FAIL)\s*:/i.test(raw)) {
+            checks.push(raw);
+        }
+    };
     const dq = /"((?:\\.|[^"\\])*)"/g;
     let m;
     while ((m = dq.exec(body)) !== null) {
-        const line = String(m[1] || '')
-            .replace(/\\"/g, '"')
-            .replace(/\\'/g, "'")
-            .trim();
-        if (line.startsWith('[C]')) checks.push(line);
+        pushIfCheck(m[1].replace(/\\"/g, '"').replace(/\\'/g, "'"));
     }
-    if (checks.length > 0) return checks;
     const sq = /'((?:\\.|[^'\\])*)'/g;
     while ((m = sq.exec(body)) !== null) {
-        const line = String(m[1] || '')
-            .replace(/\\'/g, "'")
-            .trim();
-        if (line.startsWith('[C]')) checks.push(line);
+        pushIfCheck(m[1].replace(/\\'/g, "'"));
     }
     if (checks.length > 0) return checks;
     for (const rawLine of body.split('\n')) {
-        const t = rawLine.trim().replace(/^["']|["'],?$/g, '').trim();
-        if (t.startsWith('[C]')) checks.push(t);
+        pushIfCheck(rawLine.trim().replace(/^["']|["'],?$/g, ''));
     }
     return checks;
 }
 
-/** Plain-text verifier stdout with ✅/❌ on check lines (caller HTML-escapes). */
-function dashLibFormatVerifierStdout(raw) {
-    const text = String(raw || '');
-    if (!text.trim()) return '';
+function dashLibParseLoosePassFailLines(sectionBody) {
+    const successes = [];
+    const failures = [];
+    for (const rawLine of String(sectionBody || '').split('\n')) {
+        const trimmed = rawLine.trim();
+        if (!trimmed) continue;
+        if (/^>>>\s*(SUCCESS|ERROR|FAILURE)_ACCUMULATOR/i.test(trimmed)) continue;
+        if (/^<<<\s*(SUCCESS|ERROR|FAILURE)_ACCUMULATOR/i.test(trimmed)) continue;
+        if (/^App\s+/i.test(trimmed)) continue;
+        const passMatch = trimmed.match(/^(?:PASS\s*:\s*)?(\[C\].+)$/i);
+        if (passMatch) {
+            successes.push(passMatch[1]);
+            continue;
+        }
+        const failMatch = trimmed.match(/^(?:FAIL\s*:\s*)?(\[X\].+)$/i);
+        if (failMatch) {
+            failures.push(failMatch[1]);
+        }
+    }
+    return { successes, failures };
+}
 
-    let out = text;
-    let replacedAccum = false;
-    out = out.replace(DASH_LIB_ACCUMULATOR_BLOCK_RE, (full, kind, body) => {
-        replacedAccum = true;
-        const pass = String(kind).toUpperCase() === 'SUCCESS';
-        const emoji = pass ? '✅' : '❌';
-        const checks = dashLibExtractAccumulatorChecks(body);
-        if (checks.length === 0) return full;
-        return checks.map((c) => emoji + ' ' + c).join('\n');
-    });
+function dashLibFormatAppSection(appKey, sectionBody) {
+    const successes = [];
+    const failures = [];
+    const body = String(sectionBody || '');
+    let m;
+    const accumRe = new RegExp(DASH_LIB_ACCUMULATOR_IN_SECTION_RE.source, 'g');
+    while ((m = accumRe.exec(body)) !== null) {
+        const kind = String(m[1] || '').toUpperCase();
+        const checks = dashLibExtractAccumulatorChecks(m[2]);
+        const target = kind === 'SUCCESS' ? successes : failures;
+        for (const c of checks) target.push(c);
+    }
+    const loose = dashLibParseLoosePassFailLines(body);
+    for (const c of loose.successes) {
+        if (!successes.includes(c)) successes.push(c);
+    }
+    for (const c of loose.failures) {
+        if (!failures.includes(c)) failures.push(c);
+    }
+    if (successes.length === 0 && failures.length === 0) return '';
+    const lines = [dashLibCapitalizeAppLabel(appKey) + ':'];
+    for (const c of successes) {
+        const text = dashLibStripVerifierCheckPrefix(c);
+        if (text) lines.push('✅ ' + text);
+    }
+    for (const c of failures) {
+        const text = dashLibStripVerifierCheckPrefix(c);
+        if (text) lines.push('❌ ' + text);
+    }
+    return lines.join('\n');
+}
 
-    const lines = out.split('\n');
+function dashLibFormatVerifierStdoutEpicFallback(text) {
+    const lines = String(text || '').split('\n');
     const formatted = lines.map((line) => {
         const trimmed = line.trim();
         if (!trimmed) return line;
-        if (/^[✅❌]\s/.test(trimmed)) return line;
         const epic = trimmed.match(DASH_LIB_EPIC_CRITERION_LINE_RE);
         if (epic) {
             const score = epic[2];
             const emoji = score === '1.0' ? '✅' : '❌';
-            return emoji + ' ' + trimmed;
-        }
-        if (!replacedAccum && trimmed.startsWith('[C] ')) {
-            return '✅ ' + trimmed;
+            return emoji + ' ' + dashLibStripVerifierCheckPrefix(trimmed);
         }
         return line;
     });
     return formatted.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/** Plain-text verifier stdout grouped by app (caller HTML-escapes). */
+function dashLibFormatVerifierStdout(raw) {
+    const text = String(raw || '');
+    if (!text.trim()) return '';
+
+    const sections = [];
+    let m;
+    const sectionRe = new RegExp(DASH_LIB_VERIFY_SECTION_RE.source, 'g');
+    while ((m = sectionRe.exec(text)) !== null) {
+        const formatted = dashLibFormatAppSection(m[1], m[2]);
+        if (formatted) sections.push(formatted);
+    }
+
+    if (sections.length === 0) {
+        return dashLibFormatVerifierStdoutEpicFallback(text);
+    }
+
+    const combined = text.match(/Combined result:\s*[^\n]+/i);
+    let out = sections.join('\n\n');
+    if (combined) {
+        out += '\n\n' + combined[0].trim();
+    }
+    return out.trim();
+}
+
 const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
