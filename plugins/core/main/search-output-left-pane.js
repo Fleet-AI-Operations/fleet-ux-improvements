@@ -392,7 +392,6 @@ const searchOutputLeftPaneMethods = {
                                     <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;" for="wf-dash-search-limit">Limit</label>
                                         <input type="number" id="wf-dash-search-limit" min="1" step="1" inputmode="numeric" placeholder="No limit" style="${input} width: 100%;">
-                                        <div style="${hint} margin-top: 4px;">Optional max result cards. Leave blank for no cap.</div>
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
@@ -830,7 +829,7 @@ const searchOutputLeftPaneMethods = {
             'filter-prompt-ratings': 'Prompt rating',
             'filter-qa-helpfulness': 'QA Helpfulness',
             'filter-task-issues': 'Task issues',
-            'filter-return-types': 'Return types',
+            'filter-return-types': 'Issue areas',
             'filter-v1-creation-time': 'v1 Creation Time Minutes',
             'filter-qa-time': 'QA Time Minutes',
             'filter-dispute-resolution-time': 'Dispute Resolution Time Minutes'
@@ -2700,7 +2699,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.1',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

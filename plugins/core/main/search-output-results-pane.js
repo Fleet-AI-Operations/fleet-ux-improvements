@@ -1468,6 +1468,11 @@ const searchOutputResultsPaneMethods = {
             if (!includedIds.has(id)) newVerifierOutputUi[id] = this._state.verifierOutputUi[id];
         }
         this._state.verifierOutputUi = newVerifierOutputUi;
+        const newSupplementalMsgUi = {};
+        for (const id of Object.keys(this._state.supplementalActionMsgUi || {})) {
+            if (!includedIds.has(id)) newSupplementalMsgUi[id] = this._state.supplementalActionMsgUi[id];
+        }
+        this._state.supplementalActionMsgUi = newSupplementalMsgUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' included result(s) from cache — '
             + kept.length + ' remaining');
@@ -1500,6 +1505,11 @@ const searchOutputResultsPaneMethods = {
             if (keptIds.has(id)) newVerifierOutputUi[id] = this._state.verifierOutputUi[id];
         }
         this._state.verifierOutputUi = newVerifierOutputUi;
+        const newSupplementalMsgUi = {};
+        for (const id of Object.keys(this._state.supplementalActionMsgUi || {})) {
+            if (keptIds.has(id)) newSupplementalMsgUi[id] = this._state.supplementalActionMsgUi[id];
+        }
+        this._state.supplementalActionMsgUi = newSupplementalMsgUi;
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'search-defaults' });
         Logger.log('search-output: dropped ' + dropped + ' excluded result(s) from cache — '
             + filtered.length + ' remaining');
@@ -1514,9 +1524,12 @@ const searchOutputResultsPaneMethods = {
         if (!item) return;
         this._state.cachedItems = cached.filter((it) => it.id !== id);
         if (this._state.hydrateUi) delete this._state.hydrateUi[id];
+        if (this._state.cardRehydrating) delete this._state.cardRehydrating[id];
+        if (this._state.cardRescuing) delete this._state.cardRescuing[id];
         if (this._state.userStoryUi) delete this._state.userStoryUi[id];
         if (this._state.sessionQaUi) delete this._state.sessionQaUi[id];
         if (this._state.verifierOutputUi) delete this._state.verifierOutputUi[id];
+        if (this._state.supplementalActionMsgUi) delete this._state.supplementalActionMsgUi[id];
         const taskId = item.task && item.task.id;
         if (taskId && this._state.cardUi) {
             const stillHasTask = this._state.cachedItems.some((it) => it.task && it.task.id === taskId);
@@ -2049,12 +2062,6 @@ const searchOutputResultsPaneMethods = {
         return 'Fetch Session QA';
     },
 
-    _sessionQaInlineMessageHtml(ui) {
-        const text = ui && ui.message ? String(ui.message).trim() : '';
-        if (!text) return '';
-        return `<span class="wf-dash-session-qa-inline-msg" data-wf-dash-session-qa-message="1">${dashEscHtml(text)}</span>`;
-    },
-
     _verifierOutputHasExecutions(ui) {
         return Array.isArray(ui.executions) && ui.executions.length > 0;
     },
@@ -2067,18 +2074,70 @@ const searchOutputResultsPaneMethods = {
         return 'Fetch Verifier Output';
     },
 
-    _verifierOutputInlineMessageHtml(ui) {
+    _getSupplementalActionMsgUi(itemId) {
+        const id = String(itemId || '').trim();
+        if (!id) return { message: null, source: null, tone: null };
+        if (!this._state.supplementalActionMsgUi) this._state.supplementalActionMsgUi = {};
+        if (!this._state.supplementalActionMsgUi[id]) {
+            this._state.supplementalActionMsgUi[id] = { message: null, source: null, tone: null };
+        }
+        return this._state.supplementalActionMsgUi[id];
+    },
+
+    _setSupplementalActionMessage(itemId, source, message, tone) {
+        const id = String(itemId || '').trim();
+        if (!id || !source) return;
+        const ui = this._getSupplementalActionMsgUi(id);
+        const text = message != null ? String(message).trim() : '';
+        if (text) {
+            ui.message = text;
+            ui.source = source;
+            ui.tone = tone === 'error' ? 'error' : 'muted';
+            return;
+        }
+        // Most recent action had nothing to show — clear shared slot.
+        ui.message = null;
+        ui.source = null;
+        ui.tone = null;
+    },
+
+    _supplementalActionMessageHtml(itemId) {
+        const ui = this._getSupplementalActionMsgUi(itemId);
         const text = ui && ui.message ? String(ui.message).trim() : '';
         if (!text) return '';
-        return `<span class="wf-dash-verifier-output-inline-msg" data-wf-dash-verifier-output-message="1">${dashEscHtml(text)}</span>`;
+        const tone = ui.tone === 'error' ? 'error' : 'muted';
+        return `<span data-wf-dash-supplemental-action-msg="1" data-tone="${tone}">${dashEscHtml(text)}</span>`;
+    },
+
+    _patchSupplementalActionMessage(sectionOrItemId, maybeItemId) {
+        let section = sectionOrItemId;
+        let itemId = maybeItemId;
+        if (typeof sectionOrItemId === 'string' && maybeItemId == null) {
+            itemId = sectionOrItemId;
+            section = this._findSupplementalSection(itemId);
+        }
+        if (!section || !itemId) return false;
+        const controls = section.querySelector('[data-wf-dash-supplemental-controls]');
+        if (!controls) return false;
+        let msg = controls.querySelector('[data-wf-dash-supplemental-action-msg]');
+        const html = this._supplementalActionMessageHtml(itemId);
+        if (!html) {
+            if (msg) msg.remove();
+            return true;
+        }
+        if (!msg) {
+            controls.insertAdjacentHTML('beforeend', html);
+            return true;
+        }
+        const ui = this._getSupplementalActionMsgUi(itemId);
+        msg.textContent = String(ui.message || '').trim();
+        msg.setAttribute('data-tone', ui.tone === 'error' ? 'error' : 'muted');
+        return true;
     },
 
     _userStoryControlsHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
-        if (this._userStoryIsAbsent(ui)) {
-            return `<div data-wf-dash-user-story-controls="1" data-wf-dash-user-story-absent="1">${this._userStoryEmptyHtml(ui)}</div>`;
-        }
-        const btnLabel = this._userStoryBtnLabel(ui);
+        const btnLabel = this._userStoryIsAbsent(ui) ? 'Fetch User Story' : this._userStoryBtnLabel(ui);
         const btnDisabled = ui.status === 'loading';
         return `<div data-wf-dash-user-story-controls="1">`
             + `<button type="button" class="wf-dash-user-story-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-user-story="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
@@ -2089,9 +2148,8 @@ const searchOutputResultsPaneMethods = {
         const ui = this._getSessionQaUi(itemId);
         const btnLabel = this._sessionQaBtnLabel(ui);
         const btnDisabled = ui.status === 'loading';
-        return `<div data-wf-dash-session-qa-controls="1" style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">`
+        return `<div data-wf-dash-session-qa-controls="1">`
             + `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
-            + this._sessionQaInlineMessageHtml(ui)
             + `</div>`;
     },
 
@@ -2099,9 +2157,8 @@ const searchOutputResultsPaneMethods = {
         const ui = this._getVerifierOutputUi(itemId);
         const btnLabel = this._verifierOutputBtnLabel(ui);
         const btnDisabled = ui.status === 'loading';
-        return `<div data-wf-dash-verifier-output-controls="1" style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px;">`
+        return `<div data-wf-dash-verifier-output-controls="1">`
             + `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
-            + this._verifierOutputInlineMessageHtml(ui)
             + `</div>`;
     },
 
@@ -2138,10 +2195,13 @@ const searchOutputResultsPaneMethods = {
     _supplementalSectionHtml(itemId) {
         return `
             <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-supplemental-section data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
-                <div data-wf-dash-supplemental-controls style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                    ${this._userStoryControlsHtml(itemId)}
-                    ${this._sessionQaControlsHtml(itemId)}
-                    ${this._verifierOutputControlsHtml(itemId)}
+                <div data-wf-dash-supplemental-controls>
+                    <div data-wf-dash-supplemental-controls-btns>
+                        ${this._userStoryControlsHtml(itemId)}
+                        ${this._sessionQaControlsHtml(itemId)}
+                        ${this._verifierOutputControlsHtml(itemId)}
+                    </div>
+                    ${this._supplementalActionMessageHtml(itemId)}
                 </div>
                 ${this._userStoryPanelHtml(itemId)}
                 ${this._verifierOutputPanelHtml(itemId)}
@@ -2261,15 +2321,11 @@ const searchOutputResultsPaneMethods = {
     _patchUserStoryControls(section, itemId) {
         const ui = this._getUserStoryUi(itemId);
         let controls = section.querySelector('[data-wf-dash-user-story-controls]');
-        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls]');
+        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls-btns]')
+            || section.querySelector('[data-wf-dash-supplemental-controls]');
         if (!controlsParent) return;
         if (!controls) {
             controlsParent.insertAdjacentHTML('afterbegin', this._userStoryControlsHtml(itemId));
-            return;
-        }
-        if (this._userStoryIsAbsent(ui)) {
-            controls.setAttribute('data-wf-dash-user-story-absent', '1');
-            controls.innerHTML = this._userStoryEmptyHtml(ui);
             return;
         }
         controls.removeAttribute('data-wf-dash-user-story-absent');
@@ -2279,7 +2335,7 @@ const searchOutputResultsPaneMethods = {
             btn = controls.querySelector('[data-wf-dash-user-story]');
         }
         if (!btn) return;
-        btn.textContent = this._userStoryBtnLabel(ui);
+        btn.textContent = this._userStoryIsAbsent(ui) ? 'Fetch User Story' : this._userStoryBtnLabel(ui);
         if (ui.status === 'loading') {
             btn.disabled = true;
             btn.setAttribute('aria-busy', 'true');
@@ -2292,10 +2348,13 @@ const searchOutputResultsPaneMethods = {
     _patchSessionQaControls(section, itemId) {
         const ui = this._getSessionQaUi(itemId);
         let controls = section.querySelector('[data-wf-dash-session-qa-controls]');
-        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls]');
+        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls-btns]')
+            || section.querySelector('[data-wf-dash-supplemental-controls]');
         if (!controlsParent) return;
         if (!controls) {
-            controlsParent.insertAdjacentHTML('beforeend', this._sessionQaControlsHtml(itemId));
+            const verifier = controlsParent.querySelector('[data-wf-dash-verifier-output-controls]');
+            if (verifier) verifier.insertAdjacentHTML('beforebegin', this._sessionQaControlsHtml(itemId));
+            else controlsParent.insertAdjacentHTML('beforeend', this._sessionQaControlsHtml(itemId));
             controls = section.querySelector('[data-wf-dash-session-qa-controls]');
         }
         if (!controls) return;
@@ -2304,33 +2363,22 @@ const searchOutputResultsPaneMethods = {
             controls.innerHTML = `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
             btn = controls.querySelector('[data-wf-dash-session-qa]');
         }
-        if (btn) {
-            btn.textContent = this._sessionQaBtnLabel(ui);
-            if (ui.status === 'loading') {
-                btn.disabled = true;
-                btn.setAttribute('aria-busy', 'true');
-            } else {
-                btn.disabled = false;
-                btn.removeAttribute('aria-busy');
-            }
-        }
-        let msg = controls.querySelector('[data-wf-dash-session-qa-message]');
-        const msgHtml = this._sessionQaInlineMessageHtml(ui);
-        if (!msgHtml) {
-            if (msg) msg.remove();
-            return;
-        }
-        if (!msg) {
-            controls.insertAdjacentHTML('beforeend', msgHtml);
+        if (!btn) return;
+        btn.textContent = this._sessionQaBtnLabel(ui);
+        if (ui.status === 'loading') {
+            btn.disabled = true;
+            btn.setAttribute('aria-busy', 'true');
         } else {
-            msg.textContent = String(ui.message || '').trim();
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
         }
     },
 
     _patchVerifierOutputControls(section, itemId) {
         const ui = this._getVerifierOutputUi(itemId);
         let controls = section.querySelector('[data-wf-dash-verifier-output-controls]');
-        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls]');
+        const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls-btns]')
+            || section.querySelector('[data-wf-dash-supplemental-controls]');
         if (!controlsParent) return;
         if (!controls) {
             controlsParent.insertAdjacentHTML('beforeend', this._verifierOutputControlsHtml(itemId));
@@ -2342,26 +2390,14 @@ const searchOutputResultsPaneMethods = {
             controls.innerHTML = `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"></button>`;
             btn = controls.querySelector('[data-wf-dash-verifier-output]');
         }
-        if (btn) {
-            btn.textContent = this._verifierOutputBtnLabel(ui);
-            if (ui.status === 'loading') {
-                btn.disabled = true;
-                btn.setAttribute('aria-busy', 'true');
-            } else {
-                btn.disabled = false;
-                btn.removeAttribute('aria-busy');
-            }
-        }
-        let msg = controls.querySelector('[data-wf-dash-verifier-output-message]');
-        const msgHtml = this._verifierOutputInlineMessageHtml(ui);
-        if (!msgHtml) {
-            if (msg) msg.remove();
-            return;
-        }
-        if (!msg) {
-            controls.insertAdjacentHTML('beforeend', msgHtml);
+        if (!btn) return;
+        btn.textContent = this._verifierOutputBtnLabel(ui);
+        if (ui.status === 'loading') {
+            btn.disabled = true;
+            btn.setAttribute('aria-busy', 'true');
         } else {
-            msg.textContent = String(ui.message || '').trim();
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
         }
     },
 
@@ -2443,6 +2479,7 @@ const searchOutputResultsPaneMethods = {
         if (!section) return false;
         this._patchUserStoryControls(section, itemId);
         this._patchUserStoryPanel(section, itemId);
+        this._patchSupplementalActionMessage(section, itemId);
         return true;
     },
 
@@ -2452,6 +2489,7 @@ const searchOutputResultsPaneMethods = {
         if (!section) return false;
         this._patchSessionQaControls(section, itemId);
         this._patchSessionQaPanel(section, itemId);
+        this._patchSupplementalActionMessage(section, itemId);
         return true;
     },
 
@@ -2461,6 +2499,7 @@ const searchOutputResultsPaneMethods = {
         if (!section) return false;
         this._patchVerifierOutputControls(section, itemId);
         this._patchVerifierOutputPanel(section, itemId);
+        this._patchSupplementalActionMessage(section, itemId);
         return true;
     },
 
@@ -2820,8 +2859,7 @@ const searchOutputResultsPaneMethods = {
         if (!item || !item.task) return;
         const ui = this._getUserStoryUi(id);
 
-        if (ui.status === 'loaded' || ui.status === 'error') {
-            if (!this._userStoryHasContent(ui)) return;
+        if ((ui.status === 'loaded' || ui.status === 'error') && this._userStoryHasContent(ui)) {
             ui.visible = !ui.visible;
             delete ui.animateOpen;
             Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
@@ -2840,6 +2878,7 @@ const searchOutputResultsPaneMethods = {
             ui.status = 'error';
             ui.message = 'User story unavailable (ops module not loaded).';
             ui.visible = false;
+            this._setSupplementalActionMessage(id, 'userStory', ui.message, 'error');
             this._logDashApiSkip('user-story-fetch', 'ops module missing', id);
             this._patchTaskCard(id);
             return;
@@ -2868,9 +2907,11 @@ const searchOutputResultsPaneMethods = {
                 ui.humanAnnotatorInstructions = null;
                 ui.userStory = null;
                 ui.message = this._userStoryEmptyMessage(reason);
+                this._setSupplementalActionMessage(id, 'userStory', ui.message, 'muted');
                 Logger.warn('dashboard: user story empty — ' + id + ' (' + reason + ')');
             } else {
                 ui.message = null;
+                this._setSupplementalActionMessage(id, 'userStory', null);
                 const summary = [
                     ui.scenarioTitle ? 'title ' + ui.scenarioTitle.length + ' chars' : null,
                     ui.humanAnnotatorInstructions ? 'instructions ' + ui.humanAnnotatorInstructions.length + ' chars' : null,
@@ -2889,6 +2930,7 @@ const searchOutputResultsPaneMethods = {
             ui.message = this._isDashSessionRefreshError(err)
                 ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
                 : 'Could not load user story.';
+            this._setSupplementalActionMessage(id, 'userStory', ui.message, 'error');
             ui.visible = false;
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
@@ -2929,6 +2971,7 @@ const searchOutputResultsPaneMethods = {
             ui.reviews = [];
             ui.message = 'No sessions found for this task.';
             ui.visible = false;
+            this._setSupplementalActionMessage(id, 'sessionQa', ui.message, 'muted');
             this._logDashApiSkip('session-qa-fetch', 'missing task id', id);
             if (!this._patchSessionQaSection(id)) this._patchTaskCard(id);
             return;
@@ -2947,8 +2990,10 @@ const searchOutputResultsPaneMethods = {
             ui.visible = this._sessionQaHasReviews(ui);
             if (ui.visible) ui.animateOpen = true;
             if (ui.reviews.length > 0) {
+                this._setSupplementalActionMessage(id, 'sessionQa', null);
                 Logger.log('dashboard: session QA fetched — ' + id + ' (' + ui.reviews.length + ' review(s))');
             } else {
+                this._setSupplementalActionMessage(id, 'sessionQa', ui.message || 'No sessions found for this task.', 'muted');
                 Logger.log('dashboard: session QA empty — ' + id + ' (' + (result.reason || 'empty') + ')');
             }
         } catch (err) {
@@ -2957,6 +3002,7 @@ const searchOutputResultsPaneMethods = {
             ui.message = this._isDashSessionRefreshError(err)
                 ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
                 : 'Could not load Session QA.';
+            this._setSupplementalActionMessage(id, 'sessionQa', ui.message, 'error');
             ui.visible = false;
             Logger.warn('dashboard: session QA fetch failed — ' + id, err);
         }
@@ -3000,6 +3046,7 @@ const searchOutputResultsPaneMethods = {
             ui.executions = [];
             ui.message = 'No sessions found for this task.';
             ui.visible = false;
+            this._setSupplementalActionMessage(id, 'verifierOutput', ui.message, 'muted');
             this._logDashApiSkip('verifier-output-fetch', 'missing task id', id);
             if (!this._patchVerifierOutputSection(id)) this._patchTaskCard(id);
             return;
@@ -3018,8 +3065,10 @@ const searchOutputResultsPaneMethods = {
             ui.visible = this._verifierOutputHasExecutions(ui);
             if (ui.visible) ui.animateOpen = true;
             if (ui.executions.length > 0) {
+                this._setSupplementalActionMessage(id, 'verifierOutput', null);
                 Logger.log('dashboard: verifier output fetched — ' + id + ' (' + ui.executions.length + ' run(s))');
             } else {
+                this._setSupplementalActionMessage(id, 'verifierOutput', ui.message || 'No sessions found for this task.', 'muted');
                 Logger.log('dashboard: verifier output empty — ' + id + ' (' + (result.reason || 'empty') + ')');
             }
         } catch (err) {
@@ -3028,6 +3077,7 @@ const searchOutputResultsPaneMethods = {
             ui.message = this._isDashSessionRefreshError(err)
                 ? 'Session expired — refresh Fleet and unlock Ops, then reload.'
                 : 'Could not load Verifier Output.';
+            this._setSupplementalActionMessage(id, 'verifierOutput', ui.message, 'error');
             ui.visible = false;
             Logger.warn('dashboard: verifier output fetch failed — ' + id, err);
         }
@@ -3371,6 +3421,23 @@ const searchOutputResultsPaneMethods = {
     },
 
     _cardActionAreaHtml(itemId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        const showRescue = this._taskEligibleForRescue(item && item.task);
+        const rehydrating = Boolean(this._state.cardRehydrating && this._state.cardRehydrating[itemId]);
+        const rescuing = Boolean(this._state.cardRescuing && this._state.cardRescuing[itemId]);
+        const rehydrateDisabled = (rehydrating || rescuing) ? ' disabled aria-busy="true"' : '';
+        const rescueDisabled = rescuing ? ' disabled aria-busy="true"' : '';
+        const rehydrateTitle = rehydrating ? 'Rehydrating…' : 'Throw away and fully rehydrate this card';
+        const rescueTitle = rescuing
+            ? 'Rescuing…'
+            : 'Lease and discard this escalated task back to the writer (Other)';
+        const rescueBtn = showRescue
+            ? `<button type="button" class="wf-dash-card-action wf-dash-card-action--rescue" data-wf-dash-rescue="1" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(rescueTitle)}" aria-label="${dashEscHtml(rescueTitle)}"${rescueDisabled}>
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">${rescuing ? 'Rescuing…' : 'Rescue'}</span>
+                </span>
+            </button>`
+            : '';
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
             <button type="button" class="wf-dash-card-action wf-dash-card-action--add-to-diff" data-wf-dash-add-to-diff="1" data-item-id="${dashEscHtml(itemId)}" title="Add to Diff Viewer" aria-label="Add to Diff Viewer">
                 <span class="wf-dash-card-action-inner">
@@ -3382,12 +3449,92 @@ const searchOutputResultsPaneMethods = {
                     <span class="wf-dash-card-action-label">Get Verifier</span>
                 </span>
             </button>
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--rehydrate" data-wf-dash-rehydrate="1" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(rehydrateTitle)}" aria-label="${dashEscHtml(rehydrateTitle)}"${rehydrateDisabled}>
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">${rehydrating ? 'Rehydrating…' : 'Rehydrate'}</span>
+                </span>
+            </button>
+            ${rescueBtn}
             <button type="button" class="wf-dash-card-action wf-dash-card-action--remove" data-wf-dash-remove-result="1" data-item-id="${dashEscHtml(itemId)}" title="Completely remove result from search" aria-label="Completely remove result from search">
                 <span class="wf-dash-card-action-inner">
                     <span class="wf-dash-card-action-icon" aria-hidden="true">×</span>
                 </span>
             </button>
         </div>`;
+    },
+
+    _mostRecentHumanQaFeedback(task) {
+        if (!task || !Array.isArray(task.allFeedback)) return null;
+        for (const entry of task.allFeedback) {
+            if (!entry) continue;
+            if (entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback)) continue;
+            if (entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure)) continue;
+            return entry;
+        }
+        return null;
+    },
+
+    _taskEligibleForRescue(task) {
+        const latest = this._mostRecentHumanQaFeedback(task);
+        if (!latest) return false;
+        return Boolean(latest.isEscalated || (latest.display && latest.display.isEscalated));
+    },
+
+    async _attemptRescueFromCard(itemId) {
+        const iid = String(itemId || '').trim();
+        if (!iid) {
+            this._logDashApiSkip('rescue', 'missing item id');
+            return;
+        }
+        const item = this._findCachedItem(iid) || this._findResultItem(iid);
+        if (!item || !item.task || !item.task.id) {
+            this._logDashApiSkip('rescue', 'task not found', iid);
+            return;
+        }
+        if (!this._taskEligibleForRescue(item.task)) {
+            this._logDashApiSkip('rescue', 'latest QA feedback is not escalated', iid);
+            return;
+        }
+        if (!this._state.cardRescuing) this._state.cardRescuing = {};
+        if (this._state.cardRescuing[iid]) {
+            this._logDashApiSkip('rescue', 'already in progress', iid);
+            return;
+        }
+        const taskId = String(item.task.id).trim();
+        this._logDashApiClick('rescue', taskId.slice(0, 8) + '…');
+        this._state.cardRescuing[iid] = true;
+        this._patchTaskCard(iid);
+        try {
+            await this._leaseEvalTaskForRescue(taskId);
+            await this._discardEvalTaskForRescue(taskId);
+            try {
+                await this._refreshFlagPrefetchCaches();
+            } catch (prefetchErr) {
+                Logger.debug('search-output: rescue flag prefetch refresh failed — ' + iid, prefetchErr);
+            }
+            await this._rehydrateCard(iid);
+            Logger.log('search-output: rescue complete — ' + taskId.slice(0, 8));
+        } catch (e) {
+            Logger.warn('search-output: rescue failed — ' + taskId.slice(0, 8), e);
+        } finally {
+            delete this._state.cardRescuing[iid];
+            this._patchTaskCard(iid);
+        }
+    },
+
+    async _rehydrateCardFromButton(itemId) {
+        const iid = String(itemId || '').trim();
+        if (!iid) {
+            this._logDashApiSkip('card-rehydrate', 'missing item id');
+            return;
+        }
+        this._logDashApiClick('card-rehydrate', iid);
+        try {
+            await this._refreshFlagPrefetchCaches();
+        } catch (e) {
+            Logger.debug('search-output: card rehydrate flag prefetch refresh failed — ' + iid, e);
+        }
+        await this._rehydrateCard(iid);
     },
 
     _addToDiffFromCard(itemId) {
@@ -4288,10 +4435,10 @@ const searchOutputResultsPaneMethods = {
             });
             delete this._state.disputeClaimUi[id];
             Logger.log('search-output: dispute released — ' + id);
+            await this._rehydrateCard(itemId);
         } catch (e) {
             ui.submitting = false;
             Logger.warn('search-output: dispute release failed — ' + id, e);
-        } finally {
             this._patchTaskCard(itemId);
         }
     },
@@ -4490,7 +4637,12 @@ const searchOutputResultsPaneMethods = {
 
         try {
             await attemptClaim(false);
-        } finally {
+            if (this._getDisputeClaimUi(id).status === 'claimed') {
+                await this._rehydrateCard(itemId);
+            } else {
+                this._patchTaskCard(itemId);
+            }
+        } catch (_e) {
             this._patchTaskCard(itemId);
         }
     },
@@ -6091,7 +6243,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.3',
+    _version: '5.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

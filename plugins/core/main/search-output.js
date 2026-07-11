@@ -40,6 +40,9 @@ const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
 const DASH_QA_SCREENSHOT_VIEW_URLS_PATH = '/orchestrator-private/v1/qa-feedback/screenshots/view-urls';
+const DASH_RESCUE_LEASE_MS = 2 * 60 * 60 * 1000;
+const DASH_RESCUE_DISCARD_TEXT =
+    'Rescuing and returning this task to the task writer for them to attempt to fix based on the previous QA or system feedback, or to get another pass at verifier generation if the task never made it to staging.';
 const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
 const DASH_FLAG_CREATE_REASON_KEYS = [
     'ai_generated',
@@ -507,6 +510,9 @@ const searchOutputCoreMethods = {
         if (opts.body != null) {
             headers['content-type'] = 'application/json';
         }
+        if (opts.headers && typeof opts.headers === 'object') {
+            Object.assign(headers, opts.headers);
+        }
         const fetchInit = {
             method: 'POST',
             credentials: 'include',
@@ -958,6 +964,182 @@ const searchOutputCoreMethods = {
         }
     },
 
+    async _dashPostgrestInsert(table, body) {
+        const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
+        const ops = this._dashOpsTab();
+        const pageWindow = this._pageWindow();
+        const jwt = typeof ops.getFleetUserJwt === 'function' ? ops.getFleetUserJwt(pageWindow) : '';
+        if (!jwt) {
+            throw new Error('Fleet session token not yet captured. Navigate to a Fleet data page, then retry.');
+        }
+        const url = new URL(baseUrl + '/' + table);
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url.toString(), {
+            method: 'POST',
+            headers: {
+                accept: 'application/json',
+                'content-type': 'application/json',
+                'content-profile': 'public',
+                apikey: anonKey,
+                authorization: 'Bearer ' + jwt,
+                'x-client-info': 'fleet-ux-dashboard/' + this._version
+            },
+            credentials: 'omit',
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
+        }
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return res.json().catch(() => null);
+        }
+        return null;
+    },
+
+    async _dashPostgrestPatch(table, params, body) {
+        const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
+        const ops = this._dashOpsTab();
+        const pageWindow = this._pageWindow();
+        const jwt = typeof ops.getFleetUserJwt === 'function' ? ops.getFleetUserJwt(pageWindow) : '';
+        if (!jwt) {
+            throw new Error('Fleet session token not yet captured. Navigate to a Fleet data page, then retry.');
+        }
+        const url = new URL(baseUrl + '/' + table);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value != null && value !== '') url.searchParams.set(key, String(value));
+        });
+        const requestFetch = pageWindow.fetch || fetch;
+        const res = await requestFetch.call(pageWindow, url.toString(), {
+            method: 'PATCH',
+            headers: {
+                accept: 'application/json',
+                'content-type': 'application/json',
+                'content-profile': 'public',
+                apikey: anonKey,
+                authorization: 'Bearer ' + jwt,
+                'x-client-info': 'fleet-ux-dashboard/' + this._version
+            },
+            credentials: 'omit',
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            throw new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
+        }
+    },
+
+    _qaDiscardApiPath(evalTaskId) {
+        return '/orchestrator-private/v1/pipeline/tasks/'
+            + encodeURIComponent(String(evalTaskId || '').trim())
+            + '/qa/discard';
+    },
+
+    _buildRescueDiscardBody() {
+        const note = DASH_RESCUE_DISCARD_TEXT;
+        const reason =
+            'Rejection Reason: Other (please explain)\n'
+            + 'Explanation: ' + note + '\n\n'
+            + 'Attempted Actions:\n' + note + '\n\n'
+            + 'Issue Source(s): Task\n\n'
+            + 'Task Issues:\n' + note;
+        return {
+            reason,
+            feedback_data: {
+                issue_sources: ['Task'],
+                attempted_actions: note,
+                qa_checklist: {
+                    achievable: false,
+                    clearSolution: false,
+                    wellSpecified: false
+                },
+                rejection_reasons: ['other'],
+                rejection_reason_labels: ['Other (please explain)'],
+                rejection_reason: 'other',
+                rejection_reason_label: 'Other (please explain)',
+                prompt_quality_rating: null,
+                is_escalation: false,
+                other_reason_explanation: note,
+                task_feedback: note,
+                qa_review_duration_seconds: 0
+            },
+            instance_id: null,
+            close_instance_on_submit: false
+        };
+    },
+
+    async _leaseEvalTaskForRescue(taskId) {
+        const tid = String(taskId || '').trim();
+        const userId = this._dashGetCurrentUserId();
+        if (!tid || !DASH_UUID_RE.test(tid)) throw new Error('Missing eval task id for rescue lease');
+        if (!userId || !DASH_UUID_RE.test(userId)) {
+            throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
+        }
+        const nowIso = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + DASH_RESCUE_LEASE_MS).toISOString();
+        try {
+            await this._dashPostgrestPatch('eval_task_leases', {
+                owner_id: 'eq.' + userId,
+                task_id: 'neq.' + tid,
+                expires_at: 'gt.' + nowIso
+            }, { expires_at: nowIso });
+        } catch (e) {
+            Logger.debug('search-output: rescue lease PATCH other leases failed — ' + tid.slice(0, 8), e);
+        }
+        try {
+            await this._dashPostgrestInsert('eval_task_leases', {
+                task_id: tid,
+                owner_id: userId,
+                expires_at: expiresAt
+            });
+            Logger.log('search-output: rescue lease claimed — ' + tid.slice(0, 8));
+            return { leased: true, alreadyHeld: false };
+        } catch (e) {
+            const rows = await this._dashPostgrestListGet('eval_task_leases', {
+                select: 'expires_at,ended_at',
+                task_id: 'eq.' + tid,
+                owner_id: 'eq.' + userId,
+                ended_at: 'is.null',
+                order: 'created_at.desc',
+                limit: '1'
+            }).catch(() => []);
+            const open = Array.isArray(rows) && rows[0] && rows[0].ended_at == null;
+            if (open) {
+                Logger.log('search-output: rescue lease already held — ' + tid.slice(0, 8));
+                return { leased: true, alreadyHeld: true };
+            }
+            throw e;
+        }
+    },
+
+    async _discardEvalTaskForRescue(taskId) {
+        const tid = String(taskId || '').trim();
+        if (!tid || !DASH_UUID_RE.test(tid)) throw new Error('Missing eval task id for rescue discard');
+        const pageWindow = this._pageWindow();
+        const ops = this._dashOpsTab();
+        const jwt = typeof ops.getFleetUserJwt === 'function' ? ops.getFleetUserJwt(pageWindow) : '';
+        if (!jwt) {
+            throw new Error('Fleet session token not yet captured. Navigate to a Fleet data page, then retry.');
+        }
+        const teamId = String(this._dashGetCookie('current-team-id') || '').trim();
+        if (!teamId || !DASH_UUID_RE.test(teamId)) {
+            throw new Error('Fleet team context not available.');
+        }
+        const json = await this._fleetWebPost(this._qaDiscardApiPath(tid), {
+            body: this._buildRescueDiscardBody(),
+            referer: DASH_FLEET_ORIGIN + '/work/problems/qa/' + encodeURIComponent(tid),
+            headers: {
+                'x-jwt-token': jwt,
+                'x-team-id': teamId
+            }
+        });
+        Logger.log('search-output: rescue discard — task ' + tid.slice(0, 8)
+            + ' lifecycle ' + ((json && json.new_lifecycle_status) || '?')
+            + (json && json.feedback_id != null ? (' feedback ' + json.feedback_id) : ''));
+        return json;
+    },
+
     async _refreshFlagPrefetchCaches() {
         this._resetPrefetchForRetry('pendingFlags');
         this._resetPrefetchForRetry('resolvedFlags');
@@ -974,7 +1156,25 @@ const searchOutputCoreMethods = {
             Logger.warn('search-output: card rehydrate skipped — dashboardData not loaded');
             return;
         }
+        if (!this._state.cardRehydrating) this._state.cardRehydrating = {};
+        if (this._state.cardRehydrating[itemId]) {
+            Logger.debug('search-output: card rehydrate already in progress — ' + itemId);
+            return;
+        }
         const taskId = item.task.id;
+        this._state.cardRehydrating[itemId] = true;
+        Logger.log('search-output: card rehydrate started — ' + itemId);
+
+        // Throw away hydrated payload so the in-place rebuild is a full refresh.
+        item.hydrated = false;
+        item.disputes = [];
+        item.flags = [];
+        item.task.promptVersions = [];
+        item.task.allFeedback = [];
+        item.task.systemFeedbackIdRemap = {};
+        delete item.task.initialCreationTimeSeconds;
+        this._patchTaskCard(itemId);
+
         const profilesMap = this._profilesMapFromHydrateItems([item]);
         this._state.hydrateFetchActive = true;
         try {
@@ -1002,6 +1202,31 @@ const searchOutputCoreMethods = {
             item.disputes = [];
             item.flags = [];
             await this._overlayDisputesAndFlags([item], profilesMap);
+            // Prefer live task-disputes for this card (covers resolve + external Fleet changes).
+            try {
+                const fetched = await this._fetchTaskDisputesBatch([taskId]);
+                const rows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
+                if (rows.length > 0) {
+                    const openRows = this._getAllCachedOpenDisputeRows(taskId);
+                    const combined = [...openRows, ...rows];
+                    const resolverProfileIds = [];
+                    for (const row of rows) {
+                        if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+                    }
+                    if (resolverProfileIds.length > 0) {
+                        await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+                    }
+                    item.disputes = [];
+                    this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
+                    if (!item.kinds.includes('dispute')) {
+                        item.kinds.push('dispute');
+                        item.kinds.sort((a, b) => dashKindMergeOrder().indexOf(a) - dashKindMergeOrder().indexOf(b));
+                    }
+                }
+            } catch (disputeErr) {
+                Logger.debug('search-output: card rehydrate task-disputes refresh failed — ' + itemId, disputeErr);
+            }
+            item.hydrated = true;
             this._patchTaskCard(itemId);
             this._onScopeDataEnriched();
             Logger.log('search-output: card rehydrated — ' + itemId);
@@ -1010,7 +1235,9 @@ const searchOutputCoreMethods = {
                 Logger.warn('search-output: card rehydrate failed — ' + itemId, e);
             }
         } finally {
+            delete this._state.cardRehydrating[itemId];
             this._state.hydrateFetchActive = false;
+            this._patchTaskCard(itemId);
         }
     },
 
@@ -5311,6 +5538,24 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) void dash._getVerifierFromCard(itemId);
                 return;
             }
+            const rehydrateBtn = e.target.closest('[data-wf-dash-rehydrate]');
+            if (rehydrateBtn && modal.contains(rehydrateBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                if (rehydrateBtn.disabled) return;
+                const itemId = rehydrateBtn.getAttribute('data-item-id');
+                if (itemId) void dash._rehydrateCardFromButton(itemId);
+                return;
+            }
+            const rescueBtn = e.target.closest('[data-wf-dash-rescue]');
+            if (rescueBtn && modal.contains(rescueBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                if (rescueBtn.disabled) return;
+                const itemId = rescueBtn.getAttribute('data-item-id');
+                if (itemId) void dash._attemptRescueFromCard(itemId);
+                return;
+            }
             const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
             if (removeResultBtn && modal.contains(removeResultBtn)) {
                 e.stopPropagation();
@@ -5496,7 +5741,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.4',
+    _version: '9.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
