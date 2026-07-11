@@ -2518,9 +2518,10 @@ const searchOutputResultsPaneMethods = {
         const blockId = 'session-qa:' + review.id;
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Session QA</span>`
             + submittedHtml
-            + difficultyHtml;
+            + difficultyHtml
+            + sessionLink;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
-        const bodyHtml = reviewerHtml + sessionLink + notesHtml;
+        const bodyHtml = reviewerHtml + notesHtml;
         return this._actionBlockShellHtml(
             blockId,
             itemId,
@@ -2582,9 +2583,10 @@ const searchOutputResultsPaneMethods = {
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
             + submittedHtml
             + scoreHtml
-            + timingHtml;
+            + timingHtml
+            + sessionLink;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
-        const bodyHtml = sessionLink + stdoutHtml;
+        const bodyHtml = stdoutHtml;
         return this._actionBlockShellHtml(
             blockId,
             itemId,
@@ -6078,7 +6080,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
