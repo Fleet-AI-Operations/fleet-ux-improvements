@@ -974,7 +974,25 @@ const searchOutputCoreMethods = {
             Logger.warn('search-output: card rehydrate skipped — dashboardData not loaded');
             return;
         }
+        if (!this._state.cardRehydrating) this._state.cardRehydrating = {};
+        if (this._state.cardRehydrating[itemId]) {
+            Logger.debug('search-output: card rehydrate already in progress — ' + itemId);
+            return;
+        }
         const taskId = item.task.id;
+        this._state.cardRehydrating[itemId] = true;
+        Logger.log('search-output: card rehydrate started — ' + itemId);
+
+        // Throw away hydrated payload so the in-place rebuild is a full refresh.
+        item.hydrated = false;
+        item.disputes = [];
+        item.flags = [];
+        item.task.promptVersions = [];
+        item.task.allFeedback = [];
+        item.task.systemFeedbackIdRemap = {};
+        delete item.task.initialCreationTimeSeconds;
+        this._patchTaskCard(itemId);
+
         const profilesMap = this._profilesMapFromHydrateItems([item]);
         this._state.hydrateFetchActive = true;
         try {
@@ -1002,6 +1020,31 @@ const searchOutputCoreMethods = {
             item.disputes = [];
             item.flags = [];
             await this._overlayDisputesAndFlags([item], profilesMap);
+            // Prefer live task-disputes for this card (covers resolve + external Fleet changes).
+            try {
+                const fetched = await this._fetchTaskDisputesBatch([taskId]);
+                const rows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
+                if (rows.length > 0) {
+                    const openRows = this._getAllCachedOpenDisputeRows(taskId);
+                    const combined = [...openRows, ...rows];
+                    const resolverProfileIds = [];
+                    for (const row of rows) {
+                        if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+                    }
+                    if (resolverProfileIds.length > 0) {
+                        await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+                    }
+                    item.disputes = [];
+                    this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
+                    if (!item.kinds.includes('dispute')) {
+                        item.kinds.push('dispute');
+                        item.kinds.sort((a, b) => dashKindMergeOrder().indexOf(a) - dashKindMergeOrder().indexOf(b));
+                    }
+                }
+            } catch (disputeErr) {
+                Logger.debug('search-output: card rehydrate task-disputes refresh failed — ' + itemId, disputeErr);
+            }
+            item.hydrated = true;
             this._patchTaskCard(itemId);
             this._onScopeDataEnriched();
             Logger.log('search-output: card rehydrated — ' + itemId);
@@ -1010,7 +1053,9 @@ const searchOutputCoreMethods = {
                 Logger.warn('search-output: card rehydrate failed — ' + itemId, e);
             }
         } finally {
+            delete this._state.cardRehydrating[itemId];
             this._state.hydrateFetchActive = false;
+            this._patchTaskCard(itemId);
         }
     },
 
@@ -5311,6 +5356,15 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) void dash._getVerifierFromCard(itemId);
                 return;
             }
+            const rehydrateBtn = e.target.closest('[data-wf-dash-rehydrate]');
+            if (rehydrateBtn && modal.contains(rehydrateBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                if (rehydrateBtn.disabled) return;
+                const itemId = rehydrateBtn.getAttribute('data-item-id');
+                if (itemId) void dash._rehydrateCardFromButton(itemId);
+                return;
+            }
             const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
             if (removeResultBtn && modal.contains(removeResultBtn)) {
                 e.stopPropagation();
@@ -5496,7 +5550,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.4',
+    _version: '9.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

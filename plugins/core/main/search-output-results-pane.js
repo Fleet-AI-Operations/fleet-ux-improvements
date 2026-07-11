@@ -1514,6 +1514,7 @@ const searchOutputResultsPaneMethods = {
         if (!item) return;
         this._state.cachedItems = cached.filter((it) => it.id !== id);
         if (this._state.hydrateUi) delete this._state.hydrateUi[id];
+        if (this._state.cardRehydrating) delete this._state.cardRehydrating[id];
         if (this._state.userStoryUi) delete this._state.userStoryUi[id];
         if (this._state.sessionQaUi) delete this._state.sessionQaUi[id];
         if (this._state.verifierOutputUi) delete this._state.verifierOutputUi[id];
@@ -3371,6 +3372,9 @@ const searchOutputResultsPaneMethods = {
     },
 
     _cardActionAreaHtml(itemId) {
+        const rehydrating = Boolean(this._state.cardRehydrating && this._state.cardRehydrating[itemId]);
+        const rehydrateDisabled = rehydrating ? ' disabled aria-busy="true"' : '';
+        const rehydrateTitle = rehydrating ? 'Rehydrating…' : 'Throw away and fully rehydrate this card';
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
             <button type="button" class="wf-dash-card-action wf-dash-card-action--add-to-diff" data-wf-dash-add-to-diff="1" data-item-id="${dashEscHtml(itemId)}" title="Add to Diff Viewer" aria-label="Add to Diff Viewer">
                 <span class="wf-dash-card-action-inner">
@@ -3382,12 +3386,32 @@ const searchOutputResultsPaneMethods = {
                     <span class="wf-dash-card-action-label">Get Verifier</span>
                 </span>
             </button>
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--rehydrate" data-wf-dash-rehydrate="1" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(rehydrateTitle)}" aria-label="${dashEscHtml(rehydrateTitle)}"${rehydrateDisabled}>
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">${rehydrating ? 'Rehydrating…' : 'Rehydrate'}</span>
+                </span>
+            </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--remove" data-wf-dash-remove-result="1" data-item-id="${dashEscHtml(itemId)}" title="Completely remove result from search" aria-label="Completely remove result from search">
                 <span class="wf-dash-card-action-inner">
                     <span class="wf-dash-card-action-icon" aria-hidden="true">×</span>
                 </span>
             </button>
         </div>`;
+    },
+
+    async _rehydrateCardFromButton(itemId) {
+        const iid = String(itemId || '').trim();
+        if (!iid) {
+            this._logDashApiSkip('card-rehydrate', 'missing item id');
+            return;
+        }
+        this._logDashApiClick('card-rehydrate', iid);
+        try {
+            await this._refreshFlagPrefetchCaches();
+        } catch (e) {
+            Logger.debug('search-output: card rehydrate flag prefetch refresh failed — ' + iid, e);
+        }
+        await this._rehydrateCard(iid);
     },
 
     _addToDiffFromCard(itemId) {
@@ -4288,10 +4312,10 @@ const searchOutputResultsPaneMethods = {
             });
             delete this._state.disputeClaimUi[id];
             Logger.log('search-output: dispute released — ' + id);
+            await this._rehydrateCard(itemId);
         } catch (e) {
             ui.submitting = false;
             Logger.warn('search-output: dispute release failed — ' + id, e);
-        } finally {
             this._patchTaskCard(itemId);
         }
     },
@@ -4490,7 +4514,12 @@ const searchOutputResultsPaneMethods = {
 
         try {
             await attemptClaim(false);
-        } finally {
+            if (this._getDisputeClaimUi(id).status === 'claimed') {
+                await this._rehydrateCard(itemId);
+            } else {
+                this._patchTaskCard(itemId);
+            }
+        } catch (_e) {
             this._patchTaskCard(itemId);
         }
     },
@@ -6091,7 +6120,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.3',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
