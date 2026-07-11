@@ -23,18 +23,43 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     senior_review: 'Sr Review',
     sessions: 'Sessions'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'dispute_resolved', 'flagged', 'senior_review_flagged', 'escalated', 'screenshots'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = [
+    'accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed',
+    'flagged', 'senior_review_flagged', 'escalated', 'session_qa_performed', 'screenshots'
+];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
     notes_to_qa: 'Submitted with Notes to QA',
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
-    dispute_resolved: 'Dispute Resolved',
     flagged: 'Flagged as bugged',
     senior_review_flagged: 'Flagged for Senior Review',
     escalated: 'Escalated',
+    session_qa_performed: 'Session QA Performed',
     screenshots: 'Screenshots associated with task'
+};
+const DASH_LIB_SESSION_QA_OUTCOME_ORDER = ['pass', 'fail', 'review_needed'];
+const DASH_LIB_SESSION_QA_OUTCOME_LABELS = {
+    pass: 'Pass',
+    fail: 'Fail',
+    review_needed: 'Review Needed'
+};
+const DASH_LIB_DISPUTE_OUTCOME_ORDER = [
+    'pending', 'approved', 'rejected', 'approved_with_revisions', 'approved_and_accepted'
+];
+const DASH_LIB_DISPUTE_OUTCOME_LABELS = {
+    pending: 'Pending',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    approved_with_revisions: 'Approved & Return to Writer',
+    approved_and_accepted: 'Approved & Accept Task'
+};
+const DASH_LIB_SR_REVIEW_OUTCOME_ORDER = ['pending', 'confirmed', 'dismissed'];
+const DASH_LIB_SR_REVIEW_OUTCOME_LABELS = {
+    pending: 'Pending',
+    confirmed: 'Confirmed',
+    dismissed: 'Dismissed'
 };
 const DASH_LIB_QA_HELPFULNESS_ORDER = ['helpful', 'not_helpful', 'written_review'];
 const DASH_LIB_QA_HELPFULNESS_LABELS = {
@@ -66,6 +91,9 @@ const DASH_LIB_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-session-qa-outcome', optionsKey: 'sessionQaOutcomes', draftKey: 'sessionQaOutcomes' },
+    { scopeKey: 'filter-dispute-outcome', optionsKey: 'disputeOutcomes', draftKey: 'disputeOutcomes' },
+    { scopeKey: 'filter-sr-review-outcome', optionsKey: 'srReviewOutcomes', draftKey: 'srReviewOutcomes' },
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
     { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
@@ -516,7 +544,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '5.0',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -652,6 +680,12 @@ const plugin = {
 
             QA_HELPFULNESS_ORDER: DASH_LIB_QA_HELPFULNESS_ORDER,
             QA_HELPFULNESS_LABELS: DASH_LIB_QA_HELPFULNESS_LABELS,
+            SESSION_QA_OUTCOME_ORDER: DASH_LIB_SESSION_QA_OUTCOME_ORDER,
+            SESSION_QA_OUTCOME_LABELS: DASH_LIB_SESSION_QA_OUTCOME_LABELS,
+            DISPUTE_OUTCOME_ORDER: DASH_LIB_DISPUTE_OUTCOME_ORDER,
+            DISPUTE_OUTCOME_LABELS: DASH_LIB_DISPUTE_OUTCOME_LABELS,
+            SR_REVIEW_OUTCOME_ORDER: DASH_LIB_SR_REVIEW_OUTCOME_ORDER,
+            SR_REVIEW_OUTCOME_LABELS: DASH_LIB_SR_REVIEW_OUTCOME_LABELS,
             V1_CREATION_TIME_BUCKET_ORDER: DASH_LIB_V1_CREATION_TIME_BUCKET_ORDER,
             V1_CREATION_TIME_BUCKET_LABELS: DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS,
             v1CreationTimeMinutes: dashLibV1CreationTimeMinutes,
@@ -659,6 +693,9 @@ const plugin = {
             itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
             itemQaHelpfulness: bind(self._itemQaHelpfulness),
             itemPromptHistory: bind(self._itemPromptHistory),
+            itemSessionQaOutcomes: bind(self._itemSessionQaOutcomes),
+            itemDisputeOutcomes: bind(self._itemDisputeOutcomes),
+            itemSrReviewOutcomes: bind(self._itemSrReviewOutcomes),
             itemV1CreationTimeMinutes: bind(self._itemV1CreationTimeMinutes),
             itemV1CreationTimeBuckets: bind(self._itemV1CreationTimeBuckets),
             itemQaTimeMinutes: bind(self._itemQaTimeMinutes),
@@ -1045,7 +1082,14 @@ const plugin = {
         return false;
     },
 
-    _itemPromptHistory(item) {
+    _itemSessionQaReviews(item, sessionQaUi) {
+        if (!item || !item.id) return [];
+        const ui = sessionQaUi && sessionQaUi[item.id];
+        if (!ui || !Array.isArray(ui.reviews)) return [];
+        return ui.reviews;
+    },
+
+    _itemPromptHistory(item, sessionQaUi) {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
             const rt = this._returnTypeOf(entry);
@@ -1055,22 +1099,98 @@ const plugin = {
             else if (rt === 'bugged') flags.add('flagged');
         }
         if (item.disputes && item.disputes.length > 0) flags.add('disputed');
-        if ((item.disputes || []).some((d) => d.resolutionAt)) flags.add('dispute_resolved');
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
         if (this._taskHasNotesToQa(item.task)) flags.add('notes_to_qa');
+        if (this._itemSessionQaReviews(item, sessionQaUi).length > 0) flags.add('session_qa_performed');
         if (this._itemHasAssociatedScreenshots(item)) flags.add('screenshots');
         return [...flags];
     },
 
-    _itemPassesPromptHistoryFilter(item, draft, listBounds, forceIncludeId) {
+    _itemSessionQaOutcomes(item, sessionQaUi) {
+        const flags = new Set();
+        for (const review of this._itemSessionQaReviews(item, sessionQaUi)) {
+            const verdict = String((review && review.verdict) || '').trim().toLowerCase();
+            if (DASH_LIB_SESSION_QA_OUTCOME_ORDER.includes(verdict)) flags.add(verdict);
+        }
+        return [...flags];
+    },
+
+    _itemDisputeOutcomes(item) {
+        const flags = new Set();
+        for (const dispute of (item && item.disputes) || []) {
+            if (!dispute) continue;
+            const status = String(dispute.status || '').trim().toLowerCase();
+            if (!dispute.resolutionAt || status === 'pending' || !status) {
+                flags.add('pending');
+                continue;
+            }
+            if (DASH_LIB_DISPUTE_OUTCOME_ORDER.includes(status)) flags.add(status);
+        }
+        return [...flags];
+    },
+
+    _itemSrReviewOutcomes(item) {
+        const flags = new Set();
+        for (const flag of (item && item.flags) || []) {
+            if (!flag) continue;
+            if (flag.isPending || String(flag.status || '').toLowerCase() === 'pending' || !flag.resolutionAt) {
+                flags.add('pending');
+                continue;
+            }
+            if (flag.isConfirmed || String(flag.status || '').toLowerCase() === 'confirmed') {
+                flags.add('confirmed');
+            } else if (flag.isDismissed || String(flag.status || '').toLowerCase() === 'dismissed') {
+                flags.add('dismissed');
+            }
+        }
+        return [...flags];
+    },
+
+    _itemPassesPromptHistoryFilter(item, draft, listBounds, forceIncludeId, sessionQaUi) {
         const selected = draft.promptHistory || [];
         const count = (listBounds.promptHistory || []).length;
         let effective = selected;
         if (forceIncludeId !== undefined) {
             effective = [...new Set([...selected, forceIncludeId])];
         }
-        return dashLibPassesDimension(this._itemPromptHistory(item), effective, count);
+        return dashLibPassesDimension(this._itemPromptHistory(item, sessionQaUi), effective, count);
+    },
+
+    _itemPassesDimensionFilter(values, selected, optionCount, forceIncludeId) {
+        if (optionCount === 0) return true;
+        let effective = selected || [];
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...effective, forceIncludeId])];
+        }
+        return dashLibPassesDimension(values, effective, optionCount);
+    },
+
+    _itemPassesSessionQaOutcomeFilter(item, draft, listBounds, sessionQaUi, forceIncludeId) {
+        return this._itemPassesDimensionFilter(
+            this._itemSessionQaOutcomes(item, sessionQaUi),
+            draft.sessionQaOutcomes || [],
+            (listBounds.sessionQaOutcomes || []).length,
+            forceIncludeId
+        );
+    },
+
+    _itemPassesDisputeOutcomeFilter(item, draft, listBounds, forceIncludeId) {
+        return this._itemPassesDimensionFilter(
+            this._itemDisputeOutcomes(item),
+            draft.disputeOutcomes || [],
+            (listBounds.disputeOutcomes || []).length,
+            forceIncludeId
+        );
+    },
+
+    _itemPassesSrReviewOutcomeFilter(item, draft, listBounds, forceIncludeId) {
+        return this._itemPassesDimensionFilter(
+            this._itemSrReviewOutcomes(item),
+            draft.srReviewOutcomes || [],
+            (listBounds.srReviewOutcomes || []).length,
+            forceIncludeId
+        );
     },
 
     _feedbackEligibleForHelpfulness(entry, currentUserId) {
@@ -1257,14 +1377,29 @@ const plugin = {
         const filteredTasks = this._applyClientTaskFilters(tasks, f, bounds);
         const allowedIds = new Set(filteredTasks.map((t) => t.id));
         let passed = items.filter((item) => allowedIds.has(item.task.id));
+        const helpfulnessUi = (sortContext && sortContext.helpfulnessUi) || {};
+        const currentUserId = (sortContext && sortContext.currentUserId) || '';
+        const sessionQaUi = (sortContext && sortContext.sessionQaUi) || {};
         const promptHistoryCount = (bounds.promptHistory || []).length;
         if (promptHistoryCount > 0) {
             passed = passed.filter((item) => dashLibPassesDimension(
-                this._itemPromptHistory(item), f.promptHistory || [], promptHistoryCount
+                this._itemPromptHistory(item, sessionQaUi), f.promptHistory || [], promptHistoryCount
             ));
         }
-        const helpfulnessUi = (sortContext && sortContext.helpfulnessUi) || {};
-        const currentUserId = (sortContext && sortContext.currentUserId) || '';
+        const sessionQaOutcomeCount = (bounds.sessionQaOutcomes || []).length;
+        if (sessionQaOutcomeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesSessionQaOutcomeFilter(
+                item, f, bounds, sessionQaUi
+            ));
+        }
+        const disputeOutcomeCount = (bounds.disputeOutcomes || []).length;
+        if (disputeOutcomeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesDisputeOutcomeFilter(item, f, bounds));
+        }
+        const srReviewOutcomeCount = (bounds.srReviewOutcomes || []).length;
+        if (srReviewOutcomeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesSrReviewOutcomeFilter(item, f, bounds));
+        }
         const qaHelpfulnessCount = (bounds.qaHelpfulness || []).length;
         if (qaHelpfulnessCount > 0) {
             passed = passed.filter((item) => this._itemPassesQaHelpfulnessFilter(
@@ -1406,7 +1541,8 @@ const plugin = {
         return sorted;
     },
 
-    _buildFilterListOptions(items, catalog, teamCatalog) {
+    _buildFilterListOptions(items, catalog, teamCatalog, filterCtx) {
+        const sessionQaUi = (filterCtx && filterCtx.sessionQaUi) || {};
         const teamIds = new Set();
         const projectIds = new Set();
         const envKeys = new Set();
@@ -1416,9 +1552,15 @@ const plugin = {
         const taskIssues = new Set();
         const returnTypes = new Set();
         const promptHistoryPresent = new Set();
+        const sessionQaOutcomesPresent = new Set();
+        const disputeOutcomesPresent = new Set();
+        const srReviewOutcomesPresent = new Set();
         for (const item of items) {
             const task = item.task;
-            for (const flag of this._itemPromptHistory(item)) promptHistoryPresent.add(flag);
+            for (const flag of this._itemPromptHistory(item, sessionQaUi)) promptHistoryPresent.add(flag);
+            for (const flag of this._itemSessionQaOutcomes(item, sessionQaUi)) sessionQaOutcomesPresent.add(flag);
+            for (const flag of this._itemDisputeOutcomes(item)) disputeOutcomesPresent.add(flag);
+            for (const flag of this._itemSrReviewOutcomes(item)) srReviewOutcomesPresent.add(flag);
             if (task.teamId) teamIds.add(task.teamId);
             if (task.projectId) projectIds.add(task.projectId);
             if (task.envKey) envKeys.add(task.envKey);
@@ -1486,7 +1628,16 @@ const plugin = {
                 .map((type) => ({ id: type, label: DASH_LIB_RETURN_TYPE_LABELS[type] })),
             promptHistory: DASH_LIB_PROMPT_HISTORY_ORDER
                 .filter((flag) => promptHistoryPresent.has(flag))
-                .map((flag) => ({ id: flag, label: DASH_LIB_PROMPT_HISTORY_LABELS[flag] }))
+                .map((flag) => ({ id: flag, label: DASH_LIB_PROMPT_HISTORY_LABELS[flag] })),
+            sessionQaOutcomes: DASH_LIB_SESSION_QA_OUTCOME_ORDER
+                .filter((id) => sessionQaOutcomesPresent.has(id))
+                .map((id) => ({ id, label: DASH_LIB_SESSION_QA_OUTCOME_LABELS[id] })),
+            disputeOutcomes: DASH_LIB_DISPUTE_OUTCOME_ORDER
+                .filter((id) => disputeOutcomesPresent.has(id))
+                .map((id) => ({ id, label: DASH_LIB_DISPUTE_OUTCOME_LABELS[id] })),
+            srReviewOutcomes: DASH_LIB_SR_REVIEW_OUTCOME_ORDER
+                .filter((id) => srReviewOutcomesPresent.has(id))
+                .map((id) => ({ id, label: DASH_LIB_SR_REVIEW_OUTCOME_LABELS[id] }))
         };
     },
 
@@ -1516,6 +1667,9 @@ const plugin = {
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Set()])
         );
         result.promptHistory = new Set();
+        result.sessionQaOutcomes = new Set();
+        result.disputeOutcomes = new Set();
+        result.srReviewOutcomes = new Set();
         result.qaHelpfulness = new Set();
         result.v1CreationTimeMinutes = new Set();
         result.qaTimeMinutes = new Set();
@@ -1526,7 +1680,8 @@ const plugin = {
     _itemFilterPassCtx(options) {
         return {
             helpfulnessUi: (options && options.helpfulnessUi) || {},
-            currentUserId: (options && options.currentUserId) || ''
+            currentUserId: (options && options.currentUserId) || '',
+            sessionQaUi: (options && options.sessionQaUi) || {}
         };
     },
 
@@ -1536,6 +1691,7 @@ const plugin = {
         const ex = exclude || {};
         const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
         const currentUserId = (ctx && ctx.currentUserId) || '';
+        const sessionQaUi = (ctx && ctx.sessionQaUi) || {};
         const itemKey = ex.itemKey || null;
         const forceId = ex.forceIncludeId;
 
@@ -1545,7 +1701,23 @@ const plugin = {
             return false;
         }
         if (!this._itemPassesPromptHistoryFilter(
-            item, draft, listBounds, itemKey === 'promptHistory' ? forceId : undefined
+            item, draft, listBounds, itemKey === 'promptHistory' ? forceId : undefined, sessionQaUi
+        )) {
+            return false;
+        }
+        if (!this._itemPassesSessionQaOutcomeFilter(
+            item, draft, listBounds, sessionQaUi,
+            itemKey === 'sessionQaOutcomes' ? forceId : undefined
+        )) {
+            return false;
+        }
+        if (!this._itemPassesDisputeOutcomeFilter(
+            item, draft, listBounds, itemKey === 'disputeOutcomes' ? forceId : undefined
+        )) {
+            return false;
+        }
+        if (!this._itemPassesSrReviewOutcomeFilter(
+            item, draft, listBounds, itemKey === 'srReviewOutcomes' ? forceId : undefined
         )) {
             return false;
         }
@@ -1592,12 +1764,45 @@ const plugin = {
         const irrelevantHistory = result.promptHistory;
         for (const { id } of historyOptions) {
             const hasMatch = items.some((item) => (
-                this._itemPromptHistory(item).includes(id)
+                this._itemPromptHistory(item, ctx.sessionQaUi).includes(id)
                 && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'promptHistory', forceIncludeId: id
                 })
             ));
             if (!hasMatch) irrelevantHistory.add(id);
+        }
+        const sessionQaOutcomeOptions = (options && options.sessionQaOutcomes) || [];
+        const irrelevantSessionQaOutcomes = result.sessionQaOutcomes;
+        for (const { id } of sessionQaOutcomeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemSessionQaOutcomes(item, ctx.sessionQaUi).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'sessionQaOutcomes', forceIncludeId: id
+                })
+            ));
+            if (!hasMatch) irrelevantSessionQaOutcomes.add(id);
+        }
+        const disputeOutcomeOptions = (options && options.disputeOutcomes) || [];
+        const irrelevantDisputeOutcomes = result.disputeOutcomes;
+        for (const { id } of disputeOutcomeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemDisputeOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'disputeOutcomes', forceIncludeId: id
+                })
+            ));
+            if (!hasMatch) irrelevantDisputeOutcomes.add(id);
+        }
+        const srReviewOutcomeOptions = (options && options.srReviewOutcomes) || [];
+        const irrelevantSrReviewOutcomes = result.srReviewOutcomes;
+        for (const { id } of srReviewOutcomeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemSrReviewOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'srReviewOutcomes', forceIncludeId: id
+                })
+            ));
+            if (!hasMatch) irrelevantSrReviewOutcomes.add(id);
         }
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const irrelevantHelpfulness = result.qaHelpfulness;
@@ -1651,6 +1856,9 @@ const plugin = {
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Map()])
         );
         result.promptHistory = new Map();
+        result.sessionQaOutcomes = new Map();
+        result.disputeOutcomes = new Map();
+        result.srReviewOutcomes = new Map();
         result.qaHelpfulness = new Map();
         result.v1CreationTimeMinutes = new Map();
         result.qaTimeMinutes = new Map();
@@ -1676,12 +1884,45 @@ const plugin = {
         const historyCounts = result.promptHistory;
         for (const { id } of historyOptions) {
             const count = items.filter((item) => (
-                this._itemPromptHistory(item).includes(id)
+                this._itemPromptHistory(item, ctx.sessionQaUi).includes(id)
                 && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'promptHistory', forceIncludeId: id
                 })
             )).length;
             historyCounts.set(id, count);
+        }
+        const sessionQaOutcomeOptions = (options && options.sessionQaOutcomes) || [];
+        const sessionQaOutcomeCounts = result.sessionQaOutcomes;
+        for (const { id } of sessionQaOutcomeOptions) {
+            const count = items.filter((item) => (
+                this._itemSessionQaOutcomes(item, ctx.sessionQaUi).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'sessionQaOutcomes', forceIncludeId: id
+                })
+            )).length;
+            sessionQaOutcomeCounts.set(id, count);
+        }
+        const disputeOutcomeOptions = (options && options.disputeOutcomes) || [];
+        const disputeOutcomeCounts = result.disputeOutcomes;
+        for (const { id } of disputeOutcomeOptions) {
+            const count = items.filter((item) => (
+                this._itemDisputeOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'disputeOutcomes', forceIncludeId: id
+                })
+            )).length;
+            disputeOutcomeCounts.set(id, count);
+        }
+        const srReviewOutcomeOptions = (options && options.srReviewOutcomes) || [];
+        const srReviewOutcomeCounts = result.srReviewOutcomes;
+        for (const { id } of srReviewOutcomeOptions) {
+            const count = items.filter((item) => (
+                this._itemSrReviewOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'srReviewOutcomes', forceIncludeId: id
+                })
+            )).length;
+            srReviewOutcomeCounts.set(id, count);
         }
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const helpfulnessCounts = result.qaHelpfulness;

@@ -18,6 +18,9 @@ const STATS_DIMENSION_DEFS = [
     { key: 'taskIssues', optionsKey: 'taskIssues', scopeKey: 'filter-task-issues', kind: 'task' },
     { key: 'returnTypes', optionsKey: 'returnTypes', scopeKey: 'filter-return-types', kind: 'task' },
     { key: 'promptHistory', optionsKey: 'promptHistory', scopeKey: 'filter-prompt-history', kind: 'item' },
+    { key: 'sessionQaOutcomes', optionsKey: 'sessionQaOutcomes', scopeKey: 'filter-session-qa-outcome', kind: 'item' },
+    { key: 'disputeOutcomes', optionsKey: 'disputeOutcomes', scopeKey: 'filter-dispute-outcome', kind: 'item' },
+    { key: 'srReviewOutcomes', optionsKey: 'srReviewOutcomes', scopeKey: 'filter-sr-review-outcome', kind: 'item' },
     { key: 'qaHelpfulness', optionsKey: 'qaHelpfulness', scopeKey: 'filter-qa-helpfulness', kind: 'item' },
     { key: 'v1CreationTimeMinutes', optionsKey: 'v1CreationTimeMinutes', scopeKey: 'filter-v1-creation-time', kind: 'item-bucket' },
     { key: 'qaTimeMinutes', optionsKey: 'qaTimeMinutes', scopeKey: 'filter-qa-time', kind: 'item-bucket' },
@@ -390,7 +393,8 @@ function statsFilterItemsForChart(items, chart, ctx) {
     }
     const sortContext = {
         helpfulnessUi: (ctx && ctx.helpfulnessUi) || {},
-        currentUserId: (ctx && ctx.currentUserId) || ''
+        currentUserId: (ctx && ctx.currentUserId) || '',
+        sessionQaUi: (ctx && ctx.sessionQaUi) || {}
     };
     return lib.applyClientWorkerOutputFilters(items || [], chartFilters, listBounds, sortContext);
 }
@@ -864,6 +868,7 @@ function statsGetDimensionValues(item, dimKey, lib, ctx) {
     if (!task) return [];
     const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
     const currentUserId = (ctx && ctx.currentUserId) || '';
+    const sessionQaUi = (ctx && ctx.sessionQaUi) || {};
     const getVersionCount = ctx && ctx.getVersionCount;
     switch (dimKey) {
         case 'teamIds':
@@ -883,7 +888,21 @@ function statsGetDimensionValues(item, dimKey, lib, ctx) {
         case 'returnTypes':
             return lib && typeof lib.taskReturnTypes === 'function' ? lib.taskReturnTypes(task) : [];
         case 'promptHistory':
-            return lib && typeof lib.itemPromptHistory === 'function' ? lib.itemPromptHistory(item) : [];
+            return lib && typeof lib.itemPromptHistory === 'function'
+                ? lib.itemPromptHistory(item, sessionQaUi)
+                : [];
+        case 'sessionQaOutcomes':
+            return lib && typeof lib.itemSessionQaOutcomes === 'function'
+                ? lib.itemSessionQaOutcomes(item, sessionQaUi)
+                : [];
+        case 'disputeOutcomes':
+            return lib && typeof lib.itemDisputeOutcomes === 'function'
+                ? lib.itemDisputeOutcomes(item)
+                : [];
+        case 'srReviewOutcomes':
+            return lib && typeof lib.itemSrReviewOutcomes === 'function'
+                ? lib.itemSrReviewOutcomes(item)
+                : [];
         case 'qaHelpfulness':
             return lib && typeof lib.itemQaHelpfulness === 'function'
                 ? lib.itemQaHelpfulness(item, helpfulnessUi, currentUserId)
@@ -1927,7 +1946,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '6.0',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

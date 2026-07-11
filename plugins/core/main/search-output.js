@@ -3521,21 +3521,11 @@ const searchOutputCoreMethods = {
 
     _listBoundsFromOptions(options) {
         const opts = options || {};
-        return {
-            teamIds: (opts.teams || []).map((t) => t.id),
-            projectIds: (opts.projects || []).map((p) => p.id),
-            envKeys: (opts.envs || []).map((e) => e.id),
-            statuses: (opts.statuses || []).map((s) => s.id),
-            contributorIds: (opts.contributors || []).map((c) => c.id),
-            promptRatings: (opts.promptRatings || []).map((r) => r.id),
-            taskIssues: (opts.taskIssues || []).map((i) => i.id),
-            returnTypes: (opts.returnTypes || []).map((r) => r.id),
-            promptHistory: (opts.promptHistory || []).map((h) => h.id),
-            qaHelpfulness: (opts.qaHelpfulness || []).map((h) => h.id),
-            v1CreationTimeMinutes: (opts.v1CreationTimeMinutes || []).map((h) => h.id),
-            qaTimeMinutes: (opts.qaTimeMinutes || []).map((h) => h.id),
-            disputeResolutionTimeMinutes: (opts.disputeResolutionTimeMinutes || []).map((h) => h.id)
-        };
+        const bounds = {};
+        for (const { optionsKey, draftKey } of dashFilterScopes()) {
+            bounds[draftKey] = (opts[optionsKey] || []).map((entry) => entry.id);
+        }
+        return bounds;
     },
 
     _buildQaHelpfulnessFilterOptions(scopeItems) {
@@ -3589,6 +3579,17 @@ const searchOutputCoreMethods = {
     _refreshHelpfulnessFilterUi() {
         if (!this._state.cachedItems) return;
         this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
+    },
+
+    _refreshSessionQaFilterUi() {
+        if (!this._state.cachedItems) return;
+        this._reindexFilterListsFromScope(false);
+        if (typeof this._renderFilterLists === 'function') {
+            this._renderFilterLists({ syncDraftFromApplied: true });
+        }
+        if (typeof this._updateApplyFiltersUi === 'function') {
+            this._updateApplyFiltersUi();
+        }
     },
 
     _isDimensionUnrestricted(selected, boundIds) {
@@ -3917,7 +3918,8 @@ const searchOutputCoreMethods = {
         const options = lib.buildFilterListOptions(
             scopeItems,
             this._state.catalog,
-            this._getSearchableTeamCatalog()
+            this._getSearchableTeamCatalog(),
+            { sessionQaUi: this._state.sessionQaUi || {} }
         );
         options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
         options.v1CreationTimeMinutes = this._buildV1CreationTimeFilterOptions(scopeItems);
@@ -4071,20 +4073,11 @@ const searchOutputCoreMethods = {
 
     _filtersAllSelectedFromBounds(bounds) {
         const sort = this._readDashSortFromUi();
-        return {
-            teamIds: [],
-            projectIds: [],
-            envKeys: [],
-            statuses: [],
-            contributorIds: [],
-            promptRatings: [],
-            taskIssues: [],
-            returnTypes: [],
-            promptHistory: [],
-            qaHelpfulness: [],
-            v1CreationTimeMinutes: [],
-            qaTimeMinutes: [],
-            disputeResolutionTimeMinutes: [],
+        const checkboxFilters = {};
+        for (const { draftKey } of dashFilterScopes()) {
+            checkboxFilters[draftKey] = [];
+        }
+        return Object.assign({}, checkboxFilters, {
             promptText: (this._q('#wf-dash-prompt') || {}).value || '',
             fuzzy: Boolean((this._q('#wf-dash-fuzzy') || {}).checked),
             regex: Boolean((this._q('#wf-dash-regex') || {}).checked),
@@ -4093,7 +4086,7 @@ const searchOutputCoreMethods = {
             sortOrder: sort.sortOrder,
             manualFilters: [],
             manualAndOr: 'and'
-        };
+        });
     },
 
     _parseDashSortValue(raw) {
@@ -4124,7 +4117,8 @@ const searchOutputCoreMethods = {
             openDisputesByTaskId: this._getPrefetchCache('openDisputes'),
             resolvedDisputesByTaskId: this._getPrefetchCache('resolvedDisputes'),
             helpfulnessUi: this._state.helpfulnessUi || {},
-            currentUserId: this._dashGetCurrentUserId()
+            currentUserId: this._dashGetCurrentUserId(),
+            sessionQaUi: this._state.sessionQaUi || {}
         };
     },
 
@@ -5481,7 +5475,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.1',
+    _version: '9.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

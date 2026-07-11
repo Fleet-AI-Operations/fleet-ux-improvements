@@ -1,7 +1,7 @@
 {
   "version": "11.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.133",
+  "archetypesVersion": "13.134",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -54,8 +54,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "5.0",
-      "hash": "sha256-bf3587e03a637a65be2a237801af5924d3da748f01b58585c469559a5e4c646f",
+      "version": "6.0",
+      "hash": "sha256-0a40743713ec6ce51fcc54641bf7ea367cf4ab4dd3bec9d3663a069b75de2e5c",
       "log": false
     },
     {
@@ -84,32 +84,32 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "4.0",
-      "hash": "sha256-275f3a988953bac7cae5e5d45de3e5d5d5e05ad19ec8a6adc51a186d243c3513",
+      "version": "4.1",
+      "hash": "sha256-36ef9308476d975f97b6848935ec34b508bbda9837c021623b87c59df56570e4",
       "log": false
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "4.0",
-      "hash": "sha256-affc5e12edbcdd14d256378c58d8c6911c6e1febaf103ba908c18ead8b3eb4e6",
+      "version": "4.1",
+      "hash": "sha256-c2e909d2f6aa23985d7a81372ea691b6b2490356bc229d100f5fa3bfdd8135e3",
       "log": false
     },
     {
       "name": "search-output-stats-engine.js",
-      "version": "6.0",
-      "hash": "sha256-78178e7705aafc5ae099721e3d1cfaf1e661e17a5d83d43687759c582462df0f",
+      "version": "7.0",
+      "hash": "sha256-c6bb509b3e3e82e0f091fd76559b2a2c6f75c3b43f9b851cf492ee322a42e4ae",
       "log": false
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "7.3",
-      "hash": "sha256-4be1cf1069bf90ebc2ef2b8207e03e68b1f1ddfc1f0558e72bbb1775d94dfa32",
+      "version": "7.4",
+      "hash": "sha256-89676d584839e1453608a6aec9d45743a153382c4d7962c4db2341a5b57f87a8",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "9.1",
-      "hash": "sha256-3338896c02c25b6ab7a4fcc04cd78d4a9bbd085ddf37bbdd9ded9a05651f8352",
+      "version": "9.2",
+      "hash": "sha256-5a0e207cd63ea37114b0bc3520e327d6d603838af91d048644d0aa32b38b1679",
       "log": false
     },
     {

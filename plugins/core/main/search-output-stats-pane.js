@@ -218,6 +218,7 @@ const searchOutputStatsPaneMethods = {
             items: items || [],
             helpfulnessUi: this._state.helpfulnessUi || {},
             currentUserId: typeof this._dashGetCurrentUserId === 'function' ? this._dashGetCurrentUserId() : '',
+            sessionQaUi: this._state.sessionQaUi || {},
             resolveScopeLabel: (scopeKey) => (
                 typeof this._filterScopeLabel === 'function' ? this._filterScopeLabel(scopeKey) : scopeKey
             ),
@@ -5319,7 +5320,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '7.3',
+    _version: '7.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

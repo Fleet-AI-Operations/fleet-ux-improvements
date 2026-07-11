@@ -819,6 +819,9 @@ const searchOutputLeftPaneMethods = {
     _filterScopeLabel(scopeKey) {
         const labels = {
             'filter-prompt-history': 'Task Lifecycle History',
+            'filter-session-qa-outcome': 'Session QA Outcome',
+            'filter-dispute-outcome': 'Dispute Outcome',
+            'filter-sr-review-outcome': 'Sr Review Outcome',
             'filter-teams': 'Team',
             'filter-projects': 'Project',
             'filter-envs': 'Environment',
@@ -1320,11 +1323,9 @@ const searchOutputLeftPaneMethods = {
     },
 
     _resetFilterLists() {
-        this._state.filterListOptions = {
-            teams: [], projects: [], envs: [],
-            statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: [], qaTimeMinutes: [], disputeResolutionTimeMinutes: []
-        };
+        const empty = {};
+        for (const { optionsKey } of dashFilterScopes()) empty[optionsKey] = [];
+        this._state.filterListOptions = empty;
         this._resetManualFilters();
         for (const { scopeKey } of dashFilterScopes()) {
             const panel = this._msPanelEl(scopeKey);
@@ -1354,7 +1355,8 @@ const searchOutputLeftPaneMethods = {
         const lib = dashLib();
         const filterOptions = Object.assign({}, options, {
             helpfulnessUi: this._state.helpfulnessUi || {},
-            currentUserId: this._dashGetCurrentUserId()
+            currentUserId: this._dashGetCurrentUserId(),
+            sessionQaUi: this._state.sessionQaUi || {}
         });
         const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, filterOptions)
@@ -1365,7 +1367,8 @@ const searchOutputLeftPaneMethods = {
         const order = this._state.filterSelectionOrder || [];
         const pctCtx = {
             helpfulnessUi: filterOptions.helpfulnessUi,
-            currentUserId: filterOptions.currentUserId
+            currentUserId: filterOptions.currentUserId,
+            sessionQaUi: filterOptions.sessionQaUi
         };
         const denominatorByDraftKey = {};
         for (const { draftKey } of dashFilterScopes()) {
@@ -1633,11 +1636,7 @@ const searchOutputLeftPaneMethods = {
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
         if (Boolean(draft.regex) !== Boolean(applied.regex)) return true;
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
-        const keys = [
-            'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
-            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness',
-            'v1CreationTimeMinutes', 'qaTimeMinutes', 'disputeResolutionTimeMinutes'
-        ];
+        const keys = dashFilterScopes().map((s) => s.draftKey);
         for (const key of keys) {
             const boundIds = bounds[key] || [];
             if (!this._filterDimensionEquivalent(draft[key], applied[key], boundIds)) return true;
@@ -2162,23 +2161,8 @@ const searchOutputLeftPaneMethods = {
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if (!applied) return false;
         const lib = dashLib();
-        const dims = [
-            ['teamIds', bounds.teamIds],
-            ['projectIds', bounds.projectIds],
-            ['envKeys', bounds.envKeys],
-            ['statuses', bounds.statuses],
-            ['contributorIds', bounds.contributorIds],
-            ['promptRatings', bounds.promptRatings],
-            ['taskIssues', bounds.taskIssues],
-            ['returnTypes', bounds.returnTypes],
-            ['promptHistory', bounds.promptHistory],
-            ['qaHelpfulness', bounds.qaHelpfulness],
-            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes],
-            ['qaTimeMinutes', bounds.qaTimeMinutes],
-            ['disputeResolutionTimeMinutes', bounds.disputeResolutionTimeMinutes]
-        ];
-        for (const [key, boundIds] of dims) {
-            if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
+        for (const { draftKey } of dashFilterScopes()) {
+            if (!this._isDimensionUnrestricted(applied[draftKey] || [], bounds[draftKey] || [])) return true;
         }
         return (applied.regex && lib.isRegexQueryActive(applied.promptText))
             || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive))
@@ -2716,7 +2700,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

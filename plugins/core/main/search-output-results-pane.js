@@ -2625,6 +2625,9 @@ const searchOutputResultsPaneMethods = {
             delete ui.animateOpen;
             this._syncSessionQaPanelOpen(id, ui.visible);
         }
+        if (typeof this._refreshSessionQaFilterUi === 'function') {
+            this._refreshSessionQaFilterUi();
+        }
     },
 
     _getUnhydratedInView() {
@@ -5668,7 +5671,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
