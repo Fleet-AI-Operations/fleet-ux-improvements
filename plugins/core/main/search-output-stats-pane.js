@@ -7,6 +7,7 @@ const STATS_SCORECARD_ROW_GAP_PX = 12;
 const STATS_CIRCULAR_CHART_TYPES = new Set(['pie', 'polarArea', 'radar']);
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 const STATS_LINE_BORDER_WIDTH = 2.25;
+const STATS_LINE_TENSION = 0.2;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -2662,7 +2663,7 @@ const searchOutputStatsPaneMethods = {
                     }));
                     chartDatasets.push(Object.assign({}, base, {
                         type: 'line',
-                        tension: 0.2,
+                        tension: STATS_LINE_TENSION,
                         spanGaps: true,
                         pointRadius: 3,
                         fill: false,
@@ -2680,6 +2681,8 @@ const searchOutputStatsPaneMethods = {
                         borderWidth: 0,
                         pointRadius: 0,
                         pointHoverRadius: 0,
+                        tension: STATS_LINE_TENSION,
+                        spanGaps: true,
                         stack: 'line-' + valueScale,
                         statsLegendHidden: true
                     }));
@@ -2693,7 +2696,7 @@ const searchOutputStatsPaneMethods = {
                         borderColor: outlineColor,
                         backgroundColor: outlineColor,
                         borderWidth: STATS_LINE_BORDER_WIDTH,
-                        tension: 0.2,
+                        tension: STATS_LINE_TENSION,
                         spanGaps: true,
                         pointRadius: 3
                     }));
@@ -2709,6 +2712,8 @@ const searchOutputStatsPaneMethods = {
                         borderWidth: 0,
                         pointRadius: 0,
                         pointHoverRadius: 0,
+                        tension: STATS_LINE_TENSION,
+                        spanGaps: true,
                         statsLegendHidden: true,
                         statsShadedFillLayer: true,
                         statsSeriesKey: seriesKey
@@ -2716,7 +2721,7 @@ const searchOutputStatsPaneMethods = {
                     chartDatasets.push(Object.assign({}, base, {
                         order: 1,
                         fill: false,
-                        tension: 0.2,
+                        tension: STATS_LINE_TENSION,
                         spanGaps: true,
                         pointRadius: 3,
                         borderWidth: STATS_LINE_BORDER_WIDTH,
@@ -2726,7 +2731,7 @@ const searchOutputStatsPaneMethods = {
                     return;
                 }
                 const lineOpts = {
-                    tension: 0.2,
+                    tension: STATS_LINE_TENSION,
                     spanGaps: true,
                     pointRadius: 3,
                     borderWidth: STATS_LINE_BORDER_WIDTH,
@@ -5474,7 +5479,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '8.2',
+    _version: '8.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
