@@ -4336,11 +4336,10 @@ const searchOutputStatsPaneMethods = {
     },
 
     _ratingSearchScoreTypes(committed) {
-        const c = committed || {};
-        return {
-            showTwqs: Boolean(c.includeTaskCreation),
-            showQaqs: Boolean(c.includeQa)
-        };
+        // Score-type visibility is derived from data present on hydrated cards,
+        // not from search-type flags — so sessions-only and other search types
+        // can still generate ratings for whoever appears in results.
+        return { showTwqs: true, showQaqs: true };
     },
 
     _isPrefetchInProgress(kind) {
@@ -4387,18 +4386,16 @@ const searchOutputStatsPaneMethods = {
     },
 
     _ratingsSortOptions(committed) {
-        const scoreTypes = this._ratingSearchScoreTypes(committed);
-        const opts = [{ id: 'confidence-desc', label: 'Confidence high→low' }];
-        if (scoreTypes.showTwqs) {
-            opts.push({ id: 'twqs-desc', label: 'TWQS high→low' });
-            opts.push({ id: 'twqs-asc', label: 'TWQS low→high' });
-        }
-        if (scoreTypes.showQaqs) {
-            opts.push({ id: 'qaqs-desc', label: 'QAQS high→low' });
-            opts.push({ id: 'qaqs-asc', label: 'QAQS low→high' });
-        }
-        opts.push({ id: 'name-asc', label: 'Name A→Z' });
-        return opts;
+        return [
+            { id: 'confidence-desc', label: 'Confidence high→low' },
+            { id: 'combined-desc',   label: 'Combined high→low' },
+            { id: 'combined-asc',    label: 'Combined low→high' },
+            { id: 'twqs-desc',       label: 'TWQS high→low' },
+            { id: 'twqs-asc',        label: 'TWQS low→high' },
+            { id: 'qaqs-desc',       label: 'QAQS high→low' },
+            { id: 'qaqs-asc',        label: 'QAQS low→high' },
+            { id: 'name-asc',        label: 'Name A→Z' },
+        ];
     },
 
     _defaultRatingsSortKey(committed) {
@@ -4430,24 +4427,45 @@ const searchOutputStatsPaneMethods = {
         return 0;
     },
 
+    // Returns the selected weighting variant ('flat' or 'recency') for a worker card.
+    _ratingWorkerWeighting(workerId) {
+        const stored = this._state.ratingsWeightingByWorker
+            && this._state.ratingsWeightingByWorker[String(workerId || '').trim()];
+        return stored === 'flat' ? 'flat' : 'recency';
+    },
+
+    // Returns the score block for a given weighting variant (twqs, qaqs, or combined).
+    _ratingBlockForWeighting(worker, scoreKey) {
+        if (!worker) return null;
+        const weighting = this._ratingWorkerWeighting(worker.workerId);
+        const entry = worker[scoreKey];
+        if (!entry) return null;
+        if (typeof entry === 'object' && ('flat' in entry || 'recency' in entry)) {
+            return entry[weighting] || null;
+        }
+        return entry;
+    },
+
     _ratingWorkerConfidenceSortValue(worker, scoreTypes) {
         const blocks = this._ratingVisibleScoreBlocks(worker, scoreTypes);
         let bestTier = 0;
-        let bestTrailing = 0;
+        let bestCount = 0;
         for (const block of blocks) {
             const tier = block.confidence && block.confidence.tier;
             const rank = this._ratingConfidenceTierRank(tier);
             const display = block.display || {};
-            const trailing = Math.max(
+            const count = Math.max(
+                Number(display.terminalTaskCount) || 0,
+                Number(display.inScopeFeedbackCount) || 0,
                 Number(display.trailing90dSubmissions) || 0,
                 Number(display.trailing90dFeedbackRows) || 0
             );
-            if (rank > bestTier || (rank === bestTier && trailing > bestTrailing)) {
+            if (rank > bestTier || (rank === bestTier && count > bestCount)) {
                 bestTier = rank;
-                bestTrailing = trailing;
+                bestCount = count;
             }
         }
-        return bestTier * 100000 + bestTrailing;
+        return bestTier * 100000 + bestCount;
     },
 
     _ensureRatingsSortKey(committed) {
@@ -4460,8 +4478,10 @@ const searchOutputStatsPaneMethods = {
 
     _ratingVisibleScoreBlocks(worker, scoreTypes) {
         const blocks = [];
-        if (scoreTypes.showTwqs && worker.twqs) blocks.push(worker.twqs);
-        if (scoreTypes.showQaqs && worker.qaqs) blocks.push(worker.qaqs);
+        const twqsBlock = this._ratingBlockForWeighting(worker, 'twqs');
+        const qaqsBlock = this._ratingBlockForWeighting(worker, 'qaqs');
+        if (scoreTypes.showTwqs && twqsBlock) blocks.push(twqsBlock);
+        if (scoreTypes.showQaqs && qaqsBlock) blocks.push(qaqsBlock);
         return blocks;
     },
 
@@ -4476,11 +4496,18 @@ const searchOutputStatsPaneMethods = {
             return this._ratingWorkerConfidenceSortValue(worker, scoreTypes);
         }
         if (sortKey === 'twqs-desc' || sortKey === 'twqs-asc') {
-            const s = worker.twqs && worker.twqs.score;
+            const block = this._ratingBlockForWeighting(worker, 'twqs');
+            const s = block && block.score;
             return Number.isFinite(s) ? s : null;
         }
         if (sortKey === 'qaqs-desc' || sortKey === 'qaqs-asc') {
-            const s = worker.qaqs && worker.qaqs.score;
+            const block = this._ratingBlockForWeighting(worker, 'qaqs');
+            const s = block && block.score;
+            return Number.isFinite(s) ? s : null;
+        }
+        if (sortKey === 'combined-desc' || sortKey === 'combined-asc') {
+            const block = this._ratingBlockForWeighting(worker, 'combined');
+            const s = block && block.score;
             return Number.isFinite(s) ? s : null;
         }
         return null;
@@ -4603,19 +4630,17 @@ const searchOutputStatsPaneMethods = {
     },
 
     _collectRatingWorkerIdsFromItems(cachedItems, committed) {
-        const c = committed || {};
-        const includeTw = Boolean(c.includeTaskCreation);
-        const includeQa = Boolean(c.includeQa);
+        // Collect worker IDs from any hydrated card — not gated on search-type flags.
+        // This ensures sessions-only (and other non-task/non-QA) searches can still
+        // generate ratings for contributors visible in the current results scope.
         const ids = new Set();
         for (const item of cachedItems || []) {
             if (!item || item.hydrated !== true) continue;
             const task = item.task;
             if (!task) continue;
-            if (includeTw && task.author && task.author.id) ids.add(task.author.id);
-            if (includeQa) {
-                for (const entry of task.allFeedback || []) {
-                    if (entry.reviewer && entry.reviewer.id) ids.add(entry.reviewer.id);
-                }
+            if (task.author && task.author.id) ids.add(task.author.id);
+            for (const entry of task.allFeedback || []) {
+                if (entry.reviewer && entry.reviewer.id) ids.add(entry.reviewer.id);
             }
         }
         return [...ids].sort();
@@ -4698,56 +4723,73 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Task Outcomes', weight: '40%', measures: 'How far authored tasks progress in the lifecycle (production is ideal).' },
-            { label: 'Revision Efficiency', weight: '25%', measures: 'How few revision rounds their tasks needed before landing.' },
-            { label: 'Consistency', weight: '15%', measures: 'How steadily they worked, week to week, across the span.' },
-            { label: 'Dispute Outcomes', weight: '10%', measures: 'Share of their resolved disputes decided in their favor.' },
-            { label: 'Sr Review Integrity', weight: '10%', measures: 'Absence of confirmed senior-review flags on their tasks.' }
+            { label: 'Outcome Quality',        weight: '40%', measures: 'Terminal task quality: production (1.0), bugged (0.35), discarded (0.15). In-flight tasks are excluded.' },
+            { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory).' },
+            { label: 'Non-Bottom Score Rate',  weight: '15%', measures: 'Share of explicitly scored feedback that was not the lowest possible rating.' },
+            { label: 'First-Pass Acceptance',  weight: '15%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
+            { label: 'Dispute Win Rate',       weight: '10%', measures: 'Share of their resolved disputes decided in their favor (unweighted counts).' },
         ];
         const qaqsRows = [
-            { label: 'Comprehensiveness', weight: '50%', measures: 'When they return a task, it gets fixed and accepted on the next round rather than being returned again.' },
-            { label: 'Dispute Defense', weight: '20%', measures: 'Share of resolved disputes against their calls that were upheld.' },
-            { label: 'Sr Review Integrity', weight: '20%', measures: 'Absence of confirmed poor-feedback flags against them, plus accuracy of flags they raised.' },
-            { label: 'Consistency', weight: '10%', measures: 'How steadily they reviewed, week to week, across the span.' }
+            { label: 'Return Effectiveness',  weight: '30%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
+            { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
+            { label: 'Label Discrimination',  weight: '25%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality.' },
+            { label: 'Dispute Defense',       weight: '20%', measures: 'Share of resolved disputes against their calls where they were the sole negative reviewer and the decision upheld them (unweighted counts).' },
         ];
+        const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
         return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
             + '<summary style="font-size: 11px; line-height: 1.45; cursor: pointer; list-style: none; user-select: none; ' + muted + '">'
             + '<strong style="color: var(--foreground, #0f172a);">About these ratings</strong>'
             + ' — how the scores are built and what they include.'
             + '</summary>'
             + '<div style="margin-top: 10px; font-size: 11px; line-height: 1.45; color: var(--foreground, #0f172a);">'
-            + '<p style="margin: 0 0 8px;">Two independent scores per contributor, each on a <strong>0–100</strong> scale:</p>'
+            + '<p style="margin: 0 0 8px;">Up to three scores per contributor, each on a <strong>0–100</strong> scale:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Task Writer Quality Score</strong> — quality of the work they <strong>authored</strong>.</li>'
-            + '<li><strong>QA Quality Score</strong> — quality of the reviews they <strong>performed</strong>.</li>'
+            + '<li><strong>Task Writer Quality Score (TWQS)</strong> — quality of the work they <strong>authored</strong>. Based on the WPS v1.2 model.</li>'
+            + '<li><strong>QA Quality Score (QAQS)</strong> — quality of the reviews they <strong>performed</strong>. Based on the QPS v2.1 model.</li>'
+            + '<li><strong>Combined</strong> — volume-weighted blend of TWQS and QAQS (same formula as the live ranking composite). Shown when a person has both roles. Higher task volume shifts weight toward TWQS; higher feedback volume shifts it toward QAQS.</li>'
             + '</ul>'
-            + '<p style="margin: 0 0 10px;">A person who does both jobs gets both scores. They are not blended into a single number.</p>'
+
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
+            + '<p style="margin: 0 0 8px;">Each card computes <strong>two variants</strong> of every score simultaneously. Toggle between them per card:</p>'
+            + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
+            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/90) to activity inside the window, so recent events weigh more. Matches the <code>--recency 90</code> local ranker run.</li>'
+            + '<li><strong>Flat</strong> — all in-scope events count equally. Matches the baseline (no-recency) local ranker run.</li>'
+            + '</ul>'
+            + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
+
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Estimated percentile</div>'
+            + '<p style="margin: 0 0 10px;">Each score shows an <em>estimated</em> percentile (e.g. &ldquo;~72nd pct&rdquo;) using a normal-CDF formula fitted to the dive.db population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics from historical ranking CSV runs. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, QAQS recency, combined flat, and combined recency. This is an approximation, not an exact rank.</p>'
+
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>0–100, higher is better.</strong> Scores measure distance from an ideal benchmark, <strong>not</strong> a ranking against other people. ~80 means near-ideal, not &ldquo;above average.&rdquo;</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The bar next to each axis is its own sub-score (0–100%).</li>'
-            + '<li>An axis with no qualifying activity is <strong>omitted</strong>, and its weight is spread across the others.</li>'
-            + '<li>Every score carries a <strong>confidence</strong> badge based on how much recent activity it is built from.</li>'
+            + '<li><strong>0–100, higher is better.</strong> Scores use empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The bar is the axis sub-score (0–100%). An omitted axis redistributes its weight to the others.</li>'
+            + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
             + '<thead><tr>'
             + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">Confidence</th>'
-            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">Activity in the last 90 days</th>'
+            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">TWQS: terminal tasks in scope</th>'
+            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">QAQS: feedback rows in scope</th>'
             + '</tr></thead>'
             + '<tbody>'
-            + '<tr><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">Provisional</td><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">fewer than 10</td></tr>'
-            + '<tr><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">Standard</td><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">10–49</td></tr>'
-            + '<tr><td style="padding: 4px 6px;">High confidence</td><td style="padding: 4px 6px;">50 or more</td></tr>'
+            + '<tr><td style="' + td + '">Provisional</td><td style="' + td + '">&lt; 10</td><td style="' + td + '">&lt; 25</td></tr>'
+            + '<tr><td style="' + td + '">Standard</td><td style="' + td + '">10 – 49</td><td style="' + td + '">25 – 99</td></tr>'
+            + '<tr><td style="padding: 4px 6px;">High confidence</td><td style="padding: 4px 6px;">≥ 50</td><td style="padding: 4px 6px;">≥ 100</td></tr>'
             + '</tbody></table>'
+
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">What counts toward a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li>Scores use the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>. Use the shared <strong>Filtered / All</strong> toggle (same as Stats): <strong>Filtered</strong> respects sidebar filters; <strong>All</strong> uses every result in the current results-kind tab.</li>'
-            + '<li>With no After/Before dates, all history counts, weighted toward recent activity. With a date range set, everything inside the window counts equally and nothing outside it does.</li>'
-            + '<li>Senior-review flags and disputes only move a score once they are <strong>resolved</strong>, and only in the direction the resolution supports. Pending or dismissed items stay neutral.</li>'
+            + '<li>Scores cover the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>, regardless of which search toggles (tasks, QA, sessions, disputes, etc.) produced those results.</li>'
+            + '<li>The <strong>Filtered / All</strong> scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.</li>'
+            + '<li>With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.</li>'
+            + '<li>Only <strong>terminal</strong> tasks count toward TWQS outcome quality (production, bugged, discarded). In-flight tasks are excluded. Disputes move a score only once <strong>resolved</strong>.</li>'
+            + '<li>Self-reviews are excluded from all feedback axes.</li>'
             + '</ul>'
+
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">The axes</div>'
-            + this._ratingsAboutAxisTableHtml('Task Writer Quality Score', twqsRows)
-            + this._ratingsAboutAxisTableHtml('QA Quality Score', qaqsRows)
+            + this._ratingsAboutAxisTableHtml('Task Writer Quality Score (TWQS)', twqsRows)
+            + this._ratingsAboutAxisTableHtml('QA Quality Score (QAQS)', qaqsRows)
             + '</div>'
             + '</details>';
     },
@@ -4759,13 +4801,13 @@ const searchOutputStatsPaneMethods = {
         let singular = '';
         let plural = '';
         if (basisKind === 'tasks') {
-            count = display.submissionCount;
-            singular = 'task';
-            plural = 'tasks';
+            count = display.terminalTaskCount != null ? display.terminalTaskCount : display.submissionCount;
+            singular = 'terminal task';
+            plural = 'terminal tasks';
         } else if (basisKind === 'feedbacks') {
-            count = display.feedbackRowCount;
-            singular = 'feedback';
-            plural = 'feedbacks';
+            count = display.inScopeFeedbackCount != null ? display.inScopeFeedbackCount : display.feedbackRowCount;
+            singular = 'feedback row';
+            plural = 'feedback rows';
         }
         if (count == null || !Number.isFinite(count)) return '';
         const label = count === 1 ? singular : plural;
@@ -4800,6 +4842,27 @@ const searchOutputStatsPaneMethods = {
     _ratingAxisOmitReason(axis) {
         if (!axis || axis.defined !== false) return null;
         switch (axis.id) {
+            // TWQS (WPS) axes
+            case 'outcomeQuality':
+                return 'No terminal tasks in scope';
+            case 'positiveFeedbackRate':
+                return 'No human feedback on authored tasks in scope';
+            case 'nonBottomScoreRate':
+                return 'No explicitly scored feedback in scope';
+            case 'firstPassAcceptance':
+                return 'No authored tasks with human feedback in scope';
+            case 'disputeWinRate':
+                return 'No resolved disputes in scope';
+            // QAQS (QPS) axes
+            case 'returnEffectiveness':
+                return 'No terminal tasks returned by this reviewer in scope';
+            case 'returnActionability':
+                return 'No return feedback episodes in scope';
+            case 'labelDiscrimination':
+                return 'No explicit score labels by this reviewer in scope';
+            case 'disputeDefense':
+                return 'No resolved sole-negative-reviewer disputes in scope';
+            // Legacy / fallback
             case 'feedbackResolution':
                 return 'No return episodes by this QA in scope';
             case 'reviewCallAccuracy':
@@ -4808,7 +4871,7 @@ const searchOutputStatsPaneMethods = {
             case 'consistency':
                 return 'Fewer than 2 active calendar weeks of activity in scope';
             default:
-                return 'Axis undefined';
+                return 'Axis omitted';
         }
     },
 
@@ -4833,26 +4896,80 @@ const searchOutputStatsPaneMethods = {
         const raw = axis.raw || {};
         const lines = [];
         switch (axis.id) {
-            case 'acceptanceSeverity': {
-                const meanPct = this._ratingPctOneDecimal(raw.severityMean);
-                if (meanPct != null) lines.push('Severity mean ' + meanPct + '%');
-                if (raw.eventCount != null) lines.push(raw.eventCount + ' task(s) scored');
+            // TWQS (WPS) axes
+            case 'outcomeQuality': {
+                if (raw.nTerminal != null) lines.push(raw.nTerminal + ' terminal task(s)');
+                if (raw.sumQuality != null && raw.nTerminal != null && raw.nTerminal > 0) {
+                    const meanPct = this._ratingPctOneDecimal(raw.sumQuality / raw.nTerminal);
+                    if (meanPct != null) lines.push('Mean quality ' + meanPct + '%');
+                }
                 const statusSummary = this._ratingFormatStatusCounts(raw.statusCounts);
                 if (statusSummary) lines.push(statusSummary);
                 break;
             }
-            case 'revisionEfficiency': {
-                if (raw.revisionEventCount != null) {
-                    lines.push(raw.revisionEventCount + ' revision event(s)');
-                }
-                if (raw.revisionExcludedByDisputes > 0) {
-                    lines.push(raw.revisionExcludedByDisputes + ' task(s) excluded by approved disputes');
-                }
-                if (raw.approvedDisputeRoundsSubtracted > 0) {
-                    lines.push(raw.approvedDisputeRoundsSubtracted + ' dispute round(s) credited');
+            case 'positiveFeedbackRate': {
+                if (raw.positive != null && raw.total != null && raw.total > 0) {
+                    const positivePct = this._ratingPctOneDecimal(raw.positive / raw.total);
+                    lines.push('Positive ' + (positivePct != null ? positivePct + '%' : '') + ' (' + Math.round(raw.positive * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
                 }
                 break;
             }
+            case 'nonBottomScoreRate': {
+                if (raw.nonBottom != null && raw.total != null && raw.total > 0) {
+                    const nbPct = this._ratingPctOneDecimal(raw.nonBottom / raw.total);
+                    lines.push('Non-bottom ' + (nbPct != null ? nbPct + '%' : '') + ' (' + Math.round(raw.nonBottom * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'firstPassAcceptance': {
+                if (raw.firstPass != null && raw.total != null && raw.total > 0) {
+                    const fpPct = this._ratingPctOneDecimal(raw.firstPass / raw.total);
+                    lines.push('First-pass ' + (fpPct != null ? fpPct + '%' : '') + ' (' + Math.round(raw.firstPass * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'disputeWinRate': {
+                if (raw.approved != null && raw.resolved != null && raw.resolved > 0) {
+                    const winPct = this._ratingPctOneDecimal(raw.approved / raw.resolved);
+                    lines.push('Won ' + (winPct != null ? winPct + '%' : '') + ' (' + raw.approved + ' / ' + raw.resolved + ' resolved)');
+                } else if (raw.resolved != null) {
+                    lines.push(raw.resolved + ' resolved dispute(s)');
+                }
+                break;
+            }
+            // QAQS (QPS) axes
+            case 'returnEffectiveness': {
+                if (raw.effective != null && raw.total != null && raw.total > 0) {
+                    const effPct = this._ratingPctOneDecimal(raw.effective / raw.total);
+                    lines.push('Effective ' + (effPct != null ? effPct + '%' : '') + ' (' + Math.round(raw.effective * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'returnActionability': {
+                if (raw.actionable != null && raw.total != null && raw.total > 0) {
+                    const aPct = this._ratingPctOneDecimal(raw.actionable / raw.total);
+                    lines.push('Actionable ' + (aPct != null ? aPct + '%' : '') + ' (' + Math.round(raw.actionable * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'labelDiscrimination': {
+                if (raw.labelCorrelation != null) {
+                    const ldPct = this._ratingPctOneDecimal(raw.labelCorrelation);
+                    if (ldPct != null) lines.push('Label–outcome correlation ' + ldPct + '%');
+                }
+                if (raw.total != null) lines.push(raw.total + ' labeled feedback row(s)');
+                break;
+            }
+            case 'disputeDefense': {
+                if (raw.upheld != null && raw.resolved != null && raw.resolved > 0) {
+                    const defPct = this._ratingPctOneDecimal(raw.upheld / raw.resolved);
+                    lines.push('Upheld ' + (defPct != null ? defPct + '%' : '') + ' (' + raw.upheld + ' / ' + raw.resolved + ' as sole negative reviewer)');
+                } else if (raw.resolved != null) {
+                    lines.push(raw.resolved + ' resolved dispute(s) as sole negative reviewer');
+                }
+                break;
+            }
+            // Legacy axes (backwards compat)
             case 'disputeOutcomes':
             case 'reviewCallAccuracy': {
                 const good = raw.approvedWeight != null ? raw.approvedWeight : raw.upheldWeight;
@@ -4865,28 +4982,8 @@ const searchOutputStatsPaneMethods = {
                 }
                 break;
             }
-            case 'srReviewIntegrity': {
-                if (raw.confirmedNegativeFlags != null && raw.submissionWeight != null) {
-                    lines.push('Confirmed flags ' + Math.round(raw.confirmedNegativeFlags * 10) / 10
-                        + ' / submission weight ' + Math.round(raw.submissionWeight * 10) / 10);
-                } else if (raw.confirmedFlags != null && raw.feedbackWeight != null) {
-                    lines.push('Confirmed flags ' + Math.round(raw.confirmedFlags * 10) / 10
-                        + ' / feedback weight ' + Math.round(raw.feedbackWeight * 10) / 10);
-                }
-                if (raw.penaltyScore != null) {
-                    const penaltyPct = this._ratingPctOneDecimal(raw.penaltyScore);
-                    if (penaltyPct != null) lines.push('Penalty sub-score ' + penaltyPct + '%');
-                }
-                if (raw.raisedScore != null && raw.raisedResolvedWeight > 0) {
-                    const raisedPct = this._ratingPctOneDecimal(raw.raisedScore);
-                    if (raisedPct != null) lines.push('Raised-flag accuracy ' + raisedPct + '%');
-                }
-                break;
-            }
             case 'feedbackResolution': {
-                if (raw.returnEpisodeCount != null) {
-                    lines.push(raw.returnEpisodeCount + ' return episode(s)');
-                }
+                if (raw.returnEpisodeCount != null) lines.push(raw.returnEpisodeCount + ' return episode(s)');
                 break;
             }
             case 'consistency': {
@@ -4946,6 +5043,10 @@ const searchOutputStatsPaneMethods = {
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
         const scoreDisplay = Math.round(block.score);
+        const pct = block.estimatedPercentile;
+        const pctHtml = pct != null
+            ? (' <span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b);">~' + pct + 'th pct</span>')
+            : '';
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
         const axesHtml = this._ratingSortedAxes(block)
             .map((axis) => this._ratingAxisBarHtml(axis, false))
@@ -4953,7 +5054,7 @@ const searchOutputStatsPaneMethods = {
         return '<div style="margin-top: 10px;">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
-            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
+            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + pctHtml + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
             + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
             + '</div>'
             + (basisLine
@@ -5003,13 +5104,21 @@ const searchOutputStatsPaneMethods = {
             : '';
         const display = block.display || {};
         let contextLine = '';
-        if (display.trailing90dSubmissions != null) {
+        if (display.terminalTaskCount != null) {
+            contextLine = display.terminalTaskCount + ' terminal task(s)';
+        } else if (display.inScopeFeedbackCount != null) {
+            contextLine = display.inScopeFeedbackCount + ' feedback row(s)';
+        } else if (display.trailing90dSubmissions != null) {
             contextLine = 'Trailing 90d: ' + display.trailing90dSubmissions + ' submission(s)';
         } else if (display.trailing90dFeedbackRows != null) {
             contextLine = 'Trailing 90d: ' + display.trailing90dFeedbackRows + ' feedback row(s)';
         }
         if (display.tenureDays != null && Number.isFinite(display.tenureDays)) {
             contextLine = (contextLine ? contextLine + ' · ' : '') + 'Tenure ' + display.tenureDays + ' day(s)';
+        }
+        const pct = block.estimatedPercentile;
+        if (pct != null) {
+            contextLine = (contextLine ? contextLine + ' · ' : '') + '~' + pct + 'th pct (estimated)';
         }
         return '<div style="margin-top: 12px;">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' breakdown</div>'
@@ -5035,25 +5144,54 @@ const searchOutputStatsPaneMethods = {
         return this._ratingScoreBlockCompactHtml(title, block, basisKind);
     },
 
+    _ratingCombinedBlockHtml(block) {
+        if (!block || block.score == null) return '';
+        const scoreDisplay = Math.round(block.score);
+        const pct = block.estimatedPercentile;
+        const pctHtml = pct != null
+            ? (' <span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b);">~' + pct + 'th pct</span>')
+            : '';
+        let blendLine = '';
+        if (block.writerRatio != null && block.qaRatio != null) {
+            const wPct = Math.round(block.writerRatio * 100);
+            const qPct = Math.round(block.qaRatio * 100);
+            blendLine = wPct + '% writer · ' + qPct + '% QA';
+        }
+        return '<div style="margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--primary, #6366f1) 6%, var(--card, #fff));">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 3px; color: var(--muted-foreground, #64748b);">Combined</div>'
+            + '<div style="font-size: 18px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + pctHtml + ' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
+            + (blendLine ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 3px;">' + dashEscHtml(blendLine) + '</div>' : '')
+            + '</div>';
+    },
+
     _ratingWorkerCardHtml(worker, scoreTypes) {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
         const workerId = String(worker.workerId || '').trim();
         const expanded = this._isRatingWorkerExpanded(workerId);
+        const weighting = this._ratingWorkerWeighting(workerId);
+        const isRecency = weighting === 'recency';
+
+        const twqsBlock = this._ratingBlockForWeighting(worker, 'twqs');
+        const qaqsBlock = this._ratingBlockForWeighting(worker, 'qaqs');
+        const combinedBlock = this._ratingBlockForWeighting(worker, 'combined');
+
+        const combinedHtml = this._ratingCombinedBlockHtml(combinedBlock);
         const twqsHtml = types.showTwqs
-            ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', worker.twqs, 'tasks')
+            ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqsBlock, 'tasks')
             : '';
         const qaqsHtml = types.showQaqs
-            ? this._ratingScoreBlockCompactHtml('QA Quality Score', worker.qaqs, 'feedbacks')
+            ? this._ratingScoreBlockCompactHtml('QA Quality Score', qaqsBlock, 'feedbacks')
             : '';
+
         let detailHtml = '';
         if (expanded) {
             const detailParts = [];
-            if (types.showTwqs && worker.twqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', worker.twqs));
+            if (types.showTwqs && twqsBlock) {
+                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', twqsBlock));
             }
-            if (types.showQaqs && worker.qaqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', worker.qaqs));
+            if (types.showQaqs && qaqsBlock) {
+                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', qaqsBlock));
             }
             if (detailParts.length) {
                 detailHtml = '<div data-wf-dash-rating-detail="1" style="margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border, #e2e8f0);">'
@@ -5061,25 +5199,44 @@ const searchOutputStatsPaneMethods = {
                     + '</div>';
             }
         }
+
+        const btnCls = this._dashBtnClass('basic', 'nav');
         const diagnosticsBtnHtml = Context.isDevBranch
-            ? ('<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
+            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
         const box = this._panelBoxStyle();
         const expandLabel = expanded ? 'Collapse' : 'Expand';
+
+        const recencyActiveStyle = isRecency
+            ? 'background: var(--primary, #6366f1); color: #fff; border-color: var(--primary, #6366f1);'
+            : '';
+        const flatActiveStyle = !isRecency
+            ? 'background: var(--primary, #6366f1); color: #fff; border-color: var(--primary, #6366f1);'
+            : '';
+
+        const toggleHtml = '<div style="display: flex; gap: 0; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; overflow: hidden; flex-shrink: 0;">'
+            + '<button type="button" style="font-size: 10px; padding: 2px 7px; border: none; cursor: pointer; background: transparent; ' + recencyActiveStyle + '" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Recency</button>'
+            + '<button type="button" style="font-size: 10px; padding: 2px 7px; border: none; cursor: pointer; background: transparent; ' + flatActiveStyle + '" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Flat</button>'
+            + '</div>';
+
         return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
             + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
             + '<div style="min-width: 0;">'
             + '<div style="font-size: 13px; font-weight: 600;">' + dashEscHtml(name) + '</div>'
             + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(worker.email) + '</div>' : '')
             + '</div>'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;" data-wf-dash-rating-expand="1" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + expandLabel + '</button>'
+            + '<div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">'
+            + toggleHtml
+            + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-expand="1" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + expandLabel + '</button>'
             + '</div>'
+            + '</div>'
+            + combinedHtml
             + twqsHtml
             + qaqsHtml
             + detailHtml
             + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
+            + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
+            + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
             + diagnosticsBtnHtml
             + '</div>'
             + '</div>';
@@ -5264,23 +5421,21 @@ const searchOutputStatsPaneMethods = {
             return;
         }
         const exportDate = new Date().toISOString().slice(0, 10);
-        const scoreTypes = this._ratingSearchScoreTypes(this._state.committed || {});
+        // Always export both weighting variants (plan §5); score-type visibility
+        // flags are all-true now, so we pass the worker as-is.
         const workerExport = {
             ...worker,
-            twqs: scoreTypes.showTwqs ? worker.twqs : null,
-            qaqs: scoreTypes.showQaqs ? worker.qaqs : null,
             computedAt: report.computedAt,
             engineVersion: report.version,
             exportDate
         };
+        // Derive a scoreType label for the filename from what is present.
+        const hasTwqs = worker.twqs && (worker.twqs.flat || worker.twqs.recency || worker.twqs.score != null);
+        const hasQaqs = worker.qaqs && (worker.qaqs.flat || worker.qaqs.recency || worker.qaqs.score != null);
         let scoreType = 'combined';
-        if (scoreTypes.showTwqs && scoreTypes.showQaqs) {
-            scoreType = (worker.twqs && worker.qaqs) ? 'combined' : (worker.twqs ? 'twqs' : 'qaqs');
-        } else if (scoreTypes.showTwqs) {
-            scoreType = 'twqs';
-        } else if (scoreTypes.showQaqs) {
-            scoreType = 'qaqs';
-        }
+        if (hasTwqs && hasQaqs) scoreType = 'combined';
+        else if (hasTwqs) scoreType = 'twqs';
+        else if (hasQaqs) scoreType = 'qaqs';
 
         if (format === 'diagnostics') {
             if (typeof engine.buildDiagnosticsReport !== 'function') {
@@ -5320,7 +5475,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '7.4',
+    _version: '8.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

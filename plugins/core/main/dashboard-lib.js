@@ -544,7 +544,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2313,12 +2313,16 @@ const plugin = {
         const reviewDurationSeconds = Number.isFinite(reviewDurationRaw) && reviewDurationRaw >= 0
             ? reviewDurationRaw
             : null;
+        const rawQualityRating = data.prompt_quality_rating;
         const display = {
             isSystemFeedback: false,
             isPositive,
             isEscalated,
             isFlaggedAsBugged,
-            qualityRating: dashLibMapPromptQualityRating(data.prompt_quality_rating),
+            qualityRating: dashLibMapPromptQualityRating(rawQualityRating),
+            qualityRatingRaw: (rawQualityRating != null && rawQualityRating !== '')
+                ? dashLibMapPromptQualityRating(rawQualityRating)
+                : null,
             versionNo: versionInfo.displayVersionNo || versionInfo.versionNo,
             totalVersions: versionInfo.totalVersions,
             textBlocks,
