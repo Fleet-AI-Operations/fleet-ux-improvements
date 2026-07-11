@@ -2577,10 +2577,11 @@ const searchOutputResultsPaneMethods = {
         const stdoutHtml = formatted
             ? `<div>
                 <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Stdout')}${this._copyIconHtml(formatted)}</div>
-                <pre style="margin: 4px 0 0 0; padding: 8px 10px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.45; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--foreground, #0f172a); max-height: 320px; overflow: auto;">${dashEscHtml(formatted)}</pre>
+                <pre style="margin: 4px 0 0 0; padding: 8px 10px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.45; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</pre>
             </div>`
             : '';
         const blockId = 'verifier-output:' + execution.id;
+        this._ensureActionBlockCollapseDefault(blockId, true);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
             + submittedHtml
             + scoreHtml
@@ -4369,6 +4370,15 @@ const searchOutputResultsPaneMethods = {
         return this._state.actionBlockUi[id];
     },
 
+    _ensureActionBlockCollapseDefault(blockId, collapsed) {
+        const id = String(blockId || '').trim();
+        if (!id) return;
+        if (!this._state.actionBlockUi) this._state.actionBlockUi = {};
+        if (!this._state.actionBlockUi[id]) {
+            this._state.actionBlockUi[id] = { collapsed: !!collapsed };
+        }
+    },
+
     _actionBlockBodyHiddenStyle(blockId) {
         return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
     },
@@ -4380,7 +4390,7 @@ const searchOutputResultsPaneMethods = {
             : '';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; flex: 0 1 auto; max-width: 100%;">${leftHtml}</div>`
-            + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
+            + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" title="Expand or collapse" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch; cursor: pointer;"></div>`
             + rightSection
             + `</div>`;
     },
@@ -6081,7 +6091,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

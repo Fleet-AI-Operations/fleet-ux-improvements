@@ -100,7 +100,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.1',
+    _version: '11.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1760,6 +1760,9 @@ const plugin = {
             '#wf-dash-modal [data-wf-dash-session-qa-panel][data-open="1"] [data-wf-dash-session-qa-inner] {',
             '  opacity: 1;',
             '  transition: opacity 180ms ease-in 40ms;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-action-block-toggle] {',
+            '  cursor: pointer;',
             '}'
         ].join('\n');
     },
