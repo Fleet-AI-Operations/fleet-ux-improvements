@@ -114,6 +114,12 @@ const DASH_OUTPUT_KIND_CONFIG = {
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
+    },
+    sessions: {
+        label: 'Sessions',
+        tabBg: '#0891b2',
+        toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
+        textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
 
@@ -323,6 +329,7 @@ const searchOutputLeftPaneMethods = {
                             <div style="display: flex; gap: 0; min-width: 0;">
                                 <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
                                 <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                                ${Context.isDevBranch ? `<button type="button" data-wf-dash-left-tab="dive" style="${this._leftTabStyle(leftTab === 'dive')}">Dive</button>` : ''}
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
                                 <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
@@ -342,6 +349,7 @@ const searchOutputLeftPaneMethods = {
                                             <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
                                             <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
                                             <button type="button" id="wf-dash-toggle-senior-review" aria-pressed="false" style="${this._btnToggleStyle(false, 'senior_review')}">Sr Review</button>
+                                            <button type="button" id="wf-dash-toggle-sessions" aria-pressed="false" style="${this._btnToggleStyle(false, 'sessions')}">Sessions</button>
                                         </div>
                                     </div>
                                     <div>
@@ -380,6 +388,11 @@ const searchOutputLeftPaneMethods = {
                                             <input type="date" id="wf-dash-before" style="${input} min-width: 0;">
                                         </div>
                                         <button type="button" id="wf-dash-clear-dates" aria-label="Clear dates" title="Clear dates" style="${this._inputClearBtnStyle()} display: none;">&times;</button>
+                                    </div>
+                                    <div>
+                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;" for="wf-dash-search-limit">Limit</label>
+                                        <input type="number" id="wf-dash-search-limit" min="1" step="1" inputmode="numeric" placeholder="No limit" style="${input} width: 100%;">
+                                        <div style="${hint} margin-top: 4px;">Optional max result cards. Leave blank for no cap.</div>
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
@@ -458,6 +471,36 @@ const searchOutputLeftPaneMethods = {
                                 </div>
                             </div>
                         </div>
+
+                        ${Context.isDevBranch ? `
+                        <div id="wf-dash-left-panel-dive" style="display: ${leftTab === 'dive' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                            <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px;">
+                                <div style="${section}">
+                                    <div style="${label} font-weight: 600;">Dive Export</div>
+                                    <p style="${hint} margin: 0; line-height: 1.45;">
+                                        Uses the Search tab params (output types, dates, team/project/env).
+                                        Named Contributors are exported one by one. Leave Contributors blank to expand every member of the selected teams (or all teams), dedupe, then walk that list.
+                                        Each person is searched, fully hydrated (no 500 cap), exported as <code style="font-size: 11px;">&lt;uuid&gt;.json</code>, then cleared before the next.
+                                    </p>
+                                    <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+                                        <input type="checkbox" id="wf-dash-dive-include-content">
+                                        Include full content (prompts, notes to QA, QA review text, dispute/flag bodies and resolution text)
+                                    </label>
+                                    <div style="${hint} margin: 0;">Default is metadata-only cards.</div>
+                                    <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px;">
+                                        <button type="button" id="wf-dash-dive-cancel" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Cancel</button>
+                                        <button type="button" id="wf-dash-dive-start" class="${this._dashBtnClass('primary', 'nav')}">Start Dive</button>
+                                    </div>
+                                </div>
+                                <div style="${box} flex: 1; min-height: 120px; display: flex; flex-direction: column; overflow: hidden;">
+                                    <div id="wf-dash-dive-progress" style="padding: 10px 12px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px; color: var(--muted-foreground, #64748b); flex-shrink: 0;">
+                                        Idle — set Search params, then press Start Dive.
+                                    </div>
+                                    <div id="wf-dash-dive-log" style="flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; line-height: 1.45;"></div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
 
                         <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
                             <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
@@ -776,6 +819,9 @@ const searchOutputLeftPaneMethods = {
     _filterScopeLabel(scopeKey) {
         const labels = {
             'filter-prompt-history': 'Task Lifecycle History',
+            'filter-session-qa-outcome': 'Session QA Outcome',
+            'filter-dispute-outcome': 'Dispute Outcome',
+            'filter-sr-review-outcome': 'Sr Review Outcome',
             'filter-teams': 'Team',
             'filter-projects': 'Project',
             'filter-envs': 'Environment',
@@ -809,6 +855,10 @@ const searchOutputLeftPaneMethods = {
             this._state.includeSeniorReview = !this._state.includeSeniorReview;
             this._syncOutputToggleUi();
             Logger.log('dashboard: Sr Review ' + (this._state.includeSeniorReview ? 'on' : 'off'));
+        } else if (kind === 'sessions') {
+            this._state.includeSessions = !this._state.includeSessions;
+            this._syncOutputToggleUi();
+            Logger.log('dashboard: Sessions ' + (this._state.includeSessions ? 'on' : 'off'));
         }
     },
 
@@ -821,6 +871,7 @@ const searchOutputLeftPaneMethods = {
         this._state.includeQa = kind === 'qa';
         this._state.includeDisputes = kind === 'dispute';
         this._state.includeSeniorReview = kind === 'senior_review';
+        this._state.includeSessions = kind === 'sessions';
         this._syncOutputToggleUi();
     },
 
@@ -829,6 +880,7 @@ const searchOutputLeftPaneMethods = {
         this._state.includeQa = true;
         this._state.includeDisputes = false;
         this._state.includeSeniorReview = false;
+        this._state.includeSessions = false;
         this._syncOutputToggleUi();
     },
 
@@ -848,6 +900,7 @@ const searchOutputLeftPaneMethods = {
         const qaBtn = this._q('#wf-dash-toggle-qa');
         const disputesBtn = this._q('#wf-dash-toggle-disputes');
         const seniorReviewBtn = this._q('#wf-dash-toggle-senior-review');
+        const sessionsBtn = this._q('#wf-dash-toggle-sessions');
         if (tasksBtn) {
             tasksBtn.setAttribute('aria-pressed', this._state.includeTasks ? 'true' : 'false');
             tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks, 'task_creation');
@@ -864,6 +917,27 @@ const searchOutputLeftPaneMethods = {
             seniorReviewBtn.setAttribute('aria-pressed', this._state.includeSeniorReview ? 'true' : 'false');
             seniorReviewBtn.style.cssText = this._btnToggleStyle(this._state.includeSeniorReview, 'senior_review');
         }
+        if (sessionsBtn) {
+            sessionsBtn.setAttribute('aria-pressed', this._state.includeSessions ? 'true' : 'false');
+            sessionsBtn.style.cssText = this._btnToggleStyle(this._state.includeSessions, 'sessions');
+        }
+    },
+
+    _readSearchLimitFromUi() {
+        const el = this._q('#wf-dash-search-limit');
+        if (!el) return null;
+        const raw = String(el.value || '').trim();
+        if (!raw) return null;
+        const n = parseInt(raw, 10);
+        if (!Number.isFinite(n) || n < 1) return null;
+        return n;
+    },
+
+    _syncSearchLimitUi() {
+        const el = this._q('#wf-dash-search-limit');
+        if (!el) return;
+        const limit = this._state.searchLimit;
+        el.value = (limit != null && Number.isFinite(limit) && limit >= 1) ? String(limit) : '';
     },
 
     async _resolveAuthorToken(raw) {
@@ -1249,11 +1323,9 @@ const searchOutputLeftPaneMethods = {
     },
 
     _resetFilterLists() {
-        this._state.filterListOptions = {
-            teams: [], projects: [], envs: [],
-            statuses: [], contributors: [], promptRatings: [], taskIssues: [], returnTypes: [],
-            promptHistory: [], qaHelpfulness: [], v1CreationTimeMinutes: [], qaTimeMinutes: [], disputeResolutionTimeMinutes: []
-        };
+        const empty = {};
+        for (const { optionsKey } of dashFilterScopes()) empty[optionsKey] = [];
+        this._state.filterListOptions = empty;
         this._resetManualFilters();
         for (const { scopeKey } of dashFilterScopes()) {
             const panel = this._msPanelEl(scopeKey);
@@ -1283,7 +1355,8 @@ const searchOutputLeftPaneMethods = {
         const lib = dashLib();
         const filterOptions = Object.assign({}, options, {
             helpfulnessUi: this._state.helpfulnessUi || {},
-            currentUserId: this._dashGetCurrentUserId()
+            currentUserId: this._dashGetCurrentUserId(),
+            sessionQaUi: this._state.sessionQaUi || {}
         });
         const irrelevance = scopeItems.length > 0 && this._isFilterDraftValid(draft)
             ? lib.computeFilterIrrelevance(scopeItems, draft, listBounds, filterOptions)
@@ -1294,7 +1367,8 @@ const searchOutputLeftPaneMethods = {
         const order = this._state.filterSelectionOrder || [];
         const pctCtx = {
             helpfulnessUi: filterOptions.helpfulnessUi,
-            currentUserId: filterOptions.currentUserId
+            currentUserId: filterOptions.currentUserId,
+            sessionQaUi: filterOptions.sessionQaUi
         };
         const denominatorByDraftKey = {};
         for (const { draftKey } of dashFilterScopes()) {
@@ -1358,6 +1432,7 @@ const searchOutputLeftPaneMethods = {
     },
 
     _setLeftTab(tab) {
+        if (tab === 'dive' && !Context.isDevBranch) tab = 'search';
         this._state.leftTab = tab;
         this._closeAllMsDropdowns();
         this._syncLeftTabUi();
@@ -1367,8 +1442,10 @@ const searchOutputLeftPaneMethods = {
         const tab = this._state.leftTab;
         const searchPanel = this._q('#wf-dash-left-panel-search');
         const filtersPanel = this._q('#wf-dash-left-panel-filters');
+        const divePanel = this._q('#wf-dash-left-panel-dive');
         if (searchPanel) searchPanel.style.display = tab === 'search' ? 'flex' : 'none';
         if (filtersPanel) filtersPanel.style.display = tab === 'filters' ? 'flex' : 'none';
+        if (divePanel) divePanel.style.display = tab === 'dive' ? 'flex' : 'none';
         const filterActions = this._q('#wf-dash-actions-filters');
         if (filterActions) filterActions.style.display = tab === 'filters' ? 'flex' : 'none';
         this._modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
@@ -1376,6 +1453,7 @@ const searchOutputLeftPaneMethods = {
             btn.style.cssText = this._leftTabStyle(active);
         });
         this._syncLeftMessagesBar();
+        this._syncDiveActionButtons();
     },
 
     _isMessageElVisible(el) {
@@ -1404,7 +1482,8 @@ const searchOutputLeftPaneMethods = {
         const filtersVisible = sharedVisible
             || this._isMessageElVisible(substringErr)
             || this._isMessageElVisible(applyHint);
-        const show = tab === 'filters' ? filtersVisible : searchVisible;
+        const show = tab === 'filters' ? filtersVisible
+            : (tab === 'dive' ? sharedVisible : searchVisible);
         if (show) {
             bar.style.display = 'flex';
         } else {
@@ -1510,7 +1589,8 @@ const searchOutputLeftPaneMethods = {
         const searchBtn = this._q('#wf-dash-search');
         if (searchBtn) {
             const noOutputTypes = !this._state.includeTasks && !this._state.includeQa
-                && !this._state.includeDisputes && !this._state.includeSeniorReview;
+                && !this._state.includeDisputes && !this._state.includeSeniorReview
+                && !this._state.includeSessions;
             const searchDisabled = this._state.loading
                 || noOutputTypes
                 || ((after || before) && !check.valid);
@@ -1556,11 +1636,7 @@ const searchOutputLeftPaneMethods = {
         if (Boolean(draft.fuzzy) !== Boolean(applied.fuzzy)) return true;
         if (Boolean(draft.regex) !== Boolean(applied.regex)) return true;
         if (Boolean(draft.caseSensitive) !== Boolean(applied.caseSensitive)) return true;
-        const keys = [
-            'teamIds', 'projectIds', 'envKeys', 'statuses', 'contributorIds',
-            'promptRatings', 'taskIssues', 'returnTypes', 'promptHistory', 'qaHelpfulness',
-            'v1CreationTimeMinutes', 'qaTimeMinutes', 'disputeResolutionTimeMinutes'
-        ];
+        const keys = dashFilterScopes().map((s) => s.draftKey);
         for (const key of keys) {
             const boundIds = bounds[key] || [];
             if (!this._filterDimensionEquivalent(draft[key], applied[key], boundIds)) return true;
@@ -1768,6 +1844,8 @@ const searchOutputLeftPaneMethods = {
             includeTaskCreation: true,
             includeQa: false,
             includeDisputes: false,
+            includeSeniorReview: false,
+            includeSessions: false,
             authorCount: 0,
             authorLabels: [],
             searchKinds: ['task_creation']
@@ -1845,9 +1923,10 @@ const searchOutputLeftPaneMethods = {
             const includeQa = this._state.includeQa;
             const includeDisputes = this._state.includeDisputes;
             const includeSeniorReview = this._state.includeSeniorReview;
-            if (!includeTasks && !includeQa && !includeDisputes && !includeSeniorReview) {
+            const includeSessions = this._state.includeSessions;
+            if (!includeTasks && !includeQa && !includeDisputes && !includeSeniorReview && !includeSessions) {
                 this._logDashApiSkip('search', 'no contributor areas enabled');
-                this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, or Sr Review.');
+                this._setSearchError('Enable at least one contributor search area: Task Creation, QA, Disputes, Sr Review, or Sessions.');
                 return;
             }
             const after = (this._q('#wf-dash-after') || {}).value || '';
@@ -1871,6 +1950,8 @@ const searchOutputLeftPaneMethods = {
             const authorLabels = everyoneMode
                 ? [DASH_EVERYONE_AUTHOR_LABEL]
                 : namedTokens.map((t) => this._personDisplayLabel(t));
+            const searchLimit = this._readSearchLimitFromUi();
+            this._state.searchLimit = searchLimit;
             const searchCommitted = {
                 authorIds,
                 authorCount: authorIds.length,
@@ -1880,13 +1961,16 @@ const searchOutputLeftPaneMethods = {
                 includeQa,
                 includeDisputes,
                 includeSeniorReview,
+                includeSessions,
+                searchLimit,
                 afterLocal: after,
                 beforeLocal: before,
                 searchKinds: [
                     includeTasks ? 'task_creation' : null,
                     includeQa ? 'qa' : null,
                     includeDisputes ? 'dispute' : null,
-                    includeSeniorReview ? 'senior_review' : null
+                    includeSeniorReview ? 'senior_review' : null,
+                    includeSessions ? 'sessions' : null
                 ].filter(Boolean)
             };
             this._state.committed = searchCommitted;
@@ -1916,20 +2000,26 @@ const searchOutputLeftPaneMethods = {
                 if (gen !== this._state.searchGeneration) { Logger.debug('dashboard: stale search gen ' + gen + ' dropped'); return; }
                 this._logDashApiClick('search',
                     (authorIds.length > 0 ? authorIds.length + ' author(s)' : 'all authors')
-                    + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null, includeSeniorReview ? 'Sr Review' : null].filter(Boolean).join('+')
-                    + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : ''));
+                    + ' · types: ' + [includeTasks ? 'tasks' : null, includeQa ? 'QA' : null, includeDisputes ? 'disputes' : null, includeSeniorReview ? 'Sr Review' : null, includeSessions ? 'sessions' : null].filter(Boolean).join('+')
+                    + (after ? ' · after ' + after : '') + (before ? ' · before ' + before : '')
+                    + (searchLimit != null ? ' · limit ' + searchLimit : ''));
                 const searchResult = await this._fetchWorkerOutputSearch({
                     authorIds,
                     includeTaskCreation: includeTasks,
                     includeQa,
                     includeDisputes,
                     includeSeniorReview,
+                    includeSessions,
+                    searchLimit,
                     afterIso: rangeCheck.afterIso,
                     beforeIso: rangeCheck.beforeIso,
                     scope
                 });
                 const items = searchResult.items;
                 this._state.cachedItems = items;
+                if (searchResult.sessionQaSeed) {
+                    this._applySessionQaSearchSeed(searchResult.sessionQaSeed);
+                }
                 if (this._shouldStopSearch()) {
                     this._finishStoppedSearch(items);
                     return;
@@ -1993,9 +2083,13 @@ const searchOutputLeftPaneMethods = {
         this._state.includeQa = true;
         this._state.includeDisputes = false;
         this._state.includeSeniorReview = false;
+        this._state.includeSessions = false;
+        this._state.searchLimit = null;
         ['#wf-dash-after', '#wf-dash-before'].forEach((sel) => { const el = this._q(sel); if (el) el.value = ''; });
         const quickRange = this._q('#wf-dash-quick-range');
         if (quickRange) quickRange.value = '';
+        const limitEl = this._q('#wf-dash-search-limit');
+        if (limitEl) limitEl.value = '';
         ['search-teams', 'search-projects', 'search-envs'].forEach((key) => {
             const itemsEl = this._msItemsEl(key);
             if (itemsEl) itemsEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
@@ -2067,23 +2161,8 @@ const searchOutputLeftPaneMethods = {
         const bounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
         if (!applied) return false;
         const lib = dashLib();
-        const dims = [
-            ['teamIds', bounds.teamIds],
-            ['projectIds', bounds.projectIds],
-            ['envKeys', bounds.envKeys],
-            ['statuses', bounds.statuses],
-            ['contributorIds', bounds.contributorIds],
-            ['promptRatings', bounds.promptRatings],
-            ['taskIssues', bounds.taskIssues],
-            ['returnTypes', bounds.returnTypes],
-            ['promptHistory', bounds.promptHistory],
-            ['qaHelpfulness', bounds.qaHelpfulness],
-            ['v1CreationTimeMinutes', bounds.v1CreationTimeMinutes],
-            ['qaTimeMinutes', bounds.qaTimeMinutes],
-            ['disputeResolutionTimeMinutes', bounds.disputeResolutionTimeMinutes]
-        ];
-        for (const [key, boundIds] of dims) {
-            if (!this._isDimensionUnrestricted(applied[key] || [], boundIds || [])) return true;
+        for (const { draftKey } of dashFilterScopes()) {
+            if (!this._isDimensionUnrestricted(applied[draftKey] || [], bounds[draftKey] || [])) return true;
         }
         return (applied.regex && lib.isRegexQueryActive(applied.promptText))
             || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive))
@@ -2123,7 +2202,9 @@ const searchOutputLeftPaneMethods = {
         if (committed.includeQa) types.push('QA');
         if (committed.includeDisputes) types.push('disputes');
         if (committed.includeSeniorReview) types.push('Sr Review');
+        if (committed.includeSessions) types.push('sessions');
         if (types.length > 0) parts.push('types: ' + types.join('+'));
+        if (committed.searchLimit != null) parts.push('limit ' + committed.searchLimit);
         if (committed.afterLocal) parts.push('after ' + committed.afterLocal);
         if (committed.beforeLocal) parts.push('before ' + committed.beforeLocal);
         return parts.join(' · ');
@@ -2183,6 +2264,435 @@ const searchOutputLeftPaneMethods = {
         const cls = this._dashBtnClass('basic', 'compact');
         return `<button type="button" data-wf-dash-stop-search="1" class="${cls}" style="margin-bottom: 10px;">Abort Search</button>`;
     },
+
+    _ensureDiveRuntime() {
+        if (!this._diveRuntime) {
+            this._diveRuntime = {
+                running: false,
+                cancelRequested: false,
+                logLines: [],
+                activationLogged: false
+            };
+        }
+        return this._diveRuntime;
+    },
+
+    _syncDiveActionButtons() {
+        const rt = this._ensureDiveRuntime();
+        const startBtn = this._q('#wf-dash-dive-start');
+        const cancelBtn = this._q('#wf-dash-dive-cancel');
+        if (startBtn) startBtn.disabled = Boolean(rt.running);
+        if (cancelBtn) cancelBtn.style.display = rt.running ? '' : 'none';
+    },
+
+    _setDiveProgress(text) {
+        const el = this._q('#wf-dash-dive-progress');
+        if (el) el.textContent = text;
+    },
+
+    _appendDiveLog(line) {
+        const rt = this._ensureDiveRuntime();
+        const stamp = new Date().toISOString().slice(11, 19);
+        rt.logLines.push('[' + stamp + '] ' + line);
+        if (rt.logLines.length > 500) rt.logLines = rt.logLines.slice(-500);
+        this._renderDiveLog();
+    },
+
+    _renderDiveLog() {
+        const rt = this._ensureDiveRuntime();
+        const el = this._q('#wf-dash-dive-log');
+        if (!el) return;
+        el.textContent = rt.logLines.join('\n');
+        el.scrollTop = el.scrollHeight;
+    },
+
+    _cancelDive() {
+        const rt = this._ensureDiveRuntime();
+        if (!rt.running) return;
+        rt.cancelRequested = true;
+        this._setDiveProgress('Cancelling…');
+        Logger.log('search-output-dive: cancel requested');
+        this._appendDiveLog('Cancel requested');
+        if (typeof this._requestStopSearchFetches === 'function') {
+            this._requestStopSearchFetches();
+        }
+    },
+
+    _cloneDiveJson(value) {
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (e) {
+            Logger.error('search-output-dive: JSON clone failed', e);
+            return null;
+        }
+    },
+
+    _stripDiveFeedbackEntry(fb) {
+        if (!fb || typeof fb !== 'object') return;
+        const drop = ['notes', 'reviewContent', 'displayPayload', 'feedback_content', 'feedback_data', 'content'];
+        for (const key of drop) {
+            if (Object.prototype.hasOwnProperty.call(fb, key)) delete fb[key];
+        }
+        if (fb.display && typeof fb.display === 'object') {
+            if (Array.isArray(fb.display.textBlocks)) fb.display.textBlocks = [];
+            if (Object.prototype.hasOwnProperty.call(fb.display, 'notes')) delete fb.display.notes;
+            if (Object.prototype.hasOwnProperty.call(fb.display, 'reviewContent')) delete fb.display.reviewContent;
+        }
+        if (Array.isArray(fb.textBlocks)) fb.textBlocks = [];
+    },
+
+    _stripDiveDisputeOrFlag(row) {
+        if (!row || typeof row !== 'object') return;
+        const drop = [
+            'content', 'note', 'resolution_note', 'resolution_reason', 'resolutionReason',
+            'resolutionText', 'resolutionNote', 'dispute_reason', 'reason', 'body', 'description'
+        ];
+        for (const key of drop) {
+            if (Object.prototype.hasOwnProperty.call(row, key)) delete row[key];
+        }
+    },
+
+    _stripDiveContent(item) {
+        if (!item || typeof item !== 'object') return item;
+        const task = item.task;
+        if (task && typeof task === 'object') {
+            if (Object.prototype.hasOwnProperty.call(task, 'prompt')) task.prompt = '';
+            if (Array.isArray(task.promptVersions)) {
+                for (const v of task.promptVersions) {
+                    if (!v || typeof v !== 'object') continue;
+                    if (Object.prototype.hasOwnProperty.call(v, 'prompt')) v.prompt = '';
+                    if (Object.prototype.hasOwnProperty.call(v, 'resubmissionNotes')) v.resubmissionNotes = '';
+                    if (Object.prototype.hasOwnProperty.call(v, 'resubmission_notes')) v.resubmission_notes = '';
+                }
+            }
+            if (Array.isArray(task.allFeedback)) {
+                for (const fb of task.allFeedback) this._stripDiveFeedbackEntry(fb);
+            }
+        }
+        if (Array.isArray(item.allFeedback)) {
+            for (const fb of item.allFeedback) this._stripDiveFeedbackEntry(fb);
+        }
+        if (item.qaFeedback) this._stripDiveFeedbackEntry(item.qaFeedback);
+        if (Array.isArray(item.disputes)) {
+            for (const d of item.disputes) this._stripDiveDisputeOrFlag(d);
+        }
+        if (Array.isArray(item.flags)) {
+            for (const f of item.flags) this._stripDiveDisputeOrFlag(f);
+        }
+        return item;
+    },
+
+    _downloadDiveTextFile(filename, content, mime) {
+        if (typeof this._downloadTextFile === 'function') {
+            this._downloadTextFile(filename, content, mime);
+            return;
+        }
+        const blob = new Blob([content], { type: mime || 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+
+    async _resolveDiveAuthorList() {
+        const named = (this._state.draftTokens || []).filter((t) => !this._isEveryoneAuthorToken(t));
+        if (named.length > 0) {
+            return named.map((t) => ({
+                id: String(t.id),
+                full_name: t.full_name || '',
+                email: t.email || ''
+            }));
+        }
+
+        const ops = Context.opsTab;
+        if (!ops) throw new Error('Ops tab not available.');
+        const userId = typeof ops.getCurrentUserId === 'function' ? ops.getCurrentUserId() : null;
+        if (!userId) throw new Error('No user ID found. Open Fleet while logged in and try again.');
+        if (typeof ops.hasTeamSearchCredentials === 'function' && !ops.hasTeamSearchCredentials()) {
+            throw new Error('Team search credentials missing. Open the Team page in Fleet, then retry Dive.');
+        }
+        if (typeof ops.fetchTeamSearchAllMembers !== 'function') {
+            throw new Error('Team member search API unavailable.');
+        }
+
+        let teamCatalog = typeof ops.getUserTeamCatalog === 'function' ? ops.getUserTeamCatalog() : [];
+        if (!teamCatalog.length && typeof ops.fetchUserTeamCatalog === 'function') {
+            await ops.fetchUserTeamCatalog(userId);
+            teamCatalog = ops.getUserTeamCatalog() || [];
+        }
+        if (!teamCatalog.length && typeof this._getSearchableTeamCatalog === 'function') {
+            teamCatalog = this._getSearchableTeamCatalog() || [];
+        }
+        if (!teamCatalog.length) throw new Error('No teams found for your account.');
+
+        const selectedTeamIds = this._selectedFromList('search-teams');
+        const teamsToSearch = selectedTeamIds.length > 0
+            ? teamCatalog.filter(([id]) => selectedTeamIds.includes(id))
+            : teamCatalog;
+        if (teamsToSearch.length === 0) {
+            throw new Error('No selected teams available to expand for blank Contributor search.');
+        }
+
+        const rt = this._ensureDiveRuntime();
+        this._setDiveProgress('Resolving team members across ' + teamsToSearch.length + ' team(s)…');
+        this._appendDiveLog('Blank contributors — expanding ' + teamsToSearch.length + ' team(s)');
+        Logger.log('search-output-dive: blank author mode — fetching members for ' + teamsToSearch.length + ' team(s)');
+
+        const memberMap = new Map();
+        await Promise.all(teamsToSearch.map(async ([teamId, teamLabel]) => {
+            if (rt.cancelRequested) return;
+            try {
+                const members = await ops.fetchTeamSearchAllMembers(teamId, userId, '', null, null);
+                for (const member of members || []) {
+                    if (!member || !member.id || memberMap.has(member.id)) continue;
+                    memberMap.set(member.id, {
+                        id: String(member.id),
+                        full_name: member.full_name || '',
+                        email: member.email || ''
+                    });
+                }
+                Logger.debug('search-output-dive: team members from ' + teamLabel + ' — ' + (members || []).length);
+            } catch (e) {
+                Logger.warn('search-output-dive: team member fetch failed for ' + teamLabel, e);
+                this._appendDiveLog('WARN team fetch failed (' + teamLabel + '): ' + (e && e.message ? e.message : String(e)));
+            }
+        }));
+
+        const list = [...memberMap.values()].sort((a, b) =>
+            this._personDisplayLabel(a).localeCompare(this._personDisplayLabel(b)));
+        Logger.log('search-output-dive: expanded author list — ' + list.length + ' unique member(s)');
+        this._appendDiveLog('Expanded ' + list.length + ' unique member(s)');
+        return list;
+    },
+
+    _buildDiveSearchParamsSnapshot() {
+        const after = (this._q('#wf-dash-after') || {}).value || '';
+        const before = (this._q('#wf-dash-before') || {}).value || '';
+        const rangeCheck = dashValidateCreatedAtRange(after, before);
+        return {
+            afterIso: rangeCheck.afterIso || null,
+            beforeIso: rangeCheck.beforeIso || null,
+            includeTaskCreation: Boolean(this._state.includeTasks),
+            includeQa: Boolean(this._state.includeQa),
+            includeDisputes: Boolean(this._state.includeDisputes),
+            includeSeniorReview: Boolean(this._state.includeSeniorReview),
+            includeSessions: Boolean(this._state.includeSessions),
+            searchLimit: this._readSearchLimitFromUi(),
+            teamIds: this._selectedFromList('search-teams'),
+            projectIds: this._selectedFromList('search-projects'),
+            envKeys: this._selectedFromList('search-envs')
+        };
+    },
+
+    _buildDivePersonPayload(person, items, searchParams, includeContent) {
+        const cloned = (items || [])
+            .map((it) => this._cloneDiveJson(it))
+            .filter(Boolean)
+            .map((it) => (includeContent ? it : this._stripDiveContent(it)));
+        return {
+            schemaVersion: '1.0',
+            exportedAt: new Date().toISOString(),
+            author: {
+                id: String(person.id || ''),
+                name: person.full_name || person.name || '',
+                email: person.email || ''
+            },
+            searchParams,
+            includeContent: Boolean(includeContent),
+            totalItems: cloned.length,
+            items: cloned
+        };
+    },
+
+    async _exportDivePerson(person, opts) {
+        const rt = this._ensureDiveRuntime();
+        const label = this._personDisplayLabel(person);
+        const index = opts.index;
+        const total = opts.total;
+        const includeContent = opts.includeContent;
+        const searchParams = opts.searchParams;
+
+        this._setAuthorTokens([person], { replace: true });
+        this._setSearchError('');
+        this._setDiveProgress('Processing ' + index + ' of ' + total + ': ' + label + ' — searching…');
+        await this._submitSearch();
+        if (rt.cancelRequested) return { cancelled: true };
+
+        const errEl = this._q('#wf-dash-search-error');
+        const errText = errEl && errEl.style.display !== 'none'
+            ? String(errEl.textContent || '').trim()
+            : '';
+        if (errText) throw new Error(errText);
+
+        const items = this._state.cachedItems || [];
+        if (!this._state.hasSearched && items.length === 0) {
+            throw new Error('Search did not complete for ' + label);
+        }
+
+        const unhydrated = items.filter((it) => it && !it.hydrated);
+        this._setDiveProgress(
+            'Processing ' + index + ' of ' + total + ': ' + label
+            + ' — hydrating ' + unhydrated.length + '/' + items.length + '…'
+        );
+        if (unhydrated.length > 0 && typeof this._hydrateItemsInBulkBatches === 'function') {
+            await this._hydrateItemsInBulkBatches(unhydrated, {
+                shouldCancel: () => rt.cancelRequested,
+                onProgress: (done, hydrateTotal) => {
+                    this._setDiveProgress(
+                        'Processing ' + index + ' of ' + total + ': ' + label
+                        + ' — hydrating ' + done + '/' + hydrateTotal + '…'
+                    );
+                }
+            });
+        }
+        if (rt.cancelRequested) return { cancelled: true };
+
+        const payload = this._buildDivePersonPayload(
+            person,
+            this._state.cachedItems || [],
+            searchParams,
+            includeContent
+        );
+        const filename = String(person.id) + '.json';
+        this._downloadDiveTextFile(filename, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+        Logger.log('search-output-dive: exported ' + label + ' — ' + payload.totalItems
+            + ' item(s) · ' + filename + (includeContent ? ' · full content' : ' · metadata'));
+        this._appendDiveLog(
+            'OK ' + label + ' → ' + filename + ' (' + payload.totalItems + ' items'
+            + (includeContent ? ', full' : ', metadata') + ')'
+        );
+
+        if (typeof this._clearResults === 'function') this._clearResults();
+        return { cancelled: false, count: payload.totalItems, filename };
+    },
+
+    async _startDive() {
+        const rt = this._ensureDiveRuntime();
+        if (rt.running) return;
+        if (!Context.isDevBranch) {
+            Logger.warn('search-output-dive: start skipped — not a dev build');
+            return;
+        }
+        if (!rt.activationLogged) {
+            rt.activationLogged = true;
+            Logger.log('search-output-dive: Dive left-pane activated');
+        }
+
+        const flushErr = await this._flushPendingAuthorInput();
+        if (flushErr) {
+            this._setAuthorError(flushErr);
+            this._setDiveProgress(flushErr);
+            return;
+        }
+
+        if (!this._state.includeTasks && !this._state.includeQa
+            && !this._state.includeDisputes && !this._state.includeSeniorReview
+            && !this._state.includeSessions) {
+            this._setDiveProgress('Enable at least one output type on the Search tab.');
+            return;
+        }
+
+        const after = (this._q('#wf-dash-after') || {}).value || '';
+        const before = (this._q('#wf-dash-before') || {}).value || '';
+        const rangeCheck = dashValidateCreatedAtRange(after, before);
+        if (!rangeCheck.valid) {
+            this._setDiveProgress(rangeCheck.error || 'Invalid date range.');
+            return;
+        }
+
+        if (typeof this._doBootstrap === 'function' && (!this._state || !this._state.catalog)) {
+            this._setDiveProgress('Bootstrapping catalogs…');
+            try {
+                await this._doBootstrap();
+            } catch (e) {
+                Logger.error('search-output-dive: bootstrap failed', e);
+                this._setDiveProgress('Bootstrap failed: ' + (e && e.message ? e.message : String(e)));
+                return;
+            }
+        }
+
+        const contentCb = this._q('#wf-dash-dive-include-content');
+        const includeContent = Boolean(contentCb && contentCb.checked);
+        const originalTokens = (this._state.draftTokens || []).map((t) => ({ ...t }));
+        const searchParams = this._buildDiveSearchParamsSnapshot();
+
+        rt.running = true;
+        rt.cancelRequested = false;
+        rt.logLines = [];
+        this._renderDiveLog();
+        this._syncDiveActionButtons();
+
+        try {
+            const authors = await this._resolveDiveAuthorList();
+            if (rt.cancelRequested) {
+                this._setDiveProgress('Cancelled.');
+                this._appendDiveLog('Cancelled before export loop');
+                return;
+            }
+            if (!authors.length) {
+                this._setDiveProgress('No authors to export.');
+                this._appendDiveLog('No authors resolved');
+                Logger.warn('search-output-dive: no authors to export');
+                return;
+            }
+
+            Logger.info('search-output-dive: starting — ' + authors.length + ' author(s)'
+                + (includeContent ? ' · full content' : ' · metadata-only'));
+            this._appendDiveLog('Starting dive — ' + authors.length + ' author(s)');
+
+            let okCount = 0;
+            let failCount = 0;
+            for (let i = 0; i < authors.length; i++) {
+                if (rt.cancelRequested) {
+                    this._appendDiveLog('Cancelled after ' + okCount + ' export(s)');
+                    break;
+                }
+                const person = authors[i];
+                const label = this._personDisplayLabel(person);
+                try {
+                    const result = await this._exportDivePerson(person, {
+                        index: i + 1,
+                        total: authors.length,
+                        includeContent,
+                        searchParams
+                    });
+                    if (result && result.cancelled) {
+                        this._appendDiveLog('Cancelled during ' + label);
+                        break;
+                    }
+                    okCount++;
+                } catch (e) {
+                    failCount++;
+                    Logger.error('search-output-dive: export failed for ' + label, e);
+                    this._appendDiveLog('FAIL ' + label + ': ' + (e && e.message ? e.message : String(e)));
+                    if (typeof this._clearResults === 'function') this._clearResults();
+                }
+            }
+
+            if (rt.cancelRequested) {
+                this._setDiveProgress('Cancelled — ' + okCount + ' exported, ' + failCount + ' failed.');
+                Logger.info('search-output-dive: cancelled — exported ' + okCount + ', failed ' + failCount);
+            } else {
+                this._setDiveProgress('Done — ' + okCount + ' exported, ' + failCount + ' failed of ' + authors.length + '.');
+                this._appendDiveLog('Complete — ' + okCount + ' ok / ' + failCount + ' failed / ' + authors.length + ' total');
+                Logger.info('search-output-dive: complete — ' + okCount + ' exported, ' + failCount + ' failed');
+            }
+        } catch (e) {
+            Logger.error('search-output-dive: dive failed', e);
+            this._setDiveProgress('Failed: ' + (e && e.message ? e.message : String(e)));
+            this._appendDiveLog('FATAL ' + (e && e.message ? e.message : String(e)));
+        } finally {
+            this._setAuthorTokens(originalTokens, { replace: true });
+            rt.running = false;
+            rt.cancelRequested = false;
+            this._syncDiveActionButtons();
+        }
+    }
 };
 
 
@@ -2190,7 +2700,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '2.4',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

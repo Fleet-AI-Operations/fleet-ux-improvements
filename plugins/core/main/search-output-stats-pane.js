@@ -2,9 +2,12 @@
 
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 const STATS_SCORECARD_ROW_MIN_WIDTH_PX = 180;
+const STATS_CIRCULAR_ROW_MIN_WIDTH_PX = 240;
 const STATS_SCORECARD_ROW_GAP_PX = 12;
+const STATS_CIRCULAR_CHART_TYPES = new Set(['pie', 'polarArea', 'radar']);
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 const STATS_LINE_BORDER_WIDTH = 2.25;
+const STATS_LINE_TENSION = 0.2;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -22,6 +25,7 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const statsTab = this._state ? (this._state.statsTab || 'stats') : 'stats';
         const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
+        const statsPanel = 'flex: 1; min-height: 0; overflow: hidden; padding: 14px; flex-direction: column; gap: 12px;';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
             + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
@@ -32,7 +36,7 @@ const searchOutputStatsPaneMethods = {
             + '</nav>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
             + '</div>'
-            + '<div id="wf-dash-stats-panel-stats" style="' + panelScroll + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
+            + '<div id="wf-dash-stats-panel-stats" style="' + statsPanel + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
             + this._statsChartsPanelContentHtml()
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
@@ -45,10 +49,19 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsChartsPanelContentHtml() {
+        const btnStyle = 'padding: 2px 8px; font-size: 10px;';
         return ''
             + '<div id="wf-dash-stats-warnings" style="display: none; flex-direction: column; gap: 6px; flex-shrink: 0;"></div>'
             + '<div id="wf-dash-stats-toolbar" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0;">'
-            + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 1 1 auto;"></div>'
+            + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;">'
+            + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 0 1 auto;"></div>'
+            + '<div id="wf-dash-stats-dashboard-switcher" style="display: none; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;">'
+            + '<select id="wf-dash-stats-dashboard-select" data-wf-dash-stats-dashboard-select="1" aria-label="Dashboard" style="max-width: 160px; min-width: 100px; box-sizing: border-box; padding: 2px 6px; font-size: 11px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);"></select>'
+            + '<button type="button" data-wf-dash-stats-dashboard-rename="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Rename dashboard">Rename</button>'
+            + '<button type="button" data-wf-dash-stats-dashboard-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Add dashboard">Add</button>'
+            + '<button type="button" data-wf-dash-stats-dashboard-delete="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '" title="Delete dashboard">Delete</button>'
+            + '</div>'
+            + '</div>'
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; flex: 1 1 auto; min-width: 0;">'
             + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Reset</button>'
             + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export settings</button>'
@@ -58,7 +71,7 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '</div>'
             + '<div id="wf-dash-stats-empty" style="display: none; flex: 1; min-height: 0; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;"></div>'
-            + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0;">'
+            + '<div id="wf-dash-stats-dashboard" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto;">'
             + '<div id="wf-dash-stats-chart-list" data-wf-dash-stats-chart-list="1" style="display: flex; flex-direction: column; gap: 12px; padding-bottom: 24px;"></div>'
             + '</div>'
             + '<div id="wf-dash-stats-builder" style="display: none; flex: 1; min-height: 0; flex-direction: column; overflow: hidden;"></div>';
@@ -66,9 +79,13 @@ const searchOutputStatsPaneMethods = {
 
     _ensureStatsLayout() {
         const engine = Context.statsEngine;
-        if (!engine) return { schemaVersion: 1, charts: [] };
+        if (!engine) {
+            return { schemaVersion: 6, activeDashboardId: '', dashboards: [] };
+        }
         if (!this._state.statsLayout) {
-            this._state.statsLayout = engine.loadLayout();
+            this._state.statsLayout = typeof engine.normalizeStore === 'function'
+                ? engine.normalizeStore(engine.loadLayout())
+                : engine.loadLayout();
         }
         return this._state.statsLayout;
     },
@@ -77,6 +94,115 @@ const searchOutputStatsPaneMethods = {
         const engine = Context.statsEngine;
         if (!engine || !this._state.statsLayout) return;
         this._state.statsLayout = engine.saveLayout(this._state.statsLayout) || this._state.statsLayout;
+    },
+
+    _activeStatsDashboard() {
+        const store = this._ensureStatsLayout();
+        const dashboards = (store && store.dashboards) || [];
+        return dashboards.find((d) => d.id === store.activeDashboardId) || dashboards[0] || {
+            id: '',
+            name: 'Dashboard 1',
+            charts: []
+        };
+    },
+
+    _statsDashboardOptionsHtml(selectedId) {
+        const store = this._ensureStatsLayout();
+        const selected = selectedId != null ? String(selectedId) : String(store.activeDashboardId || '');
+        return ((store && store.dashboards) || []).map((d) =>
+            '<option value="' + dashEscHtml(d.id) + '"' + (d.id === selected ? ' selected' : '') + '>'
+            + dashEscHtml(d.name) + '</option>'
+        ).join('');
+    },
+
+    _setActiveStatsDashboard(dashboardId) {
+        const engine = Context.statsEngine;
+        if (!engine || typeof engine.setActiveDashboardId !== 'function') return;
+        const next = engine.setActiveDashboardId(this._ensureStatsLayout(), dashboardId);
+        this._state.statsLayout = next;
+        this._persistStatsLayout();
+        Logger.log('search-output-stats-pane: active dashboard set — ' + dashboardId);
+        void this._renderStatsPanel();
+    },
+
+    _renameActiveStatsDashboard() {
+        const engine = Context.statsEngine;
+        const active = this._activeStatsDashboard();
+        if (!engine || !active || typeof engine.renameDashboard !== 'function') return;
+        const nextName = window.prompt('Rename dashboard', active.name || '');
+        if (nextName == null) return;
+        const trimmed = String(nextName).trim();
+        if (!trimmed) {
+            Logger.warn('search-output-stats-pane: dashboard rename skipped — empty name');
+            return;
+        }
+        this._state.statsLayout = engine.renameDashboard(this._ensureStatsLayout(), active.id, trimmed);
+        this._persistStatsLayout();
+        Logger.log('search-output-stats-pane: dashboard renamed — ' + trimmed);
+        this._syncStatsToolbarUi();
+        void this._renderStatsPanel();
+    },
+
+    _addStatsDashboard() {
+        const engine = Context.statsEngine;
+        if (!engine || typeof engine.addDashboard !== 'function') return;
+        const store = this._ensureStatsLayout();
+        const max = engine.maxDashboards || 5;
+        if ((store.dashboards || []).length >= max) {
+            Logger.warn('search-output-stats-pane: add dashboard blocked — at limit ' + max);
+            return;
+        }
+        this._state.statsLayout = engine.addDashboard(store);
+        this._persistStatsLayout();
+        const active = this._activeStatsDashboard();
+        Logger.log('search-output-stats-pane: dashboard added — ' + (active && active.name));
+        void this._renderStatsPanel();
+    },
+
+    _deleteActiveStatsDashboard() {
+        const engine = Context.statsEngine;
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        if (!engine || !active || typeof engine.deleteDashboard !== 'function') return;
+        if ((store.dashboards || []).length <= 1) {
+            Logger.warn('search-output-stats-pane: delete dashboard blocked — last remaining');
+            return;
+        }
+        const confirmed = confirm(
+            'Delete dashboard "' + (active.name || 'Dashboard') + '"? Its charts will be removed. This cannot be undone.'
+        );
+        if (!confirmed) return;
+        this._state.statsLayout = engine.deleteDashboard(store, active.id);
+        this._persistStatsLayout();
+        Logger.log('search-output-stats-pane: dashboard deleted — ' + active.id);
+        void this._renderStatsPanel();
+    },
+
+    _copyStatsChartToDashboard(chartId, toDashboardId) {
+        const engine = Context.statsEngine;
+        if (!engine || !chartId || !toDashboardId || typeof engine.copyChartToDashboard !== 'function') return;
+        const active = this._activeStatsDashboard();
+        const result = engine.copyChartToDashboard(
+            this._ensureStatsLayout(),
+            chartId,
+            active && active.id,
+            toDashboardId
+        );
+        if (!result || !result.chart) {
+            Logger.warn('search-output-stats-pane: copy chart failed — ' + chartId + ' → ' + toDashboardId);
+            return;
+        }
+        this._state.statsLayout = result.store;
+        this._persistStatsLayout();
+        const target = engine.findDashboard
+            ? engine.findDashboard(result.store, toDashboardId)
+            : null;
+        Logger.log(
+            'search-output-stats-pane: chart copied — '
+            + (result.chart.title || chartId)
+            + ' → '
+            + (target && target.name ? target.name : toDashboardId)
+        );
     },
 
     _statsCatalogCtx(items) {
@@ -93,6 +219,7 @@ const searchOutputStatsPaneMethods = {
             items: items || [],
             helpfulnessUi: this._state.helpfulnessUi || {},
             currentUserId: typeof this._dashGetCurrentUserId === 'function' ? this._dashGetCurrentUserId() : '',
+            sessionQaUi: this._state.sessionQaUi || {},
             resolveScopeLabel: (scopeKey) => (
                 typeof this._filterScopeLabel === 'function' ? this._filterScopeLabel(scopeKey) : scopeKey
             ),
@@ -116,6 +243,7 @@ const searchOutputStatsPaneMethods = {
             this._destroyStatsBuilderPreview();
             this._state.statsBuilderDraft = null;
             this._state.statsBuilderEditId = null;
+            this._state.statsBuilderDashboardId = null;
             void this._renderStatsPanel();
         } else {
             void this._renderStatsBuilder();
@@ -125,27 +253,43 @@ const searchOutputStatsPaneMethods = {
 
     _openStatsBuilder(chartId) {
         const engine = Context.statsEngine;
-        const layout = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const store = this._ensureStatsLayout();
         const items = this._getStatsScopeItems();
         const catalog = engine ? engine.buildCatalog(this._statsCatalogCtx(items)) : null;
         if (chartId) {
-            const existing = layout.charts.find((c) => c.id === chartId);
+            let existing = null;
+            let sourceDashboardId = active && active.id;
+            for (const dash of (store.dashboards || [])) {
+                const found = (dash.charts || []).find((c) => c.id === chartId);
+                if (found) {
+                    existing = found;
+                    sourceDashboardId = dash.id;
+                    break;
+                }
+            }
             this._state.statsBuilderDraft = existing
                 ? JSON.parse(JSON.stringify(existing))
                 : (engine ? engine.defaultBuilderDraft(catalog) : null);
             this._state.statsBuilderEditId = chartId;
+            this._state.statsBuilderDashboardId = sourceDashboardId;
         } else {
             this._state.statsBuilderDraft = engine ? engine.defaultBuilderDraft(catalog) : null;
             this._state.statsBuilderEditId = null;
+            this._state.statsBuilderDashboardId = active && active.id;
         }
         if (this._state.statsBuilderDraft) {
             this._ensureStatsBuilderChartFilters(this._state.statsBuilderDraft);
+            if (this._state.statsBuilderDashboardId) {
+                this._state.statsBuilderDraft.dashboardId = this._state.statsBuilderDashboardId;
+            }
         }
         this._setStatsViewMode('builder');
         void this._renderStatsBuilder();
     },
 
     _closeStatsBuilder() {
+        this._state.statsBuilderDashboardId = null;
         this._setStatsViewMode('dashboard');
     },
 
@@ -192,6 +336,17 @@ const searchOutputStatsPaneMethods = {
                 if (engine.seriesAllowsSegment && engine.seriesAllowsSegment(draft.type, entry)) {
                     if (s.segmentBy) entry.segmentBy = s.segmentBy;
                 }
+                if (engine.chartSupportsLabelOptions && engine.chartSupportsLabelOptions(draft.type)) {
+                    const abs = s.labelShowAbsolute != null ? !!s.labelShowAbsolute : true;
+                    const pct = !!s.labelShowPercent;
+                    entry.labelShowAbsolute = abs;
+                    entry.labelShowPercent = pct;
+                    entry.labelsShowName = !!s.labelsShowName;
+                    entry.labelsAlwaysVisible = !!s.labelsAlwaysVisible;
+                    entry.labelFormat = engine.labelFormatFromShowFlags
+                        ? engine.labelFormatFromShowFlags(abs, pct)
+                        : (abs && pct ? 'both' : (pct ? 'percent' : 'absolute'));
+                }
                 return entry;
             }),
             height: this._statsResolvedChartHeight(draft),
@@ -230,7 +385,15 @@ const searchOutputStatsPaneMethods = {
             this._renderStatsBuilderValidation(validation.missing);
             return;
         }
-        const layout = this._ensureStatsLayout();
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const targetId = String(draft.dashboardId || this._state.statsBuilderDashboardId || (active && active.id) || '');
+        const targetDash = (store.dashboards || []).find((d) => d.id === targetId)
+            || active;
+        if (!targetDash) {
+            Logger.warn('search-output-stats-pane: builder save blocked — no target dashboard');
+            return;
+        }
         chart.id = draft.id || engine.newChartId();
         chart.title = String(draft.title || 'Chart').trim() || 'Chart';
         const listBounds = this._listBoundsFromOptions(this._state.filterListOptions || {});
@@ -239,36 +402,61 @@ const searchOutputStatsPaneMethods = {
             : (draft.chartFilters || {});
         const editId = this._state.statsBuilderEditId;
         if (editId) {
-            const idx = layout.charts.findIndex((c) => c.id === editId);
-            if (idx >= 0) layout.charts[idx] = chart;
-            else layout.charts.push(chart);
+            let removed = false;
+            for (const dash of store.dashboards || []) {
+                const idx = (dash.charts || []).findIndex((c) => c.id === editId);
+                if (idx >= 0) {
+                    dash.charts.splice(idx, 1);
+                    removed = true;
+                    break;
+                }
+            }
+            targetDash.charts.push(chart);
+            if (!removed) {
+                Logger.debug('search-output-stats-pane: edited chart id not found — appended to target');
+            }
         } else {
-            layout.charts.push(chart);
+            targetDash.charts.push(chart);
+        }
+        if (typeof engine.setActiveDashboardId === 'function') {
+            this._state.statsLayout = engine.setActiveDashboardId(store, targetDash.id);
+        } else {
+            store.activeDashboardId = targetDash.id;
+            this._state.statsLayout = store;
         }
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: chart saved — ' + chart.title);
+        Logger.log('search-output-stats-pane: chart saved — ' + chart.title + ' → ' + targetDash.name);
         this._closeStatsBuilder();
     },
 
     _deleteStatsChart(chartId) {
         if (!chartId) return;
-        const layout = this._ensureStatsLayout();
-        layout.charts = layout.charts.filter((c) => c.id !== chartId);
+        const dash = this._activeStatsDashboard();
+        if (!dash) return;
+        dash.charts = (dash.charts || []).filter((c) => c.id !== chartId);
         this._persistStatsLayout();
         Logger.log('search-output-stats-pane: chart deleted — ' + chartId);
         void this._renderStatsPanel();
     },
 
-    _reorderStatsChart(dragId, targetId) {
-        if (!dragId || !targetId || dragId === targetId) return;
-        const layout = this._ensureStatsLayout();
-        const from = layout.charts.findIndex((c) => c.id === dragId);
-        const to = layout.charts.findIndex((c) => c.id === targetId);
-        if (from < 0 || to < 0) return;
-        const [moved] = layout.charts.splice(from, 1);
-        layout.charts.splice(to, 0, moved);
+    _moveStatsChart(chartId, delta) {
+        const step = delta === -1 || delta === 1 ? delta : 0;
+        if (!chartId || !step) return;
+        const dash = this._activeStatsDashboard();
+        if (!dash || !dash.charts || dash.charts.length < 2) return;
+        const from = dash.charts.findIndex((c) => c.id === chartId);
+        if (from < 0) return;
+        const to = from + step;
+        if (to < 0 || to >= dash.charts.length) return;
+        const [moved] = dash.charts.splice(from, 1);
+        dash.charts.splice(to, 0, moved);
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: charts reordered');
+        Logger.log(
+            'search-output-stats-pane: chart moved '
+            + (step < 0 ? 'up' : 'down')
+            + ' — '
+            + (moved.title || chartId)
+        );
         void this._renderStatsPanel();
     },
 
@@ -314,15 +502,15 @@ const searchOutputStatsPaneMethods = {
             builderEl.style.display = (tab === 'stats' && mode === 'builder') ? 'flex' : 'none';
         }
         if (panelStats && tab === 'stats') {
-            if (mode === 'builder') {
-                panelStats.style.overflowY = 'hidden';
-                panelStats.style.overflowX = 'hidden';
-            } else {
-                panelStats.style.overflowY = 'auto';
-                panelStats.style.overflowX = 'auto';
-            }
+            panelStats.style.overflowY = 'hidden';
+            panelStats.style.overflowX = 'hidden';
         }
         const summaryEl = this._q('#wf-dash-stats-scope-summary');
+        const switcherEl = this._q('#wf-dash-stats-dashboard-switcher');
+        const selectEl = this._q('#wf-dash-stats-dashboard-select');
+        const renameBtn = this._q('[data-wf-dash-stats-dashboard-rename]');
+        const addBtn = this._q('[data-wf-dash-stats-dashboard-add]');
+        const deleteBtn = this._q('[data-wf-dash-stats-dashboard-delete]');
         if (summaryEl && tab === 'stats' && mode === 'dashboard') {
             const items = this._getStatsScopeItems();
             const scopeLabel = this._state.statsUseFiltered !== false ? 'Filtered' : 'All';
@@ -331,6 +519,22 @@ const searchOutputStatsPaneMethods = {
         } else if (summaryEl) {
             summaryEl.textContent = mode === 'builder' ? 'Chart builder' : '';
             summaryEl.style.display = tab === 'stats' && mode === 'builder' ? '' : 'none';
+        }
+        const showSwitcher = tab === 'stats' && mode === 'dashboard' && this._state.hasSearched && this._state.cachedItems;
+        if (switcherEl) {
+            switcherEl.style.display = showSwitcher ? 'inline-flex' : 'none';
+        }
+        if (showSwitcher) {
+            const store = this._ensureStatsLayout();
+            const engine = Context.statsEngine;
+            const max = (engine && engine.maxDashboards) || 5;
+            const count = (store.dashboards || []).length;
+            if (selectEl) {
+                selectEl.innerHTML = this._statsDashboardOptionsHtml(store.activeDashboardId);
+            }
+            if (addBtn) addBtn.disabled = count >= max;
+            if (deleteBtn) deleteBtn.disabled = count <= 1;
+            if (renameBtn) renameBtn.disabled = count < 1;
         }
     },
 
@@ -496,7 +700,8 @@ const searchOutputStatsPaneMethods = {
             muted: this._statsResolvedColor('--muted-foreground', '#64748b'),
             border: this._statsResolvedColor('--border', '#e2e8f0'),
             brand: this._statsResolvedColor('--brand', '#2563eb'),
-            brandAlt: this._statsResolvedColor('--primary', '#16a34a')
+            brandAlt: this._statsResolvedColor('--primary', '#16a34a'),
+            card: this._statsResolvedColor('--card', '#ffffff')
         };
     },
 
@@ -710,7 +915,11 @@ const searchOutputStatsPaneMethods = {
             }
             const theme = this._statsChartTheme();
             const containerWidth = wrapEl.clientWidth || 0;
-            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
+            const config = this._statsFinalizeChartJsConfig(
+                this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog),
+                chart,
+                theme
+            );
             this._state.statsBuilderPreviewChart = new Chart(canvas, config);
             if (chart.type === 'bellCurve') {
                 this._renderBellCurveStatsSubtitle('builder', aggData);
@@ -852,26 +1061,68 @@ const searchOutputStatsPaneMethods = {
         return parts.join(' · ');
     },
 
-    _statsChartCardHeaderHtml(chart) {
+    _statsChartStackKind(chart) {
+        if (!chart) return null;
+        if (chart.type === 'scorecard') return 'scorecard-row';
+        if (STATS_CIRCULAR_CHART_TYPES.has(chart.type)) return 'circular-row';
+        return null;
+    },
+
+    _statsStackRowMinWidth(kind) {
+        return kind === 'circular-row' ? STATS_CIRCULAR_ROW_MIN_WIDTH_PX : STATS_SCORECARD_ROW_MIN_WIDTH_PX;
+    },
+
+    _statsChartCardHeaderHtml(chart, moveState) {
         const btnStyle = 'padding: 2px 8px; font-size: 10px;';
+        const moveBtnStyle = 'padding: 0 4px; min-width: 20px; font-size: 11px; line-height: 1.2;';
+        const canMoveUp = !!(moveState && moveState.canMoveUp);
+        const canMoveDown = !!(moveState && moveState.canMoveDown);
         return ''
             + '<div class="wf-dash-stats-chart-header">'
             + '<div class="wf-dash-stats-chart-header-title">'
-            + '<span data-wf-dash-stats-chart-drag="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-drag" title="Drag to reorder" aria-hidden="true">⠿</span>'
+            + '<span class="wf-dash-stats-chart-move" role="group" aria-label="Reorder chart">'
+            + '<button type="button" data-wf-dash-stats-chart-move-up="' + dashEscHtml(chart.id) + '" class="'
+            + this._dashBtnClass('basic', 'nav') + '" style="' + moveBtnStyle + '" title="Move up" aria-label="Move chart up"'
+            + (canMoveUp ? '' : ' disabled') + '>↑</button>'
+            + '<button type="button" data-wf-dash-stats-chart-move-down="' + dashEscHtml(chart.id) + '" class="'
+            + this._dashBtnClass('basic', 'nav') + '" style="' + moveBtnStyle + '" title="Move down" aria-label="Move chart down"'
+            + (canMoveDown ? '' : ' disabled') + '>↓</button>'
+            + '</span>'
             + '<div class="wf-dash-stats-chart-header-text">' + dashEscHtml(chart.title) + '</div>'
             + '</div>'
             + '<div class="wf-dash-stats-chart-header-actions">'
             + '<button type="button" data-wf-dash-stats-chart-edit="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Edit</button>'
-            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export settings</button>'
-            + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export image</button>'
             + '<button type="button" data-wf-dash-stats-chart-delete="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-delete" title="Delete chart" aria-label="Delete chart">×</button>'
             + '</div>'
             + '</div>';
     },
 
-    _statsChartCardHtml(chart, validation, inScorecardRow) {
+    _statsChartCardFooterHtml(chart) {
+        const btnStyle = 'padding: 2px 8px; font-size: 10px;';
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const otherDashboards = ((store && store.dashboards) || []).filter((d) => d.id !== (active && active.id));
+        const copySelect = otherDashboards.length
+            ? ('<select data-wf-dash-stats-chart-copy-to="' + dashEscHtml(chart.id) + '" class="wf-dash-stats-chart-copy-select" title="Copy chart to another dashboard" aria-label="Copy chart to another dashboard" style="' + btnStyle + ' max-width: 140px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);">'
+                + '<option value="">Copy to…</option>'
+                + otherDashboards.map((d) =>
+                    '<option value="' + dashEscHtml(d.id) + '">' + dashEscHtml(d.name) + '</option>'
+                ).join('')
+                + '</select>')
+            : '';
+        return ''
+            + '<div class="wf-dash-stats-chart-footer">'
+            + copySelect
+            + '<button type="button" data-wf-dash-stats-chart-export="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export settings</button>'
+            + '<button type="button" data-wf-dash-stats-chart-export-image="' + dashEscHtml(chart.id) + '" class="' + this._dashBtnClass('basic', 'nav') + '" style="' + btnStyle + '">Export image</button>'
+            + '</div>';
+    },
+
+    _statsChartCardHtml(chart, validation, inStackRow, stackMinWidth, moveState, visualHeightPx) {
         const box = this._panelBoxStyle();
-        const height = this._statsResolvedChartHeight(chart);
+        const height = visualHeightPx != null && Number.isFinite(visualHeightPx)
+            ? this._statsNormalizeChartHeight(visualHeightPx)
+            : this._statsResolvedChartHeight(chart);
         const disabled = validation && !validation.ok;
         const missingEntry = disabled && validation.missing[0] ? validation.missing[0] : null;
         const missingLabel = missingEntry ? missingEntry.label : '';
@@ -891,36 +1142,42 @@ const searchOutputStatsPaneMethods = {
             : '';
         const bodyContent = isScorecard
             ? ('<div data-wf-dash-stats-scorecard="' + dashEscHtml(chart.id) + '" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 60px; padding: 8px 12px; box-sizing: border-box;"></div>')
-            : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '"></canvas>');
+            : ('<canvas id="wf-dash-stats-canvas-' + dashEscHtml(chart.id) + '" aria-label="' + dashEscHtml(chart.title) + '" style="display: block; width: 100%; height: 100%;"></canvas>');
         const bellSubtitle = chart.type === 'bellCurve'
             ? ('<div data-wf-dash-stats-chart-subtitle="' + dashEscHtml(chart.id) + '" style="display: none; font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px; text-align: center; line-height: 1.35;"></div>')
             : '';
-        const cardLayout = inScorecardRow
-            ? ('flex: 1 1 ' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px; min-width: min(' + STATS_SCORECARD_ROW_MIN_WIDTH_PX + 'px, 100%); max-width: 100%; box-sizing: border-box;')
+        const minWidth = stackMinWidth || STATS_SCORECARD_ROW_MIN_WIDTH_PX;
+        const cardLayout = inStackRow
+            ? ('flex: 1 1 ' + minWidth + 'px; min-width: min(' + minWidth + 'px, 100%); max-width: 100%; box-sizing: border-box;')
             : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
         return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative;">'
-            + this._statsChartCardHeaderHtml(chart)
+            + this._statsChartCardHeaderHtml(chart, moveState)
             + filterSubtitle
             + '<div style="position: relative; height: ' + height + 'px; max-width: 100%;' + canvasOpacity + '">'
             + overlay
             + bodyContent
             + '</div>'
             + bellSubtitle
+            + this._statsChartCardFooterHtml(chart)
             + '</div>';
     },
 
     _statsChartLayoutGroups(charts) {
         const groups = [];
-        let scorecardCharts = null;
+        let stackKind = null;
+        let stackCharts = null;
         for (const chart of charts || []) {
-            if (chart.type === 'scorecard') {
-                if (!scorecardCharts) {
-                    scorecardCharts = [];
-                    groups.push({ kind: 'scorecard-row', charts: scorecardCharts });
+            const kind = this._statsChartStackKind(chart);
+            if (kind) {
+                if (stackKind !== kind) {
+                    stackKind = kind;
+                    stackCharts = [];
+                    groups.push({ kind, charts: stackCharts });
                 }
-                scorecardCharts.push(chart);
+                stackCharts.push(chart);
             } else {
-                scorecardCharts = null;
+                stackKind = null;
+                stackCharts = null;
                 groups.push({ kind: 'chart', charts: [chart] });
             }
         }
@@ -929,21 +1186,56 @@ const searchOutputStatsPaneMethods = {
 
     _statsBuildChartListHtml(validations) {
         const byId = new Map(validations.map((entry) => [entry.chart.id, entry]));
-        const layout = this._ensureStatsLayout();
+        const dash = this._activeStatsDashboard();
+        const charts = dash.charts || [];
+        const moveStateFor = (chartId) => {
+            const idx = charts.findIndex((c) => c.id === chartId);
+            return {
+                canMoveUp: idx > 0,
+                canMoveDown: idx >= 0 && idx < charts.length - 1
+            };
+        };
         let html = '';
-        for (const group of this._statsChartLayoutGroups(layout.charts)) {
-            if (group.kind === 'scorecard-row') {
-                html += '<div class="wf-dash-stats-scorecard-row" data-wf-dash-stats-scorecard-row="1" style="display: flex; flex-wrap: wrap; gap: '
+        for (const group of this._statsChartLayoutGroups(charts)) {
+            if (group.kind === 'scorecard-row' || group.kind === 'circular-row') {
+                const minWidth = this._statsStackRowMinWidth(group.kind);
+                const rowClass = group.kind === 'circular-row'
+                    ? 'wf-dash-stats-circular-row'
+                    : 'wf-dash-stats-scorecard-row';
+                const rowAttr = group.kind === 'circular-row'
+                    ? 'data-wf-dash-stats-circular-row="1"'
+                    : 'data-wf-dash-stats-scorecard-row="1"';
+                const rowVisualHeight = group.charts.length > 1
+                    ? Math.max(...group.charts.map((c) => this._statsResolvedChartHeight(c)))
+                    : null;
+                html += '<div class="' + rowClass + '" ' + rowAttr + ' style="display: flex; flex-wrap: wrap; gap: '
                     + STATS_SCORECARD_ROW_GAP_PX + 'px; width: 100%; align-items: stretch; box-sizing: border-box;">';
                 for (const chart of group.charts) {
                     const entry = byId.get(chart.id);
-                    if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, true);
+                    if (entry) {
+                        html += this._statsChartCardHtml(
+                            entry.chart,
+                            entry.validation,
+                            true,
+                            minWidth,
+                            moveStateFor(chart.id),
+                            rowVisualHeight
+                        );
+                    }
                 }
                 html += '</div>';
                 continue;
             }
             const entry = byId.get(group.charts[0].id);
-            if (entry) html += this._statsChartCardHtml(entry.chart, entry.validation, false);
+            if (entry) {
+                html += this._statsChartCardHtml(
+                    entry.chart,
+                    entry.validation,
+                    false,
+                    null,
+                    moveStateFor(entry.chart.id)
+                );
+            }
         }
         return html;
     },
@@ -1246,22 +1538,624 @@ const searchOutputStatsPaneMethods = {
                     const ds = item.chart.data.datasets[item.datasetIndex];
                     return !(ds && ds.statsSpreadBand);
                 },
-                label: (ctx) => {
-                    const ds = ctx.dataset || {};
-                    const horizontal = ctx.chart.options.indexAxis === 'y';
-                    const rawVal = horizontal ? ctx.parsed.x : ctx.parsed.y;
-                    let text = (ds.label || '') + ': ' + dash._formatStatsScorecardValue(rawVal);
-                    const idx = ctx.dataIndex;
-                    if (Array.isArray(ds.statsSpreadLow) && Array.isArray(ds.statsSpreadHigh)
-                        && ds.statsSpreadLow[idx] != null && ds.statsSpreadHigh[idx] != null
-                        && Number.isFinite(ds.statsSpreadLow[idx]) && Number.isFinite(ds.statsSpreadHigh[idx])) {
-                        text += ' (±σ ' + dash._formatStatsScorecardValue(ds.statsSpreadLow[idx])
-                            + '–' + dash._formatStatsScorecardValue(ds.statsSpreadHigh[idx]) + ')';
+                label: (ctx) => dash._statsTooltipLabelText(ctx.chart.$statsChartModel || null, ctx)
+            }
+        };
+    },
+
+    _statsChartSupportsLabelOptions(chart) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.chartSupportsLabelOptions === 'function') {
+            return engine.chartSupportsLabelOptions(chart && chart.type);
+        }
+        const type = this._statsNormalizeChartType(chart && chart.type);
+        return type === 'pie' || type === 'polarArea' || type === 'radar'
+            || type === 'barLine' || type === 'histogram';
+    },
+
+    _statsNormalizeLabelFormat(raw) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.normalizeLabelFormat === 'function') {
+            return engine.normalizeLabelFormat(raw);
+        }
+        if (raw === 'percent' || raw === 'both') return raw;
+        return 'absolute';
+    },
+
+    _statsLabelShowFlagsFromSeries(seriesEntry) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.labelShowFlagsFromSeries === 'function') {
+            return engine.labelShowFlagsFromSeries(seriesEntry || {});
+        }
+        const s = seriesEntry || {};
+        const format = this._statsNormalizeLabelFormat(s.labelFormat);
+        return {
+            showAbsolute: s.labelShowAbsolute != null
+                ? !!s.labelShowAbsolute
+                : (format === 'absolute' || format === 'both'),
+            showPercent: s.labelShowPercent != null
+                ? !!s.labelShowPercent
+                : (format === 'percent' || format === 'both'),
+            showName: !!s.labelsShowName,
+            alwaysVisible: !!s.labelsAlwaysVisible
+        };
+    },
+
+    _statsChartHasAlwaysVisibleLabels(chart) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.chartHasAnyAlwaysVisibleLabels === 'function') {
+            return engine.chartHasAnyAlwaysVisibleLabels(chart);
+        }
+        return (chart && chart.series || []).some((s) => s && s.labelsAlwaysVisible);
+    },
+
+    _statsStampDatasetLabelMeta(jsDataset, chart, seriesIndex) {
+        if (!jsDataset) return jsDataset;
+        const idx = seriesIndex != null && Number.isFinite(seriesIndex) ? seriesIndex : 0;
+        const series = ((chart && chart.series) || [])[idx] || ((chart && chart.series) || [])[0] || {};
+        jsDataset.statsSeriesIndex = idx;
+        jsDataset.statsLabelFlags = this._statsLabelShowFlagsFromSeries(series);
+        return jsDataset;
+    },
+
+    _statsFormatChartDatumLabel(value, total, format) {
+        const abs = this._formatStatsScorecardValue(value);
+        const pct = total > 0 && Number.isFinite(value)
+            ? (Math.round((value / total) * 1000) / 10).toFixed(1).replace(/\.0$/, '') + '%'
+            : '0%';
+        const mode = this._statsNormalizeLabelFormat(format);
+        if (mode === 'percent') return pct;
+        if (mode === 'both') return abs + ' (' + pct + ')';
+        return abs;
+    },
+
+    _statsComposeOnChartLabelLines(value, total, categoryName, flags) {
+        const f = flags || {};
+        const lines = [];
+        const name = categoryName != null ? String(categoryName).trim() : '';
+        if (f.showName && name) lines.push(name);
+        let valueText = '';
+        if (f.showAbsolute && f.showPercent) {
+            valueText = this._statsFormatChartDatumLabel(value, total, 'both');
+        } else if (f.showPercent) {
+            valueText = this._statsFormatChartDatumLabel(value, total, 'percent');
+        } else if (f.showAbsolute) {
+            valueText = this._statsFormatChartDatumLabel(value, total, 'absolute');
+        } else if (!f.showName) {
+            valueText = this._statsFormatChartDatumLabel(value, total, 'absolute');
+        }
+        if (valueText) lines.push(valueText);
+        return lines;
+    },
+
+    _statsCategoryLabelForPoint(chart, dataset, index) {
+        const labels = chart && chart.data && chart.data.labels;
+        if (Array.isArray(labels) && labels[index] != null && String(labels[index]).trim()) {
+            return String(labels[index]);
+        }
+        if (dataset && dataset.label) return String(dataset.label);
+        return '';
+    },
+
+    _statsDatasetNumericTotal(data) {
+        let sum = 0;
+        for (const v of data || []) {
+            const n = typeof v === 'number' ? v : Number(v);
+            if (Number.isFinite(n)) sum += n;
+        }
+        return sum;
+    },
+
+    _statsTooltipParsedValue(ctx) {
+        if (!ctx) return null;
+        const chartType = ctx.chart && ctx.chart.config && ctx.chart.config.type;
+        if (chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut') {
+            const n = typeof ctx.parsed === 'number' ? ctx.parsed : Number(ctx.raw);
+            return Number.isFinite(n) ? n : null;
+        }
+        if (chartType === 'radar') {
+            const n = ctx.parsed && typeof ctx.parsed.r === 'number' ? ctx.parsed.r : Number(ctx.raw);
+            return Number.isFinite(n) ? n : null;
+        }
+        const horizontal = ctx.chart && ctx.chart.options && ctx.chart.options.indexAxis === 'y';
+        const n = horizontal
+            ? (ctx.parsed && ctx.parsed.x)
+            : (ctx.parsed && ctx.parsed.y);
+        return n != null && Number.isFinite(n) ? n : null;
+    },
+
+    _statsTooltipLabelText(chartModel, ctx) {
+        const dash = this;
+        const ds = ctx.dataset || {};
+        if (ds.statsSpreadBand || ds.statsLegendHidden || ds.statsBellBand) return '';
+        const value = dash._statsTooltipParsedValue(ctx);
+        if (value == null) return '';
+        const total = dash._statsDatasetNumericTotal(ds.data);
+        const seriesIdx = ds.statsSeriesIndex != null
+            ? ds.statsSeriesIndex
+            : (ds.seriesIndex != null ? ds.seriesIndex : 0);
+        const series = ((chartModel && chartModel.series) || [])[seriesIdx] || {};
+        const flags = ds.statsLabelFlags || dash._statsLabelShowFlagsFromSeries(series);
+        const format = flags.showAbsolute && flags.showPercent
+            ? 'both'
+            : (flags.showPercent ? 'percent' : 'absolute');
+        const formatted = dash._statsFormatChartDatumLabel(value, total, format);
+        const chartType = ctx.chart && ctx.chart.config && ctx.chart.config.type;
+        if (chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut') {
+            const name = ctx.label || ds.label || '';
+            return name ? name + ': ' + formatted : formatted;
+        }
+        if (chartModel && chartModel.type === 'histogram') {
+            if (format === 'percent') return formatted;
+            if (format === 'both') {
+                const abs = dash._formatStatsScorecardValue(value);
+                const tasks = value === 1 ? '1 task' : abs + ' tasks';
+                return tasks + ' (' + dash._statsFormatChartDatumLabel(value, total, 'percent') + ')';
+            }
+            return value === 1 ? '1 task' : dash._formatStatsScorecardValue(value) + ' tasks';
+        }
+        const seriesLabel = ds.label || '';
+        let text = seriesLabel ? seriesLabel + ': ' + formatted : formatted;
+        const idx = ctx.dataIndex;
+        if (Array.isArray(ds.statsSpreadLow) && Array.isArray(ds.statsSpreadHigh)
+            && ds.statsSpreadLow[idx] != null && ds.statsSpreadHigh[idx] != null
+            && Number.isFinite(ds.statsSpreadLow[idx]) && Number.isFinite(ds.statsSpreadHigh[idx])) {
+            text += ' (±σ ' + dash._formatStatsScorecardValue(ds.statsSpreadLow[idx])
+                + '–' + dash._formatStatsScorecardValue(ds.statsSpreadHigh[idx]) + ')';
+        }
+        return text;
+    },
+
+    _statsValueLabelsPlugin(chartModel, theme) {
+        const dash = this;
+        const labelFont = '600 10px system-ui, -apple-system, sans-serif';
+        const padX = 4;
+        const lineH = 12;
+        const fill = theme && theme.card ? theme.card : 'rgba(255,255,255,0.85)';
+        const stroke = theme && theme.border ? theme.border : 'rgba(0,0,0,0.12)';
+        const fg = theme && theme.foreground ? theme.foreground : '#0f172a';
+        const leaderStroke = theme && theme.muted ? theme.muted : 'rgba(100,116,139,0.85)';
+
+        const measureLines = (ctx, lines) => {
+            ctx.font = labelFont;
+            let maxW = 0;
+            for (const line of lines) {
+                maxW = Math.max(maxW, ctx.measureText(line).width);
+            }
+            return {
+                boxW: maxW + padX * 2,
+                boxH: lines.length * lineH + 4
+            };
+        };
+
+        const drawPill = (ctx, label) => {
+            const { x, y, boxW, boxH, lines, align } = label;
+            const left = align === 'left' ? x : (align === 'right' ? x - boxW : x - boxW / 2);
+            ctx.save();
+            ctx.font = labelFont;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(left, y - boxH / 2, boxW, boxH, 3);
+            } else {
+                ctx.rect(left, y - boxH / 2, boxW, boxH);
+            }
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = fg;
+            const startY = y - ((lines.length - 1) * lineH) / 2;
+            lines.forEach((line, i) => {
+                ctx.fillText(line, left + padX, startY + i * lineH);
+            });
+            ctx.restore();
+        };
+
+        const drawLeader = (ctx, ax, ay, bx, by, cx, cy) => {
+            ctx.save();
+            ctx.strokeStyle = leaderStroke;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            if (cx != null && cy != null) {
+                ctx.lineTo(bx, by);
+                ctx.lineTo(cx, cy);
+            } else {
+                ctx.lineTo(bx, by);
+            }
+            ctx.stroke();
+            ctx.restore();
+        };
+
+        const collectCandidates = (chart, ctx) => {
+            const out = [];
+            chart.data.datasets.forEach((dataset, datasetIndex) => {
+                if (!dataset || dataset.statsSpreadBand || dataset.statsLegendHidden
+                    || dataset.statsBellBand || dataset.statsShadedFillLayer
+                    || dataset.segmentFillOnly) {
+                    return;
+                }
+                const flags = dataset.statsLabelFlags
+                    || dash._statsLabelShowFlagsFromSeries(
+                        ((chartModel.series || [])[
+                            dataset.statsSeriesIndex != null
+                                ? dataset.statsSeriesIndex
+                                : (dataset.seriesIndex != null ? dataset.seriesIndex : 0)
+                        ]) || {}
+                    );
+                if (!flags.alwaysVisible) return;
+                if (!chart.isDatasetVisible(datasetIndex)) return;
+                const meta = chart.getDatasetMeta(datasetIndex);
+                if (!meta || !meta.data) return;
+                const total = dash._statsDatasetNumericTotal(dataset.data);
+                meta.data.forEach((el, index) => {
+                    if (!el || el.skip || el.hidden) return;
+                    const raw = dataset.data[index];
+                    const value = typeof raw === 'number' ? raw : Number(raw);
+                    if (!Number.isFinite(value)) return;
+                    const lines = dash._statsComposeOnChartLabelLines(
+                        value,
+                        total,
+                        dash._statsCategoryLabelForPoint(chart, dataset, index),
+                        flags
+                    );
+                    if (!lines.length) return;
+                    const size = measureLines(ctx, lines);
+                    out.push({
+                        el,
+                        lines,
+                        value,
+                        boxW: size.boxW,
+                        boxH: size.boxH,
+                        datasetIndex,
+                        index
+                    });
+                });
+            });
+            return out;
+        };
+
+        const boxesOverlapY = (a, b, minGap) => {
+            const aTop = a.y - a.boxH / 2;
+            const aBot = a.y + a.boxH / 2;
+            const bTop = b.y - b.boxH / 2;
+            const bBot = b.y + b.boxH / 2;
+            return aTop < bBot + minGap && aBot + minGap > bTop;
+        };
+
+        const packSideLanes = (items, side, canvasW, canvasH) => {
+            if (!items.length) return [];
+            const minGap = 4;
+            const laneGap = 10;
+            const margin = 4;
+            const top = margin;
+            const bottom = canvasH - margin;
+            const sorted = items.slice().sort((a, b) => a.y - b.y);
+            const maxW = Math.max(...sorted.map((p) => p.boxW), 40);
+            const step = maxW + laneGap;
+            const baseInner = side === 'right'
+                ? Math.max(...sorted.map((p) => p.elbowX + 10))
+                : Math.min(...sorted.map((p) => p.elbowX - 10));
+            const maxLanes = side === 'right'
+                ? Math.max(1, Math.floor((canvasW - margin - baseInner) / step) + 1)
+                : Math.max(1, Math.floor((baseInner - margin) / step) + 1);
+
+            const lanes = [];
+            const unplaced = [];
+
+            const tryFitY = (lane, item) => {
+                let y = Math.max(top + item.boxH / 2, Math.min(bottom - item.boxH / 2, item.y));
+                const ordered = lane.slice().sort((a, b) => a.y - b.y);
+                for (let n = 0; n < ordered.length + 1; n += 1) {
+                    const conflict = ordered.find((p) => boxesOverlapY({ y, boxH: item.boxH }, p, minGap));
+                    if (!conflict) {
+                        if (y - item.boxH / 2 >= top - 0.5 && y + item.boxH / 2 <= bottom + 0.5) {
+                            return y;
+                        }
+                        return null;
                     }
-                    return text;
+                    y = conflict.y + conflict.boxH / 2 + minGap + item.boxH / 2;
+                    if (y + item.boxH / 2 > bottom + 0.5) return null;
+                }
+                return null;
+            };
+
+            for (const item of sorted) {
+                let assigned = false;
+                for (let k = 0; k < lanes.length; k += 1) {
+                    const y = tryFitY(lanes[k], item);
+                    if (y == null) continue;
+                    item.y = y;
+                    item.lane = k;
+                    lanes[k].push(item);
+                    assigned = true;
+                    break;
+                }
+                if (assigned) continue;
+                if (lanes.length >= maxLanes) {
+                    unplaced.push(item);
+                    continue;
+                }
+                let y = Math.max(top + item.boxH / 2, Math.min(bottom - item.boxH / 2, item.y));
+                if (y - item.boxH / 2 < top - 0.5 || y + item.boxH / 2 > bottom + 0.5) {
+                    unplaced.push(item);
+                    continue;
+                }
+                item.y = y;
+                item.lane = lanes.length;
+                lanes.push([item]);
+            }
+
+            const placed = [];
+            for (const lane of lanes) {
+                for (const item of lane) {
+                    const k = item.lane || 0;
+                    if (side === 'right') {
+                        item.align = 'left';
+                        item.x = baseInner + k * step;
+                        if (item.x + item.boxW > canvasW - margin) {
+                            unplaced.push(item);
+                            continue;
+                        }
+                    } else {
+                        item.align = 'right';
+                        item.x = baseInner - k * step;
+                        if (item.x - item.boxW < margin) {
+                            unplaced.push(item);
+                            continue;
+                        }
+                    }
+                    placed.push(item);
+                }
+            }
+
+            // Drop remaining collisions (prefer smaller values), then any still-unplaced.
+            const kept = [];
+            const ranked = placed.slice().sort((a, b) => {
+                if (b.value !== a.value) return b.value - a.value;
+                return (a.y - b.y);
+            });
+            for (const cand of ranked) {
+                const hit = kept.some((v) => {
+                    const sameSideOverlapX = side === 'right'
+                        ? !(cand.x + cand.boxW <= v.x || v.x + v.boxW <= cand.x)
+                        : !(cand.x <= v.x - v.boxW || v.x <= cand.x - cand.boxW);
+                    return sameSideOverlapX && boxesOverlapY(cand, v, minGap);
+                });
+                if (hit) {
+                    unplaced.push(cand);
+                    continue;
+                }
+                kept.push(cand);
+            }
+
+            if (unplaced.length) {
+                Logger.debug(
+                    'search-output-stats-pane: outlabels dropped '
+                    + unplaced.length
+                    + ' on '
+                    + side
+                    + ' (no room after lane stagger)'
+                );
+            }
+            return kept;
+        };
+
+        const layoutCircular = (chart, ctx, candidates) => {
+            const area = chart.chartArea || {};
+            const canvasW = chart.width || ((area.right || 0) + 4);
+            const canvasH = chart.height || ((area.bottom || 0) + 4);
+            const placed = [];
+            for (const cand of candidates) {
+                const el = cand.el;
+                let cx;
+                let cy;
+                let angle;
+                let rimR;
+                if (typeof el.startAngle === 'number' && typeof el.endAngle === 'number') {
+                    cx = el.x;
+                    cy = el.y;
+                    angle = (el.startAngle + el.endAngle) / 2;
+                    rimR = el.outerRadius != null ? el.outerRadius : 40;
+                } else {
+                    const rScale = chart.scales && chart.scales.r;
+                    cx = rScale && Number.isFinite(rScale.xCenter)
+                        ? rScale.xCenter
+                        : ((area.left + area.right) / 2);
+                    cy = rScale && Number.isFinite(rScale.yCenter)
+                        ? rScale.yCenter
+                        : ((area.top + area.bottom) / 2);
+                    const pos = typeof el.tooltipPosition === 'function'
+                        ? el.tooltipPosition()
+                        : { x: el.x, y: el.y };
+                    angle = Math.atan2(pos.y - cy, pos.x - cx);
+                    rimR = Math.hypot(pos.x - cx, pos.y - cy) || 40;
+                }
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                const anchorX = cx + rimR * cos;
+                const anchorY = cy + rimR * sin;
+                const gap = 14;
+                const elbowR = rimR + gap;
+                const elbowX = cx + elbowR * cos;
+                const elbowY = cy + elbowR * sin;
+                const side = cos >= 0 ? 'right' : 'left';
+                const labelR = rimR + gap + 10;
+                let labelX = cx + labelR * cos;
+                let labelY = cy + labelR * sin;
+                if (side === 'right') {
+                    labelX = Math.max(labelX, elbowX + 8);
+                } else {
+                    labelX = Math.min(labelX, elbowX - 8);
+                }
+                placed.push(Object.assign({}, cand, {
+                    anchorX,
+                    anchorY,
+                    elbowX,
+                    elbowY,
+                    x: labelX,
+                    y: labelY,
+                    side,
+                    align: side === 'right' ? 'left' : 'right'
+                }));
+            }
+            const left = packSideLanes(
+                placed.filter((p) => p.side === 'left'),
+                'left',
+                canvasW,
+                canvasH
+            );
+            const right = packSideLanes(
+                placed.filter((p) => p.side === 'right'),
+                'right',
+                canvasW,
+                canvasH
+            );
+            return left.concat(right);
+        };
+
+        const layoutCartesian = (chart, ctx, candidates) => {
+            const horizontal = !!(chart.options && chart.options.indexAxis === 'y');
+            const placed = candidates.map((cand) => {
+                const el = cand.el;
+                const pos = typeof el.tooltipPosition === 'function'
+                    ? el.tooltipPosition()
+                    : { x: el.x, y: el.y };
+                const anchorX = pos.x;
+                const anchorY = pos.y;
+                let x = anchorX;
+                let y = anchorY;
+                if (horizontal) {
+                    x = anchorX + cand.boxW / 2 + 8;
+                } else {
+                    y = anchorY - cand.boxH / 2 - 6;
+                }
+                return Object.assign({}, cand, {
+                    anchorX,
+                    anchorY,
+                    x,
+                    y,
+                    align: 'center',
+                    side: horizontal ? 'right' : 'top'
+                });
+            });
+            placed.sort((a, b) => (horizontal ? a.y - b.y : a.x - b.x));
+            const minGap = 3;
+            for (let i = 1; i < placed.length; i += 1) {
+                const prev = placed[i - 1];
+                const cur = placed[i];
+                if (horizontal) {
+                    const minY = prev.y + prev.boxH / 2 + minGap + cur.boxH / 2;
+                    if (cur.y < minY) cur.y = minY;
+                } else {
+                    const overlapsX = Math.abs(cur.x - prev.x) < (cur.boxW + prev.boxW) / 2;
+                    const overlapsY = Math.abs(cur.y - prev.y) < (cur.boxH + prev.boxH) / 2;
+                    if (overlapsX && overlapsY) {
+                        cur.y = prev.y - prev.boxH / 2 - minGap - cur.boxH / 2;
+                    }
+                }
+            }
+            return placed;
+        };
+
+        return {
+            id: 'wfStatsValueLabels',
+            afterDatasetsDraw(chart) {
+                if (!chartModel || !dash._statsChartSupportsLabelOptions(chartModel)) return;
+                if (!dash._statsChartHasAlwaysVisibleLabels(chartModel)) return;
+                const ctx = chart.ctx;
+                if (!ctx) return;
+                const candidates = collectCandidates(chart, ctx);
+                if (!candidates.length) return;
+                const chartType = chart.config && chart.config.type;
+                const modelType = chartModel.type;
+                const circular = chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut'
+                    || chartType === 'radar' || modelType === 'pie' || modelType === 'polarArea'
+                    || modelType === 'radar';
+                const placed = circular
+                    ? layoutCircular(chart, ctx, candidates)
+                    : layoutCartesian(chart, ctx, candidates);
+                for (const label of placed) {
+                    const edgeX = label.align === 'left'
+                        ? label.x
+                        : (label.align === 'right' ? label.x : label.x);
+                    const edgeY = label.y;
+                    const labelEdgeX = label.align === 'left'
+                        ? label.x
+                        : (label.align === 'right' ? label.x - label.boxW : label.x);
+                    const connectX = label.align === 'center'
+                        ? label.x
+                        : (label.align === 'left' ? label.x : label.x);
+                    // Leader: rim → elbow → label edge
+                    if (circular) {
+                        const lx = label.align === 'left' ? label.x : label.x;
+                        // For left align, label.x is left edge of pill; for right align, label.x is right edge.
+                        const pillEdgeX = label.align === 'left' ? label.x : label.x;
+                        drawLeader(
+                            ctx,
+                            label.anchorX,
+                            label.anchorY,
+                            label.elbowX,
+                            label.elbowY,
+                            pillEdgeX,
+                            label.y
+                        );
+                    } else {
+                        const dist = Math.hypot(label.x - label.anchorX, label.y - label.anchorY);
+                        if (dist > 10) {
+                            drawLeader(ctx, label.anchorX, label.anchorY, label.x, label.y, null, null);
+                        }
+                    }
+                    drawPill(ctx, label);
                 }
             }
         };
+    },
+
+    _statsFinalizeChartJsConfig(config, chart, theme) {
+        if (!config || !chart) return config;
+        config.$statsChartModel = chart;
+        if (config.options) {
+            config.options.$statsChartModel = chart;
+        }
+        if (!this._statsChartSupportsLabelOptions(chart)) return config;
+        if (!config.options) config.options = {};
+        if (!config.options.plugins) config.options.plugins = {};
+        const existingTooltip = config.options.plugins.tooltip || {};
+        const existingCallbacks = existingTooltip.callbacks || {};
+        const dash = this;
+        config.options.plugins.tooltip = Object.assign({}, existingTooltip, {
+            callbacks: Object.assign({}, existingCallbacks, {
+                label: (ctx) => dash._statsTooltipLabelText(chart, ctx)
+            })
+        });
+        if (this._statsChartHasAlwaysVisibleLabels(chart)) {
+            const circular = chart.type === 'pie' || chart.type === 'polarArea' || chart.type === 'radar';
+            if (circular) {
+                // Side-biased padding: keep horizontal room for leader-line labels without
+                // crushing vertical space (pies are constrained by the smaller axis).
+                const sidePad = { top: 16, right: 60, bottom: 16, left: 60 };
+                const prev = config.options.layout && config.options.layout.padding;
+                config.options.layout = Object.assign({}, config.options.layout, {
+                    padding: typeof prev === 'object' && prev
+                        ? Object.assign({}, sidePad, prev)
+                        : sidePad
+                });
+                // Out-labels carry name/value already; the bottom legend is redundant and
+                // collides with placed labels, so suppress it.
+                if (config.options.plugins.legend) {
+                    config.options.plugins.legend = Object.assign({}, config.options.plugins.legend, { display: false });
+                } else {
+                    config.options.plugins.legend = { display: false };
+                }
+            }
+            const plugin = this._statsValueLabelsPlugin(chart, theme || this._statsChartTheme());
+            config.plugins = (config.plugins || []).concat([plugin]);
+        }
+        return config;
     },
 
     _statsCartesianScales(chart, theme) {
@@ -1453,16 +2347,18 @@ const searchOutputStatsPaneMethods = {
 
         if (type === 'pie' || type === 'polarArea') {
             const ds = (aggData.datasets || [])[0] || { label: 'Count of results', data: [] };
+            const pieDs = this._statsStampDatasetLabelMeta({
+                label: ds.label,
+                data: ds.data,
+                backgroundColor: (aggData.labels || []).map((_, j) => palette[j % palette.length]),
+                borderColor: 'transparent',
+                seriesIndex: ds.seriesIndex != null ? ds.seriesIndex : 0
+            }, chart, ds.seriesIndex != null ? ds.seriesIndex : 0);
             return {
                 type: type === 'polarArea' ? 'polarArea' : 'pie',
                 data: {
                     labels: aggData.labels,
-                    datasets: [{
-                        label: ds.label,
-                        data: ds.data,
-                        backgroundColor: (aggData.labels || []).map((_, j) => palette[j % palette.length]),
-                        borderColor: 'transparent'
-                    }]
+                    datasets: [pieDs]
                 },
                 options: this._buildChartJsOptions(chart, theme, chartJsCtx)
             };
@@ -1472,16 +2368,18 @@ const searchOutputStatsPaneMethods = {
             const ds = (aggData.datasets || [])[0] || { label: '', data: [] };
             const histLabelCount = (aggData.labels || []).length;
             const metricLabel = ds.label || this._statsResolveSeriesLabel((chart.series || [])[0], catalog);
+            const histDs = this._statsStampDatasetLabelMeta({
+                label: ds.label,
+                data: ds.data,
+                backgroundColor: theme.brand,
+                borderColor: theme.brand,
+                seriesIndex: 0
+            }, chart, 0);
             return {
                 type: 'bar',
                 data: {
                     labels: aggData.labels,
-                    datasets: [{
-                        label: ds.label,
-                        data: ds.data,
-                        backgroundColor: theme.brand,
-                        borderColor: theme.brand
-                    }]
+                    datasets: [histDs]
                 },
                 options: {
                     responsive: true,
@@ -1647,14 +2545,16 @@ const searchOutputStatsPaneMethods = {
         if (type === 'radar') {
             const datasets = (aggData.datasets || []).map((ds, i) => {
                 const color = i === 0 ? theme.brand : (i === 1 ? theme.brandAlt : palette[i % palette.length]);
-                return {
+                const seriesIndex = ds.seriesIndex != null ? ds.seriesIndex : i;
+                return this._statsStampDatasetLabelMeta({
                     label: ds.label,
                     data: ds.data,
                     borderColor: color,
                     backgroundColor: this._statsColorWithAlpha(color, 0.2),
                     pointBackgroundColor: color,
-                    pointBorderColor: color
-                };
+                    pointBorderColor: color,
+                    seriesIndex
+                }, chart, seriesIndex);
             });
             const circularLegend = this._statsCircularChartLegend(theme, labelCount, containerWidth || 0);
             return {
@@ -1697,14 +2597,17 @@ const searchOutputStatsPaneMethods = {
             const valueScale = ds.yAxis === 'y1' ? 'y1' : 'y';
             const valueAxisID = this._statsValueAxisId(chart, ds.yAxis);
             const axisBinding = horizontal ? { xAxisID: valueAxisID } : { yAxisID: valueScale };
+            const seriesIndex = ds.seriesIndex != null ? ds.seriesIndex : i;
             const base = Object.assign({
                 type: renderAs,
                 label: ds.label,
                 data: ds.data,
                 borderColor: color,
                 backgroundColor: color,
-                order: renderAs === 'line' ? 1 : 2
+                order: renderAs === 'line' ? 1 : 2,
+                seriesIndex
             }, axisBinding);
+            this._statsStampDatasetLabelMeta(base, chart, seriesIndex);
             const hasSpreadBand = ds.spread === 'stddevBand'
                 && Array.isArray(ds.spreadLow)
                 && Array.isArray(ds.spreadHigh);
@@ -1768,7 +2671,7 @@ const searchOutputStatsPaneMethods = {
                     }));
                     chartDatasets.push(Object.assign({}, base, {
                         type: 'line',
-                        tension: 0.2,
+                        tension: STATS_LINE_TENSION,
                         spanGaps: true,
                         pointRadius: 3,
                         fill: false,
@@ -1786,6 +2689,8 @@ const searchOutputStatsPaneMethods = {
                         borderWidth: 0,
                         pointRadius: 0,
                         pointHoverRadius: 0,
+                        tension: STATS_LINE_TENSION,
+                        spanGaps: true,
                         stack: 'line-' + valueScale,
                         statsLegendHidden: true
                     }));
@@ -1799,7 +2704,7 @@ const searchOutputStatsPaneMethods = {
                         borderColor: outlineColor,
                         backgroundColor: outlineColor,
                         borderWidth: STATS_LINE_BORDER_WIDTH,
-                        tension: 0.2,
+                        tension: STATS_LINE_TENSION,
                         spanGaps: true,
                         pointRadius: 3
                     }));
@@ -1815,6 +2720,8 @@ const searchOutputStatsPaneMethods = {
                         borderWidth: 0,
                         pointRadius: 0,
                         pointHoverRadius: 0,
+                        tension: STATS_LINE_TENSION,
+                        spanGaps: true,
                         statsLegendHidden: true,
                         statsShadedFillLayer: true,
                         statsSeriesKey: seriesKey
@@ -1822,7 +2729,7 @@ const searchOutputStatsPaneMethods = {
                     chartDatasets.push(Object.assign({}, base, {
                         order: 1,
                         fill: false,
-                        tension: 0.2,
+                        tension: STATS_LINE_TENSION,
                         spanGaps: true,
                         pointRadius: 3,
                         borderWidth: STATS_LINE_BORDER_WIDTH,
@@ -1832,7 +2739,7 @@ const searchOutputStatsPaneMethods = {
                     return;
                 }
                 const lineOpts = {
-                    tension: 0.2,
+                    tension: STATS_LINE_TENSION,
                     spanGaps: true,
                     pointRadius: 3,
                     borderWidth: STATS_LINE_BORDER_WIDTH,
@@ -1883,51 +2790,26 @@ const searchOutputStatsPaneMethods = {
         return barConfig;
     },
 
-    _attachStatsChartReorder(listEl) {
-        if (!listEl || listEl.dataset.wfStatsReorderBound === 'true') return;
-        listEl.dataset.wfStatsReorderBound = 'true';
-        const dash = this;
-        let dragId = null;
-        listEl.addEventListener('pointerdown', (e) => {
-            const handle = e.target.closest('[data-wf-dash-stats-chart-drag]');
-            if (!handle || !listEl.contains(handle)) return;
-            dragId = handle.getAttribute('data-wf-dash-stats-chart-drag');
-            handle.setPointerCapture(e.pointerId);
-        });
-        listEl.addEventListener('pointerup', (e) => {
-            if (!dragId) return;
-            const card = e.target.closest('[data-chart-id]');
-            const targetId = card ? card.getAttribute('data-chart-id') : null;
-            if (targetId && targetId !== dragId) {
-                dash._reorderStatsChart(dragId, targetId);
-            }
-            dragId = null;
-        });
-        listEl.addEventListener('pointercancel', () => { dragId = null; });
-    },
-
     _ensureStatsChartCardStyles() {
         if (typeof document === 'undefined') return;
-        if (document.getElementById(STATS_CHART_CARD_STYLE_ID)) return;
-        const style = document.createElement('style');
-        style.id = STATS_CHART_CARD_STYLE_ID;
+        let style = document.getElementById(STATS_CHART_CARD_STYLE_ID);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = STATS_CHART_CARD_STYLE_ID;
+            document.head.appendChild(style);
+        }
         style.textContent = ''
-            + '.wf-dash-stats-chart-card { container-type: inline-size; }'
             + '.wf-dash-stats-chart-header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 6px; margin-bottom: 8px; }'
             + '.wf-dash-stats-chart-header-title { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; max-width: 100%; }'
             + '.wf-dash-stats-chart-header-text { font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }'
-            + '.wf-dash-stats-chart-drag { cursor: grab; color: var(--muted-foreground, #64748b); font-size: 14px; user-select: none; line-height: 1; flex-shrink: 0; }'
+            + '.wf-dash-stats-chart-move { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; flex-shrink: 0; }'
+            + '.wf-dash-stats-chart-move button:disabled { opacity: 0.35; cursor: not-allowed; }'
             + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
+            + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 8px; max-width: 100%; }'
+            + '.wf-dash-stats-chart-copy-select { cursor: pointer; }'
             + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
-            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-actions { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }'
-            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-stack .wf-dash-stats-chart-header-actions { flex-direction: column; align-items: stretch; }'
-            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-stack .wf-dash-stats-chart-header-actions button { width: 100%; box-sizing: border-box; justify-content: center; }'
-            + '@container (max-width: 260px) {'
-            + '.wf-dash-stats-chart-header-actions { flex-direction: column; align-items: stretch; }'
-            + '.wf-dash-stats-chart-header-actions button { width: 100%; box-sizing: border-box; justify-content: center; }'
-            + '}';
-        document.head.appendChild(style);
+            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-actions { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }';
     },
 
     _syncStatsChartCardHeader(card) {
@@ -1943,10 +2825,6 @@ const searchOutputStatsPaneMethods = {
         const needsWrap = titleRow.scrollWidth + actionsNaturalWidth + 8 > header.clientWidth + 1;
         if (needsWrap) {
             header.classList.add('wf-dash-stats-chart-header--actions-wrap');
-        }
-        void header.offsetHeight;
-        if (actionsNaturalWidth > actions.clientWidth + 1) {
-            header.classList.add('wf-dash-stats-chart-header--actions-stack');
         }
     },
 
@@ -2016,19 +2894,25 @@ const searchOutputStatsPaneMethods = {
 
     _resetStatsDashboard() {
         const engine = Context.statsEngine;
-        if (!engine || typeof engine.defaultLayout !== 'function') {
+        if (!engine || typeof engine.resetDashboardCharts !== 'function') {
             Logger.warn('search-output-stats-pane: dashboard reset skipped — stats engine unavailable');
             return;
         }
+        const active = this._activeStatsDashboard();
         const confirmed = confirm(
-            'Reset dashboard to the default layout? All custom charts will be removed. This cannot be undone.'
+            'Reset dashboard "' + ((active && active.name) || 'Dashboard')
+            + '" to the default chart set? Custom charts on this dashboard will be removed. This cannot be undone.'
         );
         if (!confirmed) return;
-        this._state.statsLayout = engine.defaultLayout();
+        this._state.statsLayout = engine.resetDashboardCharts(this._ensureStatsLayout(), active && active.id);
         this._persistStatsLayout();
         this._state.statsPanelDirty = false;
         void this._renderStatsPanel();
-        Logger.log('search-output-stats-pane: dashboard reset to default — ' + this._state.statsLayout.charts.length + ' chart(s)');
+        const next = this._activeStatsDashboard();
+        Logger.log(
+            'search-output-stats-pane: dashboard reset to default — '
+            + ((next && next.charts) ? next.charts.length : 0) + ' chart(s)'
+        );
     },
 
     _exportStatsDashboard() {
@@ -2037,10 +2921,14 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output-stats-pane: dashboard export skipped — stats engine unavailable');
             return;
         }
-        const layout = this._ensureStatsLayout();
-        const payload = engine.exportLayoutObject(layout);
+        const store = this._ensureStatsLayout();
+        const active = this._activeStatsDashboard();
+        const payload = engine.exportLayoutObject(store);
         const date = typeof engine.exportDateSlug === 'function' ? engine.exportDateSlug() : 'export';
-        const filename = 'fleet-stats-dashboard-' + date + '.json';
+        const slug = typeof engine.sanitizeExportSlug === 'function'
+            ? engine.sanitizeExportSlug(active && active.name)
+            : 'dashboard';
+        const filename = 'fleet-stats-dashboard-' + slug + '-' + date + '.json';
         const json = JSON.stringify(payload, null, 2);
         this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
         Logger.log('search-output-stats-pane: dashboard exported — ' + payload.charts.length + ' chart(s)');
@@ -2052,8 +2940,8 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output-stats-pane: chart export skipped — missing chart or engine');
             return;
         }
-        const layout = this._ensureStatsLayout();
-        const chart = layout.charts.find((c) => c.id === chartId);
+        const dash = this._activeStatsDashboard();
+        const chart = (dash.charts || []).find((c) => c.id === chartId);
         if (!chart) {
             Logger.warn('search-output-stats-pane: chart export skipped — chart not found ' + chartId);
             return;
@@ -2100,9 +2988,9 @@ const searchOutputStatsPaneMethods = {
     _statsDashboardExportCssWidth() {
         const list = this._q('#wf-dash-stats-chart-list');
         if (list && list.clientWidth > 0) return Math.max(320, list.clientWidth);
-        const layout = this._ensureStatsLayout();
+        const dash = this._activeStatsDashboard();
         let max = 0;
-        for (const chart of layout.charts) {
+        for (const chart of (dash.charts || [])) {
             const width = this._statsChartBodyCssWidth(chart);
             if (width > max) max = width;
         }
@@ -2246,13 +3134,14 @@ const searchOutputStatsPaneMethods = {
         return canvas.toDataURL('image/png');
     },
 
-    async _composeStatsDashboardExportImages(layout, exportCssWidth) {
-        const groups = this._statsChartLayoutGroups(layout.charts);
+    async _composeStatsDashboardExportImages(dashboard, exportCssWidth) {
+        const groups = this._statsChartLayoutGroups((dashboard && dashboard.charts) || []);
         const images = [];
         for (const group of groups) {
-            if (group.kind === 'scorecard-row' && group.charts.length > 1) {
+            if ((group.kind === 'scorecard-row' || group.kind === 'circular-row') && group.charts.length > 1) {
+                const rowMinWidth = this._statsStackRowMinWidth(group.kind);
                 const cardWidth = Math.max(
-                    STATS_SCORECARD_ROW_MIN_WIDTH_PX,
+                    rowMinWidth,
                     Math.floor((exportCssWidth - STATS_SCORECARD_ROW_GAP_PX * (group.charts.length - 1)) / group.charts.length)
                 );
                 const rowImgs = [];
@@ -2291,8 +3180,8 @@ const searchOutputStatsPaneMethods = {
 
     async _exportStatsChartImage(chartId) {
         const chartIdStr = String(chartId || '');
-        const layout = this._ensureStatsLayout();
-        const chart = layout.charts.find((c) => c.id === chartIdStr);
+        const dash = this._activeStatsDashboard();
+        const chart = (dash.charts || []).find((c) => c.id === chartIdStr);
         if (!chart) {
             Logger.warn('search-output-stats-pane: chart image export skipped — chart not found ' + chartIdStr);
             return;
@@ -2308,15 +3197,15 @@ const searchOutputStatsPaneMethods = {
     },
 
     async _exportStatsDashboardImage() {
-        const layout = this._ensureStatsLayout();
-        if (!layout.charts.length) {
+        const dash = this._activeStatsDashboard();
+        if (!(dash.charts || []).length) {
             Logger.warn('search-output-stats-pane: dashboard image export skipped — no charts');
             return;
         }
         const exportCssWidth = this._statsDashboardExportCssWidth();
         let imgs;
         try {
-            imgs = await this._composeStatsDashboardExportImages(layout, exportCssWidth);
+            imgs = await this._composeStatsDashboardExportImages(dash, exportCssWidth);
         } catch (e) {
             Logger.warn('search-output-stats-pane: dashboard image export failed — compose error', e);
             return;
@@ -2343,7 +3232,7 @@ const searchOutputStatsPaneMethods = {
             ctx.drawImage(img, 0, y);
             y += img.height + gap;
         }
-        const filename = this._statsExportImageFilename('fleet-stats-dashboard', 'dashboard');
+        const filename = this._statsExportImageFilename('fleet-stats-dashboard', (dash && dash.name) || 'dashboard');
         this._downloadDataUrl(filename, canvas.toDataURL('image/png'));
         Logger.log('search-output-stats-pane: dashboard image exported — ' + imgs.length + ' chart(s)');
     },
@@ -2369,14 +3258,14 @@ const searchOutputStatsPaneMethods = {
                     Logger.warn('search-output-stats-pane: stats import rejected — invalid payload');
                     return;
                 }
-                const layout = this._ensureStatsLayout();
+                const dash = this._activeStatsDashboard();
                 let added = 0;
                 for (const raw of payload.charts) {
                     const chart = typeof engine.prepareImportedChart === 'function'
                         ? engine.prepareImportedChart(raw)
                         : null;
                     if (!chart) continue;
-                    layout.charts.push(chart);
+                    dash.charts.push(chart);
                     added += 1;
                 }
                 if (!added) {
@@ -2426,12 +3315,17 @@ const searchOutputStatsPaneMethods = {
     _statsBuilderFieldStyles() {
         return {
             fieldLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 4px;',
-            inputStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
-            inputDisabledStyle: 'width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a); opacity: 0.55; cursor: not-allowed;',
+            inputStyle: 'width: 100%; max-width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
+            inputCompactStyle: 'width: 100%; max-width: 180px; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);',
+            inputDisabledStyle: 'width: 100%; max-width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: 12px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a); opacity: 0.55; cursor: not-allowed;',
             hintStyle: 'font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px; line-height: 1.35;',
-            cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 10px; background: var(--muted, #f1f5f9);',
-            grid2: 'display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;',
-            grid3: 'display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;',
+            cardStyle: 'border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 8px; background: var(--muted, #f1f5f9);',
+            gridAuto: 'display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: start;',
+            grid2: 'display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: start;',
+            grid3: 'display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items: start;',
+            titleRow: 'display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;',
+            titleField: 'flex: 1 1 180px; min-width: 0;',
+            dashboardField: 'flex: 0 1 180px; min-width: 140px; max-width: 200px;',
             sectionLabel: 'font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 6px;'
         };
     },
@@ -2449,9 +3343,10 @@ const searchOutputStatsPaneMethods = {
         opts = opts || {};
         const styles = opts.styles || this._statsBuilderFieldStyles();
         const spanStyle = opts.span ? ('grid-column: span ' + opts.span + ';') : '';
+        const widthStyle = opts.maxWidth ? ('max-width: ' + opts.maxWidth + ';') : '';
         const fieldOpacity = opts.disabled ? ' opacity: 0.65;' : '';
         const hint = opts.hint ? ('<div style="' + styles.hintStyle + '">' + opts.hint + '</div>') : '';
-        return '<div style="' + spanStyle + fieldOpacity + '"><div style="' + styles.fieldLabel + '">' + label + '</div>'
+        return '<div style="' + spanStyle + widthStyle + fieldOpacity + '"><div style="' + styles.fieldLabel + '">' + label + '</div>'
             + innerHtml + hint + '</div>';
     },
 
@@ -2487,12 +3382,10 @@ const searchOutputStatsPaneMethods = {
         const heightCfg = catalog.chartHeight || this._statsChartHeightConfig();
         const heightValue = this._statsNormalizeChartHeight(draft.height, heightCfg.default);
         const heightField = this._statsBuilderField('Height (px)',
-            '<input type="number" data-wf-dash-stats-draft="height" min="' + heightCfg.min + '" max="' + heightCfg.max + '" step="' + heightCfg.step + '" value="' + heightValue + '" style="' + styles.inputStyle + '">',
-            { styles, hint: heightCfg.min + '–' + heightCfg.max + ' px in steps of ' + heightCfg.step });
+            '<input type="number" data-wf-dash-stats-draft="height" min="' + heightCfg.min + '" max="' + heightCfg.max + '" step="' + heightCfg.step + '" value="' + heightValue + '" style="' + styles.inputCompactStyle + '">',
+            { styles, hint: heightCfg.min + '–' + heightCfg.max + ' px in steps of ' + heightCfg.step, maxWidth: '180px' });
         const chartSettingsCells = [chartTypeField, groupByField, heightField].filter(Boolean);
-        const chartColCount = chartSettingsCells.length;
-        const chartGridStyle = chartColCount === 3 ? styles.grid3 : styles.grid2;
-        const chartSettingsHtml = '<div style="' + chartGridStyle + '">' + chartSettingsCells.join('') + '</div>';
+        const chartSettingsHtml = '<div style="' + styles.gridAuto + '">' + chartSettingsCells.join('') + '</div>';
 
         const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
         const barDatasetCount = engine.countBarDatasets ? engine.countBarDatasets(draft, catalog) : 0;
@@ -2550,8 +3443,7 @@ const searchOutputStatsPaneMethods = {
         const layoutCells = [orientationField, barLayoutField, lineAreaLayoutField, categorySortField].filter(Boolean);
         let layoutOptionsHtml = '';
         if (layoutCells.length) {
-            const layoutGridStyle = layoutCells.length >= 3 ? styles.grid3 : styles.grid2;
-            layoutOptionsHtml = '<div style="' + layoutGridStyle + '">' + layoutCells.join('') + '</div>';
+            layoutOptionsHtml = '<div style="' + styles.gridAuto + '">' + layoutCells.join('') + '</div>';
         }
 
         const pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
@@ -2564,7 +3456,32 @@ const searchOutputStatsPaneMethods = {
                 { styles })
             : '';
 
-        return { chartSettingsHtml, layoutOptionsHtml, pointModeHtml };
+        return { chartSettingsHtml, layoutOptionsHtml, pointModeHtml, labelOptionsHtml: '' };
+    },
+
+    _statsBuilderSeriesLabelOptionsHtml(i, s, styles) {
+        const flags = this._statsLabelShowFlagsFromSeries(s);
+        const labelCheckStyle = 'display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--foreground, #0f172a);';
+        return this._statsBuilderField('Labels',
+            '<div style="display: flex; flex-wrap: wrap; gap: 10px 16px;">'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelShowAbsolute" data-series-idx="' + i + '"'
+            + (flags.showAbsolute ? ' checked' : '') + '>'
+            + 'Absolute</label>'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelShowPercent" data-series-idx="' + i + '"'
+            + (flags.showPercent ? ' checked' : '') + '>'
+            + 'Percent of total</label>'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelsShowName" data-series-idx="' + i + '"'
+            + (flags.showName ? ' checked' : '') + '>'
+            + 'Category name</label>'
+            + '<label style="' + labelCheckStyle + '">'
+            + '<input type="checkbox" data-wf-dash-stats-draft="series-labelsAlwaysVisible" data-series-idx="' + i + '"'
+            + (flags.alwaysVisible ? ' checked' : '') + '>'
+            + 'Show on chart</label>'
+            + '</div>',
+            { styles, hint: 'Percent is of that series’ total. Category name is the group label (e.g. slice name), shown on its own line.' });
     },
 
     _statsBuilderSeriesCard(i, s, ctx) {
@@ -2610,16 +3527,16 @@ const searchOutputStatsPaneMethods = {
                 ).join('')
                 + '</select>',
                 { styles, disabled: segmentDisabled });
-            row1Html = '<div style="' + styles.grid3 + '">' + metricField + aggField + segmentField + '</div>';
+            row1Html = '<div style="' + styles.gridAuto + '">' + metricField + aggField + segmentField + '</div>';
         } else if (typeMeta.skipAggregation) {
-            row1Html = '<div>' + metricField + '</div>';
+            row1Html = '<div style="' + styles.gridAuto + '">' + metricField + '</div>';
         } else {
-            row1Html = '<div style="' + styles.grid2 + '">' + metricField + aggField + '</div>';
+            row1Html = '<div style="' + styles.gridAuto + '">' + metricField + aggField + '</div>';
         }
 
         let row2Html = '';
         if (showSeriesLabel) {
-            row2Html = '<div style="margin-top: 8px;">'
+            row2Html = '<div style="margin-top: 8px; max-width: 280px;">'
                 + this._statsBuilderField('Series label',
                     '<input type="text" data-wf-dash-stats-draft="series-label" data-series-idx="' + i + '" value="' + dashEscHtml(s.label || '') + '" style="' + styles.inputStyle + '">',
                     { styles })
@@ -2663,9 +3580,14 @@ const searchOutputStatsPaneMethods = {
                     disabled: spreadDisabled,
                     hint: 'Shows mean ± 1 sample std dev per category. Requires Average aggregation.'
                 });
-            row3Html = '<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px;">'
+            row3Html = '<div style="' + styles.gridAuto + '; margin-top: 8px;">'
                 + renderField + lineStyleField + yAxisField + spreadField + '</div>';
         }
+
+        const supportsLabels = this._statsChartSupportsLabelOptions(draft);
+        const labelRowHtml = supportsLabels
+            ? ('<div style="margin-top: 8px;">' + this._statsBuilderSeriesLabelOptionsHtml(i, s, styles) + '</div>')
+            : '';
 
         const removeBtn = showRemove
             ? ('<button type="button" data-wf-dash-stats-series-remove="' + i + '" class="' + this._dashBtnClass('basic', 'nav') + '" title="Remove series" aria-label="Remove series" style="flex-shrink: 0; min-width: 32px; padding: 4px 8px;">×</button>')
@@ -2683,6 +3605,7 @@ const searchOutputStatsPaneMethods = {
             + row1Html
             + row2Html
             + row3Html
+            + labelRowHtml
             + '</div>';
     },
 
@@ -2731,7 +3654,7 @@ const searchOutputStatsPaneMethods = {
             seriesHtml += this._statsBuilderSeriesCard(i, series[i], seriesCtx);
         }
         const seriesStackHtml = seriesHtml
-            ? ('<div style="display: flex; flex-direction: column; gap: 10px;">' + seriesHtml + '</div>')
+            ? ('<div style="display: flex; flex-direction: column; gap: 8px;">' + seriesHtml + '</div>')
             : '';
         const seriesActions = maxSeries > typeMeta.minSeries && series.length < maxSeries
             ? '<button type="button" data-wf-dash-stats-series-add="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="margin-top: 8px;">Add series</button>'
@@ -2747,14 +3670,28 @@ const searchOutputStatsPaneMethods = {
             chartFiltersHtml += this._multiSelectHtml(chartScopeKey, label, 'No options in scope', false);
         }
         const seriesSectionLabel = typeMeta.skipGroupBy ? 'Metric' : 'Series';
-        formEl.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 12px;">'
+        const selectedDashboardId = draft.dashboardId
+            || this._state.statsBuilderDashboardId
+            || (this._activeStatsDashboard() && this._activeStatsDashboard().id)
+            || '';
+        const titleField = this._statsBuilderField('Title',
+            '<input type="text" data-wf-dash-stats-draft="title" value="' + dashEscHtml(draft.title || '') + '" style="' + styles.inputStyle + '">',
+            { styles });
+        const dashboardField = this._statsBuilderField('Dashboard',
+            '<select data-wf-dash-stats-draft="dashboardId" style="' + styles.inputStyle + '">'
+            + this._statsDashboardOptionsHtml(selectedDashboardId)
+            + '</select>',
+            { styles });
+        formEl.innerHTML = '<div style="' + box + ' padding: 12px; display: flex; flex-direction: column; gap: 8px;">'
             + '<div id="wf-dash-stats-builder-validation" style="display: none; font-size: 11px; color: #dc2626;"></div>'
-            + this._statsBuilderField('Title',
-                '<input type="text" data-wf-dash-stats-draft="title" value="' + dashEscHtml(draft.title || '') + '" style="' + styles.inputStyle + '">',
-                { styles })
+            + '<div style="' + styles.titleRow + '">'
+            + '<div style="' + styles.titleField + '">' + titleField + '</div>'
+            + '<div style="' + styles.dashboardField + '">' + dashboardField + '</div>'
+            + '</div>'
             + chartSettings.chartSettingsHtml
             + chartSettings.layoutOptionsHtml
             + chartSettings.pointModeHtml
+            + (chartSettings.labelOptionsHtml || '')
             + '<div><div style="' + styles.sectionLabel + '">' + seriesSectionLabel + '</div>'
             + seriesStackHtml + seriesActions + '</div>'
             + '<details style="margin-top: 2px;">'
@@ -2776,6 +3713,7 @@ const searchOutputStatsPaneMethods = {
         const draft = this._state.statsBuilderDraft;
         if (!draft) return;
         const titleEl = this._q('[data-wf-dash-stats-draft="title"]');
+        const dashboardEl = this._q('[data-wf-dash-stats-draft="dashboardId"]');
         const typeEl = this._q('[data-wf-dash-stats-draft="type"]');
         const groupEl = this._q('[data-wf-dash-stats-draft="groupBy"]');
         const barLayoutEl = this._q('[data-wf-dash-stats-draft="barLayout"]');
@@ -2785,6 +3723,10 @@ const searchOutputStatsPaneMethods = {
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
         if (titleEl) draft.title = titleEl.value;
+        if (dashboardEl) {
+            draft.dashboardId = dashboardEl.value;
+            this._state.statsBuilderDashboardId = dashboardEl.value;
+        }
         if (typeEl) draft.type = typeEl.value;
         if (groupEl) draft.groupBy = groupEl.value;
         if (barLayoutEl) draft.barLayout = barLayoutEl.value === 'stacked' ? 'stacked' : 'grouped';
@@ -2803,6 +3745,11 @@ const searchOutputStatsPaneMethods = {
             heightEl.value = String(draft.height);
         }
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
+        delete draft.labelFormat;
+        delete draft.labelShowAbsolute;
+        delete draft.labelShowPercent;
+        delete draft.labelsShowName;
+        delete draft.labelsAlwaysVisible;
         const series = [];
         const draftSeries = draft.series || [];
         this._modal.querySelectorAll('[data-wf-dash-stats-series-row]').forEach((row) => {
@@ -2814,6 +3761,10 @@ const searchOutputStatsPaneMethods = {
             const yAxisEl = row.querySelector('[data-wf-dash-stats-draft="series-yaxis"]');
             const segmentEl = row.querySelector('[data-wf-dash-stats-draft="series-segment"]');
             const spreadEl = row.querySelector('[data-wf-dash-stats-draft="series-spread"]');
+            const labelAbsEl = row.querySelector('[data-wf-dash-stats-draft="series-labelShowAbsolute"]');
+            const labelPctEl = row.querySelector('[data-wf-dash-stats-draft="series-labelShowPercent"]');
+            const labelNameEl = row.querySelector('[data-wf-dash-stats-draft="series-labelsShowName"]');
+            const labelAlwaysEl = row.querySelector('[data-wf-dash-stats-draft="series-labelsAlwaysVisible"]');
             if (!metricEl) return;
             const rowIdx = Number(row.getAttribute('data-wf-dash-stats-series-row'));
             const prev = Number.isInteger(rowIdx) && rowIdx >= 0 ? draftSeries[rowIdx] : null;
@@ -2827,6 +3778,24 @@ const searchOutputStatsPaneMethods = {
             if (yAxisEl) entry.yAxis = yAxisEl.value === 'y1' ? 'y1' : 'y';
             if (segmentEl) entry.segmentBy = segmentEl.value || null;
             if (spreadEl) entry.spread = spreadEl.value === 'stddevBand' ? 'stddevBand' : 'none';
+            if (labelAbsEl || labelPctEl || labelNameEl || labelAlwaysEl) {
+                const abs = !!(labelAbsEl && labelAbsEl.checked);
+                const pct = !!(labelPctEl && labelPctEl.checked);
+                entry.labelShowAbsolute = abs;
+                entry.labelShowPercent = pct;
+                entry.labelsShowName = !!(labelNameEl && labelNameEl.checked);
+                entry.labelsAlwaysVisible = !!(labelAlwaysEl && labelAlwaysEl.checked);
+                const eng = Context.statsEngine;
+                entry.labelFormat = eng && typeof eng.labelFormatFromShowFlags === 'function'
+                    ? eng.labelFormatFromShowFlags(abs, pct)
+                    : (abs && pct ? 'both' : (pct ? 'percent' : 'absolute'));
+            } else if (prev) {
+                entry.labelShowAbsolute = prev.labelShowAbsolute;
+                entry.labelShowPercent = prev.labelShowPercent;
+                entry.labelsShowName = prev.labelsShowName;
+                entry.labelsAlwaysVisible = prev.labelsAlwaysVisible;
+                entry.labelFormat = prev.labelFormat;
+            }
             series.push(entry);
         });
         if (series.length) draft.series = series;
@@ -2858,14 +3827,20 @@ const searchOutputStatsPaneMethods = {
                 const pick = (numeric[draft.series.length] && numeric[draft.series.length].id)
                     || (numeric[0] && numeric[0].id)
                     || 'prompt_version_count';
-                draft.series.push({
+                draft.series.push(Object.assign({
                     metricId: pick,
                     agg: 'avg',
                     label: '',
                     renderAs: draft.series.length === 0 ? 'bar' : 'line',
                     lineStyle: 'line',
                     yAxis: draft.series.length === 0 ? 'y' : 'y1'
-                });
+                }, (engine.defaultSeriesLabelFlags && engine.defaultSeriesLabelFlags()) || {
+                    labelShowAbsolute: true,
+                    labelShowPercent: false,
+                    labelsShowName: false,
+                    labelsAlwaysVisible: false,
+                    labelFormat: 'absolute'
+                }));
             }
             if (meta.needsRenderAs) {
                 draft.series.forEach((s, i) => {
@@ -2967,14 +3942,20 @@ const searchOutputStatsPaneMethods = {
         const items = this._getStatsScopeItems();
         const catalog = engine.buildCatalog(this._statsCatalogCtx(items));
         const firstNumeric = (catalog.metrics || []).find((m) => m.id !== 'count');
-        draft.series.push({
+        draft.series.push(Object.assign({
             metricId: firstNumeric ? firstNumeric.id : 'count',
             agg: firstNumeric ? 'avg' : 'count',
             label: '',
             renderAs: draft.series.length === 0 ? 'bar' : 'line',
             lineStyle: 'line',
             yAxis: 'y'
-        });
+        }, (engine.defaultSeriesLabelFlags && engine.defaultSeriesLabelFlags()) || {
+            labelShowAbsolute: true,
+            labelShowPercent: false,
+            labelsShowName: false,
+            labelsAlwaysVisible: false,
+            labelFormat: 'absolute'
+        }));
         void this._renderStatsBuilder();
     },
 
@@ -3186,7 +4167,7 @@ const searchOutputStatsPaneMethods = {
         this._destroyStatsCharts();
 
         const engine = Context.statsEngine;
-        const layout = this._ensureStatsLayout();
+        const dash = this._activeStatsDashboard();
         const ctx = this._statsCatalogCtx(items);
         const catalog = engine ? engine.buildCatalog(ctx) : null;
 
@@ -3197,12 +4178,11 @@ const searchOutputStatsPaneMethods = {
 
         let cardsHtml = '';
         const validations = [];
-        for (const chart of layout.charts) {
+        for (const chart of (dash.charts || [])) {
             const validation = engine.validateChart(chart, catalog, items, ctx);
             validations.push({ chart, validation });
         }
         listEl.innerHTML = this._statsBuildChartListHtml(validations);
-        this._attachStatsChartReorder(listEl);
         this._attachStatsChartHeaderLayout(listEl);
 
         const renderGen = (this._state.statsRenderGen || 0) + 1;
@@ -3228,7 +4208,7 @@ const searchOutputStatsPaneMethods = {
         const chartApi = Context.chartJs;
         if (!chartApi || typeof chartApi.ensureLoaded !== 'function') {
             this._renderStatsWarnings([...warnings, 'Chart.js loader not available. Reload the page and try again.']);
-            this._renderStatsFallbackText(layout, catalog, items, ctx);
+            this._renderStatsFallbackText(dash, catalog, items, ctx);
             return;
         }
 
@@ -3237,7 +4217,7 @@ const searchOutputStatsPaneMethods = {
             Chart = await chartApi.ensureLoaded();
         } catch (e) {
             this._renderStatsWarnings([...warnings, 'Chart.js failed to load — showing text summary only.']);
-            this._renderStatsFallbackText(layout, catalog, items, ctx);
+            this._renderStatsFallbackText(dash, catalog, items, ctx);
             Logger.warn('search-output-stats-pane: Chart.js load failed', e);
             return;
         }
@@ -3254,7 +4234,11 @@ const searchOutputStatsPaneMethods = {
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
             if (!this._statsChartHasRenderableData(chart, aggData)) continue;
             const containerWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 0;
-            const config = this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog);
+            const config = this._statsFinalizeChartJsConfig(
+                this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog),
+                chart,
+                theme
+            );
             charts[chart.id] = new Chart(canvas, config);
             if (chart.type === 'bellCurve') {
                 this._renderBellCurveStatsSubtitle(chart.id, aggData);
@@ -3371,11 +4355,10 @@ const searchOutputStatsPaneMethods = {
     },
 
     _ratingSearchScoreTypes(committed) {
-        const c = committed || {};
-        return {
-            showTwqs: Boolean(c.includeTaskCreation),
-            showQaqs: Boolean(c.includeQa)
-        };
+        // Score-type visibility is derived from data present on hydrated cards,
+        // not from search-type flags — so sessions-only and other search types
+        // can still generate ratings for whoever appears in results.
+        return { showTwqs: true, showQaqs: true };
     },
 
     _isPrefetchInProgress(kind) {
@@ -3422,18 +4405,16 @@ const searchOutputStatsPaneMethods = {
     },
 
     _ratingsSortOptions(committed) {
-        const scoreTypes = this._ratingSearchScoreTypes(committed);
-        const opts = [{ id: 'confidence-desc', label: 'Confidence high→low' }];
-        if (scoreTypes.showTwqs) {
-            opts.push({ id: 'twqs-desc', label: 'TWQS high→low' });
-            opts.push({ id: 'twqs-asc', label: 'TWQS low→high' });
-        }
-        if (scoreTypes.showQaqs) {
-            opts.push({ id: 'qaqs-desc', label: 'QAQS high→low' });
-            opts.push({ id: 'qaqs-asc', label: 'QAQS low→high' });
-        }
-        opts.push({ id: 'name-asc', label: 'Name A→Z' });
-        return opts;
+        return [
+            { id: 'confidence-desc', label: 'Confidence high→low' },
+            { id: 'combined-desc',   label: 'Combined high→low' },
+            { id: 'combined-asc',    label: 'Combined low→high' },
+            { id: 'twqs-desc',       label: 'TWQS high→low' },
+            { id: 'twqs-asc',        label: 'TWQS low→high' },
+            { id: 'qaqs-desc',       label: 'QAQS high→low' },
+            { id: 'qaqs-asc',        label: 'QAQS low→high' },
+            { id: 'name-asc',        label: 'Name A→Z' },
+        ];
     },
 
     _defaultRatingsSortKey(committed) {
@@ -3465,24 +4446,45 @@ const searchOutputStatsPaneMethods = {
         return 0;
     },
 
+    // Returns the selected weighting variant ('flat' or 'recency') for a worker card.
+    _ratingWorkerWeighting(workerId) {
+        const stored = this._state.ratingsWeightingByWorker
+            && this._state.ratingsWeightingByWorker[String(workerId || '').trim()];
+        return stored === 'flat' ? 'flat' : 'recency';
+    },
+
+    // Returns the score block for a given weighting variant (twqs, qaqs, or combined).
+    _ratingBlockForWeighting(worker, scoreKey) {
+        if (!worker) return null;
+        const weighting = this._ratingWorkerWeighting(worker.workerId);
+        const entry = worker[scoreKey];
+        if (!entry) return null;
+        if (typeof entry === 'object' && ('flat' in entry || 'recency' in entry)) {
+            return entry[weighting] || null;
+        }
+        return entry;
+    },
+
     _ratingWorkerConfidenceSortValue(worker, scoreTypes) {
         const blocks = this._ratingVisibleScoreBlocks(worker, scoreTypes);
         let bestTier = 0;
-        let bestTrailing = 0;
+        let bestCount = 0;
         for (const block of blocks) {
             const tier = block.confidence && block.confidence.tier;
             const rank = this._ratingConfidenceTierRank(tier);
             const display = block.display || {};
-            const trailing = Math.max(
+            const count = Math.max(
+                Number(display.terminalTaskCount) || 0,
+                Number(display.inScopeFeedbackCount) || 0,
                 Number(display.trailing90dSubmissions) || 0,
                 Number(display.trailing90dFeedbackRows) || 0
             );
-            if (rank > bestTier || (rank === bestTier && trailing > bestTrailing)) {
+            if (rank > bestTier || (rank === bestTier && count > bestCount)) {
                 bestTier = rank;
-                bestTrailing = trailing;
+                bestCount = count;
             }
         }
-        return bestTier * 100000 + bestTrailing;
+        return bestTier * 100000 + bestCount;
     },
 
     _ensureRatingsSortKey(committed) {
@@ -3495,8 +4497,10 @@ const searchOutputStatsPaneMethods = {
 
     _ratingVisibleScoreBlocks(worker, scoreTypes) {
         const blocks = [];
-        if (scoreTypes.showTwqs && worker.twqs) blocks.push(worker.twqs);
-        if (scoreTypes.showQaqs && worker.qaqs) blocks.push(worker.qaqs);
+        const twqsBlock = this._ratingBlockForWeighting(worker, 'twqs');
+        const qaqsBlock = this._ratingBlockForWeighting(worker, 'qaqs');
+        if (scoreTypes.showTwqs && twqsBlock) blocks.push(twqsBlock);
+        if (scoreTypes.showQaqs && qaqsBlock) blocks.push(qaqsBlock);
         return blocks;
     },
 
@@ -3511,11 +4515,18 @@ const searchOutputStatsPaneMethods = {
             return this._ratingWorkerConfidenceSortValue(worker, scoreTypes);
         }
         if (sortKey === 'twqs-desc' || sortKey === 'twqs-asc') {
-            const s = worker.twqs && worker.twqs.score;
+            const block = this._ratingBlockForWeighting(worker, 'twqs');
+            const s = block && block.score;
             return Number.isFinite(s) ? s : null;
         }
         if (sortKey === 'qaqs-desc' || sortKey === 'qaqs-asc') {
-            const s = worker.qaqs && worker.qaqs.score;
+            const block = this._ratingBlockForWeighting(worker, 'qaqs');
+            const s = block && block.score;
+            return Number.isFinite(s) ? s : null;
+        }
+        if (sortKey === 'combined-desc' || sortKey === 'combined-asc') {
+            const block = this._ratingBlockForWeighting(worker, 'combined');
+            const s = block && block.score;
             return Number.isFinite(s) ? s : null;
         }
         return null;
@@ -3638,19 +4649,17 @@ const searchOutputStatsPaneMethods = {
     },
 
     _collectRatingWorkerIdsFromItems(cachedItems, committed) {
-        const c = committed || {};
-        const includeTw = Boolean(c.includeTaskCreation);
-        const includeQa = Boolean(c.includeQa);
+        // Collect worker IDs from any hydrated card — not gated on search-type flags.
+        // This ensures sessions-only (and other non-task/non-QA) searches can still
+        // generate ratings for contributors visible in the current results scope.
         const ids = new Set();
         for (const item of cachedItems || []) {
             if (!item || item.hydrated !== true) continue;
             const task = item.task;
             if (!task) continue;
-            if (includeTw && task.author && task.author.id) ids.add(task.author.id);
-            if (includeQa) {
-                for (const entry of task.allFeedback || []) {
-                    if (entry.reviewer && entry.reviewer.id) ids.add(entry.reviewer.id);
-                }
+            if (task.author && task.author.id) ids.add(task.author.id);
+            for (const entry of task.allFeedback || []) {
+                if (entry.reviewer && entry.reviewer.id) ids.add(entry.reviewer.id);
             }
         }
         return [...ids].sort();
@@ -3733,56 +4742,73 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Task Outcomes', weight: '40%', measures: 'How far authored tasks progress in the lifecycle (production is ideal).' },
-            { label: 'Revision Efficiency', weight: '25%', measures: 'How few revision rounds their tasks needed before landing.' },
-            { label: 'Consistency', weight: '15%', measures: 'How steadily they worked, week to week, across the span.' },
-            { label: 'Dispute Outcomes', weight: '10%', measures: 'Share of their resolved disputes decided in their favor.' },
-            { label: 'Sr Review Integrity', weight: '10%', measures: 'Absence of confirmed senior-review flags on their tasks.' }
+            { label: 'Outcome Quality',        weight: '40%', measures: 'Terminal task quality: production (1.0), bugged (0.35), discarded (0.15). In-flight tasks are excluded.' },
+            { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory).' },
+            { label: 'Non-Bottom Score Rate',  weight: '15%', measures: 'Share of explicitly scored feedback that was not the lowest possible rating.' },
+            { label: 'First-Pass Acceptance',  weight: '15%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
+            { label: 'Dispute Win Rate',       weight: '10%', measures: 'Share of their resolved disputes decided in their favor (unweighted counts).' },
         ];
         const qaqsRows = [
-            { label: 'Comprehensiveness', weight: '50%', measures: 'When they return a task, it gets fixed and accepted on the next round rather than being returned again.' },
-            { label: 'Dispute Defense', weight: '20%', measures: 'Share of resolved disputes against their calls that were upheld.' },
-            { label: 'Sr Review Integrity', weight: '20%', measures: 'Absence of confirmed poor-feedback flags against them, plus accuracy of flags they raised.' },
-            { label: 'Consistency', weight: '10%', measures: 'How steadily they reviewed, week to week, across the span.' }
+            { label: 'Return Effectiveness',  weight: '30%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
+            { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
+            { label: 'Label Discrimination',  weight: '25%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality.' },
+            { label: 'Dispute Defense',       weight: '20%', measures: 'Share of resolved disputes against their calls where they were the sole negative reviewer and the decision upheld them (unweighted counts).' },
         ];
+        const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
         return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
             + '<summary style="font-size: 11px; line-height: 1.45; cursor: pointer; list-style: none; user-select: none; ' + muted + '">'
             + '<strong style="color: var(--foreground, #0f172a);">About these ratings</strong>'
             + ' — how the scores are built and what they include.'
             + '</summary>'
             + '<div style="margin-top: 10px; font-size: 11px; line-height: 1.45; color: var(--foreground, #0f172a);">'
-            + '<p style="margin: 0 0 8px;">Two independent scores per contributor, each on a <strong>0–100</strong> scale:</p>'
+            + '<p style="margin: 0 0 8px;">Up to three scores per contributor, each on a <strong>0–100</strong> scale:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Task Writer Quality Score</strong> — quality of the work they <strong>authored</strong>.</li>'
-            + '<li><strong>QA Quality Score</strong> — quality of the reviews they <strong>performed</strong>.</li>'
+            + '<li><strong>Task Writer Quality Score (TWQS)</strong> — quality of the work they <strong>authored</strong>. Based on the WPS v1.2 model.</li>'
+            + '<li><strong>QA Quality Score (QAQS)</strong> — quality of the reviews they <strong>performed</strong>. Based on the QPS v2.1 model.</li>'
+            + '<li><strong>Combined</strong> — volume-weighted blend of TWQS and QAQS (same formula as the live ranking composite). Shown when a person has both roles. Higher task volume shifts weight toward TWQS; higher feedback volume shifts it toward QAQS.</li>'
             + '</ul>'
-            + '<p style="margin: 0 0 10px;">A person who does both jobs gets both scores. They are not blended into a single number.</p>'
+
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
+            + '<p style="margin: 0 0 8px;">Each card computes <strong>two variants</strong> of every score simultaneously. Toggle between them per card:</p>'
+            + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
+            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/90) to activity inside the window, so recent events weigh more. Matches the <code>--recency 90</code> local ranker run.</li>'
+            + '<li><strong>Flat</strong> — all in-scope events count equally. Matches the baseline (no-recency) local ranker run.</li>'
+            + '</ul>'
+            + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
+
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Estimated percentile</div>'
+            + '<p style="margin: 0 0 10px;">Each score shows an <em>estimated</em> percentile (e.g. &ldquo;~72nd pct&rdquo;) using a normal-CDF formula fitted to the dive.db population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics from historical ranking CSV runs. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, QAQS recency, combined flat, and combined recency. This is an approximation, not an exact rank.</p>'
+
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>0–100, higher is better.</strong> Scores measure distance from an ideal benchmark, <strong>not</strong> a ranking against other people. ~80 means near-ideal, not &ldquo;above average.&rdquo;</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The bar next to each axis is its own sub-score (0–100%).</li>'
-            + '<li>An axis with no qualifying activity is <strong>omitted</strong>, and its weight is spread across the others.</li>'
-            + '<li>Every score carries a <strong>confidence</strong> badge based on how much recent activity it is built from.</li>'
+            + '<li><strong>0–100, higher is better.</strong> Scores use empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The bar is the axis sub-score (0–100%). An omitted axis redistributes its weight to the others.</li>'
+            + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
             + '<thead><tr>'
             + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">Confidence</th>'
-            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">Activity in the last 90 days</th>'
+            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">TWQS: terminal tasks in scope</th>'
+            + '<th style="padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);">QAQS: feedback rows in scope</th>'
             + '</tr></thead>'
             + '<tbody>'
-            + '<tr><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">Provisional</td><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">fewer than 10</td></tr>'
-            + '<tr><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">Standard</td><td style="padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);">10–49</td></tr>'
-            + '<tr><td style="padding: 4px 6px;">High confidence</td><td style="padding: 4px 6px;">50 or more</td></tr>'
+            + '<tr><td style="' + td + '">Provisional</td><td style="' + td + '">&lt; 10</td><td style="' + td + '">&lt; 25</td></tr>'
+            + '<tr><td style="' + td + '">Standard</td><td style="' + td + '">10 – 49</td><td style="' + td + '">25 – 99</td></tr>'
+            + '<tr><td style="padding: 4px 6px;">High confidence</td><td style="padding: 4px 6px;">≥ 50</td><td style="padding: 4px 6px;">≥ 100</td></tr>'
             + '</tbody></table>'
+
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">What counts toward a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li>Scores use the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>. Use the shared <strong>Filtered / All</strong> toggle (same as Stats): <strong>Filtered</strong> respects sidebar filters; <strong>All</strong> uses every result in the current results-kind tab.</li>'
-            + '<li>With no After/Before dates, all history counts, weighted toward recent activity. With a date range set, everything inside the window counts equally and nothing outside it does.</li>'
-            + '<li>Senior-review flags and disputes only move a score once they are <strong>resolved</strong>, and only in the direction the resolution supports. Pending or dismissed items stay neutral.</li>'
+            + '<li>Scores cover the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>, regardless of which search toggles (tasks, QA, sessions, disputes, etc.) produced those results.</li>'
+            + '<li>The <strong>Filtered / All</strong> scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.</li>'
+            + '<li>With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.</li>'
+            + '<li>Only <strong>terminal</strong> tasks count toward TWQS outcome quality (production, bugged, discarded). In-flight tasks are excluded. Disputes move a score only once <strong>resolved</strong>.</li>'
+            + '<li>Self-reviews are excluded from all feedback axes.</li>'
             + '</ul>'
+
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">The axes</div>'
-            + this._ratingsAboutAxisTableHtml('Task Writer Quality Score', twqsRows)
-            + this._ratingsAboutAxisTableHtml('QA Quality Score', qaqsRows)
+            + this._ratingsAboutAxisTableHtml('Task Writer Quality Score (TWQS)', twqsRows)
+            + this._ratingsAboutAxisTableHtml('QA Quality Score (QAQS)', qaqsRows)
             + '</div>'
             + '</details>';
     },
@@ -3794,13 +4820,13 @@ const searchOutputStatsPaneMethods = {
         let singular = '';
         let plural = '';
         if (basisKind === 'tasks') {
-            count = display.submissionCount;
-            singular = 'task';
-            plural = 'tasks';
+            count = display.terminalTaskCount != null ? display.terminalTaskCount : display.submissionCount;
+            singular = 'terminal task';
+            plural = 'terminal tasks';
         } else if (basisKind === 'feedbacks') {
-            count = display.feedbackRowCount;
-            singular = 'feedback';
-            plural = 'feedbacks';
+            count = display.inScopeFeedbackCount != null ? display.inScopeFeedbackCount : display.feedbackRowCount;
+            singular = 'feedback row';
+            plural = 'feedback rows';
         }
         if (count == null || !Number.isFinite(count)) return '';
         const label = count === 1 ? singular : plural;
@@ -3835,6 +4861,27 @@ const searchOutputStatsPaneMethods = {
     _ratingAxisOmitReason(axis) {
         if (!axis || axis.defined !== false) return null;
         switch (axis.id) {
+            // TWQS (WPS) axes
+            case 'outcomeQuality':
+                return 'No terminal tasks in scope';
+            case 'positiveFeedbackRate':
+                return 'No human feedback on authored tasks in scope';
+            case 'nonBottomScoreRate':
+                return 'No explicitly scored feedback in scope';
+            case 'firstPassAcceptance':
+                return 'No authored tasks with human feedback in scope';
+            case 'disputeWinRate':
+                return 'No resolved disputes in scope';
+            // QAQS (QPS) axes
+            case 'returnEffectiveness':
+                return 'No terminal tasks returned by this reviewer in scope';
+            case 'returnActionability':
+                return 'No return feedback episodes in scope';
+            case 'labelDiscrimination':
+                return 'No explicit score labels by this reviewer in scope';
+            case 'disputeDefense':
+                return 'No resolved sole-negative-reviewer disputes in scope';
+            // Legacy / fallback
             case 'feedbackResolution':
                 return 'No return episodes by this QA in scope';
             case 'reviewCallAccuracy':
@@ -3843,7 +4890,7 @@ const searchOutputStatsPaneMethods = {
             case 'consistency':
                 return 'Fewer than 2 active calendar weeks of activity in scope';
             default:
-                return 'Axis undefined';
+                return 'Axis omitted';
         }
     },
 
@@ -3868,26 +4915,80 @@ const searchOutputStatsPaneMethods = {
         const raw = axis.raw || {};
         const lines = [];
         switch (axis.id) {
-            case 'acceptanceSeverity': {
-                const meanPct = this._ratingPctOneDecimal(raw.severityMean);
-                if (meanPct != null) lines.push('Severity mean ' + meanPct + '%');
-                if (raw.eventCount != null) lines.push(raw.eventCount + ' task(s) scored');
+            // TWQS (WPS) axes
+            case 'outcomeQuality': {
+                if (raw.nTerminal != null) lines.push(raw.nTerminal + ' terminal task(s)');
+                if (raw.sumQuality != null && raw.nTerminal != null && raw.nTerminal > 0) {
+                    const meanPct = this._ratingPctOneDecimal(raw.sumQuality / raw.nTerminal);
+                    if (meanPct != null) lines.push('Mean quality ' + meanPct + '%');
+                }
                 const statusSummary = this._ratingFormatStatusCounts(raw.statusCounts);
                 if (statusSummary) lines.push(statusSummary);
                 break;
             }
-            case 'revisionEfficiency': {
-                if (raw.revisionEventCount != null) {
-                    lines.push(raw.revisionEventCount + ' revision event(s)');
-                }
-                if (raw.revisionExcludedByDisputes > 0) {
-                    lines.push(raw.revisionExcludedByDisputes + ' task(s) excluded by approved disputes');
-                }
-                if (raw.approvedDisputeRoundsSubtracted > 0) {
-                    lines.push(raw.approvedDisputeRoundsSubtracted + ' dispute round(s) credited');
+            case 'positiveFeedbackRate': {
+                if (raw.positive != null && raw.total != null && raw.total > 0) {
+                    const positivePct = this._ratingPctOneDecimal(raw.positive / raw.total);
+                    lines.push('Positive ' + (positivePct != null ? positivePct + '%' : '') + ' (' + Math.round(raw.positive * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
                 }
                 break;
             }
+            case 'nonBottomScoreRate': {
+                if (raw.nonBottom != null && raw.total != null && raw.total > 0) {
+                    const nbPct = this._ratingPctOneDecimal(raw.nonBottom / raw.total);
+                    lines.push('Non-bottom ' + (nbPct != null ? nbPct + '%' : '') + ' (' + Math.round(raw.nonBottom * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'firstPassAcceptance': {
+                if (raw.firstPass != null && raw.total != null && raw.total > 0) {
+                    const fpPct = this._ratingPctOneDecimal(raw.firstPass / raw.total);
+                    lines.push('First-pass ' + (fpPct != null ? fpPct + '%' : '') + ' (' + Math.round(raw.firstPass * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'disputeWinRate': {
+                if (raw.approved != null && raw.resolved != null && raw.resolved > 0) {
+                    const winPct = this._ratingPctOneDecimal(raw.approved / raw.resolved);
+                    lines.push('Won ' + (winPct != null ? winPct + '%' : '') + ' (' + raw.approved + ' / ' + raw.resolved + ' resolved)');
+                } else if (raw.resolved != null) {
+                    lines.push(raw.resolved + ' resolved dispute(s)');
+                }
+                break;
+            }
+            // QAQS (QPS) axes
+            case 'returnEffectiveness': {
+                if (raw.effective != null && raw.total != null && raw.total > 0) {
+                    const effPct = this._ratingPctOneDecimal(raw.effective / raw.total);
+                    lines.push('Effective ' + (effPct != null ? effPct + '%' : '') + ' (' + Math.round(raw.effective * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'returnActionability': {
+                if (raw.actionable != null && raw.total != null && raw.total > 0) {
+                    const aPct = this._ratingPctOneDecimal(raw.actionable / raw.total);
+                    lines.push('Actionable ' + (aPct != null ? aPct + '%' : '') + ' (' + Math.round(raw.actionable * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                }
+                break;
+            }
+            case 'labelDiscrimination': {
+                if (raw.labelCorrelation != null) {
+                    const ldPct = this._ratingPctOneDecimal(raw.labelCorrelation);
+                    if (ldPct != null) lines.push('Label–outcome correlation ' + ldPct + '%');
+                }
+                if (raw.total != null) lines.push(raw.total + ' labeled feedback row(s)');
+                break;
+            }
+            case 'disputeDefense': {
+                if (raw.upheld != null && raw.resolved != null && raw.resolved > 0) {
+                    const defPct = this._ratingPctOneDecimal(raw.upheld / raw.resolved);
+                    lines.push('Upheld ' + (defPct != null ? defPct + '%' : '') + ' (' + raw.upheld + ' / ' + raw.resolved + ' as sole negative reviewer)');
+                } else if (raw.resolved != null) {
+                    lines.push(raw.resolved + ' resolved dispute(s) as sole negative reviewer');
+                }
+                break;
+            }
+            // Legacy axes (backwards compat)
             case 'disputeOutcomes':
             case 'reviewCallAccuracy': {
                 const good = raw.approvedWeight != null ? raw.approvedWeight : raw.upheldWeight;
@@ -3900,28 +5001,8 @@ const searchOutputStatsPaneMethods = {
                 }
                 break;
             }
-            case 'srReviewIntegrity': {
-                if (raw.confirmedNegativeFlags != null && raw.submissionWeight != null) {
-                    lines.push('Confirmed flags ' + Math.round(raw.confirmedNegativeFlags * 10) / 10
-                        + ' / submission weight ' + Math.round(raw.submissionWeight * 10) / 10);
-                } else if (raw.confirmedFlags != null && raw.feedbackWeight != null) {
-                    lines.push('Confirmed flags ' + Math.round(raw.confirmedFlags * 10) / 10
-                        + ' / feedback weight ' + Math.round(raw.feedbackWeight * 10) / 10);
-                }
-                if (raw.penaltyScore != null) {
-                    const penaltyPct = this._ratingPctOneDecimal(raw.penaltyScore);
-                    if (penaltyPct != null) lines.push('Penalty sub-score ' + penaltyPct + '%');
-                }
-                if (raw.raisedScore != null && raw.raisedResolvedWeight > 0) {
-                    const raisedPct = this._ratingPctOneDecimal(raw.raisedScore);
-                    if (raisedPct != null) lines.push('Raised-flag accuracy ' + raisedPct + '%');
-                }
-                break;
-            }
             case 'feedbackResolution': {
-                if (raw.returnEpisodeCount != null) {
-                    lines.push(raw.returnEpisodeCount + ' return episode(s)');
-                }
+                if (raw.returnEpisodeCount != null) lines.push(raw.returnEpisodeCount + ' return episode(s)');
                 break;
             }
             case 'consistency': {
@@ -3936,6 +5017,42 @@ const searchOutputStatsPaneMethods = {
         return lines.length ? lines : ['No additional inputs recorded'];
     },
 
+    _ratingAxisBarHtml(axis, showDetail) {
+        if (!axis) return '';
+        const omitted = axis.defined === false || axis.score == null;
+        const label = axis.label || axis.id || '';
+        if (omitted) {
+            const reason = this._ratingAxisOmitReason(axis) || 'omitted';
+            return '<div style="margin-top: 6px;">'
+                + '<div style="font-size: 10px; color: var(--muted-foreground, #64748b);">'
+                + dashEscHtml(label) + ' — ' + dashEscHtml(reason)
+                + '</div></div>';
+        }
+        const subPct = this._ratingPctOneDecimal(axis.score);
+        const fillPct = Math.max(0, Math.min(100, subPct != null ? subPct : 0));
+        const trackStyle = 'flex: 1; min-width: 48px; height: 6px; border-radius: 3px;'
+            + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 22%, transparent); overflow: hidden;';
+        const fillStyle = 'height: 100%; width: ' + fillPct + '%; border-radius: 3px;'
+            + ' background: color-mix(in srgb, var(--brand, #3b82f6) 70%, transparent);';
+        let html = '<div style="margin-top: 6px;">'
+            + '<div style="display: flex; align-items: center; gap: 8px; font-size: 10px;">'
+            + '<span style="flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
+            + dashEscHtml(label) + '</span>'
+            + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
+            + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
+            + dashEscHtml(String(subPct) + '%') + '</span>'
+            + '</div>';
+        if (showDetail) {
+            const breakdownLines = this._ratingAxisBreakdownLines(axis);
+            html += breakdownLines.map((line) =>
+                '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px; padding-left: 2px;">'
+                + dashEscHtml(line) + '</div>'
+            ).join('');
+        }
+        html += '</div>';
+        return html;
+    },
+
     _ratingScoreBlockCompactHtml(title, block, basisKind) {
         if (!block || block.score == null) {
             return '';
@@ -3945,16 +5062,24 @@ const searchOutputStatsPaneMethods = {
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
         const scoreDisplay = Math.round(block.score);
+        const pct = block.estimatedPercentile;
+        const pctHtml = pct != null
+            ? (' <span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b);">~' + pct + 'th pct</span>')
+            : '';
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
+        const axesHtml = this._ratingSortedAxes(block)
+            .map((axis) => this._ratingAxisBarHtml(axis, false))
+            .join('');
         return '<div style="margin-top: 10px;">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
-            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
+            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + pctHtml + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
             + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
             + '</div>'
             + (basisLine
                 ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px;">' + dashEscHtml(basisLine) + '</div>')
                 : '')
+            + (axesHtml ? '<div style="margin-top: 4px;">' + axesHtml + '</div>' : '')
             + '</div>';
     },
 
@@ -3974,10 +5099,6 @@ const searchOutputStatsPaneMethods = {
             const subPct = omitted ? null : this._ratingPctOneDecimal(axis.score);
             const basePct = this._ratingPctOneDecimal(axis.baseWeight);
             const effPct = omitted ? 0 : this._ratingPctOneDecimal(axis.effectiveWeight);
-            const breakdownLines = this._ratingAxisBreakdownLines(axis);
-            const breakdownHtml = breakdownLines.map((line) =>
-                '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(line) + '</div>'
-            ).join('');
             if (!omitted && subPct != null && effPct != null) {
                 compositeTerms.push(subPct + '×' + effPct + '%');
                 compositeSum += (axis.score || 0) * (axis.effectiveWeight || 0);
@@ -3988,8 +5109,9 @@ const searchOutputStatsPaneMethods = {
                     + (basePct != null && effPct != null && Math.abs(effPct - basePct) >= 0.05
                         ? ' <span style="color: var(--muted-foreground, #64748b);">(base ' + basePct + '%)</span>'
                         : ''));
+            const axisCellHtml = this._ratingAxisBarHtml(axis, true);
             rowsHtml += '<tr>'
-                + '<td style="' + tdStyle + '">' + dashEscHtml(axis.label || axis.id || '') + breakdownHtml + '</td>'
+                + '<td style="' + tdStyle + '">' + axisCellHtml + '</td>'
                 + '<td style="' + tdNum + '">' + (omitted ? '<span style="color: var(--muted-foreground, #64748b);">omitted</span>' : dashEscHtml(String(subPct) + '%')) + '</td>'
                 + '<td style="' + tdNum + '">' + (basePct != null ? dashEscHtml(String(basePct) + '%') : '—') + '</td>'
                 + '<td style="' + tdNum + '">' + effDisplay + '</td>'
@@ -4001,13 +5123,21 @@ const searchOutputStatsPaneMethods = {
             : '';
         const display = block.display || {};
         let contextLine = '';
-        if (display.trailing90dSubmissions != null) {
+        if (display.terminalTaskCount != null) {
+            contextLine = display.terminalTaskCount + ' terminal task(s)';
+        } else if (display.inScopeFeedbackCount != null) {
+            contextLine = display.inScopeFeedbackCount + ' feedback row(s)';
+        } else if (display.trailing90dSubmissions != null) {
             contextLine = 'Trailing 90d: ' + display.trailing90dSubmissions + ' submission(s)';
         } else if (display.trailing90dFeedbackRows != null) {
             contextLine = 'Trailing 90d: ' + display.trailing90dFeedbackRows + ' feedback row(s)';
         }
         if (display.tenureDays != null && Number.isFinite(display.tenureDays)) {
             contextLine = (contextLine ? contextLine + ' · ' : '') + 'Tenure ' + display.tenureDays + ' day(s)';
+        }
+        const pct = block.estimatedPercentile;
+        if (pct != null) {
+            contextLine = (contextLine ? contextLine + ' · ' : '') + '~' + pct + 'th pct (estimated)';
         }
         return '<div style="margin-top: 12px;">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' breakdown</div>'
@@ -4033,25 +5163,54 @@ const searchOutputStatsPaneMethods = {
         return this._ratingScoreBlockCompactHtml(title, block, basisKind);
     },
 
+    _ratingCombinedBlockHtml(block) {
+        if (!block || block.score == null) return '';
+        const scoreDisplay = Math.round(block.score);
+        const pct = block.estimatedPercentile;
+        const pctHtml = pct != null
+            ? (' <span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b);">~' + pct + 'th pct</span>')
+            : '';
+        let blendLine = '';
+        if (block.writerRatio != null && block.qaRatio != null) {
+            const wPct = Math.round(block.writerRatio * 100);
+            const qPct = Math.round(block.qaRatio * 100);
+            blendLine = wPct + '% writer · ' + qPct + '% QA';
+        }
+        return '<div style="margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--primary, #6366f1) 6%, var(--card, #fff));">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 3px; color: var(--muted-foreground, #64748b);">Combined</div>'
+            + '<div style="font-size: 18px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + pctHtml + ' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
+            + (blendLine ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 3px;">' + dashEscHtml(blendLine) + '</div>' : '')
+            + '</div>';
+    },
+
     _ratingWorkerCardHtml(worker, scoreTypes) {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
         const workerId = String(worker.workerId || '').trim();
         const expanded = this._isRatingWorkerExpanded(workerId);
+        const weighting = this._ratingWorkerWeighting(workerId);
+        const isRecency = weighting === 'recency';
+
+        const twqsBlock = this._ratingBlockForWeighting(worker, 'twqs');
+        const qaqsBlock = this._ratingBlockForWeighting(worker, 'qaqs');
+        const combinedBlock = this._ratingBlockForWeighting(worker, 'combined');
+
+        const combinedHtml = this._ratingCombinedBlockHtml(combinedBlock);
         const twqsHtml = types.showTwqs
-            ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', worker.twqs, 'tasks')
+            ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqsBlock, 'tasks')
             : '';
         const qaqsHtml = types.showQaqs
-            ? this._ratingScoreBlockCompactHtml('QA Quality Score', worker.qaqs, 'feedbacks')
+            ? this._ratingScoreBlockCompactHtml('QA Quality Score', qaqsBlock, 'feedbacks')
             : '';
+
         let detailHtml = '';
         if (expanded) {
             const detailParts = [];
-            if (types.showTwqs && worker.twqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', worker.twqs));
+            if (types.showTwqs && twqsBlock) {
+                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', twqsBlock));
             }
-            if (types.showQaqs && worker.qaqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', worker.qaqs));
+            if (types.showQaqs && qaqsBlock) {
+                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', qaqsBlock));
             }
             if (detailParts.length) {
                 detailHtml = '<div data-wf-dash-rating-detail="1" style="margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border, #e2e8f0);">'
@@ -4059,25 +5218,37 @@ const searchOutputStatsPaneMethods = {
                     + '</div>';
             }
         }
+
+        const btnCls = this._dashBtnClass('basic', 'nav');
         const diagnosticsBtnHtml = Context.isDevBranch
-            ? ('<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
+            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
         const box = this._panelBoxStyle();
         const expandLabel = expanded ? 'Collapse' : 'Expand';
+
+        const toggleHtml = '<div class="dv-seg-group" style="flex-shrink: 0;">'
+            + '<button type="button" class="dv-seg-btn dv-seg-btn--divider" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'true' : 'false') + '">Recency</button>'
+            + '<button type="button" class="dv-seg-btn" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'false' : 'true') + '">Flat</button>'
+            + '</div>';
+
         return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
             + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
             + '<div style="min-width: 0;">'
             + '<div style="font-size: 13px; font-weight: 600;">' + dashEscHtml(name) + '</div>'
             + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(worker.email) + '</div>' : '')
             + '</div>'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;" data-wf-dash-rating-expand="1" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + expandLabel + '</button>'
+            + '<div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">'
+            + toggleHtml
+            + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-expand="1" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + expandLabel + '</button>'
             + '</div>'
+            + '</div>'
+            + combinedHtml
             + twqsHtml
             + qaqsHtml
             + detailHtml
             + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
-            + '<button type="button" class="' + this._dashBtnClass('basic', 'nav') + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
+            + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
+            + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
             + diagnosticsBtnHtml
             + '</div>'
             + '</div>';
@@ -4262,23 +5433,21 @@ const searchOutputStatsPaneMethods = {
             return;
         }
         const exportDate = new Date().toISOString().slice(0, 10);
-        const scoreTypes = this._ratingSearchScoreTypes(this._state.committed || {});
+        // Always export both weighting variants (plan §5); score-type visibility
+        // flags are all-true now, so we pass the worker as-is.
         const workerExport = {
             ...worker,
-            twqs: scoreTypes.showTwqs ? worker.twqs : null,
-            qaqs: scoreTypes.showQaqs ? worker.qaqs : null,
             computedAt: report.computedAt,
             engineVersion: report.version,
             exportDate
         };
+        // Derive a scoreType label for the filename from what is present.
+        const hasTwqs = worker.twqs && (worker.twqs.flat || worker.twqs.recency || worker.twqs.score != null);
+        const hasQaqs = worker.qaqs && (worker.qaqs.flat || worker.qaqs.recency || worker.qaqs.score != null);
         let scoreType = 'combined';
-        if (scoreTypes.showTwqs && scoreTypes.showQaqs) {
-            scoreType = (worker.twqs && worker.qaqs) ? 'combined' : (worker.twqs ? 'twqs' : 'qaqs');
-        } else if (scoreTypes.showTwqs) {
-            scoreType = 'twqs';
-        } else if (scoreTypes.showQaqs) {
-            scoreType = 'qaqs';
-        }
+        if (hasTwqs && hasQaqs) scoreType = 'combined';
+        else if (hasTwqs) scoreType = 'twqs';
+        else if (hasQaqs) scoreType = 'qaqs';
 
         if (format === 'diagnostics') {
             if (typeof engine.buildDiagnosticsReport !== 'function') {
@@ -4318,7 +5487,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '5.35',
+    _version: '8.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

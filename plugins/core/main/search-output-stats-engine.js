@@ -1,7 +1,8 @@
 // search-output-stats-engine.js — Worker Output Search stats dashboard catalog, aggregation, persistence
 
 const STATS_LAYOUT_STORAGE_KEY = 'fleet-ux:dash-stats-dashboard';
-const STATS_LAYOUT_SCHEMA_VERSION = 5;
+const STATS_LAYOUT_SCHEMA_VERSION = 6;
+const STATS_MAX_DASHBOARDS = 5;
 
 const STATS_DEFAULT_LAYOUT_JSON = '{"schemaVersion":5,"charts":[{"id":"chart-mr9if575-n0g8zx2","title":"Current Task Status","type":"pie","groupBy":"statuses","series":[{"metricId":"count","agg":"count","label":"Count"}],"height":220,"presetKey":"status","chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9l3yl0-ne9fwit","title":"Return Reasons","type":"polarArea","groupBy":"taskIssues","series":[{"metricId":"count","agg":"count","label":""}],"height":140,"presetKey":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":["returned"],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9mmfih-7eeey9y","title":"Avg # Task Versions/Workflow Time vs Environment","type":"barLine","groupBy":"envKeys","series":[{"metricId":"prompt_version_count","agg":"avg","label":"Avg Task Versions","renderAs":"bar","yAxis":"y","segmentBy":null},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"Avg v1 Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"},{"metricId":"qa_time_minutes","agg":"avg","label":"Avg QA Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"}],"height":280,"presetKey":null,"barLayout":"grouped","orientation":"vertical","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9n8ud7-liveetc","title":"Count of Tasks by Env vs Current Status","type":"barLine","groupBy":"envKeys","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"horizontal","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9y70g0-qrk1ewp","title":"Tasks by Week and Status vs Avg v1 Creation Time","type":"barLine","groupBy":"taskCreatedWeek","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"","renderAs":"line","yAxis":"y1","lineStyle":"shaded","segmentBy":null}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"vertical","lineAreaLayout":"origin","categorySort":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}}]}';
 
@@ -17,6 +18,9 @@ const STATS_DIMENSION_DEFS = [
     { key: 'taskIssues', optionsKey: 'taskIssues', scopeKey: 'filter-task-issues', kind: 'task' },
     { key: 'returnTypes', optionsKey: 'returnTypes', scopeKey: 'filter-return-types', kind: 'task' },
     { key: 'promptHistory', optionsKey: 'promptHistory', scopeKey: 'filter-prompt-history', kind: 'item' },
+    { key: 'sessionQaOutcomes', optionsKey: 'sessionQaOutcomes', scopeKey: 'filter-session-qa-outcome', kind: 'item' },
+    { key: 'disputeOutcomes', optionsKey: 'disputeOutcomes', scopeKey: 'filter-dispute-outcome', kind: 'item' },
+    { key: 'srReviewOutcomes', optionsKey: 'srReviewOutcomes', scopeKey: 'filter-sr-review-outcome', kind: 'item' },
     { key: 'qaHelpfulness', optionsKey: 'qaHelpfulness', scopeKey: 'filter-qa-helpfulness', kind: 'item' },
     { key: 'v1CreationTimeMinutes', optionsKey: 'v1CreationTimeMinutes', scopeKey: 'filter-v1-creation-time', kind: 'item-bucket' },
     { key: 'qaTimeMinutes', optionsKey: 'qaTimeMinutes', scopeKey: 'filter-qa-time', kind: 'item-bucket' },
@@ -122,6 +126,10 @@ function statsNewChartId() {
     return 'chart-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
 }
 
+function statsNewDashboardId() {
+    return 'dash-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 9);
+}
+
 function statsLegacyChartType(type) {
     const t = type != null ? String(type) : '';
     return STATS_LEGACY_BAR_LINE_TYPES.has(t) ? t : null;
@@ -150,6 +158,119 @@ function statsNormalizeOrientation(raw) {
 
 function statsNormalizeLineAreaLayout(raw) {
     return raw === 'stacked' ? 'stacked' : 'origin';
+}
+
+function statsNormalizeLabelFormat(raw) {
+    if (raw === 'percent' || raw === 'both') return raw;
+    return 'absolute';
+}
+
+function statsNormalizeLabelsAlwaysVisible(raw) {
+    return raw === true || raw === 'true' || raw === 1 || raw === '1';
+}
+
+function statsNormalizeLabelsShowName(raw) {
+    return raw === true || raw === 'true' || raw === 1 || raw === '1';
+}
+
+function statsNormalizeBoolFlag(raw, fallback) {
+    if (raw === true || raw === 'true' || raw === 1 || raw === '1') return true;
+    if (raw === false || raw === 'false' || raw === 0 || raw === '0') return false;
+    return !!fallback;
+}
+
+function statsLabelFormatFromShowFlags(showAbsolute, showPercent) {
+    if (showAbsolute && showPercent) return 'both';
+    if (showPercent && !showAbsolute) return 'percent';
+    return 'absolute';
+}
+
+function statsLabelShowFlagsFromSeries(seriesEntry, legacyChart) {
+    const s = seriesEntry || {};
+    const hasSeriesAbs = Object.prototype.hasOwnProperty.call(s, 'labelShowAbsolute');
+    const hasSeriesPct = Object.prototype.hasOwnProperty.call(s, 'labelShowPercent');
+    const hasSeriesName = Object.prototype.hasOwnProperty.call(s, 'labelsShowName');
+    const hasSeriesAlways = Object.prototype.hasOwnProperty.call(s, 'labelsAlwaysVisible');
+    const legacy = legacyChart ? statsLabelShowFlagsFromChart(legacyChart) : {
+        showAbsolute: true,
+        showPercent: false,
+        showName: false
+    };
+    const legacyAlways = legacyChart
+        ? statsNormalizeLabelsAlwaysVisible(legacyChart.labelsAlwaysVisible)
+        : false;
+    const format = statsNormalizeLabelFormat(s.labelFormat);
+    const fromFormat = {
+        showAbsolute: format === 'absolute' || format === 'both',
+        showPercent: format === 'percent' || format === 'both'
+    };
+    const showAbsolute = hasSeriesAbs
+        ? statsNormalizeBoolFlag(s.labelShowAbsolute, fromFormat.showAbsolute)
+        : (Object.prototype.hasOwnProperty.call(s, 'labelFormat') ? fromFormat.showAbsolute : legacy.showAbsolute);
+    const showPercent = hasSeriesPct
+        ? statsNormalizeBoolFlag(s.labelShowPercent, fromFormat.showPercent)
+        : (Object.prototype.hasOwnProperty.call(s, 'labelFormat') ? fromFormat.showPercent : legacy.showPercent);
+    return {
+        showAbsolute,
+        showPercent,
+        showName: hasSeriesName
+            ? statsNormalizeLabelsShowName(s.labelsShowName)
+            : legacy.showName,
+        alwaysVisible: hasSeriesAlways
+            ? statsNormalizeLabelsAlwaysVisible(s.labelsAlwaysVisible)
+            : legacyAlways
+    };
+}
+
+/** @deprecated Prefer statsLabelShowFlagsFromSeries; kept for legacy chart-level migration. */
+function statsLabelShowFlagsFromChart(c) {
+    const format = statsNormalizeLabelFormat(c && c.labelFormat);
+    const fromFormat = {
+        showAbsolute: format === 'absolute' || format === 'both',
+        showPercent: format === 'percent' || format === 'both'
+    };
+    const hasAbsKey = c && Object.prototype.hasOwnProperty.call(c, 'labelShowAbsolute');
+    const hasPctKey = c && Object.prototype.hasOwnProperty.call(c, 'labelShowPercent');
+    return {
+        showAbsolute: hasAbsKey
+            ? statsNormalizeBoolFlag(c.labelShowAbsolute, fromFormat.showAbsolute)
+            : fromFormat.showAbsolute,
+        showPercent: hasPctKey
+            ? statsNormalizeBoolFlag(c.labelShowPercent, fromFormat.showPercent)
+            : fromFormat.showPercent,
+        showName: statsNormalizeLabelsShowName(c && c.labelsShowName)
+    };
+}
+
+function statsChartHasAnyAlwaysVisibleLabels(chart) {
+    if (!chart || !statsChartSupportsLabelOptions(chart.type)) return false;
+    return (chart.series || []).some((s) => s && s.labelsAlwaysVisible);
+}
+
+function statsApplySeriesLabelFlags(entry, seriesSrc, chartType, legacyChart) {
+    if (!statsChartSupportsLabelOptions(chartType)) return entry;
+    const flags = statsLabelShowFlagsFromSeries(seriesSrc, legacyChart);
+    entry.labelShowAbsolute = flags.showAbsolute;
+    entry.labelShowPercent = flags.showPercent;
+    entry.labelsShowName = flags.showName;
+    entry.labelsAlwaysVisible = flags.alwaysVisible;
+    entry.labelFormat = statsLabelFormatFromShowFlags(flags.showAbsolute, flags.showPercent);
+    return entry;
+}
+
+function statsDefaultSeriesLabelFlags() {
+    return {
+        labelShowAbsolute: true,
+        labelShowPercent: false,
+        labelsShowName: false,
+        labelsAlwaysVisible: false,
+        labelFormat: 'absolute'
+    };
+}
+
+function statsChartSupportsLabelOptions(type) {
+    const t = statsNormalizeChartType(type);
+    return t === 'pie' || t === 'polarArea' || t === 'radar' || t === 'barLine' || t === 'histogram';
 }
 
 function statsNormalizeSpread(raw) {
@@ -272,12 +393,13 @@ function statsFilterItemsForChart(items, chart, ctx) {
     }
     const sortContext = {
         helpfulnessUi: (ctx && ctx.helpfulnessUi) || {},
-        currentUserId: (ctx && ctx.currentUserId) || ''
+        currentUserId: (ctx && ctx.currentUserId) || '',
+        sessionQaUi: (ctx && ctx.sessionQaUi) || {}
     };
     return lib.applyClientWorkerOutputFilters(items || [], chartFilters, listBounds, sortContext);
 }
 
-function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySourceType) {
+function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySourceType, legacyChart) {
     const meta = statsGetChartTypeMeta(chartType);
     let renderAs = s.renderAs === 'line' ? 'line' : 'bar';
     if (legacySourceType === 'line') renderAs = 'line';
@@ -307,6 +429,7 @@ function statsNormalizeSeriesEntry(s, chartType, seriesIndex, groupBy, legacySou
             ? statsNormalizeSpread(s.spread)
             : 'none';
     }
+    statsApplySeriesLabelFlags(entry, s, chartType, legacyChart);
     return entry;
 }
 
@@ -316,16 +439,24 @@ function statsNormalizeChartEntry(c) {
     const meta = statsGetChartTypeMeta(type);
     const groupBy = meta.skipGroupBy ? STATS_SCORECARD_GROUP_BY : String(c.groupBy);
     const legacySegmentBy = c.splitBy != null ? statsNormalizeSegmentBy(c.splitBy, groupBy) : null;
+    const legacyChartLabels = statsChartSupportsLabelOptions(type) ? c : null;
     let series = (c.series || []).map((s, i) => {
         const src = legacySegmentBy && i === 0 && !s.segmentBy && !s.splitBy
             ? Object.assign({}, s, { segmentBy: legacySegmentBy })
             : s;
-        return statsNormalizeSeriesEntry(src, type, i, groupBy, legacySourceType);
+        return statsNormalizeSeriesEntry(src, type, i, groupBy, legacySourceType, legacyChartLabels);
     });
     if (series.length > meta.maxSeries) series = series.slice(0, meta.maxSeries);
     if (series.length < meta.minSeries && meta.minSeries > 0) {
         while (series.length < meta.minSeries) {
-            series.push(statsNormalizeSeriesEntry({ metricId: 'count', agg: 'count' }, type, series.length, groupBy, legacySourceType));
+            series.push(statsNormalizeSeriesEntry(
+                { metricId: 'count', agg: 'count' },
+                type,
+                series.length,
+                groupBy,
+                legacySourceType,
+                legacyChartLabels
+            ));
         }
     }
     const chart = {
@@ -352,23 +483,210 @@ function statsNormalizeChartEntry(c) {
     if (meta.needsBarLayout) {
         chart.categorySort = statsNormalizeCategorySort(c.categorySort, series.length);
     }
+    // Label options live on series only (legacy chart-level fields migrated above).
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
 }
 
-function statsDefaultLayout() {
-    return statsNormalizeLayout(JSON.parse(STATS_DEFAULT_LAYOUT_JSON));
-}
-
-function statsNormalizeLayout(raw) {
-    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.charts)) {
-        return statsDefaultLayout();
-    }
-    const charts = raw.charts
+function statsNormalizeChartsList(rawCharts) {
+    if (!Array.isArray(rawCharts)) return [];
+    return rawCharts
         .filter((c) => c && c.id && c.groupBy && c.type && Array.isArray(c.series) && c.series.length > 0)
         .map((c) => statsNormalizeChartEntry(c));
-    if (charts.length === 0) return statsDefaultLayout();
-    return { schemaVersion: STATS_LAYOUT_SCHEMA_VERSION, charts };
+}
+
+function statsDefaultCharts() {
+    try {
+        const parsed = JSON.parse(STATS_DEFAULT_LAYOUT_JSON);
+        const charts = statsNormalizeChartsList(parsed && parsed.charts);
+        return charts.length ? charts : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function statsMakeDashboard(raw, index) {
+    const idx = Number.isFinite(index) ? index : 0;
+    const id = raw && raw.id != null && String(raw.id).trim()
+        ? String(raw.id).trim()
+        : statsNewDashboardId();
+    const fallbackName = 'Dashboard ' + (idx + 1);
+    const name = raw && raw.name != null && String(raw.name).trim()
+        ? String(raw.name).trim().slice(0, 80)
+        : fallbackName;
+    return {
+        id,
+        name,
+        charts: statsNormalizeChartsList(raw && raw.charts)
+    };
+}
+
+function statsDefaultStore() {
+    const dashboard = statsMakeDashboard({
+        id: statsNewDashboardId(),
+        name: 'Dashboard 1',
+        charts: statsDefaultCharts()
+    }, 0);
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        activeDashboardId: dashboard.id,
+        dashboards: [dashboard]
+    };
+}
+
+function statsWrapLegacyLayout(raw) {
+    const charts = statsNormalizeChartsList(raw && raw.charts);
+    const dashboard = statsMakeDashboard({
+        id: statsNewDashboardId(),
+        name: 'Dashboard 1',
+        charts: charts.length ? charts : statsDefaultCharts()
+    }, 0);
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        activeDashboardId: dashboard.id,
+        dashboards: [dashboard]
+    };
+}
+
+/** @deprecated Prefer statsNormalizeStore — kept for charts-only export/import helpers. */
+function statsNormalizeLayout(raw) {
+    if (raw && typeof raw === 'object' && Array.isArray(raw.dashboards)) {
+        const active = statsGetActiveDashboard(raw);
+        return {
+            schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+            charts: (active && active.charts) ? active.charts.slice() : []
+        };
+    }
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.charts)) {
+        return { schemaVersion: STATS_LAYOUT_SCHEMA_VERSION, charts: statsDefaultCharts() };
+    }
+    const charts = statsNormalizeChartsList(raw.charts);
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        charts: charts.length ? charts : statsDefaultCharts()
+    };
+}
+
+function statsDefaultLayout() {
+    return statsDefaultStore();
+}
+
+function statsNormalizeStore(raw) {
+    if (!raw || typeof raw !== 'object') return statsDefaultStore();
+    if (Array.isArray(raw.charts) && !Array.isArray(raw.dashboards)) {
+        return statsWrapLegacyLayout(raw);
+    }
+    if (!Array.isArray(raw.dashboards) || !raw.dashboards.length) {
+        return statsDefaultStore();
+    }
+    const dashboards = raw.dashboards
+        .slice(0, STATS_MAX_DASHBOARDS)
+        .map((d, i) => statsMakeDashboard(d, i))
+        .filter((d) => d && d.id);
+    if (!dashboards.length) return statsDefaultStore();
+    let activeDashboardId = raw.activeDashboardId != null ? String(raw.activeDashboardId) : dashboards[0].id;
+    if (!dashboards.some((d) => d.id === activeDashboardId)) {
+        activeDashboardId = dashboards[0].id;
+    }
+    return {
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        activeDashboardId,
+        dashboards
+    };
+}
+
+function statsGetActiveDashboard(store) {
+    const normalized = statsNormalizeStore(store);
+    return normalized.dashboards.find((d) => d.id === normalized.activeDashboardId) || normalized.dashboards[0];
+}
+
+function statsFindDashboard(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const id = dashboardId != null ? String(dashboardId) : '';
+    return normalized.dashboards.find((d) => d.id === id) || null;
+}
+
+function statsSetActiveDashboardId(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const id = dashboardId != null ? String(dashboardId) : '';
+    if (!normalized.dashboards.some((d) => d.id === id)) return normalized;
+    normalized.activeDashboardId = id;
+    return normalized;
+}
+
+function statsNextDashboardName(store) {
+    const normalized = statsNormalizeStore(store);
+    const used = new Set(normalized.dashboards.map((d) => d.name));
+    for (let n = 1; n <= STATS_MAX_DASHBOARDS + 5; n += 1) {
+        const name = 'Dashboard ' + n;
+        if (!used.has(name)) return name;
+    }
+    return 'Dashboard';
+}
+
+function statsAddDashboard(store, name) {
+    const normalized = statsNormalizeStore(store);
+    if (normalized.dashboards.length >= STATS_MAX_DASHBOARDS) return normalized;
+    const trimmed = name != null ? String(name).trim().slice(0, 80) : '';
+    const dashboard = statsMakeDashboard({
+        id: statsNewDashboardId(),
+        name: trimmed || statsNextDashboardName(normalized),
+        charts: []
+    }, normalized.dashboards.length);
+    normalized.dashboards.push(dashboard);
+    normalized.activeDashboardId = dashboard.id;
+    return normalized;
+}
+
+function statsRenameDashboard(store, dashboardId, name) {
+    const normalized = statsNormalizeStore(store);
+    const trimmed = name != null ? String(name).trim().slice(0, 80) : '';
+    if (!trimmed) return normalized;
+    const dash = normalized.dashboards.find((d) => d.id === String(dashboardId));
+    if (!dash) return normalized;
+    dash.name = trimmed;
+    return normalized;
+}
+
+function statsDeleteDashboard(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    if (normalized.dashboards.length <= 1) return normalized;
+    const id = String(dashboardId);
+    const next = normalized.dashboards.filter((d) => d.id !== id);
+    if (next.length === normalized.dashboards.length) return normalized;
+    normalized.dashboards = next;
+    if (normalized.activeDashboardId === id) {
+        normalized.activeDashboardId = next[0].id;
+    }
+    return normalized;
+}
+
+function statsCopyChartToDashboard(store, chartId, fromDashboardId, toDashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const fromId = String(fromDashboardId || '');
+    const toId = String(toDashboardId || '');
+    if (!chartId || !toId || fromId === toId) return { store: normalized, chart: null };
+    const fromDash = normalized.dashboards.find((d) => d.id === fromId)
+        || (fromId ? null : statsGetActiveDashboard(normalized));
+    const toDash = normalized.dashboards.find((d) => d.id === toId);
+    if (!fromDash || !toDash) return { store: normalized, chart: null };
+    const source = fromDash.charts.find((c) => c.id === String(chartId));
+    if (!source) return { store: normalized, chart: null };
+    const clone = statsNormalizeChartEntry(Object.assign({}, JSON.parse(JSON.stringify(source)), {
+        id: statsNewChartId()
+    }));
+    toDash.charts.push(clone);
+    return { store: normalized, chart: clone };
+}
+
+function statsResetDashboardCharts(store, dashboardId) {
+    const normalized = statsNormalizeStore(store);
+    const dash = normalized.dashboards.find((d) => d.id === String(dashboardId || normalized.activeDashboardId));
+    if (!dash) return normalized;
+    dash.charts = statsDefaultCharts().map((c) => statsNormalizeChartEntry(Object.assign({}, JSON.parse(JSON.stringify(c)), {
+        id: statsNewChartId()
+    })));
+    return normalized;
 }
 
 function statsIsImportableChartShape(c) {
@@ -396,11 +714,17 @@ function statsPrepareImportedChart(raw) {
     return statsNormalizeChartEntry(Object.assign({}, raw, { id: statsNewChartId() }));
 }
 
-function statsExportLayoutObject(layout) {
-    const normalized = statsNormalizeLayout(layout);
+function statsExportLayoutObject(layoutOrStore) {
+    let charts = [];
+    if (layoutOrStore && Array.isArray(layoutOrStore.dashboards)) {
+        const active = statsGetActiveDashboard(layoutOrStore);
+        charts = (active && active.charts) || [];
+    } else if (layoutOrStore && Array.isArray(layoutOrStore.charts)) {
+        charts = statsNormalizeChartsList(layoutOrStore.charts);
+    }
     return {
-        schemaVersion: normalized.schemaVersion,
-        charts: normalized.charts.map((chart) => JSON.parse(JSON.stringify(chart)))
+        schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
+        charts: charts.map((chart) => JSON.parse(JSON.stringify(chart)))
     };
 }
 
@@ -544,6 +868,7 @@ function statsGetDimensionValues(item, dimKey, lib, ctx) {
     if (!task) return [];
     const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
     const currentUserId = (ctx && ctx.currentUserId) || '';
+    const sessionQaUi = (ctx && ctx.sessionQaUi) || {};
     const getVersionCount = ctx && ctx.getVersionCount;
     switch (dimKey) {
         case 'teamIds':
@@ -563,7 +888,21 @@ function statsGetDimensionValues(item, dimKey, lib, ctx) {
         case 'returnTypes':
             return lib && typeof lib.taskReturnTypes === 'function' ? lib.taskReturnTypes(task) : [];
         case 'promptHistory':
-            return lib && typeof lib.itemPromptHistory === 'function' ? lib.itemPromptHistory(item) : [];
+            return lib && typeof lib.itemPromptHistory === 'function'
+                ? lib.itemPromptHistory(item, sessionQaUi)
+                : [];
+        case 'sessionQaOutcomes':
+            return lib && typeof lib.itemSessionQaOutcomes === 'function'
+                ? lib.itemSessionQaOutcomes(item, sessionQaUi)
+                : [];
+        case 'disputeOutcomes':
+            return lib && typeof lib.itemDisputeOutcomes === 'function'
+                ? lib.itemDisputeOutcomes(item)
+                : [];
+        case 'srReviewOutcomes':
+            return lib && typeof lib.itemSrReviewOutcomes === 'function'
+                ? lib.itemSrReviewOutcomes(item)
+                : [];
         case 'qaHelpfulness':
             return lib && typeof lib.itemQaHelpfulness === 'function'
                 ? lib.itemQaHelpfulness(item, helpfulnessUi, currentUserId)
@@ -1000,7 +1339,8 @@ function statsAggregateHistogram(chart, items, catalog, ctx) {
         datasets: [{
             label: metricLabel,
             data: binResult.counts,
-            metricId: s.metricId
+            metricId: s.metricId,
+            seriesIndex: 0
         }]
     };
 }
@@ -1238,7 +1578,8 @@ function statsBuildSegmentedSeriesDatasets(seriesEntry, segmentBy, segmentDim, k
             renderAs: seriesEntry.renderAs,
             lineStyle: seriesEntry.lineStyle,
             yAxis: seriesEntry.yAxis,
-            segmentSeries: true
+            segmentSeries: true,
+            seriesIndex: seriesEntry._seriesIndex != null ? seriesEntry._seriesIndex : 0
         });
     };
 
@@ -1359,12 +1700,14 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
         if (segmentBy) {
             const segmentDim = statsFindDimension(catalog, segmentBy);
             if (segmentDim) {
+                const seriesForSegment = Object.assign({}, s, { _seriesIndex: si });
                 const segmentDatasets = statsBuildSegmentedSeriesDatasets(
-                    s, segmentBy, segmentDim, keysOut, items, chart, lib, ctx, catalog
+                    seriesForSegment, segmentBy, segmentDim, keysOut, items, chart, lib, ctx, catalog
                 );
                 if (s.lineStyle === 'shaded') {
                     segmentDatasets.forEach((ds) => {
                         ds.segmentFillOnly = true;
+                        ds.seriesIndex = si;
                     });
                     const metric = statsFindMetric(catalog, s.metricId);
                     const seriesLabel = s.label || (metric && metric.label) || s.metricId;
@@ -1386,9 +1729,11 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
                         lineStyle: 'line',
                         yAxis: s.yAxis,
                         segmentOutline: true,
-                        segmentSeries: true
+                        segmentSeries: true,
+                        seriesIndex: si
                     });
                 } else {
+                    segmentDatasets.forEach((ds) => { ds.seriesIndex = si; });
                     datasets.push(...segmentDatasets);
                 }
             }
@@ -1426,7 +1771,8 @@ function statsAggregateCategorical(chart, items, catalog, ctx) {
             agg: s.agg,
             renderAs: s.renderAs,
             lineStyle: s.lineStyle,
-            yAxis: s.yAxis
+            yAxis: s.yAxis,
+            seriesIndex: si
         };
         if (spreadEnabled) {
             datasetEntry.spread = 'stddevBand';
@@ -1578,12 +1924,13 @@ function statsAggregateChart(chart, items, catalog, ctx) {
 
 function statsDefaultBuilderDraft(catalog) {
     const firstDim = (catalog && catalog.dimensions && catalog.dimensions[0]) || null;
+    const labelDefaults = statsDefaultSeriesLabelFlags();
     return {
         id: null,
         title: '',
         type: 'pie',
         groupBy: firstDim ? firstDim.key : '',
-        series: [{ metricId: 'count', agg: 'count', label: '' }],
+        series: [Object.assign({ metricId: 'count', agg: 'count', label: '' }, labelDefaults)],
         height: STATS_CHART_HEIGHT_DEFAULT,
         pointMode: 'bucket',
         barLayout: 'grouped',
@@ -1599,7 +1946,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '4.12',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1612,11 +1959,26 @@ const plugin = {
         const self = this;
         Context.statsEngine = {
             storageKey: STATS_LAYOUT_STORAGE_KEY,
+            maxDashboards: STATS_MAX_DASHBOARDS,
             loadLayout: () => self._loadLayout(),
             saveLayout: (layout) => self._saveLayout(layout),
-            defaultLayout: () => statsDefaultLayout(),
+            defaultLayout: () => statsDefaultStore(),
+            defaultStore: () => statsDefaultStore(),
+            defaultCharts: () => statsDefaultCharts(),
             normalizeLayout: (raw) => statsNormalizeLayout(raw),
+            normalizeStore: (raw) => statsNormalizeStore(raw),
             newChartId: () => statsNewChartId(),
+            newDashboardId: () => statsNewDashboardId(),
+            getActiveDashboard: (store) => statsGetActiveDashboard(store),
+            findDashboard: (store, dashboardId) => statsFindDashboard(store, dashboardId),
+            setActiveDashboardId: (store, dashboardId) => statsSetActiveDashboardId(store, dashboardId),
+            addDashboard: (store, name) => statsAddDashboard(store, name),
+            renameDashboard: (store, dashboardId, name) => statsRenameDashboard(store, dashboardId, name),
+            deleteDashboard: (store, dashboardId) => statsDeleteDashboard(store, dashboardId),
+            copyChartToDashboard: (store, chartId, fromDashboardId, toDashboardId) => (
+                statsCopyChartToDashboard(store, chartId, fromDashboardId, toDashboardId)
+            ),
+            resetDashboardCharts: (store, dashboardId) => statsResetDashboardCharts(store, dashboardId),
             buildCatalog: (ctx) => statsBuildCatalog(ctx),
             validateChart: (chart, catalog, items, ctx) => statsValidateChart(chart, catalog, items, ctx),
             aggregateChart: (chart, items, catalog, ctx) => statsAggregateChart(chart, items, catalog, ctx),
@@ -1645,6 +2007,15 @@ const plugin = {
             countShadedLineDatasets: (chart, catalog) => statsCountShadedLineDatasets(chart, catalog),
             seriesAllowsSegment: (chartType, seriesEntry) => statsSeriesAllowsSegment(chartType, seriesEntry),
             normalizeCategorySort: (raw, seriesCount) => statsNormalizeCategorySort(raw, seriesCount),
+            normalizeLabelFormat: (raw) => statsNormalizeLabelFormat(raw),
+            normalizeLabelsShowName: (raw) => statsNormalizeLabelsShowName(raw),
+            labelFormatFromShowFlags: (showAbsolute, showPercent) =>
+                statsLabelFormatFromShowFlags(showAbsolute, showPercent),
+            labelShowFlagsFromSeries: (series) => statsLabelShowFlagsFromSeries(series, null),
+            labelShowFlagsFromChart: (chart) => statsLabelShowFlagsFromChart(chart),
+            chartHasAnyAlwaysVisibleLabels: (chart) => statsChartHasAnyAlwaysVisibleLabels(chart),
+            defaultSeriesLabelFlags: () => statsDefaultSeriesLabelFlags(),
+            chartSupportsLabelOptions: (type) => statsChartSupportsLabelOptions(type),
         };
         if (state) state.registered = true;
         Logger.log('search-output-stats-engine: registered (Context.statsEngine)');
@@ -1653,20 +2024,26 @@ const plugin = {
     _loadLayout() {
         try {
             const raw = Storage.getData(STATS_LAYOUT_STORAGE_KEY, null);
-            if (!raw) return statsDefaultLayout();
+            if (!raw) return statsDefaultStore();
             const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            return statsNormalizeLayout(parsed);
+            return statsNormalizeStore(parsed);
         } catch (e) {
             Logger.warn('search-output-stats-engine: loadLayout failed — using defaults', e);
-            return statsDefaultLayout();
+            return statsDefaultStore();
         }
     },
 
     _saveLayout(layout) {
         try {
-            const normalized = statsNormalizeLayout(layout);
+            const normalized = statsNormalizeStore(layout);
             Storage.setData(STATS_LAYOUT_STORAGE_KEY, JSON.stringify(normalized));
-            Logger.log('search-output-stats-engine: layout saved — ' + normalized.charts.length + ' chart(s)');
+            const active = statsGetActiveDashboard(normalized);
+            Logger.log(
+                'search-output-stats-engine: layout saved — '
+                + normalized.dashboards.length + ' dashboard(s), active "'
+                + (active && active.name ? active.name : '') + '" has '
+                + ((active && active.charts) ? active.charts.length : 0) + ' chart(s)'
+            );
             return normalized;
         } catch (e) {
             Logger.error('search-output-stats-engine: saveLayout failed', e);

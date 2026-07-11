@@ -15,25 +15,51 @@ const DASH_LIB_RETURN_TYPE_LABELS = {
 };
 const DASH_LIB_RETURN_TYPE_ORDER = ['accepted', 'returned', 'escalated', 'bugged'];
 const DASH_LIB_PROMPT_RATING_ORDER = ['Top 10%', 'Average', 'Bottom 10%'];
-const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review'];
+const DASH_LIB_OUTPUT_KIND_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review', 'sessions'];
 const DASH_LIB_OUTPUT_KIND_LABELS = {
     task_creation: 'Task Creation',
     qa: 'QA',
     dispute: 'Disputes',
-    senior_review: 'Sr Review'
+    senior_review: 'Sr Review',
+    sessions: 'Sessions'
 };
-const DASH_LIB_PROMPT_HISTORY_ORDER = ['accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed', 'dispute_resolved', 'flagged', 'senior_review_flagged', 'escalated', 'screenshots'];
+const DASH_LIB_PROMPT_HISTORY_ORDER = [
+    'accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed',
+    'flagged', 'senior_review_flagged', 'escalated', 'session_qa_performed', 'screenshots'
+];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
     notes_to_qa: 'Submitted with Notes to QA',
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
-    dispute_resolved: 'Dispute Resolved',
     flagged: 'Flagged as bugged',
     senior_review_flagged: 'Flagged for Senior Review',
     escalated: 'Escalated',
+    session_qa_performed: 'Session QA Performed',
     screenshots: 'Screenshots associated with task'
+};
+const DASH_LIB_SESSION_QA_OUTCOME_ORDER = ['pass', 'fail', 'review_needed'];
+const DASH_LIB_SESSION_QA_OUTCOME_LABELS = {
+    pass: 'Pass',
+    fail: 'Fail',
+    review_needed: 'Review Needed'
+};
+const DASH_LIB_DISPUTE_OUTCOME_ORDER = [
+    'pending', 'approved', 'rejected', 'approved_with_revisions', 'approved_and_accepted'
+];
+const DASH_LIB_DISPUTE_OUTCOME_LABELS = {
+    pending: 'Pending',
+    approved: 'Approved',
+    rejected: 'Rejected',
+    approved_with_revisions: 'Approved & Return to Writer',
+    approved_and_accepted: 'Approved & Accept Task'
+};
+const DASH_LIB_SR_REVIEW_OUTCOME_ORDER = ['pending', 'confirmed', 'dismissed'];
+const DASH_LIB_SR_REVIEW_OUTCOME_LABELS = {
+    pending: 'Pending',
+    confirmed: 'Confirmed',
+    dismissed: 'Dismissed'
 };
 const DASH_LIB_QA_HELPFULNESS_ORDER = ['helpful', 'not_helpful', 'written_review'];
 const DASH_LIB_QA_HELPFULNESS_LABELS = {
@@ -65,6 +91,9 @@ const DASH_LIB_FILTER_SCOPES = [
     { scopeKey: 'filter-return-types', optionsKey: 'returnTypes', draftKey: 'returnTypes' },
     { scopeKey: 'filter-task-issues', optionsKey: 'taskIssues', draftKey: 'taskIssues' },
     { scopeKey: 'filter-prompt-history', optionsKey: 'promptHistory', draftKey: 'promptHistory' },
+    { scopeKey: 'filter-session-qa-outcome', optionsKey: 'sessionQaOutcomes', draftKey: 'sessionQaOutcomes' },
+    { scopeKey: 'filter-dispute-outcome', optionsKey: 'disputeOutcomes', draftKey: 'disputeOutcomes' },
+    { scopeKey: 'filter-sr-review-outcome', optionsKey: 'srReviewOutcomes', draftKey: 'srReviewOutcomes' },
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
     { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
@@ -85,7 +114,7 @@ const DASH_LIB_SORT_OPTIONS = DASH_LIB_SORT_METRICS.flatMap((metric) => ([
 ]));
 
 /** Tab strip order when one task matches multiple output kinds. */
-const DASH_LIB_OUTPUT_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review'];
+const DASH_LIB_OUTPUT_KIND_MERGE_ORDER = ['task_creation', 'qa', 'dispute', 'senior_review', 'sessions'];
 
 const DASH_LIB_MANUAL_FILTER_FIELDS = [
     { id: 'prompt_word_count', label: 'Prompt Length (words)', type: 'number' },
@@ -511,11 +540,151 @@ function dashLibRelativeAgo(iso, options) {
     return minLabel(Math.max(1, totalMins)) + ' ago';
 }
 
+const DASH_LIB_EPIC_CRITERION_LINE_RE = /^\[C\]\s+((?:\[NICE\]\s+)?.+:\s+(0\.0|1\.0)\/1\.0\s+—\s+.+)$/;
+const DASH_LIB_VERIFY_SECTION_RE =
+    /<<<\s*VERIFY_([A-Za-z0-9_-]+)\s*<<<([\s\S]*?)>>>\s*VERIFY_\1\s*>>>/g;
+const DASH_LIB_ACCUMULATOR_IN_SECTION_RE =
+    />>>\s*(SUCCESS|ERROR|FAILURE)_ACCUMULATOR\s*>>>\s*([\s\S]*?)\s*<<<\s*\1_ACCUMULATOR\s*<</g;
+
+function dashLibCapitalizeAppLabel(appKey) {
+    const key = String(appKey || '').trim();
+    if (!key) return '';
+    return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+function dashLibStripVerifierCheckPrefix(text) {
+    return String(text || '')
+        .replace(/^(?:PASS|FAIL)\s*:\s*/i, '')
+        .replace(/^\[(?:C|X)\]\s*/i, '')
+        .trim();
+}
+
+function dashLibExtractAccumulatorChecks(blockBody) {
+    const body = String(blockBody || '');
+    const checks = [];
+    const pushIfCheck = (line) => {
+        const raw = String(line || '').trim();
+        if (!raw) return;
+        if (/^\[(?:C|X)\]/i.test(raw) || /^(?:PASS|FAIL)\s*:/i.test(raw)) {
+            checks.push(raw);
+        }
+    };
+    const dq = /"((?:\\.|[^"\\])*)"/g;
+    let m;
+    while ((m = dq.exec(body)) !== null) {
+        pushIfCheck(m[1].replace(/\\"/g, '"').replace(/\\'/g, "'"));
+    }
+    const sq = /'((?:\\.|[^'\\])*)'/g;
+    while ((m = sq.exec(body)) !== null) {
+        pushIfCheck(m[1].replace(/\\'/g, "'"));
+    }
+    if (checks.length > 0) return checks;
+    for (const rawLine of body.split('\n')) {
+        pushIfCheck(rawLine.trim().replace(/^["']|["'],?$/g, ''));
+    }
+    return checks;
+}
+
+function dashLibParseLoosePassFailLines(sectionBody) {
+    const successes = [];
+    const failures = [];
+    for (const rawLine of String(sectionBody || '').split('\n')) {
+        const trimmed = rawLine.trim();
+        if (!trimmed) continue;
+        if (/^>>>\s*(SUCCESS|ERROR|FAILURE)_ACCUMULATOR/i.test(trimmed)) continue;
+        if (/^<<<\s*(SUCCESS|ERROR|FAILURE)_ACCUMULATOR/i.test(trimmed)) continue;
+        if (/^App\s+/i.test(trimmed)) continue;
+        const passMatch = trimmed.match(/^(?:PASS\s*:\s*)?(\[C\].+)$/i);
+        if (passMatch) {
+            successes.push(passMatch[1]);
+            continue;
+        }
+        const failMatch = trimmed.match(/^(?:FAIL\s*:\s*)?(\[X\].+)$/i);
+        if (failMatch) {
+            failures.push(failMatch[1]);
+        }
+    }
+    return { successes, failures };
+}
+
+function dashLibFormatAppSection(appKey, sectionBody) {
+    const successes = [];
+    const failures = [];
+    const body = String(sectionBody || '');
+    let m;
+    const accumRe = new RegExp(DASH_LIB_ACCUMULATOR_IN_SECTION_RE.source, 'g');
+    while ((m = accumRe.exec(body)) !== null) {
+        const kind = String(m[1] || '').toUpperCase();
+        const checks = dashLibExtractAccumulatorChecks(m[2]);
+        const target = kind === 'SUCCESS' ? successes : failures;
+        for (const c of checks) target.push(c);
+    }
+    const loose = dashLibParseLoosePassFailLines(body);
+    for (const c of loose.successes) {
+        if (!successes.includes(c)) successes.push(c);
+    }
+    for (const c of loose.failures) {
+        if (!failures.includes(c)) failures.push(c);
+    }
+    if (successes.length === 0 && failures.length === 0) return '';
+    const lines = [dashLibCapitalizeAppLabel(appKey) + ':'];
+    for (const c of successes) {
+        const text = dashLibStripVerifierCheckPrefix(c);
+        if (text) lines.push('✅ ' + text);
+    }
+    for (const c of failures) {
+        const text = dashLibStripVerifierCheckPrefix(c);
+        if (text) lines.push('❌ ' + text);
+    }
+    return lines.join('\n');
+}
+
+function dashLibFormatVerifierStdoutEpicFallback(text) {
+    const lines = String(text || '').split('\n');
+    const formatted = lines.map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        const epic = trimmed.match(DASH_LIB_EPIC_CRITERION_LINE_RE);
+        if (epic) {
+            const score = epic[2];
+            const emoji = score === '1.0' ? '✅' : '❌';
+            return emoji + ' ' + dashLibStripVerifierCheckPrefix(trimmed);
+        }
+        return line;
+    });
+    return formatted.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Plain-text verifier stdout grouped by app (caller HTML-escapes). */
+function dashLibFormatVerifierStdout(raw) {
+    const text = String(raw || '');
+    if (!text.trim()) return '';
+
+    const sections = [];
+    let m;
+    const sectionRe = new RegExp(DASH_LIB_VERIFY_SECTION_RE.source, 'g');
+    while ((m = sectionRe.exec(text)) !== null) {
+        const formatted = dashLibFormatAppSection(m[1], m[2]);
+        if (formatted) sections.push(formatted);
+    }
+
+    if (sections.length === 0) {
+        return dashLibFormatVerifierStdoutEpicFallback(text);
+    }
+
+    const combined = text.match(/Combined result:\s*[^\n]+/i);
+    let out = sections.join('\n\n');
+    if (combined) {
+        out += '\n\n' + combined[0].trim();
+    }
+    return out.trim();
+}
+
 const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '4.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -631,6 +800,7 @@ const plugin = {
             validateUniversalSearchRange: bind(self._validateUniversalSearchRange),
 
             qaTextBlockLabel: bind(self._qaTextBlockLabel),
+            formatVerifierStdout: dashLibFormatVerifierStdout,
 
             projectDisplayLabel: dashLibProjectDisplayLabel,
 
@@ -651,6 +821,12 @@ const plugin = {
 
             QA_HELPFULNESS_ORDER: DASH_LIB_QA_HELPFULNESS_ORDER,
             QA_HELPFULNESS_LABELS: DASH_LIB_QA_HELPFULNESS_LABELS,
+            SESSION_QA_OUTCOME_ORDER: DASH_LIB_SESSION_QA_OUTCOME_ORDER,
+            SESSION_QA_OUTCOME_LABELS: DASH_LIB_SESSION_QA_OUTCOME_LABELS,
+            DISPUTE_OUTCOME_ORDER: DASH_LIB_DISPUTE_OUTCOME_ORDER,
+            DISPUTE_OUTCOME_LABELS: DASH_LIB_DISPUTE_OUTCOME_LABELS,
+            SR_REVIEW_OUTCOME_ORDER: DASH_LIB_SR_REVIEW_OUTCOME_ORDER,
+            SR_REVIEW_OUTCOME_LABELS: DASH_LIB_SR_REVIEW_OUTCOME_LABELS,
             V1_CREATION_TIME_BUCKET_ORDER: DASH_LIB_V1_CREATION_TIME_BUCKET_ORDER,
             V1_CREATION_TIME_BUCKET_LABELS: DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS,
             v1CreationTimeMinutes: dashLibV1CreationTimeMinutes,
@@ -658,6 +834,9 @@ const plugin = {
             itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
             itemQaHelpfulness: bind(self._itemQaHelpfulness),
             itemPromptHistory: bind(self._itemPromptHistory),
+            itemSessionQaOutcomes: bind(self._itemSessionQaOutcomes),
+            itemDisputeOutcomes: bind(self._itemDisputeOutcomes),
+            itemSrReviewOutcomes: bind(self._itemSrReviewOutcomes),
             itemV1CreationTimeMinutes: bind(self._itemV1CreationTimeMinutes),
             itemV1CreationTimeBuckets: bind(self._itemV1CreationTimeBuckets),
             itemQaTimeMinutes: bind(self._itemQaTimeMinutes),
@@ -1044,7 +1223,14 @@ const plugin = {
         return false;
     },
 
-    _itemPromptHistory(item) {
+    _itemSessionQaReviews(item, sessionQaUi) {
+        if (!item || !item.id) return [];
+        const ui = sessionQaUi && sessionQaUi[item.id];
+        if (!ui || !Array.isArray(ui.reviews)) return [];
+        return ui.reviews;
+    },
+
+    _itemPromptHistory(item, sessionQaUi) {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
             const rt = this._returnTypeOf(entry);
@@ -1054,22 +1240,98 @@ const plugin = {
             else if (rt === 'bugged') flags.add('flagged');
         }
         if (item.disputes && item.disputes.length > 0) flags.add('disputed');
-        if ((item.disputes || []).some((d) => d.resolutionAt)) flags.add('dispute_resolved');
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
         if (this._taskHasNotesToQa(item.task)) flags.add('notes_to_qa');
+        if (this._itemSessionQaReviews(item, sessionQaUi).length > 0) flags.add('session_qa_performed');
         if (this._itemHasAssociatedScreenshots(item)) flags.add('screenshots');
         return [...flags];
     },
 
-    _itemPassesPromptHistoryFilter(item, draft, listBounds, forceIncludeId) {
+    _itemSessionQaOutcomes(item, sessionQaUi) {
+        const flags = new Set();
+        for (const review of this._itemSessionQaReviews(item, sessionQaUi)) {
+            const verdict = String((review && review.verdict) || '').trim().toLowerCase();
+            if (DASH_LIB_SESSION_QA_OUTCOME_ORDER.includes(verdict)) flags.add(verdict);
+        }
+        return [...flags];
+    },
+
+    _itemDisputeOutcomes(item) {
+        const flags = new Set();
+        for (const dispute of (item && item.disputes) || []) {
+            if (!dispute) continue;
+            const status = String(dispute.status || '').trim().toLowerCase();
+            if (!dispute.resolutionAt || status === 'pending' || !status) {
+                flags.add('pending');
+                continue;
+            }
+            if (DASH_LIB_DISPUTE_OUTCOME_ORDER.includes(status)) flags.add(status);
+        }
+        return [...flags];
+    },
+
+    _itemSrReviewOutcomes(item) {
+        const flags = new Set();
+        for (const flag of (item && item.flags) || []) {
+            if (!flag) continue;
+            if (flag.isPending || String(flag.status || '').toLowerCase() === 'pending' || !flag.resolutionAt) {
+                flags.add('pending');
+                continue;
+            }
+            if (flag.isConfirmed || String(flag.status || '').toLowerCase() === 'confirmed') {
+                flags.add('confirmed');
+            } else if (flag.isDismissed || String(flag.status || '').toLowerCase() === 'dismissed') {
+                flags.add('dismissed');
+            }
+        }
+        return [...flags];
+    },
+
+    _itemPassesPromptHistoryFilter(item, draft, listBounds, forceIncludeId, sessionQaUi) {
         const selected = draft.promptHistory || [];
         const count = (listBounds.promptHistory || []).length;
         let effective = selected;
         if (forceIncludeId !== undefined) {
             effective = [...new Set([...selected, forceIncludeId])];
         }
-        return dashLibPassesDimension(this._itemPromptHistory(item), effective, count);
+        return dashLibPassesDimension(this._itemPromptHistory(item, sessionQaUi), effective, count);
+    },
+
+    _itemPassesDimensionFilter(values, selected, optionCount, forceIncludeId) {
+        if (optionCount === 0) return true;
+        let effective = selected || [];
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...effective, forceIncludeId])];
+        }
+        return dashLibPassesDimension(values, effective, optionCount);
+    },
+
+    _itemPassesSessionQaOutcomeFilter(item, draft, listBounds, sessionQaUi, forceIncludeId) {
+        return this._itemPassesDimensionFilter(
+            this._itemSessionQaOutcomes(item, sessionQaUi),
+            draft.sessionQaOutcomes || [],
+            (listBounds.sessionQaOutcomes || []).length,
+            forceIncludeId
+        );
+    },
+
+    _itemPassesDisputeOutcomeFilter(item, draft, listBounds, forceIncludeId) {
+        return this._itemPassesDimensionFilter(
+            this._itemDisputeOutcomes(item),
+            draft.disputeOutcomes || [],
+            (listBounds.disputeOutcomes || []).length,
+            forceIncludeId
+        );
+    },
+
+    _itemPassesSrReviewOutcomeFilter(item, draft, listBounds, forceIncludeId) {
+        return this._itemPassesDimensionFilter(
+            this._itemSrReviewOutcomes(item),
+            draft.srReviewOutcomes || [],
+            (listBounds.srReviewOutcomes || []).length,
+            forceIncludeId
+        );
     },
 
     _feedbackEligibleForHelpfulness(entry, currentUserId) {
@@ -1256,14 +1518,29 @@ const plugin = {
         const filteredTasks = this._applyClientTaskFilters(tasks, f, bounds);
         const allowedIds = new Set(filteredTasks.map((t) => t.id));
         let passed = items.filter((item) => allowedIds.has(item.task.id));
+        const helpfulnessUi = (sortContext && sortContext.helpfulnessUi) || {};
+        const currentUserId = (sortContext && sortContext.currentUserId) || '';
+        const sessionQaUi = (sortContext && sortContext.sessionQaUi) || {};
         const promptHistoryCount = (bounds.promptHistory || []).length;
         if (promptHistoryCount > 0) {
             passed = passed.filter((item) => dashLibPassesDimension(
-                this._itemPromptHistory(item), f.promptHistory || [], promptHistoryCount
+                this._itemPromptHistory(item, sessionQaUi), f.promptHistory || [], promptHistoryCount
             ));
         }
-        const helpfulnessUi = (sortContext && sortContext.helpfulnessUi) || {};
-        const currentUserId = (sortContext && sortContext.currentUserId) || '';
+        const sessionQaOutcomeCount = (bounds.sessionQaOutcomes || []).length;
+        if (sessionQaOutcomeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesSessionQaOutcomeFilter(
+                item, f, bounds, sessionQaUi
+            ));
+        }
+        const disputeOutcomeCount = (bounds.disputeOutcomes || []).length;
+        if (disputeOutcomeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesDisputeOutcomeFilter(item, f, bounds));
+        }
+        const srReviewOutcomeCount = (bounds.srReviewOutcomes || []).length;
+        if (srReviewOutcomeCount > 0) {
+            passed = passed.filter((item) => this._itemPassesSrReviewOutcomeFilter(item, f, bounds));
+        }
         const qaHelpfulnessCount = (bounds.qaHelpfulness || []).length;
         if (qaHelpfulnessCount > 0) {
             passed = passed.filter((item) => this._itemPassesQaHelpfulnessFilter(
@@ -1405,7 +1682,8 @@ const plugin = {
         return sorted;
     },
 
-    _buildFilterListOptions(items, catalog, teamCatalog) {
+    _buildFilterListOptions(items, catalog, teamCatalog, filterCtx) {
+        const sessionQaUi = (filterCtx && filterCtx.sessionQaUi) || {};
         const teamIds = new Set();
         const projectIds = new Set();
         const envKeys = new Set();
@@ -1415,9 +1693,15 @@ const plugin = {
         const taskIssues = new Set();
         const returnTypes = new Set();
         const promptHistoryPresent = new Set();
+        const sessionQaOutcomesPresent = new Set();
+        const disputeOutcomesPresent = new Set();
+        const srReviewOutcomesPresent = new Set();
         for (const item of items) {
             const task = item.task;
-            for (const flag of this._itemPromptHistory(item)) promptHistoryPresent.add(flag);
+            for (const flag of this._itemPromptHistory(item, sessionQaUi)) promptHistoryPresent.add(flag);
+            for (const flag of this._itemSessionQaOutcomes(item, sessionQaUi)) sessionQaOutcomesPresent.add(flag);
+            for (const flag of this._itemDisputeOutcomes(item)) disputeOutcomesPresent.add(flag);
+            for (const flag of this._itemSrReviewOutcomes(item)) srReviewOutcomesPresent.add(flag);
             if (task.teamId) teamIds.add(task.teamId);
             if (task.projectId) projectIds.add(task.projectId);
             if (task.envKey) envKeys.add(task.envKey);
@@ -1485,7 +1769,16 @@ const plugin = {
                 .map((type) => ({ id: type, label: DASH_LIB_RETURN_TYPE_LABELS[type] })),
             promptHistory: DASH_LIB_PROMPT_HISTORY_ORDER
                 .filter((flag) => promptHistoryPresent.has(flag))
-                .map((flag) => ({ id: flag, label: DASH_LIB_PROMPT_HISTORY_LABELS[flag] }))
+                .map((flag) => ({ id: flag, label: DASH_LIB_PROMPT_HISTORY_LABELS[flag] })),
+            sessionQaOutcomes: DASH_LIB_SESSION_QA_OUTCOME_ORDER
+                .filter((id) => sessionQaOutcomesPresent.has(id))
+                .map((id) => ({ id, label: DASH_LIB_SESSION_QA_OUTCOME_LABELS[id] })),
+            disputeOutcomes: DASH_LIB_DISPUTE_OUTCOME_ORDER
+                .filter((id) => disputeOutcomesPresent.has(id))
+                .map((id) => ({ id, label: DASH_LIB_DISPUTE_OUTCOME_LABELS[id] })),
+            srReviewOutcomes: DASH_LIB_SR_REVIEW_OUTCOME_ORDER
+                .filter((id) => srReviewOutcomesPresent.has(id))
+                .map((id) => ({ id, label: DASH_LIB_SR_REVIEW_OUTCOME_LABELS[id] }))
         };
     },
 
@@ -1515,6 +1808,9 @@ const plugin = {
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Set()])
         );
         result.promptHistory = new Set();
+        result.sessionQaOutcomes = new Set();
+        result.disputeOutcomes = new Set();
+        result.srReviewOutcomes = new Set();
         result.qaHelpfulness = new Set();
         result.v1CreationTimeMinutes = new Set();
         result.qaTimeMinutes = new Set();
@@ -1525,7 +1821,8 @@ const plugin = {
     _itemFilterPassCtx(options) {
         return {
             helpfulnessUi: (options && options.helpfulnessUi) || {},
-            currentUserId: (options && options.currentUserId) || ''
+            currentUserId: (options && options.currentUserId) || '',
+            sessionQaUi: (options && options.sessionQaUi) || {}
         };
     },
 
@@ -1535,6 +1832,7 @@ const plugin = {
         const ex = exclude || {};
         const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
         const currentUserId = (ctx && ctx.currentUserId) || '';
+        const sessionQaUi = (ctx && ctx.sessionQaUi) || {};
         const itemKey = ex.itemKey || null;
         const forceId = ex.forceIncludeId;
 
@@ -1544,7 +1842,23 @@ const plugin = {
             return false;
         }
         if (!this._itemPassesPromptHistoryFilter(
-            item, draft, listBounds, itemKey === 'promptHistory' ? forceId : undefined
+            item, draft, listBounds, itemKey === 'promptHistory' ? forceId : undefined, sessionQaUi
+        )) {
+            return false;
+        }
+        if (!this._itemPassesSessionQaOutcomeFilter(
+            item, draft, listBounds, sessionQaUi,
+            itemKey === 'sessionQaOutcomes' ? forceId : undefined
+        )) {
+            return false;
+        }
+        if (!this._itemPassesDisputeOutcomeFilter(
+            item, draft, listBounds, itemKey === 'disputeOutcomes' ? forceId : undefined
+        )) {
+            return false;
+        }
+        if (!this._itemPassesSrReviewOutcomeFilter(
+            item, draft, listBounds, itemKey === 'srReviewOutcomes' ? forceId : undefined
         )) {
             return false;
         }
@@ -1591,12 +1905,45 @@ const plugin = {
         const irrelevantHistory = result.promptHistory;
         for (const { id } of historyOptions) {
             const hasMatch = items.some((item) => (
-                this._itemPromptHistory(item).includes(id)
+                this._itemPromptHistory(item, ctx.sessionQaUi).includes(id)
                 && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'promptHistory', forceIncludeId: id
                 })
             ));
             if (!hasMatch) irrelevantHistory.add(id);
+        }
+        const sessionQaOutcomeOptions = (options && options.sessionQaOutcomes) || [];
+        const irrelevantSessionQaOutcomes = result.sessionQaOutcomes;
+        for (const { id } of sessionQaOutcomeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemSessionQaOutcomes(item, ctx.sessionQaUi).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'sessionQaOutcomes', forceIncludeId: id
+                })
+            ));
+            if (!hasMatch) irrelevantSessionQaOutcomes.add(id);
+        }
+        const disputeOutcomeOptions = (options && options.disputeOutcomes) || [];
+        const irrelevantDisputeOutcomes = result.disputeOutcomes;
+        for (const { id } of disputeOutcomeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemDisputeOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'disputeOutcomes', forceIncludeId: id
+                })
+            ));
+            if (!hasMatch) irrelevantDisputeOutcomes.add(id);
+        }
+        const srReviewOutcomeOptions = (options && options.srReviewOutcomes) || [];
+        const irrelevantSrReviewOutcomes = result.srReviewOutcomes;
+        for (const { id } of srReviewOutcomeOptions) {
+            const hasMatch = items.some((item) => (
+                this._itemSrReviewOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'srReviewOutcomes', forceIncludeId: id
+                })
+            ));
+            if (!hasMatch) irrelevantSrReviewOutcomes.add(id);
         }
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const irrelevantHelpfulness = result.qaHelpfulness;
@@ -1650,6 +1997,9 @@ const plugin = {
             this._checkboxFilterDimensions.map((d) => [d.draftKey, new Map()])
         );
         result.promptHistory = new Map();
+        result.sessionQaOutcomes = new Map();
+        result.disputeOutcomes = new Map();
+        result.srReviewOutcomes = new Map();
         result.qaHelpfulness = new Map();
         result.v1CreationTimeMinutes = new Map();
         result.qaTimeMinutes = new Map();
@@ -1675,12 +2025,45 @@ const plugin = {
         const historyCounts = result.promptHistory;
         for (const { id } of historyOptions) {
             const count = items.filter((item) => (
-                this._itemPromptHistory(item).includes(id)
+                this._itemPromptHistory(item, ctx.sessionQaUi).includes(id)
                 && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
                     itemKey: 'promptHistory', forceIncludeId: id
                 })
             )).length;
             historyCounts.set(id, count);
+        }
+        const sessionQaOutcomeOptions = (options && options.sessionQaOutcomes) || [];
+        const sessionQaOutcomeCounts = result.sessionQaOutcomes;
+        for (const { id } of sessionQaOutcomeOptions) {
+            const count = items.filter((item) => (
+                this._itemSessionQaOutcomes(item, ctx.sessionQaUi).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'sessionQaOutcomes', forceIncludeId: id
+                })
+            )).length;
+            sessionQaOutcomeCounts.set(id, count);
+        }
+        const disputeOutcomeOptions = (options && options.disputeOutcomes) || [];
+        const disputeOutcomeCounts = result.disputeOutcomes;
+        for (const { id } of disputeOutcomeOptions) {
+            const count = items.filter((item) => (
+                this._itemDisputeOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'disputeOutcomes', forceIncludeId: id
+                })
+            )).length;
+            disputeOutcomeCounts.set(id, count);
+        }
+        const srReviewOutcomeOptions = (options && options.srReviewOutcomes) || [];
+        const srReviewOutcomeCounts = result.srReviewOutcomes;
+        for (const { id } of srReviewOutcomeOptions) {
+            const count = items.filter((item) => (
+                this._itemSrReviewOutcomes(item).includes(id)
+                && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                    itemKey: 'srReviewOutcomes', forceIncludeId: id
+                })
+            )).length;
+            srReviewOutcomeCounts.set(id, count);
         }
         const helpfulnessOptions = (options && options.qaHelpfulness) || [];
         const helpfulnessCounts = result.qaHelpfulness;
@@ -2071,12 +2454,16 @@ const plugin = {
         const reviewDurationSeconds = Number.isFinite(reviewDurationRaw) && reviewDurationRaw >= 0
             ? reviewDurationRaw
             : null;
+        const rawQualityRating = data.prompt_quality_rating;
         const display = {
             isSystemFeedback: false,
             isPositive,
             isEscalated,
             isFlaggedAsBugged,
-            qualityRating: dashLibMapPromptQualityRating(data.prompt_quality_rating),
+            qualityRating: dashLibMapPromptQualityRating(rawQualityRating),
+            qualityRatingRaw: (rawQualityRating != null && rawQualityRating !== '')
+                ? dashLibMapPromptQualityRating(rawQualityRating)
+                : null,
             versionNo: versionInfo.displayVersionNo || versionInfo.versionNo,
             totalVersions: versionInfo.totalVersions,
             textBlocks,
@@ -2191,5 +2578,13 @@ const plugin = {
         if (label === 'Task Feedback') return 'Approval Feedback';
         if (label === 'Attempted Actions') return 'Accepted Feedback';
         return label;
+    },
+
+    /**
+     * Format verifier stdout for display: SUCCESS/FAILURE_ACCUMULATOR [C] lines and
+     * Epic score lines get ✅ / ❌ prefixes. Returns plain text (caller escapes HTML).
+     */
+    _formatVerifierStdout(raw) {
+        return dashLibFormatVerifierStdout(raw);
     }
 };

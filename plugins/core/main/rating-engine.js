@@ -1,52 +1,93 @@
-// rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
+// rating-engine.js — TWQS / QAQS / Combined computation for Worker Output Search Ratings tab.
+// Engine v4.0: Aligned with rank-workers.py WPS v1.2, rank-qa.py QPS v2.1, rank-combined.py v1.1.
+// Dual flat + recency variants computed per worker. Parametric percentile via normal CDF.
 
-const RE_VERSION = '1.15';
+const RE_VERSION = '4.0';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
-const RE_CONFIDENCE_WINDOW_MS = 90 * RE_MS_PER_DAY;
 const RE_DIAG_SAMPLE_ROWS = 5;
-const RE_STATUS_SEVERITY_DEFAULT = 0.4;
+const RE_DISCARDED_STALE_DAYS = 7;
 
-const RE_WRITER_FLAG_REASONS = new Set(['ai_generated', 'possible_duplicate']);
-const RE_QA_FLAG_REASON = 'poor_feedback_from_previous_qa';
-const RE_QAQS_SR_PENALTY_BLEND = 0.75;
-const RE_QAQS_SR_RAISED_BLEND = 0.25;
-const RE_PRODUCTION_STATUS_MATCH = 'production';
+// Terminal task status → quality score (mirrors rank-workers.py STATUS_QUALITY).
+// Statuses not listed here are in-flight — excluded from outcome quality denominator.
+const RE_STATUS_QUALITY = {
+    production: 1.0,
+    bugged: 0.5,
+    'escalated-fleet-review': 0.5,
+    discarded: 0.15,
+    dismissed: 0.0,
+};
 
-// Shrinkage / spread — negative outcomes weighted more heavily (engine 1.15 retune).
-const RE_ACCEPTANCE_SHRINK_C = 5;
-const RE_ACCEPTANCE_SHRINK_PRIOR = 0.45;
-const RE_DISPUTE_SHRINK_C = 10;
-const RE_SR_SHRINK_C = 15;
-const RE_SR_PENALTY_PRIOR = 0.6;
-const RE_REVISION_EFF_EXPONENT = 1.25;
-const RE_QAQS_RESOLUTION_SHRINK_C = 5;
-const RE_QAQS_RESOLUTION_SHRINK_PRIOR = 0.55;
-const RE_RETURN_EPISODE_EXPONENT = 1.3;
-const RE_AXIS_SPREAD_EXPONENT = 1.18;
+// WPS (TWQS) per-axis shrinkage constants calibrated from dive.db baseline (rank-workers v1.2).
+const RE_TWQS_C = {
+    outcomeQuality:       10,
+    positiveFeedbackRate: 10,
+    nonBottomScoreRate:    5,
+    firstPassAcceptance:   5,
+    disputeWinRate:        5,
+};
+const RE_TWQS_PRIOR = {
+    outcomeQuality:       0.7906,
+    positiveFeedbackRate: 0.4800,
+    nonBottomScoreRate:   0.9635,
+    firstPassAcceptance:  0.4606,
+    disputeWinRate:       0.6829,
+};
+
+// QPS (QAQS) per-axis shrinkage constants calibrated from dive.db baseline (rank-qa v2.0).
+const RE_QAQS_RET_EFF_C         = 10;
+const RE_QAQS_RET_EFF_PRIOR     = 0.4893;
+const RE_QAQS_RET_ACT_C         = 10;
+const RE_QAQS_RET_ACT_PRIOR     = 0.6891;
+const RE_QAQS_DISPUTE_DEF_C     = 5;
+const RE_QAQS_DISPUTE_DEF_PRIOR = 0.3263;
+const RE_QAQS_LABEL_DISC_C      = 5;
+const RE_QAQS_LABEL_DISC_PRIOR  = 0.1205;
 
 const RE_TWQS_AXES = [
-    { id: 'acceptanceSeverity', label: 'Task Outcomes', weight: 0.40 },
-    { id: 'revisionEfficiency', label: 'Revision Efficiency', weight: 0.25 },
-    { id: 'consistency', label: 'Consistency', weight: 0.15 },
-    { id: 'disputeOutcomes', label: 'Dispute Outcomes', weight: 0.10 },
-    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.10 }
+    { id: 'outcomeQuality',       label: 'Outcome Quality',        weight: 0.40 },
+    { id: 'positiveFeedbackRate', label: 'Positive Feedback Rate', weight: 0.20 },
+    { id: 'nonBottomScoreRate',   label: 'Non-Bottom Score Rate',  weight: 0.15 },
+    { id: 'firstPassAcceptance',  label: 'First-Pass Acceptance',  weight: 0.15 },
+    { id: 'disputeWinRate',       label: 'Dispute Win Rate',       weight: 0.10 },
 ];
 
 const RE_QAQS_AXES = [
-    { id: 'feedbackResolution', label: 'Comprehensiveness', weight: 0.50 },
-    { id: 'reviewCallAccuracy', label: 'Dispute Defense', weight: 0.20 },
-    { id: 'srReviewIntegrity', label: 'Sr Review Integrity', weight: 0.20 },
-    { id: 'consistency', label: 'Consistency', weight: 0.10 }
+    { id: 'returnEffectiveness', label: 'Return Effectiveness', weight: 0.40 },
+    { id: 'returnActionability', label: 'Return Actionability', weight: 0.25 },
+    { id: 'disputeDefense',      label: 'Dispute Defense',      weight: 0.20 },
+    { id: 'labelDiscrimination', label: 'Label Discrimination', weight: 0.15 },
 ];
 
 const RE_BANDS = [
-    { min: 88, label: 'Excellent' },
-    { min: 72, label: 'Good' },
-    { min: 55, label: 'Average' },
-    { min: 38, label: 'Needs attention' },
-    { min: 0, label: 'Concerning' }
+    { min: 80, label: 'Excellent' },
+    { min: 70, label: 'Good' },
+    { min: 58, label: 'Average' },
+    { min: 48, label: 'Needs attention' },
+    { min: 0,  label: 'Concerning' }
 ];
+
+// Parametric percentile distributions (μ, σ) fitted from dive.db baseline CSVs.
+// Estimated percentile = 100 × Φ((score − μ) / σ).  No individual scores stored.
+// Snapshot: 662 WPS workers, 272 QPS reviewers, 694 combined, recency90d variants.
+const RE_PERCENTILE_PARAMS = {
+    twqs: {
+        flat:    { mu: 68.0609, sigma: 7.5483 },
+        recency: { mu: 68.4895, sigma: 6.5843 },
+    },
+    qaqs: {
+        flat:    { mu: 47.2703, sigma: 6.3403 },
+        recency: { mu: 47.0710, sigma: 5.9755 },
+    },
+    combined: {
+        flat:    { mu: 62.9757, sigma: 9.7063 },
+        recency: { mu: 63.2194, sigma: 9.5722 },
+    },
+};
+
+// ---------------------------------------------------------------------------
+// Utility helpers
+// ---------------------------------------------------------------------------
 
 function reLib() {
     return Context.dashboardLib || null;
@@ -62,10 +103,6 @@ function reTaskTimestamp(task, item) {
 
 function reIdsEqual(a, b) {
     return String(a || '').trim() === String(b || '').trim();
-}
-
-function reIsProductionTask(task) {
-    return String((task && task.status) || '').toLowerCase().includes(RE_PRODUCTION_STATUS_MATCH);
 }
 
 function reResolveFeedbackId(id, remap) {
@@ -84,33 +121,6 @@ function reFeedbackAtForResolvedId(task, feedbackId) {
     return '';
 }
 
-function reQaFlagPenalizesWorker(task, flag, workerId) {
-    const flaggerId = String((flag && flag.flaggerId) || '');
-    if (flaggerId && reIdsEqual(flaggerId, workerId)) return false;
-    const cutoff = String((flag && (flag.createdAt || flag.resolutionAt)) || '').trim();
-    let hasPrior = false;
-    let hasAny = false;
-    for (const entry of (task && task.allFeedback) || []) {
-        if (!reIsHumanFeedback(entry)) continue;
-        if (!reIdsEqual(entry.reviewer && entry.reviewer.id, workerId)) continue;
-        hasAny = true;
-        const ts = reFeedbackTimestamp(entry);
-        if (!cutoff || (ts && ts < cutoff)) hasPrior = true;
-    }
-    return cutoff ? hasPrior : hasAny;
-}
-
-function reReturnTypeOf(entry) {
-    const lib = reLib();
-    if (lib && typeof lib.returnTypeOf === 'function') return lib.returnTypeOf(entry);
-    if (entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure)) return null;
-    if (entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback)) return null;
-    if (entry.isPositive) return 'accepted';
-    if (entry.isEscalated) return 'escalated';
-    if (entry.isFlaggedAsBugged) return 'bugged';
-    return 'returned';
-}
-
 function reIsHumanFeedback(entry) {
     if (!entry) return false;
     if (entry.isVerifierFailure || entry.isSystemFeedback) return false;
@@ -118,24 +128,43 @@ function reIsHumanFeedback(entry) {
     return true;
 }
 
-function reIsoWeekKey(iso) {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return null;
-    const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-    const dayNum = utc.getUTCDay() || 7;
-    utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
-    const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-    const weekNo = Math.ceil((((utc - yearStart) / RE_MS_PER_DAY) + 1) / 7);
-    return utc.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
+// Returns quality score for terminal tasks; null for in-flight (mirrors rank-workers.py task_terminal_quality).
+function reTaskTerminalQuality(task, nowMs) {
+    const status = String((task && task.status) || '').toLowerCase().trim();
+    if (!status) return null;
+    if (status === 'discarded') {
+        const createdAt = String((task && (task.createdAt || task.created_at)) || '').trim();
+        const ts = Date.parse(createdAt);
+        if (Number.isNaN(ts)) return null;
+        const ageDays = Math.max(0, (nowMs - ts) / RE_MS_PER_DAY);
+        if (ageDays < RE_DISCARDED_STALE_DAYS) return null;
+        return RE_STATUS_QUALITY.discarded;
+    }
+    const quality = RE_STATUS_QUALITY[status];
+    return quality !== undefined ? quality : null;
 }
 
-function reShrunkRate(k, n, C, prior = 0.5) {
+// Standard normal CDF approximation (Abramowitz–Stegun rational, max error ≈7.5×10⁻⁸).
+function reNormalCdf(z) {
+    const t = 1 / (1 + 0.2316419 * Math.abs(z));
+    const poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+    const pdf = Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
+    const cdf = 1 - pdf * poly;
+    return z >= 0 ? cdf : 1 - cdf;
+}
+
+// Estimated percentile via Φ((score − μ) / σ). Returns one decimal 0–100, or null.
+function reEstimatePercentile(score, params) {
+    if (score == null || !Number.isFinite(score)) return null;
+    if (!params || !Number.isFinite(params.mu) || !Number.isFinite(params.sigma) || params.sigma <= 0) return null;
+    const z = (score - params.mu) / params.sigma;
+    const pct = reNormalCdf(z) * 100;
+    return Math.max(0, Math.min(100, Math.round(pct * 10) / 10));
+}
+
+// Empirical-Bayes shrinkage toward cohort prior.
+function reShrunkRate(k, n, C, prior) {
     return (k + C * prior) / (n + C);
-}
-
-function reSpreadAxisScore(score) {
-    if (score == null || !Number.isFinite(score)) return score;
-    return Math.pow(score, RE_AXIS_SPREAD_EXPONENT);
 }
 
 function reBandLabel(score) {
@@ -147,55 +176,35 @@ function reBandLabel(score) {
     return RE_BANDS[RE_BANDS.length - 1].label;
 }
 
-function reConfidenceBadge(count90d) {
-    const n = Number(count90d) || 0;
+// TWQS confidence: based on terminal task count (mirrors rank-workers.py _confidence).
+function reTwqsConfidenceBadge(terminalCount) {
+    const n = Number(terminalCount) || 0;
     if (n < 10) return { tier: 'provisional', label: 'Provisional' };
     if (n < 50) return { tier: 'standard', label: 'Standard' };
     return { tier: 'high', label: 'High confidence' };
 }
 
-function reCoefficientOfVariation(values) {
-    if (!values.length) return 1;
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    if (mean <= 0) return 1;
-    const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
-    return Math.min(1, Math.sqrt(variance) / mean);
+// QAQS confidence: based on feedback row count (mirrors rank-qa.py _confidence).
+function reQaqsConfidenceBadge(feedbackRowCount) {
+    const n = Number(feedbackRowCount) || 0;
+    if (n < 25) return { tier: 'provisional', label: 'Provisional' };
+    if (n < 100) return { tier: 'standard', label: 'Standard' };
+    return { tier: 'high', label: 'High confidence' };
 }
 
-function reWeekKeysInSpan(startMs, endMs) {
-    const keys = new Set();
-    if (startMs == null || endMs == null || Number.isNaN(startMs) || Number.isNaN(endMs)) return keys;
-    const from = Math.min(startMs, endMs);
-    const to = Math.max(startMs, endMs);
-    for (let t = from; t <= to; t += RE_MS_PER_DAY * 7) {
-        const key = reIsoWeekKey(new Date(t).toISOString());
-        if (key) keys.add(key);
+// Returns 0 when outside date window or timestamp unparseable.
+// 'flat'    → 1.0 inside window (or always if no window)
+// 'recency' → exp(−ln(2)·age/H) inside window (or always if no window)
+function reEventWeight(isoTs, weighting, nowMs, window) {
+    const ts = Date.parse(isoTs);
+    if (Number.isNaN(ts)) return 0;
+    if (window) {
+        if (window.afterIso && isoTs < window.afterIso) return 0;
+        if (window.beforeIso && isoTs > window.beforeIso) return 0;
     }
-    const endKey = reIsoWeekKey(new Date(to).toISOString());
-    if (endKey) keys.add(endKey);
-    return keys;
-}
-
-// Activity-cadence consistency: rewards steady week-to-week presence (coverage
-// of weeks worked across the span) plus even volume when active. Outcome-agnostic.
-function reActivityConsistency(weeklyCounts, firstActivityMs, spanEndMs) {
-    const activeWeeks = weeklyCounts ? weeklyCounts.size : 0;
-    if (activeWeeks < 2) {
-        return { defined: false, score: null, activeWeeks, totalWeeks: activeWeeks };
-    }
-    const spanKeys = reWeekKeysInSpan(firstActivityMs, spanEndMs);
-    const totalWeeks = Math.max(spanKeys.size, activeWeeks);
-    const coverage = totalWeeks > 0 ? Math.min(1, activeWeeks / totalWeeks) : 0;
-    const counts = [...weeklyCounts.values()];
-    const evenness = 1 - Math.min(1, reCoefficientOfVariation(counts));
-    const score = Math.max(0, Math.min(1, 0.6 * coverage + 0.4 * evenness));
-    return { defined: true, score, activeWeeks, totalWeeks };
-}
-
-function reResolveWeightingMode(committed) {
-    const after = String((committed && committed.afterLocal) || '').trim();
-    const before = String((committed && committed.beforeLocal) || '').trim();
-    return (!after && !before) ? 'A' : 'B';
+    if (weighting === 'flat') return 1;
+    const ageDays = Math.max(0, (nowMs - ts) / RE_MS_PER_DAY);
+    return Math.exp(-Math.LN2 * ageDays / RE_HALFLIFE_DAYS);
 }
 
 function reResolveWindow(committed) {
@@ -212,18 +221,6 @@ function reResolveWindow(committed) {
         }
     }
     return { afterLocal, beforeLocal, afterIso, beforeIso };
-}
-
-function reEventWeight(isoTs, mode, nowMs, window) {
-    const ts = Date.parse(isoTs);
-    if (Number.isNaN(ts)) return 0;
-    if (mode === 'B') {
-        if (window.afterIso && isoTs < window.afterIso) return 0;
-        if (window.beforeIso && isoTs > window.beforeIso) return 0;
-        return 1;
-    }
-    const ageDays = Math.max(0, (nowMs - ts) / RE_MS_PER_DAY);
-    return Math.exp(-ageDays / RE_HALFLIFE_DAYS);
 }
 
 function reWeightedMean(pairs) {
@@ -263,118 +260,15 @@ function reHumanFeedbackChronological(task) {
         .sort((a, b) => reFeedbackTimestamp(a).localeCompare(reFeedbackTimestamp(b)));
 }
 
-function reTaskSeverityScore(task) {
-    const status = String((task && task.status) || '').toLowerCase().trim();
-    if (!status) return RE_STATUS_SEVERITY_DEFAULT;
-    if (status.includes('dismissed')) return 0.0;
-    if (status.includes('discarded')) return 0.15;
-    if (status.includes('bugged') || status.includes('escalated')) return 0.2;
-    if (status.includes('staging')) return 0.35;
-    if (status.includes('recovery')) return 0.55;
-    if (status.includes('production')) return 1.0;
-    return RE_STATUS_SEVERITY_DEFAULT;
-}
-
-function reRevisionStatusWeight(task) {
-    const status = String((task && task.status) || '').toLowerCase().trim();
-    if (!status) return 0.5;
-    if (status.includes('disputed')) return 0.55;
-    if (status.includes('production') || status.includes('discarded')
-        || status.includes('dismissed') || status.includes('staging')) return 1.0;
-    return 0.4;
-}
-
-function reCountApprovedDisputes(item) {
-    let n = 0;
-    for (const dispute of (item && item.disputes) || []) {
-        if (dispute.isApproved) n += 1;
-    }
-    return n;
-}
-
-function reEffectiveRevisionVersion(task, item) {
-    const vFinal = reFinalDisplayVersionNo(task);
-    const vEffective = vFinal - reCountApprovedDisputes(item);
-    if (vEffective <= 0) return null;
-    return vEffective;
-}
-
-function reFinalDisplayVersionNo(task) {
-    const versions = (task && task.promptVersions) || [];
-    if (!versions.length) return 1;
-    if (versions[0].displayVersionNo != null) {
-        return versions[versions.length - 1].displayVersionNo || 1;
-    }
-    const lib = reLib();
-    if (lib && typeof lib.computeDisplayVersions === 'function') {
-        const display = lib.computeDisplayVersions(versions);
-        if (display.length) return display[display.length - 1].displayVersionNo || 1;
-    }
-    return Math.max(...versions.map((v) => Number(v.version_no || v.versionNo || 1)));
-}
-
-function reCollectQaqsFeedbackRows(workerId, hydratedItems) {
-    const feedbackById = new Map();
-    for (const item of hydratedItems) {
-        const task = item.task;
-        if (!task) continue;
-        for (const entry of task.allFeedback || []) {
-            if (!reIsHumanFeedback(entry)) continue;
-            const reviewerId = entry.reviewer && entry.reviewer.id;
-            if (!reIdsEqual(reviewerId, workerId)) continue;
-            feedbackById.set(String(entry.id), { entry, task, item });
-        }
-    }
-    return [...feedbackById.values()];
-}
-
-function reComputeReturnEpisode(entry, task, mode, window, nowMs) {
-    const createdAt = reFeedbackTimestamp(entry);
-    const w = reEventWeight(createdAt, mode, nowMs, window);
-    const rt = reReturnTypeOf(entry);
-    if (rt !== 'returned') {
-        return { createdAt, weight: w, returnType: rt, episodeScore: null, rounds: null, subsequentReviewerIds: [] };
-    }
-    const allFb = reHumanFeedbackChronological(task);
-    const returnIdx = allFb.findIndex((e) => String(e.id) === String(entry.id));
-    let episodeScore = 0;
-    let rounds = null;
-    const subsequentReviewerIds = [];
-    if (returnIdx >= 0) {
-        rounds = 0;
-        let accepted = false;
-        for (let i = returnIdx + 1; i < allFb.length; i++) {
-            rounds += 1;
-            const next = allFb[i];
-            if (next.reviewer && next.reviewer.id) {
-                subsequentReviewerIds.push(String(next.reviewer.id));
-            }
-            const nextRt = reReturnTypeOf(next);
-            if (nextRt === 'accepted') {
-                accepted = true;
-                episodeScore = 1 / Math.pow(rounds, RE_RETURN_EPISODE_EXPONENT);
-                break;
-            }
-            if (nextRt === 'bugged' || nextRt === 'escalated') break;
-        }
-        if (!accepted && rounds > 0) episodeScore = 0;
-    }
-    return { createdAt, weight: w, returnType: rt, episodeScore, rounds, subsequentReviewerIds };
-}
-
-function reAxisOmitReason(axis) {
-    if (!axis || axis.defined !== false) return null;
-    switch (axis.id) {
-        case 'feedbackResolution':
-            return 'No return episodes by this QA in scope';
-        case 'reviewCallAccuracy':
-        case 'disputeOutcomes':
-            return 'No resolved disputes in scope';
-        case 'consistency':
-            return 'Fewer than 2 active calendar weeks of activity in scope';
-        default:
-            return 'Axis undefined';
-    }
+function reIsoWeekKey(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayNum = utc.getUTCDay() || 7;
+    utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+    const weekNo = Math.ceil((((utc - yearStart) / RE_MS_PER_DAY) + 1) / 7);
+    return utc.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
 }
 
 function reMedian(values) {
@@ -428,6 +322,7 @@ function reScoreBlockExport(block) {
     return {
         score: block.score,
         band: block.band,
+        estimatedPercentile: block.estimatedPercentile != null ? block.estimatedPercentile : null,
         confidence: block.confidence || null,
         axes: reSortedAxesForExport(block.axes).map(reAxisExportRow)
     };
@@ -435,19 +330,60 @@ function reScoreBlockExport(block) {
 
 function reWorkerJsonExport(workerReport) {
     const src = workerReport || {};
+    const flatTwqs = src.twqs && src.twqs.flat;
+    const recencyTwqs = src.twqs && src.twqs.recency;
+    const flatQaqs = src.qaqs && src.qaqs.flat;
+    const recencyQaqs = src.qaqs && src.qaqs.recency;
+    const flatComb = src.combined && src.combined.flat;
+    const recencyComb = src.combined && src.combined.recency;
+
+    const exportCombinedBlock = (c) => {
+        if (!c) return null;
+        return {
+            score: c.score,
+            band: c.band,
+            estimatedPercentile: c.estimatedPercentile != null ? c.estimatedPercentile : null,
+            writerRatio: c.writerRatio,
+            qaRatio: c.qaRatio,
+            nTerminal: c.nTerminal,
+            nFeedback: c.nFeedback
+        };
+    };
+
     return {
         workerId: src.workerId,
         name: src.name,
         email: src.email || '',
-        mode: src.mode,
         window: src.window || {},
         computedAt: src.computedAt || null,
         engineVersion: src.engineVersion || RE_VERSION,
         exportDate: src.exportDate || null,
-        twqs: reScoreBlockExport(src.twqs),
-        qaqs: reScoreBlockExport(src.qaqs),
-        meta: src.meta || null
+        weighting: {
+            flat: {
+                twqs: reScoreBlockExport(flatTwqs),
+                qaqs: reScoreBlockExport(flatQaqs),
+                combined: exportCombinedBlock(flatComb)
+            },
+            recency: {
+                twqs: reScoreBlockExport(recencyTwqs),
+                qaqs: reScoreBlockExport(recencyQaqs),
+                combined: exportCombinedBlock(recencyComb)
+            }
+        }
     };
+}
+
+function reAxisOmitReason(axis) {
+    if (!axis || axis.defined !== false) return null;
+    switch (axis.id) {
+        case 'disputeWinRate':
+        case 'disputeDefense':
+            return 'No resolved disputes in scope';
+        case 'returnActionability':
+            return 'No negative feedback on production tasks in scope';
+        default:
+            return 'Axis undefined';
+    }
 }
 
 function reFieldAuditRow(entry, task, workerId) {
@@ -460,13 +396,81 @@ function reFieldAuditRow(entry, task, workerId) {
         feedbackAt: ts || null,
         created_at_legacy: String((entry && entry.created_at) || '') || null,
         reviewerId: String((entry.reviewer && entry.reviewer.id) || ''),
-        returnType: reReturnTypeOf(entry),
+        returnType: (() => {
+            if (entry.isPositive) return 'accepted';
+            if (entry.isEscalated) return 'escalated';
+            if (entry.isFlaggedAsBugged) return 'bugged';
+            return 'returned';
+        })(),
         chronologicalIndex: chronoIdx,
         totalHumanFeedbackOnTask: allFb.length,
         isFirstQaOnTask: chronoIdx === 0,
         timestampResolvable: Boolean(ts)
     };
 }
+
+// Collects all QA feedback rows for a reviewer across hydrated items, deduped by feedback ID.
+// Excludes system/verifier entries and self-reviews (where reviewer === task author).
+function reCollectQaqsFeedbackRows(workerId, hydratedItems) {
+    const feedbackById = new Map();
+    for (const item of hydratedItems) {
+        const task = item.task;
+        if (!task) continue;
+        const authorId = task.author && task.author.id;
+        for (const entry of task.allFeedback || []) {
+            if (!reIsHumanFeedback(entry)) continue;
+            const reviewerId = entry.reviewer && entry.reviewer.id;
+            if (!reIdsEqual(reviewerId, workerId)) continue;
+            if (authorId && reIdsEqual(reviewerId, authorId)) continue;
+            feedbackById.set(String(entry.id), { entry, task, item });
+        }
+    }
+    return [...feedbackById.values()];
+}
+
+// ---------------------------------------------------------------------------
+// Combined score block (volume-weighted WPS + QPS blend, mirrors rank-combined.py)
+// ---------------------------------------------------------------------------
+
+function reCombinedScoreBlock(twqsBlock, qaqsBlock, nTerminal, nFeedback, weighting) {
+    const twqsScore = twqsBlock && twqsBlock.score != null ? twqsBlock.score : null;
+    const qaqsScore = qaqsBlock && qaqsBlock.score != null ? qaqsBlock.score : null;
+    const nTotal = nTerminal + nFeedback;
+
+    let score = null;
+    let writerRatio = null;
+    let qaRatio = null;
+
+    if (twqsScore != null && qaqsScore != null && nTotal > 0) {
+        score = (twqsScore * nTerminal + qaqsScore * nFeedback) / nTotal;
+        writerRatio = nTerminal / nTotal;
+        qaRatio = nFeedback / nTotal;
+    } else if (twqsScore != null) {
+        score = twqsScore;
+    } else if (qaqsScore != null) {
+        score = qaqsScore;
+    }
+
+    if (score == null) return null;
+
+    const roundedScore = Math.round(score * 10) / 10;
+    const params = RE_PERCENTILE_PARAMS.combined[weighting];
+    const estimatedPercentile = reEstimatePercentile(roundedScore, params);
+
+    return {
+        score: roundedScore,
+        band: reBandLabel(roundedScore),
+        estimatedPercentile,
+        writerRatio,
+        qaRatio,
+        nTerminal,
+        nFeedback
+    };
+}
+
+// ---------------------------------------------------------------------------
+// RatingEngine
+// ---------------------------------------------------------------------------
 
 const RatingEngine = {
     VERSION: RE_VERSION,
@@ -479,33 +483,41 @@ const RatingEngine = {
         const authorIds = [...new Set((committed.authorIds || []).filter(Boolean))];
         const hydratedItems = cachedItems.filter((item) => item && item.hydrated === true);
         const unhydratedCount = cachedItems.length - hydratedItems.length;
-        const mode = reResolveWeightingMode(committed);
         const window = reResolveWindow(committed);
         const profiles = opts.workerProfiles || {};
 
         const workers = authorIds.map((workerId) => {
             const profile = profiles[workerId] || {};
-            const twqs = this._computeTwqs(workerId, hydratedItems, mode, window, nowMs);
-            const qaqs = this._computeQaqs(workerId, hydratedItems, mode, window, nowMs);
+
+            const flatTwqs = this._computeTwqs(workerId, hydratedItems, 'flat', window, nowMs);
+            const recencyTwqs = this._computeTwqs(workerId, hydratedItems, 'recency', window, nowMs);
+            const flatQaqs = this._computeQaqs(workerId, hydratedItems, 'flat', window, nowMs);
+            const recencyQaqs = this._computeQaqs(workerId, hydratedItems, 'recency', window, nowMs);
+
+            // Volume counts are unweighted in-scope counts, shared by both variants.
+            const nTerminal = (flatTwqs && flatTwqs.display && flatTwqs.display.terminalTaskCount) || 0;
+            const nFeedback = (flatQaqs && flatQaqs.display && flatQaqs.display.inScopeFeedbackCount) || 0;
+
+            const flatCombined = reCombinedScoreBlock(flatTwqs, flatQaqs, nTerminal, nFeedback, 'flat');
+            const recencyCombined = reCombinedScoreBlock(recencyTwqs, recencyQaqs, nTerminal, nFeedback, 'recency');
+
             return {
                 workerId,
                 name: profile.name || profile.label || workerId,
                 email: profile.email || '',
-                mode,
                 window,
-                twqs,
-                qaqs,
-                meta: {
-                    hydratedCount: hydratedItems.length,
-                    unhydratedCount
-                }
+                twqs: { flat: flatTwqs, recency: recencyTwqs },
+                qaqs: { flat: flatQaqs, recency: recencyQaqs },
+                combined: (flatCombined || recencyCombined)
+                    ? { flat: flatCombined, recency: recencyCombined }
+                    : null,
+                meta: { hydratedCount: hydratedItems.length, unhydratedCount }
             };
         });
 
         return {
             version: RE_VERSION,
             computedAt: new Date(nowMs).toISOString(),
-            mode,
             window,
             workers,
             meta: {
@@ -524,373 +536,330 @@ const RatingEngine = {
         });
     },
 
-    _computeTwqs(workerId, hydratedItems, mode, window, nowMs) {
+    // Computes WPS-aligned TWQS (five-axis, rank-workers.py v1.2 formula).
+    _computeTwqs(workerId, hydratedItems, weighting, window, nowMs) {
         const writerItems = this._writerItems(workerId, hydratedItems);
         if (writerItems.length === 0) return null;
 
-        const severityEvents = [];
-        const revisionEvents = [];
-        let flagBad = 0;
-        let flagDenom = 0;
-        let disputeGood = 0;
-        let disputeDenom = 0;
-        const weeklyActivity = new Map();
-        let count90d = 0;
-        let earliestTs = null;
-        const outcomeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0 };
-        const statusCounts = {};
+        // Outcome Quality: terminal tasks, recency-weighted quality sum
+        let oqKsum = 0, oqNsum = 0, oqTerminalCount = 0;
+        // Positive Feedback Rate: all human feedback, recency-weighted
+        let pfKsum = 0, pfNsum = 0;
+        // Non-Bottom Score Rate: explicitly scored feedback only (qualityRatingRaw), recency-weighted
+        let nbKsum = 0, nbNsum = 0;
+        // First-Pass Acceptance: one per task (earliest in-scope feedback), recency-weighted
+        let fpKsum = 0, fpNsum = 0;
+        const fpSeenTasks = new Set();
+        // Dispute Win Rate: unweighted resolved disputes
+        let dwApproved = 0, dwResolved = 0;
 
-        let revisionApprovedRoundsSubtracted = 0;
-        let revisionExcludedByDisputes = 0;
+        let earliestTs = null;
 
         for (const item of writerItems) {
             const task = item.task;
-            const createdAt = reTaskTimestamp(task, item);
-            const w = reEventWeight(createdAt, mode, nowMs, window);
-            if (w <= 0) continue;
+            if (!task) continue;
+            const taskCreatedAt = reTaskTimestamp(task, item);
 
-            const severity = reTaskSeverityScore(task);
-            severityEvents.push({ value: severity, weight: w, iso: createdAt });
-            const statusKey = String((task && task.status) || '').trim() || '(missing)';
-            statusCounts[statusKey] = (statusCounts[statusKey] || 0) + 1;
-            const wk = reIsoWeekKey(createdAt);
-            if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
+            const tts = Date.parse(taskCreatedAt);
+            if (!Number.isNaN(tts) && (earliestTs == null || tts < earliestTs)) earliestTs = tts;
 
-            const approvedDisputeCount = reCountApprovedDisputes(item);
-            if (approvedDisputeCount > 0) revisionApprovedRoundsSubtracted += approvedDisputeCount;
-            const vEffective = reEffectiveRevisionVersion(task, item);
-            if (vEffective == null) {
-                revisionExcludedByDisputes += 1;
-            } else {
-                const revisionStatusW = reRevisionStatusWeight(task);
-                revisionEvents.push({
-                    value: 1 / Math.pow(vEffective, RE_REVISION_EFF_EXPONENT),
-                    weight: w * revisionStatusW,
-                    iso: createdAt
-                });
+            // Outcome Quality: terminal tasks only
+            const terminalQuality = reTaskTerminalQuality(task, nowMs);
+            const taskInScope = reEventWeight(taskCreatedAt, 'flat', nowMs, window) > 0;
+
+            if (terminalQuality !== null && taskInScope) {
+                oqTerminalCount += 1;
+                const taskW = reEventWeight(taskCreatedAt, weighting, nowMs, window);
+                if (taskW > 0) {
+                    oqKsum += terminalQuality * taskW;
+                    oqNsum += taskW;
+                }
             }
 
-            const ts = Date.parse(createdAt);
-            if (!Number.isNaN(ts)) {
-                if (earliestTs == null || ts < earliestTs) earliestTs = ts;
-                if ((nowMs - ts) <= RE_CONFIDENCE_WINDOW_MS) count90d += 1;
+            // Human feedback axes: positive rate, non-bottom, first-pass
+            const taskId = String(task.id || '');
+            const allHumanFb = reHumanFeedbackChronological(task);
+
+            for (const entry of allHumanFb) {
+                const fbAt = reFeedbackTimestamp(entry);
+                const fw = reEventWeight(fbAt, weighting, nowMs, window);
+                if (fw <= 0) continue;
+
+                // Positive Feedback Rate
+                pfNsum += fw;
+                if (entry.isPositive) pfKsum += fw;
+
+                // Non-Bottom Score Rate (explicit score labels only via qualityRatingRaw)
+                const rawRating = entry.display && entry.display.qualityRatingRaw;
+                if (rawRating === 'Average' || rawRating === 'Top 10%' || rawRating === 'Bottom 10%') {
+                    nbNsum += fw;
+                    if (rawRating !== 'Bottom 10%') nbKsum += fw;
+                }
+
+                // First-Pass Acceptance: first in-scope feedback per task
+                if (taskId && !fpSeenTasks.has(taskId)) {
+                    fpSeenTasks.add(taskId);
+                    fpNsum += fw;
+                    if (entry.isPositive) fpKsum += fw;
+                }
             }
 
-            for (const entry of reHumanFeedbackChronological(task)) {
-                const rt = reReturnTypeOf(entry);
-                if (rt && outcomeCounts[rt] != null) outcomeCounts[rt] += 1;
-            }
-
-            flagDenom += w;
-            for (const flag of item.flags || []) {
-                if (!flag.isConfirmed) continue;
-                if (!RE_WRITER_FLAG_REASONS.has(flag.reasonKey)) continue;
-                const flagTs = flag.resolutionAt || flag.createdAt || createdAt;
-                const fw = reEventWeight(flagTs, mode, nowMs, window);
-                if (fw > 0) flagBad += fw;
-            }
-
+            // Dispute Win Rate: unweighted but respects date window
             for (const dispute of item.disputes || []) {
                 if (!dispute.resolutionAt) continue;
-                const dw = reEventWeight(dispute.resolutionAt, mode, nowMs, window);
-                if (dw <= 0) continue;
-                disputeDenom += dw;
-                if (dispute.isApproved) disputeGood += dw;
+                if (reEventWeight(dispute.resolutionAt, 'flat', nowMs, window) <= 0) continue;
+                dwResolved += 1;
+                if (dispute.isApproved) dwApproved += 1;
             }
         }
 
-        const wSumSeverity = severityEvents.reduce((s, e) => s + e.weight, 0);
-        const severityMean = reWeightedMean(severityEvents);
-        const acceptanceScore = severityMean != null && wSumSeverity > 0
-            ? (severityMean * wSumSeverity + RE_ACCEPTANCE_SHRINK_C * RE_ACCEPTANCE_SHRINK_PRIOR)
-                / (wSumSeverity + RE_ACCEPTANCE_SHRINK_C)
-            : 0.5;
-
-        const revisionScore = reWeightedMean(revisionEvents);
-        const revisionAxisScore = revisionScore != null ? revisionScore : 0.5;
-
-        const srScore = flagDenom > 0
-            ? 1 - reShrunkRate(flagBad, flagDenom, RE_SR_SHRINK_C, RE_SR_PENALTY_PRIOR)
-            : 0.5;
-
-        let disputeScore = null;
-        let disputeDefined = false;
-        if (disputeDenom > 0) {
-            disputeDefined = true;
-            disputeScore = reShrunkRate(disputeGood, disputeDenom, RE_DISPUTE_SHRINK_C);
-        }
-
-        const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
-            ? Date.parse(window.beforeIso)
-            : nowMs;
-        const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
+        const oqScore = reShrunkRate(oqKsum, oqNsum, RE_TWQS_C.outcomeQuality, RE_TWQS_PRIOR.outcomeQuality);
+        const pfScore = reShrunkRate(pfKsum, pfNsum, RE_TWQS_C.positiveFeedbackRate, RE_TWQS_PRIOR.positiveFeedbackRate);
+        const nbScore = reShrunkRate(nbKsum, nbNsum, RE_TWQS_C.nonBottomScoreRate, RE_TWQS_PRIOR.nonBottomScoreRate);
+        const fpScore = reShrunkRate(fpKsum, fpNsum, RE_TWQS_C.firstPassAcceptance, RE_TWQS_PRIOR.firstPassAcceptance);
+        const dwDefined = dwResolved > 0;
+        const dwScore = dwDefined ? reShrunkRate(dwApproved, dwResolved, RE_TWQS_C.disputeWinRate, RE_TWQS_PRIOR.disputeWinRate) : null;
 
         const axes = RE_TWQS_AXES.map((def) => {
             let score = null;
             let defined = true;
             let raw = {};
             switch (def.id) {
-                case 'acceptanceSeverity':
-                    score = acceptanceScore;
-                    raw = { severityMean, eventCount: severityEvents.length, statusCounts, outcomeCounts };
-                    break;
-                case 'revisionEfficiency':
-                    score = revisionAxisScore;
+                case 'outcomeQuality':
+                    score = oqScore;
                     raw = {
-                        revisionEventCount: revisionEvents.length,
-                        approvedDisputeRoundsSubtracted: revisionApprovedRoundsSubtracted,
-                        revisionExcludedByDisputes
+                        terminalTaskCount: oqTerminalCount,
+                        weightedQualitySum: Math.round(oqKsum * 1000) / 1000,
+                        weightedN: Math.round(oqNsum * 1000) / 1000
                     };
                     break;
-                case 'srReviewIntegrity':
-                    score = srScore;
-                    raw = { confirmedNegativeFlags: flagBad, submissionWeight: flagDenom };
+                case 'positiveFeedbackRate':
+                    score = pfScore;
+                    raw = {
+                        weightedPositive: Math.round(pfKsum * 1000) / 1000,
+                        weightedTotal: Math.round(pfNsum * 1000) / 1000
+                    };
                     break;
-                case 'disputeOutcomes':
-                    defined = disputeDefined;
-                    score = disputeDefined ? disputeScore : null;
-                    raw = { approvedWeight: disputeGood, resolvedWeight: disputeDenom };
+                case 'nonBottomScoreRate':
+                    score = nbScore;
+                    raw = {
+                        weightedNonBottom: Math.round(nbKsum * 1000) / 1000,
+                        weightedScored: Math.round(nbNsum * 1000) / 1000
+                    };
                     break;
-                case 'consistency':
-                    defined = consistencyResult.defined;
-                    score = consistencyResult.defined ? consistencyResult.score : null;
-                    raw = { activeWeeks: consistencyResult.activeWeeks, totalWeeks: consistencyResult.totalWeeks };
+                case 'firstPassAcceptance':
+                    score = fpScore;
+                    raw = {
+                        weightedAccepted: Math.round(fpKsum * 1000) / 1000,
+                        weightedEligible: Math.round(fpNsum * 1000) / 1000,
+                        taskCount: fpSeenTasks.size
+                    };
+                    break;
+                case 'disputeWinRate':
+                    defined = dwDefined;
+                    score = dwScore;
+                    raw = { approved: dwApproved, resolved: dwResolved };
                     break;
                 default:
                     break;
             }
-            return {
-                id: def.id,
-                label: def.label,
-                baseWeight: def.weight,
-                score: defined && score != null ? reSpreadAxisScore(score) : score,
-                defined,
-                raw
-            };
+            return { id: def.id, label: def.label, baseWeight: def.weight, score, defined, raw };
         });
 
         const combined = reCombineAxes(axes);
-        const tenureDays = earliestTs != null
-            ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
-            : null;
-
-        return {
-            ...combined,
-            confidence: reConfidenceBadge(count90d),
-            display: {
-                submissionCount: writerItems.length,
-                trailing90dSubmissions: count90d,
-                tenureDays,
-                outcomeCounts
-            },
-            raw: {
-                severityEvents: severityEvents.length,
-                revisionEvents: revisionEvents.length,
-                flagBad,
-                flagDenom,
-                disputeGood,
-                disputeDenom
-            }
+        const params = RE_PERCENTILE_PARAMS.twqs[weighting] || {};
+        combined.estimatedPercentile = reEstimatePercentile(combined.score, params);
+        combined.confidence = reTwqsConfidenceBadge(oqTerminalCount);
+        combined.display = {
+            writerItemCount: writerItems.length,
+            terminalTaskCount: oqTerminalCount,
+            tenureDays: earliestTs != null
+                ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
+                : null
         };
+        combined.raw = {
+            oqKsum: Math.round(oqKsum * 1000) / 1000,
+            oqNsum: Math.round(oqNsum * 1000) / 1000,
+            pfKsum: Math.round(pfKsum * 1000) / 1000,
+            pfNsum: Math.round(pfNsum * 1000) / 1000,
+            nbKsum: Math.round(nbKsum * 1000) / 1000,
+            nbNsum: Math.round(nbNsum * 1000) / 1000,
+            fpKsum: Math.round(fpKsum * 1000) / 1000,
+            fpNsum: Math.round(fpNsum * 1000) / 1000,
+            dwApproved,
+            dwResolved
+        };
+
+        return combined;
     },
 
-    _computeQaqs(workerId, hydratedItems, mode, window, nowMs) {
+    // Computes QPS-aligned QAQS (four-axis, rank-qa.py v2.1 formula).
+    _computeQaqs(workerId, hydratedItems, weighting, window, nowMs) {
         const feedbackRows = reCollectQaqsFeedbackRows(workerId, hydratedItems);
         if (feedbackRows.length === 0) return null;
 
-        const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
-        const returnEpisodes = [];
-        let flagBad = 0;
-        let flagDenom = 0;
-        let raisedGood = 0;
-        let raisedDenom = 0;
-        let disputeGood = 0;
-        let disputeDenom = 0;
-        const weeklyActivity = new Map();
-        let count90d = 0;
+        // Return Effectiveness: neg feedback on terminal tasks → production
+        let reKsum = 0, reNsum = 0;
+        // Return Actionability: neg on production → next human row positive?
+        let raKsum = 0, raNsum = 0;
+        // Label Discrimination: explicit score labels (qualityRatingRaw)
+        let ldKsum = 0, ldNsum = 0;
+        // Dispute Defense: sole-neg attribution (unweighted)
+        let ddUpheld = 0, ddDenom = 0;
+
+        let inScopeFeedbackCount = 0;
         let earliestTs = null;
 
         for (const { entry, task } of feedbackRows) {
-            const createdAt = reFeedbackTimestamp(entry);
-            const w = reEventWeight(createdAt, mode, nowMs, window);
-            if (w <= 0) continue;
+            const fbAt = reFeedbackTimestamp(entry);
+            const inScope = reEventWeight(fbAt, 'flat', nowMs, window) > 0;
+            if (!inScope) continue;
 
-            flagDenom += w;
-            const ts = Date.parse(createdAt);
-            if (!Number.isNaN(ts)) {
-                if (earliestTs == null || ts < earliestTs) earliestTs = ts;
-                if ((nowMs - ts) <= RE_CONFIDENCE_WINDOW_MS) count90d += 1;
+            inScopeFeedbackCount += 1;
+            const ts = Date.parse(fbAt);
+            if (!Number.isNaN(ts) && (earliestTs == null || ts < earliestTs)) earliestTs = ts;
+
+            const fw = reEventWeight(fbAt, weighting, nowMs, window);
+            const taskStatus = String((task && task.status) || '').toLowerCase().trim();
+
+            // Return Effectiveness: neg feedback on terminal tasks
+            if (!entry.isPositive) {
+                const termQ = reTaskTerminalQuality(task, nowMs);
+                if (termQ !== null) {
+                    reNsum += fw;
+                    if (taskStatus === 'production') reKsum += fw;
+                }
             }
 
-            const wk = reIsoWeekKey(createdAt);
-            if (wk) weeklyActivity.set(wk, (weeklyActivity.get(wk) || 0) + 1);
+            // Return Actionability: neg on production → next human row positive?
+            if (!entry.isPositive && taskStatus === 'production') {
+                raNsum += fw;
+                const allHuman = reHumanFeedbackChronological(task);
+                const idx = allHuman.findIndex((e) => reIdsEqual(e.id, entry.id));
+                if (idx >= 0 && idx + 1 < allHuman.length && allHuman[idx + 1].isPositive) {
+                    raKsum += fw;
+                }
+            }
 
-            const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
-            if (episode.returnType === 'returned' && reIsProductionTask(task)) {
-                returnEpisodes.push({
-                    value: episode.episodeScore,
-                    weight: w,
-                    iso: createdAt,
-                    rounds: episode.rounds
-                });
+            // Label Discrimination: explicit score labels only (qualityRatingRaw)
+            const rawRating = entry.display && entry.display.qualityRatingRaw;
+            if (rawRating === 'Average' || rawRating === 'Top 10%' || rawRating === 'Bottom 10%') {
+                ldNsum += fw;
+                if (rawRating !== 'Average') ldKsum += fw;
             }
         }
 
+        // Dispute Defense: sole-neg reviewer attribution (mirrors fill_dispute_defense).
+        // A dispute is attributed to workerId only if workerId is the sole distinct
+        // negative reviewer on that task. Counts are unweighted.
         for (const item of hydratedItems) {
             const task = item.task;
             if (!task) continue;
-            const remap = task.systemFeedbackIdRemap || {};
 
-            for (const flag of item.flags || []) {
-                if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-
-                if (flag.isConfirmed && reQaFlagPenalizesWorker(task, flag, workerId)) {
-                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
-                    const fw = reEventWeight(flagTs, mode, nowMs, window);
-                    if (fw > 0) flagBad += fw;
-                }
-
-                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
-                    const flagTs = flag.resolutionAt || flag.createdAt || item.sortAt || '';
-                    const fw = reEventWeight(flagTs, mode, nowMs, window);
-                    if (fw > 0) {
-                        raisedDenom += fw;
-                        if (flag.isConfirmed) raisedGood += fw;
-                    }
+            // Collect distinct neg reviewer IDs on this task
+            const negReviewerIds = new Set();
+            for (const entry of task.allFeedback || []) {
+                if (!reIsHumanFeedback(entry)) continue;
+                if (!entry.isPositive) {
+                    const rid = entry.reviewer && entry.reviewer.id;
+                    if (rid) negReviewerIds.add(String(rid));
                 }
             }
+
+            if (negReviewerIds.size !== 1) continue;
+            const soleNegId = [...negReviewerIds][0];
+            if (!reIdsEqual(soleNegId, workerId)) continue;
 
             for (const dispute of item.disputes || []) {
                 if (!dispute.resolutionAt) continue;
-                const fid = reResolveFeedbackId(dispute.feedbackId, remap);
-                if (!fid || !feedbackIds.has(fid)) continue;
-                const weightTs = reFeedbackAtForResolvedId(task, fid);
-                const dw = reEventWeight(weightTs, mode, nowMs, window);
-                if (dw <= 0) continue;
-                disputeDenom += dw;
-                if (dispute.isRejected) disputeGood += dw;
+                if (reEventWeight(dispute.resolutionAt, 'flat', nowMs, window) <= 0) continue;
+                ddDenom += 1;
+                if (dispute.isRejected) ddUpheld += 1;
             }
         }
 
-        let resolutionScore = null;
-        let resolutionDefined = false;
-        if (returnEpisodes.length > 0) {
-            resolutionDefined = true;
-            const mean = reWeightedMean(returnEpisodes);
-            const n = returnEpisodes.length;
-            resolutionScore = mean != null
-                ? (mean * n + RE_QAQS_RESOLUTION_SHRINK_C * RE_QAQS_RESOLUTION_SHRINK_PRIOR)
-                    / (n + RE_QAQS_RESOLUTION_SHRINK_C)
-                : null;
-        }
-
-        let disputeScore = null;
-        let disputeDefined = false;
-        if (disputeDenom > 0) {
-            disputeDefined = true;
-            disputeScore = reShrunkRate(disputeGood, disputeDenom, RE_DISPUTE_SHRINK_C);
-        }
-
-        const penaltyScore = flagDenom > 0
-            ? 1 - reShrunkRate(flagBad, flagDenom, RE_SR_SHRINK_C, RE_SR_PENALTY_PRIOR)
-            : 0.5;
-        const raisedScore = raisedDenom > 0
-            ? reShrunkRate(raisedGood, raisedDenom, RE_SR_SHRINK_C)
-            : 0.5;
-        const srScore = RE_QAQS_SR_PENALTY_BLEND * penaltyScore + RE_QAQS_SR_RAISED_BLEND * raisedScore;
-
-        const spanEndMs = (mode === 'B' && window && window.beforeIso && !Number.isNaN(Date.parse(window.beforeIso)))
-            ? Date.parse(window.beforeIso)
-            : nowMs;
-        const consistencyResult = reActivityConsistency(weeklyActivity, earliestTs, spanEndMs);
-
-        const roundsList = returnEpisodes.map((e) => e.rounds).filter((r) => r != null && r > 0);
-        const oneRoundCount = returnEpisodes.filter((e) => e.rounds === 1).length;
+        // Shrunk scores.
+        // returnEffectiveness and labelDiscrimination are always defined (prior when n=0).
+        const reScore = reShrunkRate(reKsum, reNsum, RE_QAQS_RET_EFF_C, RE_QAQS_RET_EFF_PRIOR);
+        const raDefined = raNsum > 0;
+        const raScore = raDefined ? reShrunkRate(raKsum, raNsum, RE_QAQS_RET_ACT_C, RE_QAQS_RET_ACT_PRIOR) : null;
+        const ldScore = reShrunkRate(ldKsum, ldNsum, RE_QAQS_LABEL_DISC_C, RE_QAQS_LABEL_DISC_PRIOR);
+        const ddDefined = ddDenom > 0;
+        const ddScore = ddDefined ? reShrunkRate(ddUpheld, ddDenom, RE_QAQS_DISPUTE_DEF_C, RE_QAQS_DISPUTE_DEF_PRIOR) : null;
 
         const axes = RE_QAQS_AXES.map((def) => {
             let score = null;
             let defined = true;
             let raw = {};
             switch (def.id) {
-                case 'feedbackResolution':
-                    defined = resolutionDefined;
-                    score = resolutionDefined ? resolutionScore : null;
-                    raw = { returnEpisodeCount: returnEpisodes.length };
-                    break;
-                case 'reviewCallAccuracy':
-                    defined = disputeDefined;
-                    score = disputeDefined ? disputeScore : null;
-                    raw = { upheldWeight: disputeGood, resolvedWeight: disputeDenom };
-                    break;
-                case 'srReviewIntegrity':
-                    score = srScore;
+                case 'returnEffectiveness':
+                    score = reScore;
                     raw = {
-                        confirmedFlags: flagBad,
-                        feedbackWeight: flagDenom,
-                        penaltyScore,
-                        raisedConfirmedWeight: raisedGood,
-                        raisedResolvedWeight: raisedDenom,
-                        raisedScore
+                        weightedResolved: Math.round(reKsum * 1000) / 1000,
+                        weightedNegTerminal: Math.round(reNsum * 1000) / 1000
                     };
                     break;
-                case 'consistency':
-                    defined = consistencyResult.defined;
-                    score = consistencyResult.defined ? consistencyResult.score : null;
-                    raw = { activeWeeks: consistencyResult.activeWeeks, totalWeeks: consistencyResult.totalWeeks };
+                case 'returnActionability':
+                    defined = raDefined;
+                    score = raScore;
+                    raw = {
+                        weightedOneRound: Math.round(raKsum * 1000) / 1000,
+                        weightedNegProduction: Math.round(raNsum * 1000) / 1000
+                    };
+                    break;
+                case 'disputeDefense':
+                    defined = ddDefined;
+                    score = ddScore;
+                    raw = { upheld: ddUpheld, resolved: ddDenom };
+                    break;
+                case 'labelDiscrimination':
+                    score = ldScore;
+                    raw = {
+                        weightedNonStd: Math.round(ldKsum * 1000) / 1000,
+                        weightedScored: Math.round(ldNsum * 1000) / 1000
+                    };
                     break;
                 default:
                     break;
             }
-            return {
-                id: def.id,
-                label: def.label,
-                baseWeight: def.weight,
-                score: defined && score != null ? reSpreadAxisScore(score) : score,
-                defined,
-                raw
-            };
+            return { id: def.id, label: def.label, baseWeight: def.weight, score, defined, raw };
         });
 
         const combined = reCombineAxes(axes);
-        const tenureDays = earliestTs != null
-            ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
-            : null;
-
-        return {
-            ...combined,
-            confidence: reConfidenceBadge(count90d),
-            display: {
-                feedbackRowCount: feedbackRows.length,
-                trailing90dFeedbackRows: count90d,
-                tenureDays,
-                returnEpisodeCount: returnEpisodes.length,
-                medianRoundsToAccept: reMedian(roundsList),
-                oneRoundPct: returnEpisodes.length
-                    ? Math.round((oneRoundCount / returnEpisodes.length) * 1000) / 10
-                    : null
-            },
-            raw: {
-                returnEpisodes: returnEpisodes.length,
-                flagBad,
-                flagDenom,
-                raisedGood,
-                raisedDenom,
-                disputeGood,
-                disputeDenom
-            }
+        const params = RE_PERCENTILE_PARAMS.qaqs[weighting] || {};
+        combined.estimatedPercentile = reEstimatePercentile(combined.score, params);
+        combined.confidence = reQaqsConfidenceBadge(inScopeFeedbackCount);
+        combined.display = {
+            feedbackRowCount: feedbackRows.length,
+            inScopeFeedbackCount,
+            tenureDays: earliestTs != null
+                ? Math.max(0, Math.round((nowMs - earliestTs) / RE_MS_PER_DAY))
+                : null,
+            negOnTerminalCount: Math.round(reNsum),
+            negOnProductionCount: Math.round(raNsum)
         };
+        combined.raw = {
+            reKsum: Math.round(reKsum * 1000) / 1000,
+            reNsum: Math.round(reNsum * 1000) / 1000,
+            raKsum: Math.round(raKsum * 1000) / 1000,
+            raNsum: Math.round(raNsum * 1000) / 1000,
+            ldKsum: Math.round(ldKsum * 1000) / 1000,
+            ldNsum: Math.round(ldNsum * 1000) / 1000,
+            ddUpheld,
+            ddDenom
+        };
+
+        return combined;
     },
 
     buildDiagnosticsReport(workerReport, context) {
         const ctx = context || {};
         const cachedItems = (ctx.cachedItems || []).filter((item) => item && item.hydrated === true);
         const workerId = workerReport.workerId;
-        const mode = workerReport.mode || reResolveWeightingMode(ctx.committed);
         const window = workerReport.window || reResolveWindow(ctx.committed);
         const nowMs = Date.parse(workerReport.computedAt) || Date.now();
 
         const feedbackRows = reCollectQaqsFeedbackRows(workerId, cachedItems);
-        const feedbackRowsRaw = [];
         let feedbackRowsBeforeDedupe = 0;
         for (const item of cachedItems) {
             const task = item.task;
@@ -904,49 +873,33 @@ const RatingEngine = {
 
         const returnTypeCounts = { accepted: 0, returned: 0, escalated: 0, bugged: 0, other: 0 };
         let timestampMissingCount = 0;
-        let weightedFeedbackRows = 0;
-        const returnEpisodeDetails = [];
+        let inScopeCount = 0;
         const fieldAuditSamples = [];
         const seenAuditIds = new Set();
 
         for (const { entry, task } of feedbackRows) {
             const ts = reFeedbackTimestamp(entry);
             if (!ts) timestampMissingCount += 1;
-            const w = reEventWeight(ts, mode, nowMs, window);
-            if (w > 0) weightedFeedbackRows += 1;
+            if (reEventWeight(ts, 'flat', nowMs, window) > 0) inScopeCount += 1;
 
-            const rt = reReturnTypeOf(entry) || 'other';
-            if (returnTypeCounts[rt] != null) returnTypeCounts[rt] += 1;
+            if (entry.isPositive) returnTypeCounts.accepted += 1;
+            else if (entry.isEscalated) returnTypeCounts.escalated += 1;
+            else if (entry.isFlaggedAsBugged) returnTypeCounts.bugged += 1;
+            else if (!entry.isSystemFeedback) returnTypeCounts.returned += 1;
             else returnTypeCounts.other += 1;
 
             const audit = reFieldAuditRow(entry, task, workerId);
-            const isAnomalous = !audit.timestampResolvable || rt === 'returned';
+            const isAnomalous = !audit.timestampResolvable;
             if (fieldAuditSamples.length < RE_DIAG_SAMPLE_ROWS || isAnomalous) {
                 if (!seenAuditIds.has(audit.feedbackId)) {
                     seenAuditIds.add(audit.feedbackId);
                     fieldAuditSamples.push(audit);
                 }
             }
-
-            const episode = reComputeReturnEpisode(entry, task, mode, window, nowMs);
-            if (episode.returnType === 'returned') {
-                returnEpisodeDetails.push({
-                    feedbackId: String(entry.id),
-                    taskId: String(task.id),
-                    feedbackAt: episode.createdAt || null,
-                    roundsToAccept: episode.rounds,
-                    episodeScore: episode.episodeScore,
-                    subsequentReviewerIds: episode.subsequentReviewerIds,
-                    taskStatus: String((task && task.status) || '') || null,
-                    countedInResolution: reIsProductionTask(task)
-                });
-            }
         }
 
         const feedbackIds = new Set(feedbackRows.map((r) => String(r.entry.id)));
         const disputesInScope = [];
-        const flagsInScope = [];
-        const flagsRaisedInScope = [];
 
         for (const item of cachedItems) {
             const task = item.task;
@@ -960,67 +913,30 @@ const RatingEngine = {
             for (const dispute of item.disputes || []) {
                 const rawFid = String(dispute.feedbackId || '').trim();
                 const resolvedFid = reResolveFeedbackId(dispute.feedbackId, remap);
-                const matchesWorker = resolvedFid && feedbackIds.has(resolvedFid);
                 disputesInScope.push({
                     disputeId: String(dispute.id || ''),
                     feedbackId: rawFid,
                     resolvedFeedbackId: resolvedFid,
-                    feedbackAt: reFeedbackAtForResolvedId(task, resolvedFid) || null,
-                    matchesWorker,
+                    matchesWorkerFeedback: Boolean(resolvedFid && feedbackIds.has(resolvedFid)),
                     status: dispute.status || null,
                     resolutionAt: dispute.resolutionAt || null,
                     isRejected: Boolean(dispute.isRejected),
                     isApproved: Boolean(dispute.isApproved)
                 });
             }
-
-            for (const flag of item.flags || []) {
-                if (flag.reasonKey !== RE_QA_FLAG_REASON) continue;
-
-                if (reQaFlagPenalizesWorker(task, flag, workerId) && flag.isConfirmed) {
-                    flagsInScope.push({
-                        flagId: String(flag.id || ''),
-                        taskId: String(task.id || ''),
-                        flaggerId: String(flag.flaggerId || '') || null,
-                        reasonKey: flag.reasonKey,
-                        status: flag.status || null,
-                        isConfirmed: Boolean(flag.isConfirmed),
-                        resolutionAt: flag.resolutionAt || null,
-                        attributedToWorker: true
-                    });
-                }
-
-                if (reIdsEqual(flag.flaggerId, workerId) && (flag.isConfirmed || flag.isDismissed)) {
-                    flagsRaisedInScope.push({
-                        flagId: String(flag.id || ''),
-                        taskId: String(task.id || ''),
-                        reasonKey: flag.reasonKey,
-                        status: flag.status || null,
-                        isConfirmed: Boolean(flag.isConfirmed),
-                        isDismissed: Boolean(flag.isDismissed),
-                        resolutionAt: flag.resolutionAt || null,
-                        raisedByWorker: true
-                    });
-                }
-            }
         }
 
-        const qaqsAxisDebug = (workerReport.qaqs && workerReport.qaqs.axes || []).map((p) => ({
-            id: p.id,
-            label: p.label,
-            defined: p.defined !== false,
-            whyOmitted: reAxisOmitReason(p),
-            score: p.score,
-            raw: p.raw || {}
+        const recencyTwqs = workerReport.twqs && workerReport.twqs.recency;
+        const recencyQaqs = workerReport.qaqs && workerReport.qaqs.recency;
+
+        const qaqsAxisDebug = ((recencyQaqs && recencyQaqs.axes) || []).map((p) => ({
+            id: p.id, label: p.label, defined: p.defined !== false,
+            whyOmitted: reAxisOmitReason(p), score: p.score, raw: p.raw || {}
         }));
 
-        const twqsAxisDebug = (workerReport.twqs && workerReport.twqs.axes || []).map((p) => ({
-            id: p.id,
-            label: p.label,
-            defined: p.defined !== false,
-            whyOmitted: reAxisOmitReason(p),
-            score: p.score,
-            raw: p.raw || {}
+        const twqsAxisDebug = ((recencyTwqs && recencyTwqs.axes) || []).map((p) => ({
+            id: p.id, label: p.label, defined: p.defined !== false,
+            whyOmitted: reAxisOmitReason(p), score: p.score, raw: p.raw || {}
         }));
 
         return {
@@ -1030,7 +946,6 @@ const RatingEngine = {
                 workerId,
                 name: workerReport.name || workerId,
                 email: workerReport.email || '',
-                mode,
                 window,
                 hydratedCount: cachedItems.length,
                 unhydratedCount: ctx.unhydratedCount != null
@@ -1049,44 +964,45 @@ const RatingEngine = {
             qaqs: {
                 feedbackRowsBeforeDedupe,
                 feedbackRowsDeduped: feedbackRows.length,
+                inScopeCount,
                 timestampMissingCount,
-                weightedFeedbackRows,
                 returnTypeCounts,
-                returnEpisodes: returnEpisodeDetails,
                 disputesInScope,
-                flagsInScope,
-                flagsRaisedInScope,
                 axisDebug: qaqsAxisDebug
             },
-            twqs: workerReport.twqs ? {
+            twqs: recencyTwqs ? {
                 writerItemCount: this._writerItems(workerId, cachedItems).length,
                 axisDebug: twqsAxisDebug
             } : null,
             scores: {
-                twqs: workerReport.twqs ? {
-                    score: workerReport.twqs.score,
-                    band: workerReport.twqs.band
-                } : null,
-                qaqs: workerReport.qaqs ? {
-                    score: workerReport.qaqs.score,
-                    band: workerReport.qaqs.band
-                } : null
+                flat: {
+                    twqs: workerReport.twqs && workerReport.twqs.flat
+                        ? { score: workerReport.twqs.flat.score, band: workerReport.twqs.flat.band } : null,
+                    qaqs: workerReport.qaqs && workerReport.qaqs.flat
+                        ? { score: workerReport.qaqs.flat.score, band: workerReport.qaqs.flat.band } : null,
+                    combined: workerReport.combined && workerReport.combined.flat
+                        ? { score: workerReport.combined.flat.score, band: workerReport.combined.flat.band } : null
+                },
+                recency: {
+                    twqs: recencyTwqs ? { score: recencyTwqs.score, band: recencyTwqs.band } : null,
+                    qaqs: recencyQaqs ? { score: recencyQaqs.score, band: recencyQaqs.band } : null,
+                    combined: workerReport.combined && workerReport.combined.recency
+                        ? { score: workerReport.combined.recency.score, band: workerReport.combined.recency.band } : null
+                }
             }
         };
     },
 
     buildExportFilename(workerReport, scoreType, ext) {
         const name = reSlugify(workerReport.name || workerReport.workerId);
-        const mode = workerReport.mode === 'B' ? 'window' : 'lifetime';
         const date = (workerReport.exportDate || new Date().toISOString().slice(0, 10));
-        return 'rating-' + name + '-' + scoreType + '-' + mode + '-' + date + '.' + ext;
+        return 'rating-' + name + '-' + scoreType + '-' + date + '.' + ext;
     },
 
     buildDiagnosticsFilename(workerReport) {
         const name = reSlugify(workerReport.name || workerReport.workerId);
-        const mode = workerReport.mode === 'B' ? 'window' : 'lifetime';
         const date = (workerReport.exportDate || new Date().toISOString().slice(0, 10));
-        return 'rating-' + name + '-diagnostics-' + mode + '-' + date + '.json';
+        return 'rating-' + name + '-diagnostics-' + date + '.json';
     },
 
     serializeJson(report) {
@@ -1104,7 +1020,6 @@ const RatingEngine = {
         lines.push('- **Worker:** ' + (workerReport.name || workerReport.workerId));
         if (workerReport.email) lines.push('- **Email:** ' + workerReport.email);
         lines.push('- **Computed:** ' + (workerReport.computedAt || new Date().toISOString()));
-        lines.push('- **Weighting mode:** ' + (workerReport.mode === 'B' ? 'Mode B (flat window)' : 'Mode A (recency decay)'));
         const win = workerReport.window || {};
         if (win.afterLocal || win.beforeLocal) {
             lines.push('- **Window:** ' + (win.afterLocal || '…') + ' → ' + (win.beforeLocal || '…'));
@@ -1115,10 +1030,14 @@ const RatingEngine = {
         lines.push('');
 
         const renderScoreBlock = (title, block) => {
-            if (!block) return;
+            if (!block || block.score == null) return;
             lines.push('## ' + title);
             lines.push('');
-            lines.push('**Score:** ' + block.score + ' / 100 · ' + block.band);
+            let scoreStr = String(Math.round(block.score)) + ' / 100 · ' + block.band;
+            if (block.estimatedPercentile != null) {
+                scoreStr += ' · ~' + block.estimatedPercentile + 'th pct (estimated)';
+            }
+            lines.push('**Score:** ' + scoreStr);
             lines.push('**Confidence:** ' + (block.confidence && block.confidence.label));
             lines.push('');
             lines.push('| Axis | Sub-score | Weight |');
@@ -1131,24 +1050,40 @@ const RatingEngine = {
                 lines.push('| ' + p.label + ' | ' + sc + ' | ' + wt + ' |');
             }
             lines.push('');
-            if (block.display) {
-                lines.push('### Display stats');
-                for (const [k, v] of Object.entries(block.display)) {
-                    lines.push('- **' + k + ':** ' + JSON.stringify(v));
-                }
-                lines.push('');
-            }
-            if (block.raw) {
-                lines.push('### Raw inputs');
-                lines.push('```json');
-                lines.push(JSON.stringify(block.raw, null, 2));
-                lines.push('```');
-                lines.push('');
-            }
         };
 
-        renderScoreBlock('Task Writer Quality Score (TWQS)', workerReport.twqs);
-        renderScoreBlock('QA Quality Score (QAQS)', workerReport.qaqs);
+        const renderCombinedBlock = (title, block) => {
+            if (!block || block.score == null) return;
+            lines.push('## ' + title);
+            lines.push('');
+            let scoreStr = String(Math.round(block.score)) + ' / 100 · ' + block.band;
+            if (block.estimatedPercentile != null) {
+                scoreStr += ' · ~' + block.estimatedPercentile + 'th pct (estimated)';
+            }
+            lines.push('**Score:** ' + scoreStr);
+            if (block.writerRatio != null) {
+                lines.push('**Volume blend:** ' + Math.round(block.writerRatio * 100) + '% writer + '
+                    + Math.round(block.qaRatio * 100) + '% QA (' + block.nTerminal + ' tasks / ' + block.nFeedback + ' feedbacks)');
+            }
+            lines.push('');
+        };
+
+        for (const weighting of ['recency', 'flat']) {
+            const label = weighting === 'recency' ? 'Recency-weighted (90-day half-life)' : 'Flat-weighted';
+            const twqs = workerReport.twqs && workerReport.twqs[weighting];
+            const qaqs = workerReport.qaqs && workerReport.qaqs[weighting];
+            const comb = workerReport.combined && workerReport.combined[weighting];
+
+            if (twqs || qaqs) {
+                lines.push('---');
+                lines.push('');
+                lines.push('# ' + label);
+                lines.push('');
+                renderScoreBlock('Task Writer Quality Score (TWQS)', twqs);
+                renderScoreBlock('QA Quality Score (QAQS)', qaqs);
+                renderCombinedBlock('Combined Score', comb);
+            }
+        }
 
         if (workerReport.meta) {
             lines.push('## Meta');
@@ -1163,8 +1098,8 @@ const RatingEngine = {
 const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
-    description: 'TWQS and QAQS computation for Worker Output Search ratings',
-    _version: '1.15',
+    description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1176,6 +1111,6 @@ const plugin = {
         }
         Context.ratingEngine = RatingEngine;
         if (state) state.registered = true;
-        Logger.log('rating-engine: module registered (Context.ratingEngine)');
+        Logger.log('rating-engine: module registered (Context.ratingEngine) v' + RE_VERSION);
     }
 };

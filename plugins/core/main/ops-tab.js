@@ -198,7 +198,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -332,6 +332,12 @@ const plugin = {
             isSessionRefreshRequiredError: (err) => this._isOpsSessionRefreshRequiredError(err),
             getFleetUserJwt: (pageWindow) => this._getOpsFleetUserJwt(pageWindow),
             getCurrentUserId: () => this._getOpsCurrentUserId(),
+            hasTeamSearchCredentials: () => {
+                this._loadOpsTeamSearchActionFromStorage();
+                return !!this._opsTeamSearchActionCache.nextAction;
+            },
+            fetchTeamSearchAllMembers: (teamId, userId, query, sessionId, signal) =>
+                this._fetchOpsTeamSearchAllMembers(teamId, userId, query, sessionId, signal),
             getTaskDataActionCache: () => this._opsTaskDataActionCache,
             fetchTaskDataRsc: (taskKey, taskUuid) => this._fetchOpsTaskDataRsc(taskKey, taskUuid),
             fetchUserTeamCatalog: (profileId, options) => this.fetchUserTeamCatalog(profileId, options),
