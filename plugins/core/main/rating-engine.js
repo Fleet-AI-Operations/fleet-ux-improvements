@@ -2,7 +2,7 @@
 // Engine v5.0: Outcome Quality blends status-weighted terminal scores with a
 // bugged-excluded variant (50/50). Aligned otherwise with rank-workers.py WPS v1.2.
 
-const RE_VERSION = '5.0';
+const RE_VERSION = '5.1';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -153,13 +153,32 @@ function reNormalCdf(z) {
     return z >= 0 ? cdf : 1 - cdf;
 }
 
-// Estimated percentile via Φ((score − μ) / σ). Returns one decimal 0–100, or null.
+// Estimated percentile via Φ((score − μ) / σ). Returns integer 0–100, or null.
 function reEstimatePercentile(score, params) {
     if (score == null || !Number.isFinite(score)) return null;
     if (!params || !Number.isFinite(params.mu) || !Number.isFinite(params.sigma) || params.sigma <= 0) return null;
     const z = (score - params.mu) / params.sigma;
     const pct = reNormalCdf(z) * 100;
-    return Math.max(0, Math.min(100, Math.round(pct * 10) / 10));
+    return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function reOrdinalSuffix(n) {
+    const v = Math.abs(Math.trunc(Number(n)));
+    if (!Number.isFinite(v)) return 'th';
+    const mod100 = v % 100;
+    if (mod100 >= 11 && mod100 <= 13) return 'th';
+    const mod10 = v % 10;
+    if (mod10 === 1) return 'st';
+    if (mod10 === 2) return 'nd';
+    if (mod10 === 3) return 'rd';
+    return 'th';
+}
+
+/** Formats an integer percentile as e.g. "72nd". Returns '' if invalid. */
+function reFormatPercentile(n) {
+    if (n == null || !Number.isFinite(Number(n))) return '';
+    const v = Math.round(Number(n));
+    return String(v) + reOrdinalSuffix(v);
 }
 
 // Empirical-Bayes shrinkage toward cohort prior.
@@ -474,6 +493,8 @@ function reCombinedScoreBlock(twqsBlock, qaqsBlock, nTerminal, nFeedback, weight
 
 const RatingEngine = {
     VERSION: RE_VERSION,
+    ordinalSuffix: reOrdinalSuffix,
+    formatPercentile: reFormatPercentile,
 
     compute(options) {
         const opts = options || {};
@@ -695,8 +716,8 @@ const RatingEngine = {
                 : null
         };
         combined.raw = {
-            oqKsum: Math.round(oqKsum * 1000) / 1000,
-            oqNsum: Math.round(oqNsum * 1000) / 1000,
+            oqKsum: Math.round(oqKsumA * 1000) / 1000,
+            oqNsum: Math.round(oqNsumA * 1000) / 1000,
             pfKsum: Math.round(pfKsum * 1000) / 1000,
             pfNsum: Math.round(pfNsum * 1000) / 1000,
             nbKsum: Math.round(nbKsum * 1000) / 1000,
@@ -1052,7 +1073,7 @@ const RatingEngine = {
             lines.push('');
             let scoreStr = String(Math.round(block.score)) + ' / 100 · ' + block.band;
             if (block.estimatedPercentile != null) {
-                scoreStr += ' · ~' + block.estimatedPercentile + 'th pct (estimated)';
+                scoreStr += ' · ~' + reFormatPercentile(block.estimatedPercentile) + ' pct (estimated)';
             }
             lines.push('**Score:** ' + scoreStr);
             lines.push('**Confidence:** ' + (block.confidence && block.confidence.label));
@@ -1075,7 +1096,7 @@ const RatingEngine = {
             lines.push('');
             let scoreStr = String(Math.round(block.score)) + ' / 100 · ' + block.band;
             if (block.estimatedPercentile != null) {
-                scoreStr += ' · ~' + block.estimatedPercentile + 'th pct (estimated)';
+                scoreStr += ' · ~' + reFormatPercentile(block.estimatedPercentile) + ' pct (estimated)';
             }
             lines.push('**Score:** ' + scoreStr);
             if (block.writerRatio != null) {
@@ -1116,7 +1137,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

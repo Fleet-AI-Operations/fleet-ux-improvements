@@ -5217,6 +5217,24 @@ const searchOutputStatsPaneMethods = {
         return html;
     },
 
+    _ratingFormatPercentile(n) {
+        const engine = Context.ratingEngine;
+        if (engine && typeof engine.formatPercentile === 'function') {
+            return engine.formatPercentile(n);
+        }
+        if (n == null || !Number.isFinite(Number(n))) return '';
+        const v = Math.round(Number(n));
+        const mod100 = Math.abs(v) % 100;
+        let suffix = 'th';
+        if (mod100 < 11 || mod100 > 13) {
+            const mod10 = Math.abs(v) % 10;
+            if (mod10 === 1) suffix = 'st';
+            else if (mod10 === 2) suffix = 'nd';
+            else if (mod10 === 3) suffix = 'rd';
+        }
+        return String(v) + suffix;
+    },
+
     _ratingScoreBlockCompactHtml(title, block, basisKind) {
         if (!block || block.score == null) {
             return '';
@@ -5227,10 +5245,11 @@ const searchOutputStatsPaneMethods = {
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
         const scoreDisplay = Math.round(block.score);
         const pct = block.estimatedPercentile;
-        const primaryHtml = pct != null
-            ? ('~' + pct + '<span style="font-size: 12px; font-weight: 500;">th pct</span>')
+        const pctLabel = pct != null ? this._ratingFormatPercentile(pct) : '';
+        const primaryHtml = pctLabel
+            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 12px; font-weight: 500;"> pct</span>')
             : dashEscHtml(String(scoreDisplay));
-        const secondaryHtml = pct != null
+        const secondaryHtml = pctLabel
             ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
                 + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
             : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
@@ -5336,10 +5355,11 @@ const searchOutputStatsPaneMethods = {
         if (!block || block.score == null) return '';
         const scoreDisplay = Math.round(block.score);
         const pct = block.estimatedPercentile;
-        const primaryHtml = pct != null
-            ? ('~' + pct + '<span style="font-size: 11px; font-weight: 500;">th pct</span>')
+        const pctLabel = pct != null ? this._ratingFormatPercentile(pct) : '';
+        const primaryHtml = pctLabel
+            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 11px; font-weight: 500;"> pct</span>')
             : dashEscHtml(String(scoreDisplay));
-        const secondaryHtml = pct != null
+        const secondaryHtml = pctLabel
             ? (' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
                 + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
             : (' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
@@ -5660,7 +5680,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
