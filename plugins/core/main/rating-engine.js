@@ -2,7 +2,7 @@
 // Engine v5.0: Outcome Quality blends status-weighted terminal scores with a
 // bugged-excluded variant (50/50). Aligned otherwise with rank-workers.py WPS v1.2.
 
-const RE_VERSION = '5.1';
+const RE_VERSION = '5.2';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -1073,7 +1073,7 @@ const RatingEngine = {
             lines.push('');
             let scoreStr = String(Math.round(block.score)) + ' / 100 · ' + block.band;
             if (block.estimatedPercentile != null) {
-                scoreStr += ' · ~' + reFormatPercentile(block.estimatedPercentile) + ' pct (estimated)';
+                scoreStr += ' · ~' + reFormatPercentile(block.estimatedPercentile) + ' percentile (estimated)';
             }
             lines.push('**Score:** ' + scoreStr);
             lines.push('**Confidence:** ' + (block.confidence && block.confidence.label));
@@ -1096,7 +1096,7 @@ const RatingEngine = {
             lines.push('');
             let scoreStr = String(Math.round(block.score)) + ' / 100 · ' + block.band;
             if (block.estimatedPercentile != null) {
-                scoreStr += ' · ~' + reFormatPercentile(block.estimatedPercentile) + ' pct (estimated)';
+                scoreStr += ' · ~' + reFormatPercentile(block.estimatedPercentile) + ' percentile (estimated)';
             }
             lines.push('**Score:** ' + scoreStr);
             if (block.writerRatio != null) {
@@ -1137,7 +1137,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '5.1',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

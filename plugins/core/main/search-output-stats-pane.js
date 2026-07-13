@@ -4977,7 +4977,7 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Estimated percentile</div>'
-            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is an <em>estimated</em> percentile (e.g. &ldquo;~72nd pct&rdquo;), with the raw 0–100 score shown as secondary. Percentiles use a normal-CDF formula fitted to the dive.db population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics from historical ranking CSV runs. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, QAQS recency, combined flat, and combined recency. This is an approximation, not an exact rank.</p>'
+            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is an <em>estimated</em> percentile (e.g. &ldquo;~72nd percentile&rdquo;), with the raw 0–100 score shown as secondary. Percentiles use a normal-CDF formula fitted to the dive.db population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics from historical ranking CSV runs. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, QAQS recency, combined flat, and combined recency. This is an approximation, not an exact rank.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
@@ -5283,7 +5283,7 @@ const searchOutputStatsPaneMethods = {
         const pct = block.estimatedPercentile;
         const pctLabel = pct != null ? this._ratingFormatPercentile(pct) : '';
         const primaryHtml = pctLabel
-            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 12px; font-weight: 500;"> pct</span>')
+            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 12px; font-weight: 500;"> percentile</span>')
             : dashEscHtml(String(scoreDisplay));
         const secondaryHtml = pctLabel
             ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
@@ -5393,7 +5393,7 @@ const searchOutputStatsPaneMethods = {
         const pct = block.estimatedPercentile;
         const pctLabel = pct != null ? this._ratingFormatPercentile(pct) : '';
         const primaryHtml = pctLabel
-            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 11px; font-weight: 500;"> pct</span>')
+            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 11px; font-weight: 500;"> percentile</span>')
             : dashEscHtml(String(scoreDisplay));
         const secondaryHtml = pctLabel
             ? (' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
@@ -5716,7 +5716,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.4',
+    _version: '9.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
