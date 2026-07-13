@@ -1,8 +1,8 @@
 // rating-engine.js — TWQS / QAQS / Combined computation for Worker Output Search Ratings tab.
-// Engine v4.0: Aligned with rank-workers.py WPS v1.2, rank-qa.py QPS v2.1, rank-combined.py v1.1.
-// Dual flat + recency variants computed per worker. Parametric percentile via normal CDF.
+// Engine v5.0: Outcome Quality blends status-weighted terminal scores with a
+// bugged-excluded variant (50/50). Aligned otherwise with rank-workers.py WPS v1.2.
 
-const RE_VERSION = '4.0';
+const RE_VERSION = '5.0';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -542,7 +542,9 @@ const RatingEngine = {
         if (writerItems.length === 0) return null;
 
         // Outcome Quality: terminal tasks, recency-weighted quality sum
-        let oqKsum = 0, oqNsum = 0, oqTerminalCount = 0;
+        // A = status-weighted (includes bugged); B = excludes bugged statuses entirely
+        let oqKsumA = 0, oqNsumA = 0, oqTerminalCount = 0;
+        let oqKsumB = 0, oqNsumB = 0;
         // Positive Feedback Rate: all human feedback, recency-weighted
         let pfKsum = 0, pfNsum = 0;
         // Non-Bottom Score Rate: explicitly scored feedback only (qualityRatingRaw), recency-weighted
@@ -566,13 +568,18 @@ const RatingEngine = {
             // Outcome Quality: terminal tasks only
             const terminalQuality = reTaskTerminalQuality(task, nowMs);
             const taskInScope = reEventWeight(taskCreatedAt, 'flat', nowMs, window) > 0;
+            const taskStatus = String((task && task.status) || '').toLowerCase().trim();
 
             if (terminalQuality !== null && taskInScope) {
                 oqTerminalCount += 1;
                 const taskW = reEventWeight(taskCreatedAt, weighting, nowMs, window);
                 if (taskW > 0) {
-                    oqKsum += terminalQuality * taskW;
-                    oqNsum += taskW;
+                    oqKsumA += terminalQuality * taskW;
+                    oqNsumA += taskW;
+                    if (taskStatus !== 'bugged') {
+                        oqKsumB += terminalQuality * taskW;
+                        oqNsumB += taskW;
+                    }
                 }
             }
 
@@ -613,7 +620,13 @@ const RatingEngine = {
             }
         }
 
-        const oqScore = reShrunkRate(oqKsum, oqNsum, RE_TWQS_C.outcomeQuality, RE_TWQS_PRIOR.outcomeQuality);
+        const oqScoreA = reShrunkRate(oqKsumA, oqNsumA, RE_TWQS_C.outcomeQuality, RE_TWQS_PRIOR.outcomeQuality);
+        const oqScoreB = oqNsumB > 0
+            ? reShrunkRate(oqKsumB, oqNsumB, RE_TWQS_C.outcomeQuality, RE_TWQS_PRIOR.outcomeQuality)
+            : null;
+        const oqScore = oqScoreB != null
+            ? (0.5 * oqScoreA + 0.5 * oqScoreB)
+            : oqScoreA;
         const pfScore = reShrunkRate(pfKsum, pfNsum, RE_TWQS_C.positiveFeedbackRate, RE_TWQS_PRIOR.positiveFeedbackRate);
         const nbScore = reShrunkRate(nbKsum, nbNsum, RE_TWQS_C.nonBottomScoreRate, RE_TWQS_PRIOR.nonBottomScoreRate);
         const fpScore = reShrunkRate(fpKsum, fpNsum, RE_TWQS_C.firstPassAcceptance, RE_TWQS_PRIOR.firstPassAcceptance);
@@ -629,8 +642,12 @@ const RatingEngine = {
                     score = oqScore;
                     raw = {
                         terminalTaskCount: oqTerminalCount,
-                        weightedQualitySum: Math.round(oqKsum * 1000) / 1000,
-                        weightedN: Math.round(oqNsum * 1000) / 1000
+                        weightedQualitySum: Math.round(oqKsumA * 1000) / 1000,
+                        weightedN: Math.round(oqNsumA * 1000) / 1000,
+                        statusWeightedScore: Math.round(oqScoreA * 1000) / 1000,
+                        ignoreBuggedScore: oqScoreB != null ? Math.round(oqScoreB * 1000) / 1000 : null,
+                        ignoreBuggedWeightedN: Math.round(oqNsumB * 1000) / 1000,
+                        blend: '0.5*statusWeighted + 0.5*ignoreBugged'
                     };
                     break;
                 case 'positiveFeedbackRate':
@@ -1099,7 +1116,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '4.0',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

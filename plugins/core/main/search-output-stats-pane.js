@@ -63,6 +63,7 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '</div>'
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; flex: 1 1 auto; min-width: 0;">'
+            + '<button type="button" data-wf-dash-stats-horizontal-stack="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;" title="Allow scorecards and circular charts to share a row">Stack horizontally: On</button>'
             + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Reset</button>'
             + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export settings</button>'
             + '<button type="button" data-wf-dash-stats-export-dashboard-image="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export image</button>'
@@ -80,7 +81,7 @@ const searchOutputStatsPaneMethods = {
     _ensureStatsLayout() {
         const engine = Context.statsEngine;
         if (!engine) {
-            return { schemaVersion: 6, activeDashboardId: '', dashboards: [] };
+            return { schemaVersion: 7, activeDashboardId: '', allowHorizontalStack: true, dashboards: [] };
         }
         if (!this._state.statsLayout) {
             this._state.statsLayout = typeof engine.normalizeStore === 'function'
@@ -402,17 +403,23 @@ const searchOutputStatsPaneMethods = {
             : (draft.chartFilters || {});
         const editId = this._state.statsBuilderEditId;
         if (editId) {
-            let removed = false;
+            let sourceDash = null;
+            let sourceIdx = -1;
             for (const dash of store.dashboards || []) {
                 const idx = (dash.charts || []).findIndex((c) => c.id === editId);
                 if (idx >= 0) {
-                    dash.charts.splice(idx, 1);
-                    removed = true;
+                    sourceDash = dash;
+                    sourceIdx = idx;
                     break;
                 }
             }
-            targetDash.charts.push(chart);
-            if (!removed) {
+            if (sourceDash && sourceDash.id === targetDash.id && sourceIdx >= 0) {
+                targetDash.charts[sourceIdx] = chart;
+            } else if (sourceDash && sourceIdx >= 0) {
+                sourceDash.charts.splice(sourceIdx, 1);
+                targetDash.charts.push(chart);
+            } else {
+                targetDash.charts.push(chart);
                 Logger.debug('search-output-stats-pane: edited chart id not found — appended to target');
             }
         } else {
@@ -471,6 +478,7 @@ const searchOutputStatsPaneMethods = {
         const toolbar = this._q('#wf-dash-stats-toolbar');
         const buildBtn = this._q('[data-wf-dash-stats-build]');
         const resetDashBtn = this._q('[data-wf-dash-stats-reset-dashboard]');
+        const stackBtn = this._q('[data-wf-dash-stats-horizontal-stack]');
         const exportDashBtn = this._q('[data-wf-dash-stats-export-dashboard]');
         const exportDashImageBtn = this._q('[data-wf-dash-stats-export-dashboard-image]');
         const importJsonBtn = this._q('[data-wf-dash-stats-import-json]');
@@ -484,6 +492,15 @@ const searchOutputStatsPaneMethods = {
         }
         if (buildBtn) {
             buildBtn.textContent = mode === 'builder' ? 'Back to dashboard' : 'Build Chart';
+        }
+        if (stackBtn) {
+            const stackOn = this._statsAllowHorizontalStack();
+            stackBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
+            stackBtn.textContent = 'Stack horizontally: ' + (stackOn ? 'On' : 'Off');
+            stackBtn.title = stackOn
+                ? 'Scorecards and circular charts may share a row'
+                : 'Each chart uses full width';
+            stackBtn.setAttribute('aria-pressed', stackOn ? 'true' : 'false');
         }
         if (resetDashBtn) {
             resetDashBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
@@ -1150,7 +1167,7 @@ const searchOutputStatsPaneMethods = {
         const cardLayout = inStackRow
             ? ('flex: 1 1 ' + minWidth + 'px; min-width: min(' + minWidth + 'px, 100%); max-width: 100%; box-sizing: border-box;')
             : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
-        return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative;">'
+        return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative; display: flex; flex-direction: column;">'
             + this._statsChartCardHeaderHtml(chart, moveState)
             + filterSubtitle
             + '<div style="position: relative; height: ' + height + 'px; max-width: 100%;' + canvasOpacity + '">'
@@ -1162,12 +1179,30 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _statsAllowHorizontalStack() {
+        const store = this._ensureStatsLayout();
+        return store.allowHorizontalStack !== false;
+    },
+
+    _toggleStatsHorizontalStack() {
+        const engine = Context.statsEngine;
+        const store = this._ensureStatsLayout();
+        const next = !this._statsAllowHorizontalStack();
+        this._state.statsLayout = engine && typeof engine.setAllowHorizontalStack === 'function'
+            ? engine.setAllowHorizontalStack(store, next)
+            : Object.assign({}, store, { allowHorizontalStack: next });
+        this._persistStatsLayout();
+        Logger.log('search-output-stats-pane: horizontal stacking ' + (next ? 'enabled' : 'disabled'));
+        void this._renderStatsPanel();
+    },
+
     _statsChartLayoutGroups(charts) {
         const groups = [];
         let stackKind = null;
         let stackCharts = null;
+        const allowStack = this._statsAllowHorizontalStack();
         for (const chart of charts || []) {
-            const kind = this._statsChartStackKind(chart);
+            const kind = allowStack ? this._statsChartStackKind(chart) : null;
             if (kind) {
                 if (stackKind !== kind) {
                     stackKind = kind;
@@ -1368,6 +1403,104 @@ const searchOutputStatsPaneMethods = {
             align: position === 'right' ? 'start' : 'center',
             labels: { color: theme.foreground, boxWidth: 12, font: { size: 10 } }
         };
+    },
+
+    _statsLegendValueFormat(flags) {
+        const f = flags || {};
+        if (f.showAbsolute && f.showPercent) return 'both';
+        if (f.showPercent) return 'percent';
+        return 'absolute';
+    },
+
+    _statsGenerateLegendLabels(chartJs, chartModel) {
+        const dash = this;
+        const chartType = chartJs && chartJs.config && chartJs.config.type;
+        const data = (chartJs && chartJs.data) || {};
+        const labels = data.labels || [];
+        const datasets = data.datasets || [];
+
+        if (chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut') {
+            const ds = datasets[0] || {};
+            if (!labels.length) return [];
+            const total = dash._statsDatasetNumericTotal(ds.data);
+            const series = ((chartModel && chartModel.series) || [])[0] || {};
+            const flags = ds.statsLabelFlags || dash._statsLabelShowFlagsFromSeries(series);
+            const format = dash._statsLegendValueFormat(flags);
+            const meta = typeof chartJs.getDatasetMeta === 'function' ? chartJs.getDatasetMeta(0) : null;
+            return labels.map((label, i) => {
+                const raw = ds.data && ds.data[i];
+                const value = typeof raw === 'number' ? raw : Number(raw);
+                const valueText = Number.isFinite(value)
+                    ? dash._statsFormatChartDatumLabel(value, total, format)
+                    : '';
+                const text = valueText
+                    ? (String(label == null ? '' : label) + ' · ' + valueText)
+                    : String(label == null ? '' : label);
+                let fillStyle = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[i] : ds.backgroundColor;
+                let strokeStyle = Array.isArray(ds.borderColor) ? ds.borderColor[i] : ds.borderColor;
+                try {
+                    const style = meta && meta.controller && meta.controller.getStyle(i);
+                    if (style) {
+                        if (style.backgroundColor) fillStyle = style.backgroundColor;
+                        if (style.borderColor) strokeStyle = style.borderColor;
+                    }
+                } catch (_) { /* style lookup optional */ }
+                const hidden = typeof chartJs.getDataVisibility === 'function'
+                    ? !chartJs.getDataVisibility(i)
+                    : Boolean(meta && meta.data && meta.data[i] && meta.data[i].hidden);
+                return {
+                    text,
+                    fillStyle: fillStyle || '#94a3b8',
+                    strokeStyle: strokeStyle || fillStyle || '#94a3b8',
+                    fontColor: (chartJs.options && chartJs.options.plugins && chartJs.options.plugins.legend
+                        && chartJs.options.plugins.legend.labels
+                        && chartJs.options.plugins.legend.labels.color) || undefined,
+                    lineWidth: 1,
+                    hidden,
+                    index: i,
+                    datasetIndex: 0
+                };
+            });
+        }
+
+        return datasets.map((ds, i) => {
+            if (!ds || ds.statsLegendHidden || ds.statsSpreadBand || ds.statsShadedFillLayer || ds.statsBellBand) {
+                return null;
+            }
+            const meta = typeof chartJs.getDatasetMeta === 'function' ? chartJs.getDatasetMeta(i) : null;
+            const total = dash._statsDatasetNumericTotal(ds.data);
+            const seriesIdx = ds.statsSeriesIndex != null
+                ? ds.statsSeriesIndex
+                : (ds.seriesIndex != null ? ds.seriesIndex : 0);
+            const series = ((chartModel && chartModel.series) || [])[seriesIdx] || {};
+            const flags = ds.statsLabelFlags || dash._statsLabelShowFlagsFromSeries(series);
+            // Dataset legends: absolute series total when absolute labels are on (skip % of self).
+            let suffix = '';
+            if (flags.showAbsolute || (!flags.showAbsolute && !flags.showPercent)) {
+                suffix = total > 0
+                    ? dash._statsFormatChartDatumLabel(total, total, 'absolute')
+                    : '';
+            }
+            const baseLabel = ds.label != null ? String(ds.label) : ('Series ' + (i + 1));
+            const text = suffix ? (baseLabel + ' · ' + suffix) : baseLabel;
+            let fillStyle = Array.isArray(ds.backgroundColor) ? ds.backgroundColor[0] : ds.backgroundColor;
+            let strokeStyle = Array.isArray(ds.borderColor) ? ds.borderColor[0] : ds.borderColor;
+            try {
+                const style = meta && meta.controller && meta.controller.getStyle(0);
+                if (style) {
+                    if (style.backgroundColor) fillStyle = style.backgroundColor;
+                    if (style.borderColor) strokeStyle = style.borderColor;
+                }
+            } catch (_) { /* style lookup optional */ }
+            return {
+                text,
+                fillStyle: fillStyle || strokeStyle || '#94a3b8',
+                strokeStyle: strokeStyle || fillStyle || '#94a3b8',
+                lineWidth: ds.borderWidth != null ? ds.borderWidth : 1,
+                hidden: Boolean(meta && meta.hidden),
+                datasetIndex: i
+            };
+        }).filter(Boolean);
     },
 
     _statsApplyCircularLegendPosition(chart, width) {
@@ -2132,6 +2265,15 @@ const searchOutputStatsPaneMethods = {
                 label: (ctx) => dash._statsTooltipLabelText(chart, ctx)
             })
         });
+        const existingLegend = config.options.plugins.legend;
+        if (existingLegend && existingLegend.display !== false) {
+            const prevLabels = existingLegend.labels || {};
+            config.options.plugins.legend = Object.assign({}, existingLegend, {
+                labels: Object.assign({}, prevLabels, {
+                    generateLabels: (chartJs) => dash._statsGenerateLegendLabels(chartJs, chart)
+                })
+            });
+        }
         if (this._statsChartHasAlwaysVisibleLabels(chart)) {
             const circular = chart.type === 'pie' || chart.type === 'polarArea' || chart.type === 'radar';
             if (circular) {
@@ -2799,13 +2941,16 @@ const searchOutputStatsPaneMethods = {
             document.head.appendChild(style);
         }
         style.textContent = ''
+            + '.wf-dash-stats-chart-card { display: flex; flex-direction: column; }'
             + '.wf-dash-stats-chart-header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 6px; margin-bottom: 8px; }'
             + '.wf-dash-stats-chart-header-title { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; max-width: 100%; }'
             + '.wf-dash-stats-chart-header-text { font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }'
             + '.wf-dash-stats-chart-move { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-move button:disabled { opacity: 0.35; cursor: not-allowed; }'
             + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
-            + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: 8px; max-width: 100%; }'
+            + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: auto; max-width: 100%;'
+            + ' position: sticky; bottom: 0; z-index: 3; padding: 8px 0 2px; background: var(--card, #fff);'
+            + ' border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent); box-shadow: 0 -6px 10px -8px color-mix(in srgb, var(--foreground, #0f172a) 18%, transparent); }'
             + '.wf-dash-stats-chart-copy-select { cursor: pointer; }'
             + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
@@ -3492,9 +3637,7 @@ const searchOutputStatsPaneMethods = {
         const metricOpts = metricList.map((m) =>
             '<option value="' + dashEscHtml(m.id) + '"' + (s.metricId === m.id ? ' selected' : '') + '>' + dashEscHtml(m.label) + '</option>'
         ).join('');
-        const aggListForSeries = s.metricId === 'count'
-            ? aggList.filter((a) => a.id === 'count')
-            : aggList;
+        const aggListForSeries = aggList;
         const aggOpts = aggListForSeries.map((a) =>
             '<option value="' + dashEscHtml(a.id) + '"' + (s.agg === a.id ? ' selected' : '') + '>' + dashEscHtml(a.label) + '</option>'
         ).join('');
@@ -4297,6 +4440,13 @@ const searchOutputStatsPaneMethods = {
         return btn;
     },
 
+    _resetStatsPanelScroll() {
+        const dashEl = this._q('#wf-dash-stats-dashboard');
+        if (dashEl) dashEl.scrollTop = 0;
+        const ratingsEl = this._q('#wf-dash-stats-panel-ratings');
+        if (ratingsEl) ratingsEl.scrollTop = 0;
+    },
+
     _syncStatsPanelCollapseUi() {
         const statsCol = this._q('[data-wf-dash-stats-column]');
         if (!statsCol) return;
@@ -4309,9 +4459,14 @@ const searchOutputStatsPaneMethods = {
         const sliver = statsCol.querySelector('[data-wf-dash-stats-sliver]');
         btn.textContent = hidden ? 'Unhide' : 'Hide';
         btn.title = hidden ? 'Show the ratings panel' : 'Hide the ratings panel';
-        if (hidden) {
-            if (sliver && btn.parentElement !== sliver) sliver.appendChild(btn);
-        } else if (headerActions && btn.parentElement !== headerActions) {
+        const movingToSliver = hidden && sliver && btn.parentElement !== sliver;
+        const movingToHeader = !hidden && headerActions && btn.parentElement !== headerActions;
+        if ((movingToSliver || movingToHeader) && typeof btn.blur === 'function') {
+            btn.blur();
+        }
+        if (movingToSliver) {
+            sliver.appendChild(btn);
+        } else if (movingToHeader) {
             headerActions.appendChild(btn);
         }
     },
@@ -4331,8 +4486,11 @@ const searchOutputStatsPaneMethods = {
         if (typeof dashApi.scheduleSplitLayoutSync === 'function') {
             dashApi.scheduleSplitLayoutSync();
         }
-        if (!next && this._state.statsPanelDirty) {
-            void this._renderStatsPanel();
+        if (!next) {
+            this._resetStatsPanelScroll();
+            if (this._state.statsPanelDirty) {
+                void this._renderStatsPanel();
+            }
         }
     },
 
@@ -4342,15 +4500,21 @@ const searchOutputStatsPaneMethods = {
         if (root && dashApi && typeof dashApi.applyStatsPanelLayout === 'function') {
             dashApi.applyStatsPanelLayout(root);
             this._syncStatsScopeToggleUi();
-            if (this._isStatsPanelOpen() && this._state.statsPanelDirty) {
-                void this._renderStatsPanel();
+            if (this._isStatsPanelOpen()) {
+                this._resetStatsPanelScroll();
+                if (this._state.statsPanelDirty) {
+                    void this._renderStatsPanel();
+                }
             }
             return;
         }
         this._syncStatsPanelCollapseUi();
         this._syncStatsScopeToggleUi();
-        if (this._isStatsPanelOpen() && this._state.statsPanelDirty) {
-            void this._renderStatsPanel();
+        if (this._isStatsPanelOpen()) {
+            this._resetStatsPanelScroll();
+            if (this._state.statsPanelDirty) {
+                void this._renderStatsPanel();
+            }
         }
     },
 
@@ -4742,7 +4906,7 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Outcome Quality',        weight: '40%', measures: 'Terminal task quality: production (1.0), bugged (0.35), discarded (0.15). In-flight tasks are excluded.' },
+            { label: 'Outcome Quality',        weight: '40%', measures: 'Blend (50/50) of status-weighted terminal quality (production 1.0, bugged 0.5, escalated-fleet-review 0.5, discarded 0.15) and the same calc excluding bugged statuses. In-flight tasks are excluded.' },
             { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory).' },
             { label: 'Non-Bottom Score Rate',  weight: '15%', measures: 'Share of explicitly scored feedback that was not the lowest possible rating.' },
             { label: 'First-Pass Acceptance',  weight: '15%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
@@ -4777,11 +4941,11 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Estimated percentile</div>'
-            + '<p style="margin: 0 0 10px;">Each score shows an <em>estimated</em> percentile (e.g. &ldquo;~72nd pct&rdquo;) using a normal-CDF formula fitted to the dive.db population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics from historical ranking CSV runs. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, QAQS recency, combined flat, and combined recency. This is an approximation, not an exact rank.</p>'
+            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is an <em>estimated</em> percentile (e.g. &ldquo;~72nd pct&rdquo;), with the raw 0–100 score shown as secondary. Percentiles use a normal-CDF formula fitted to the dive.db population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics from historical ranking CSV runs. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, QAQS recency, combined flat, and combined recency. This is an approximation, not an exact rank.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>0–100, higher is better.</strong> Scores use empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
+            + '<li><strong>Percentile first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
             + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The bar is the axis sub-score (0–100%). An omitted axis redistributes its weight to the others.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
@@ -4802,7 +4966,7 @@ const searchOutputStatsPaneMethods = {
             + '<li>Scores cover the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>, regardless of which search toggles (tasks, QA, sessions, disputes, etc.) produced those results.</li>'
             + '<li>The <strong>Filtered / All</strong> scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.</li>'
             + '<li>With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.</li>'
-            + '<li>Only <strong>terminal</strong> tasks count toward TWQS outcome quality (production, bugged, discarded). In-flight tasks are excluded. Disputes move a score only once <strong>resolved</strong>.</li>'
+            + '<li>Only <strong>terminal</strong> tasks count toward TWQS outcome quality (production, bugged, discarded, escalated-fleet-review). Outcome Quality is a <strong>50/50 blend</strong> of status-weighted scores and a variant that ignores bugged statuses. In-flight tasks are excluded. Disputes move a score only once <strong>resolved</strong>.</li>'
             + '<li>Self-reviews are excluded from all feedback axes.</li>'
             + '</ul>'
 
@@ -5063,9 +5227,13 @@ const searchOutputStatsPaneMethods = {
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
         const scoreDisplay = Math.round(block.score);
         const pct = block.estimatedPercentile;
-        const pctHtml = pct != null
-            ? (' <span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b);">~' + pct + 'th pct</span>')
-            : '';
+        const primaryHtml = pct != null
+            ? ('~' + pct + '<span style="font-size: 12px; font-weight: 500;">th pct</span>')
+            : dashEscHtml(String(scoreDisplay));
+        const secondaryHtml = pct != null
+            ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
+                + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
+            : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
         const axesHtml = this._ratingSortedAxes(block)
             .map((axis) => this._ratingAxisBarHtml(axis, false))
@@ -5073,7 +5241,7 @@ const searchOutputStatsPaneMethods = {
         return '<div style="margin-top: 10px;">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
-            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + pctHtml + ' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
+            + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
             + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
             + '</div>'
             + (basisLine
@@ -5137,7 +5305,8 @@ const searchOutputStatsPaneMethods = {
         }
         const pct = block.estimatedPercentile;
         if (pct != null) {
-            contextLine = (contextLine ? contextLine + ' · ' : '') + '~' + pct + 'th pct (estimated)';
+            contextLine = (contextLine ? contextLine + ' · ' : '')
+                + 'raw ' + Math.round(block.score) + ' / 100';
         }
         return '<div style="margin-top: 12px;">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' breakdown</div>'
@@ -5167,9 +5336,13 @@ const searchOutputStatsPaneMethods = {
         if (!block || block.score == null) return '';
         const scoreDisplay = Math.round(block.score);
         const pct = block.estimatedPercentile;
-        const pctHtml = pct != null
-            ? (' <span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #64748b);">~' + pct + 'th pct</span>')
-            : '';
+        const primaryHtml = pct != null
+            ? ('~' + pct + '<span style="font-size: 11px; font-weight: 500;">th pct</span>')
+            : dashEscHtml(String(scoreDisplay));
+        const secondaryHtml = pct != null
+            ? (' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
+                + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
+            : (' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
         let blendLine = '';
         if (block.writerRatio != null && block.qaRatio != null) {
             const wPct = Math.round(block.writerRatio * 100);
@@ -5178,7 +5351,7 @@ const searchOutputStatsPaneMethods = {
         }
         return '<div style="margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--primary, #6366f1) 6%, var(--card, #fff));">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 3px; color: var(--muted-foreground, #64748b);">Combined</div>'
-            + '<div style="font-size: 18px; font-weight: 700; line-height: 1.2;">' + dashEscHtml(String(scoreDisplay)) + pctHtml + ' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span></div>'
+            + '<div style="font-size: 18px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
             + (blendLine ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 3px;">' + dashEscHtml(blendLine) + '</div>' : '')
             + '</div>';
     },
@@ -5487,7 +5660,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '8.4',
+    _version: '9.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
