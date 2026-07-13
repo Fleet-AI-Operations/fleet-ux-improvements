@@ -65,8 +65,8 @@ const STATS_ALL_GROUP_BY = '__all__';
 const STATS_LEGACY_BAR_LINE_TYPES = new Set(['bar', 'line', 'combo']);
 
 const STATS_CHART_TYPE_META = {
-    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 120 },
-    pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
+    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 120, allowsHorizontalStack: true },
+    pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true, allowsHorizontalStack: true },
     barLine: {
         id: 'barLine',
         label: 'Bar/Line',
@@ -79,8 +79,8 @@ const STATS_CHART_TYPE_META = {
         needsLineAreaLayout: true,
         needsOrientation: true
     },
-    polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
-    radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
+    polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true, allowsHorizontalStack: true },
+    radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true, allowsHorizontalStack: true },
     scatter: { id: 'scatter', label: 'Scatter', minSeries: 2, maxSeries: 2, allowCountAxis: false, needsPointMode: true },
     bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true },
     histogram: {
@@ -482,6 +482,9 @@ function statsNormalizeChartEntry(c) {
     }
     if (meta.needsBarLayout) {
         chart.categorySort = statsNormalizeCategorySort(c.categorySort, series.length);
+    }
+    if (meta.allowsHorizontalStack) {
+        chart.allowHorizontalStack = c.allowHorizontalStack !== false;
     }
     // Label options live on series only (legacy chart-level fields migrated above).
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
@@ -1949,6 +1952,7 @@ function statsDefaultBuilderDraft(catalog) {
         lineAreaLayout: 'origin',
         categorySort: null,
         presetKey: null,
+        allowHorizontalStack: true,
         chartFilters: statsEmptyChartFilters()
     };
 }
@@ -1957,7 +1961,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '8.0',
+    _version: '8.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

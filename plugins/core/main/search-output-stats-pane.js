@@ -369,6 +369,9 @@ const searchOutputStatsPaneMethods = {
         if (engineMeta.needsBarLayout && engine.normalizeCategorySort) {
             chart.categorySort = engine.normalizeCategorySort(draft.categorySort, chart.series.length);
         }
+        if (engineMeta.allowsHorizontalStack) {
+            chart.allowHorizontalStack = draft.allowHorizontalStack !== false;
+        }
         return chart;
     },
 
@@ -1079,7 +1082,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsChartStackKind(chart) {
-        if (!chart) return null;
+        if (!chart || chart.allowHorizontalStack === false) return null;
         if (chart.type === 'scorecard') return 'scorecard-row';
         if (STATS_CIRCULAR_CHART_TYPES.has(chart.type)) return 'circular-row';
         return null;
@@ -3529,7 +3532,17 @@ const searchOutputStatsPaneMethods = {
         const heightField = this._statsBuilderField('Height (px)',
             '<input type="number" data-wf-dash-stats-draft="height" min="' + heightCfg.min + '" max="' + heightCfg.max + '" step="' + heightCfg.step + '" value="' + heightValue + '" style="' + styles.inputCompactStyle + '">',
             { styles, hint: heightCfg.min + '–' + heightCfg.max + ' px in steps of ' + heightCfg.step, maxWidth: '180px' });
-        const chartSettingsCells = [chartTypeField, groupByField, heightField].filter(Boolean);
+        const stackOn = draft.allowHorizontalStack !== false;
+        const stackCheckStyle = 'display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--foreground, #0f172a);';
+        const horizontalStackField = typeMeta.allowsHorizontalStack
+            ? this._statsBuilderField('Layout',
+                '<label style="' + stackCheckStyle + '">'
+                + '<input type="checkbox" data-wf-dash-stats-draft="allowHorizontalStack"'
+                + (stackOn ? ' checked' : '') + '>'
+                + 'Allow horizontal stacking</label>',
+                { styles, hint: 'When on, this chart may share a row with adjacent scorecards or circular charts (also needs the dashboard Stack horizontally toggle).' })
+            : '';
+        const chartSettingsCells = [chartTypeField, groupByField, heightField, horizontalStackField].filter(Boolean);
         const chartSettingsHtml = '<div style="' + styles.gridAuto + '">' + chartSettingsCells.join('') + '</div>';
 
         const barLayout = draft.barLayout === 'stacked' ? 'stacked' : 'grouped';
@@ -3865,6 +3878,7 @@ const searchOutputStatsPaneMethods = {
         const categorySortEl = this._q('[data-wf-dash-stats-draft="categorySort"]');
         const heightEl = this._q('[data-wf-dash-stats-draft="height"]');
         const pointModeEl = this._q('[data-wf-dash-stats-draft="pointMode"]');
+        const allowHorizontalStackEl = this._q('[data-wf-dash-stats-draft="allowHorizontalStack"]');
         if (titleEl) draft.title = titleEl.value;
         if (dashboardEl) {
             draft.dashboardId = dashboardEl.value;
@@ -3888,6 +3902,17 @@ const searchOutputStatsPaneMethods = {
             heightEl.value = String(draft.height);
         }
         if (pointModeEl) draft.pointMode = pointModeEl.value === 'task' ? 'task' : 'bucket';
+        const engine = Context.statsEngine;
+        const typeMeta = engine && engine.getChartTypeMeta
+            ? engine.getChartTypeMeta(draft.type)
+            : null;
+        if (typeMeta && typeMeta.allowsHorizontalStack) {
+            draft.allowHorizontalStack = allowHorizontalStackEl
+                ? !!allowHorizontalStackEl.checked
+                : (draft.allowHorizontalStack !== false);
+        } else {
+            delete draft.allowHorizontalStack;
+        }
         delete draft.labelFormat;
         delete draft.labelShowAbsolute;
         delete draft.labelShowPercent;
@@ -4052,6 +4077,11 @@ const searchOutputStatsPaneMethods = {
                     draft.categorySort,
                     (draft.series && draft.series.length) || 0
                 );
+            }
+            if (meta.allowsHorizontalStack) {
+                if (draft.allowHorizontalStack == null) draft.allowHorizontalStack = true;
+            } else {
+                delete draft.allowHorizontalStack;
             }
         }
         void this._renderStatsBuilder();
@@ -5680,7 +5710,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.1',
+    _version: '9.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
