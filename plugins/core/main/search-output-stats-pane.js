@@ -1421,6 +1421,12 @@ const searchOutputStatsPaneMethods = {
         const data = (chartJs && chartJs.data) || {};
         const labels = data.labels || [];
         const datasets = data.datasets || [];
+        const theme = dash._statsChartTheme();
+        const labelsOpt = chartJs && chartJs.options && chartJs.options.plugins
+            && chartJs.options.plugins.legend && chartJs.options.plugins.legend.labels;
+        const legendColor = (labelsOpt && typeof labelsOpt.color === 'string' && labelsOpt.color)
+            || theme.foreground
+            || '#e2e8f0';
 
         if (chartType === 'pie' || chartType === 'polarArea' || chartType === 'doughnut') {
             const ds = datasets[0] || {};
@@ -1455,9 +1461,8 @@ const searchOutputStatsPaneMethods = {
                     text,
                     fillStyle: fillStyle || '#94a3b8',
                     strokeStyle: strokeStyle || fillStyle || '#94a3b8',
-                    fontColor: (chartJs.options && chartJs.options.plugins && chartJs.options.plugins.legend
-                        && chartJs.options.plugins.legend.labels
-                        && chartJs.options.plugins.legend.labels.color) || undefined,
+                    fontColor: legendColor,
+                    color: legendColor,
                     lineWidth: 1,
                     hidden,
                     index: i,
@@ -1499,6 +1504,8 @@ const searchOutputStatsPaneMethods = {
                 text,
                 fillStyle: fillStyle || strokeStyle || '#94a3b8',
                 strokeStyle: strokeStyle || fillStyle || '#94a3b8',
+                fontColor: legendColor,
+                color: legendColor,
                 lineWidth: ds.borderWidth != null ? ds.borderWidth : 1,
                 hidden: Boolean(meta && meta.hidden),
                 datasetIndex: i
@@ -5710,7 +5717,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.2',
+    _version: '9.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
