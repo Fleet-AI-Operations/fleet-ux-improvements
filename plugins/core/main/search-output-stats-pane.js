@@ -2959,8 +2959,7 @@ const searchOutputStatsPaneMethods = {
             + '.wf-dash-stats-chart-move button:disabled { opacity: 0.35; cursor: not-allowed; }'
             + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
             + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: auto; max-width: 100%;'
-            + ' position: sticky; bottom: 0; z-index: 3; padding: 8px 0 2px; background: var(--card, #fff);'
-            + ' border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent); box-shadow: 0 -6px 10px -8px color-mix(in srgb, var(--foreground, #0f172a) 18%, transparent); }'
+            + ' position: sticky; bottom: 0; z-index: 3; padding: 8px 0 2px; background: var(--card, #fff); }'
             + '.wf-dash-stats-chart-copy-select { cursor: pointer; }'
             + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
@@ -5717,7 +5716,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.3',
+    _version: '9.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
