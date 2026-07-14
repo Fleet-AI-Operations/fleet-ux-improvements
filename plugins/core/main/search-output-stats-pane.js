@@ -5292,7 +5292,7 @@ const searchOutputStatsPaneMethods = {
             default:
                 break;
         }
-        return lines.length ? lines : ['No additional inputs recorded'];
+        return lines;
     },
 
     _ratingAxisBarHtml(axis, showDetail) {
@@ -5860,7 +5860,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.8',
+    _version: '9.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
