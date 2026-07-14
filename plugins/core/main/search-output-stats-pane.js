@@ -4,10 +4,14 @@ const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags',
 const STATS_SCORECARD_ROW_MIN_WIDTH_PX = 180;
 const STATS_CIRCULAR_ROW_MIN_WIDTH_PX = 240;
 const STATS_SCORECARD_ROW_GAP_PX = 12;
+const STATS_SCORECARD_ROW_MAX = 3;
+const STATS_CIRCULAR_ROW_MAX = 2;
 const STATS_CIRCULAR_CHART_TYPES = new Set(['pie', 'polarArea', 'radar']);
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 const STATS_LINE_BORDER_WIDTH = 2.25;
 const STATS_LINE_TENSION = 0.2;
+/** Max content width for Ratings tab (cards stay readable when the pane is wide). */
+const RATINGS_CONTENT_MAX_WIDTH_PX = 640;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -40,10 +44,12 @@ const searchOutputStatsPaneMethods = {
             + this._statsChartsPanelContentHtml()
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
+            + '<div id="wf-dash-ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: ' + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
             + this._ratingsToolbarHtml()
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
+            + '</div>'
             + '</div>'
             + '</div>';
     },
@@ -1199,6 +1205,10 @@ const searchOutputStatsPaneMethods = {
         void this._renderStatsPanel();
     },
 
+    _statsStackRowMax(kind) {
+        return kind === 'circular-row' ? STATS_CIRCULAR_ROW_MAX : STATS_SCORECARD_ROW_MAX;
+    },
+
     _statsChartLayoutGroups(charts) {
         const groups = [];
         let stackKind = null;
@@ -1207,7 +1217,8 @@ const searchOutputStatsPaneMethods = {
         for (const chart of charts || []) {
             const kind = allowStack ? this._statsChartStackKind(chart) : null;
             if (kind) {
-                if (stackKind !== kind) {
+                const maxPerRow = this._statsStackRowMax(kind);
+                if (stackKind !== kind || !stackCharts || stackCharts.length >= maxPerRow) {
                     stackKind = kind;
                     stackCharts = [];
                     groups.push({ kind, charts: stackCharts });
@@ -5883,7 +5894,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.4',
+    _version: '10.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
