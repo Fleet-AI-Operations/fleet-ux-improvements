@@ -5245,31 +5245,6 @@ function attachSearchOutputListeners(modal, dash) {
                 if (workerId && format) dash._handleRatingExport(workerId, format);
                 return;
             }
-            const ratingExpandBtn = e.target.closest('[data-wf-dash-rating-expand]');
-            if (ratingExpandBtn && modal.contains(ratingExpandBtn)) {
-                const workerId = String(ratingExpandBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
-                if (workerId) {
-                    const expanded = dash._ensureRatingsExpandedWorkers();
-                    const nextExpanded = !expanded.has(workerId);
-                    if (nextExpanded) expanded.add(workerId);
-                    else expanded.delete(workerId);
-                    Logger.log('search-output: ratings card ' + (nextExpanded ? 'expanded' : 'collapsed') + ' — ' + workerId);
-                    dash._renderRatingsPanel({ recompute: false });
-                }
-                return;
-            }
-            const ratingWeightingBtn = e.target.closest('[data-wf-dash-rating-weighting]');
-            if (ratingWeightingBtn && modal.contains(ratingWeightingBtn)) {
-                const workerId = String(ratingWeightingBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
-                const weighting = ratingWeightingBtn.getAttribute('data-wf-dash-rating-weighting');
-                if (workerId && (weighting === 'flat' || weighting === 'recency')) {
-                    if (!dash._state.ratingsWeightingByWorker) dash._state.ratingsWeightingByWorker = {};
-                    dash._state.ratingsWeightingByWorker[workerId] = weighting;
-                    Logger.log('search-output: ratings weighting toggled — ' + workerId + ' → ' + weighting);
-                    dash._renderRatingsPanel({ recompute: false });
-                }
-                return;
-            }
             const ratingCohortSliceBtn = e.target.closest('[data-wf-dash-rating-cohort-slice]');
             if (ratingCohortSliceBtn && modal.contains(ratingCohortSliceBtn)) {
                 const workerId = String(ratingCohortSliceBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
@@ -5284,6 +5259,34 @@ function attachSearchOutputListeners(modal, dash) {
                     else set.delete(key);
                     Logger.log('search-output: ratings cohort slice ' + (nextOpen ? 'expanded' : 'collapsed')
                         + ' — ' + workerId + ' · ' + scoreKind + ' · ' + dimension + ' · ' + sliceKey);
+                    dash._renderRatingsPanel({ recompute: false });
+                }
+                return;
+            }
+            const ratingScoreExpandEl = e.target.closest('[data-wf-dash-rating-score-expand]');
+            if (ratingScoreExpandEl && modal.contains(ratingScoreExpandEl)) {
+                const workerId = String(ratingScoreExpandEl.getAttribute('data-wf-dash-rating-worker') || '').trim();
+                const scoreKind = String(ratingScoreExpandEl.getAttribute('data-wf-dash-rating-score-kind') || '').trim();
+                if (workerId && scoreKind && typeof dash._ratingScoreExpandKey === 'function') {
+                    const set = dash._ensureRatingsExpandedScores();
+                    const key = dash._ratingScoreExpandKey(workerId, scoreKind);
+                    const nextOpen = !set.has(key);
+                    if (nextOpen) set.add(key);
+                    else set.delete(key);
+                    Logger.log('search-output: ratings score ' + (nextOpen ? 'expanded' : 'collapsed')
+                        + ' — ' + workerId + ' · ' + scoreKind);
+                    dash._renderRatingsPanel({ recompute: false });
+                }
+                return;
+            }
+            const ratingWeightingBtn = e.target.closest('[data-wf-dash-rating-weighting]');
+            if (ratingWeightingBtn && modal.contains(ratingWeightingBtn)) {
+                const workerId = String(ratingWeightingBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
+                const weighting = ratingWeightingBtn.getAttribute('data-wf-dash-rating-weighting');
+                if (workerId && (weighting === 'flat' || weighting === 'recency')) {
+                    if (!dash._state.ratingsWeightingByWorker) dash._state.ratingsWeightingByWorker = {};
+                    dash._state.ratingsWeightingByWorker[workerId] = weighting;
+                    Logger.log('search-output: ratings weighting toggled — ' + workerId + ' → ' + weighting);
                     dash._renderRatingsPanel({ recompute: false });
                 }
                 return;
@@ -5764,7 +5767,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.11',
+    _version: '9.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

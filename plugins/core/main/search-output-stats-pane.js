@@ -5016,7 +5016,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li><strong>Percentile first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Expand a card to see only the channels that received weight.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
@@ -5067,11 +5067,15 @@ const searchOutputStatsPaneMethods = {
         return 'Based on ' + count + ' ' + label;
     },
 
-    _ensureRatingsExpandedWorkers() {
-        if (!this._state.ratingsExpandedWorkers) {
-            this._state.ratingsExpandedWorkers = new Set();
+    _ensureRatingsExpandedScores() {
+        if (!this._state.ratingsExpandedScores) {
+            this._state.ratingsExpandedScores = new Set();
         }
-        return this._state.ratingsExpandedWorkers;
+        return this._state.ratingsExpandedScores;
+    },
+
+    _ratingScoreExpandKey(workerId, scoreKind) {
+        return String(workerId || '').trim() + '\u001f' + String(scoreKind || '').trim();
     },
 
     _ensureRatingsCohortSliceExpanded() {
@@ -5096,9 +5100,10 @@ const searchOutputStatsPaneMethods = {
         );
     },
 
-    _isRatingWorkerExpanded(workerId) {
-        const set = this._ensureRatingsExpandedWorkers();
-        return set.has(String(workerId || '').trim());
+    _isRatingScoreExpanded(workerId, scoreKind) {
+        return this._ensureRatingsExpandedScores().has(
+            this._ratingScoreExpandKey(workerId, scoreKind)
+        );
     },
 
     _ratingPctOneDecimal(fraction) {
@@ -5333,9 +5338,9 @@ const searchOutputStatsPaneMethods = {
             return '';
         }
         const options = opts || {};
-        const expanded = !!options.expanded;
         const workerId = String(options.workerId || '').trim();
         const scoreKind = String(options.scoreKind || '').trim();
+        const expanded = !!(workerId && scoreKind && this._isRatingScoreExpanded(workerId, scoreKind));
         const conf = block.confidence || {};
         const confStyle = conf.tier === 'provisional'
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
@@ -5352,6 +5357,7 @@ const searchOutputStatsPaneMethods = {
             : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
         const cohortBlend = block.cohortBlend || null;
+        const canExpand = !!(workerId && scoreKind && (cohortBlend || this._ratingSortedAxes(block).length));
         let bodyHtml = '';
         if (expanded) {
             // Cohort per-X lives inside the tinted card; skip flat/main axes (already summarized above).
@@ -5365,8 +5371,21 @@ const searchOutputStatsPaneMethods = {
                 .join('');
             if (axesHtml) bodyHtml = '<div style="margin-top: 4px;">' + axesHtml + '</div>';
         }
+        const chevron = canExpand
+            ? ('<span style="display: inline-block; width: 10px; color: var(--muted-foreground, #64748b); transform: rotate('
+                + (expanded ? '90deg' : '0deg') + '); transition: transform 120ms ease;">▸</span> ')
+            : '';
+        const headerAttrs = canExpand
+            ? (' role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '"'
+                + ' data-wf-dash-rating-score-expand="1"'
+                + ' data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '"'
+                + ' data-wf-dash-rating-score-kind="' + dashEscHtml(scoreKind) + '"'
+                + ' style="cursor: pointer; user-select: none;"')
+            : '';
         return '<div style="' + this._ratingPercentilePanelStyle(pct) + '">'
-            + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
+            + '<div' + headerAttrs + '>'
+            + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">'
+            + chevron + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
             + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
             + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
@@ -5374,6 +5393,7 @@ const searchOutputStatsPaneMethods = {
             + (basisLine
                 ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px;">' + dashEscHtml(basisLine) + '</div>')
                 : '')
+            + '</div>'
             + bodyHtml
             + '</div>';
     },
@@ -5567,7 +5587,6 @@ const searchOutputStatsPaneMethods = {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
         const workerId = String(worker.workerId || '').trim();
-        const expanded = this._isRatingWorkerExpanded(workerId);
         const weighting = this._ratingWorkerWeighting(workerId);
         const isRecency = weighting === 'recency';
 
@@ -5577,14 +5596,12 @@ const searchOutputStatsPaneMethods = {
         const hasQaqs = !!(types.showQaqs && qaqsBlock && qaqsBlock.score != null);
         const twqsHtml = hasTwqs
             ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqsBlock, 'tasks', {
-                expanded,
                 workerId,
                 scoreKind: 'twqs',
             })
             : '';
         const qaqsHtml = hasQaqs
             ? this._ratingScoreBlockCompactHtml('QA Quality Score', qaqsBlock, 'feedbacks', {
-                expanded,
                 workerId,
                 scoreKind: 'qaqs',
             })
@@ -5595,7 +5612,6 @@ const searchOutputStatsPaneMethods = {
             ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
         const box = this._panelBoxStyle();
-        const expandLabel = expanded ? 'Collapse' : 'Expand';
 
         const toggleHtml = '<div class="dv-seg-group" style="flex-shrink: 0;">'
             + '<button type="button" class="dv-seg-btn dv-seg-btn--divider" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'true' : 'false') + '">Recency</button>'
@@ -5608,10 +5624,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 13px; font-weight: 600;">' + dashEscHtml(name) + '</div>'
             + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(worker.email) + '</div>' : '')
             + '</div>'
-            + '<div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">'
             + toggleHtml
-            + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-expand="1" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + expandLabel + '</button>'
-            + '</div>'
             + '</div>'
             + twqsHtml
             + qaqsHtml
@@ -5856,7 +5869,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.0',
+    _version: '10.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
