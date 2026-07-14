@@ -14,6 +14,7 @@ const TEAM_MEMBERS_PAGE_SIZE_KEY = 'fleet-ux:team-members-page-size';
 const TEAM_MEMBERS_PAGE_SIZE_DEFAULT = 25;
 const TEAM_MEMBERS_BADGE_SCOPE = 'team-members-badges';
 const TEAM_MEMBERS_BADGE_FILTER_ITEMS = [
+    { id: 'mts', label: 'MTS' },
     { id: 'ui', label: 'UI' },
     { id: 'verticals', label: 'Verticals' },
     { id: 'epic', label: 'Epic' },
@@ -499,7 +500,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

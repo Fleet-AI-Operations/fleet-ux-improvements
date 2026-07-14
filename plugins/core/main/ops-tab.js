@@ -198,7 +198,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.1',
+    _version: '9.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3198,7 +3198,16 @@ const plugin = {
         return false;
     },
 
+    _opsMemberEmailDomainHasFleet(member) {
+        const email = String(member && member.email || '');
+        const at = email.lastIndexOf('@');
+        if (at < 0) return false;
+        return email.slice(at + 1).toLowerCase().includes('fleet');
+    },
+
     _opsMemberBadgeCategory(member) {
+        // Fleet-domain emails always get MTS, regardless of team labels.
+        if (this._opsMemberEmailDomainHasFleet(member)) return 'mts';
         const teamLabels = member.teamLabels || new Set();
         if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return 'fellows';
         for (const label of teamLabels) {
@@ -3211,12 +3220,14 @@ const plugin = {
 
     _opsMemberBadgeHtml(category) {
         const styles = {
+            mts: 'background:#0f172a;color:#fff;',
             ui: 'background:var(--brand,#4f46e5);color:#fff;',
             verticals: 'background:#0d9488;color:#fff;',
             epic: 'background:#7c3aed;color:#fff;',
             fellows: 'background:#64748b;color:#fff;'
         };
         const labels = {
+            mts: 'MTS',
             ui: 'UI',
             verticals: 'VERTICALS',
             epic: 'EPIC',
