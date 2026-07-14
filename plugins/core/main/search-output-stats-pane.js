@@ -4607,8 +4607,6 @@ const searchOutputStatsPaneMethods = {
     _ratingsSortOptions(committed) {
         return [
             { id: 'confidence-desc', label: 'Confidence high→low' },
-            { id: 'combined-desc',   label: 'Combined high→low' },
-            { id: 'combined-asc',    label: 'Combined low→high' },
             { id: 'twqs-desc',       label: 'TWQS high→low' },
             { id: 'twqs-asc',        label: 'TWQS low→high' },
             { id: 'qaqs-desc',       label: 'QAQS high→low' },
@@ -4653,11 +4651,11 @@ const searchOutputStatsPaneMethods = {
         return stored === 'flat' ? 'flat' : 'recency';
     },
 
-    // Returns the score block for a given weighting variant (twqs, qaqs, or combined).
-    // When a cohort blend exists, TWQS/QAQS keep axis detail from the main score but
-    // surface the blended score/band; Combined uses the blend's combined block.
+    // Returns the score block for a given weighting variant (twqs or qaqs).
+    // When a cohort blend exists, keep axis detail from the main score but
+    // surface the blended score/band.
     _ratingBlockForWeighting(worker, scoreKey) {
-        if (!worker) return null;
+        if (!worker || (scoreKey !== 'twqs' && scoreKey !== 'qaqs')) return null;
         const weighting = this._ratingWorkerWeighting(worker.workerId);
         const entry = worker[scoreKey];
         const main = !entry
@@ -4668,9 +4666,6 @@ const searchOutputStatsPaneMethods = {
         const cohortEntry = worker.cohort
             && worker.cohort[weighting]
             && worker.cohort[weighting][scoreKey];
-        if (scoreKey === 'combined') {
-            return (cohortEntry && cohortEntry.score != null) ? cohortEntry : main;
-        }
         if (!main) return null;
         if (!cohortEntry || cohortEntry.score == null) return main;
         return Object.assign({}, main, {
@@ -4766,11 +4761,6 @@ const searchOutputStatsPaneMethods = {
         }
         if (sortKey === 'qaqs-desc' || sortKey === 'qaqs-asc') {
             const block = this._ratingBlockForWeighting(worker, 'qaqs');
-            const s = block && block.score;
-            return Number.isFinite(s) ? s : null;
-        }
-        if (sortKey === 'combined-desc' || sortKey === 'combined-asc') {
-            const block = this._ratingBlockForWeighting(worker, 'combined');
             const s = block && block.score;
             return Number.isFinite(s) ? s : null;
         }
@@ -5006,11 +4996,10 @@ const searchOutputStatsPaneMethods = {
             + ' — how the scores are built and what they include.'
             + '</summary>'
             + '<div style="margin-top: 10px; font-size: 11px; line-height: 1.45; color: var(--foreground, #0f172a);">'
-            + '<p style="margin: 0 0 8px;">Up to three scores per contributor, each on a <strong>0–100</strong> scale:</p>'
+            + '<p style="margin: 0 0 8px;">Up to two scores per contributor, each on a <strong>0–100</strong> scale:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li><strong>Task Writer Quality Score (TWQS)</strong> — quality of the work they <strong>authored</strong>. Based on the WPS v1.2 model.</li>'
             + '<li><strong>QA Quality Score (QAQS)</strong> — quality of the reviews they <strong>performed</strong>. Based on the QPS v2.1 model.</li>'
-            + '<li><strong>Combined</strong> — volume-weighted blend of TWQS and QAQS (same formula as the live ranking composite). Shown when a person has both roles. Higher task volume shifts weight toward TWQS; higher feedback volume shifts it toward QAQS.</li>'
             + '</ul>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
@@ -5022,7 +5011,7 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Estimated percentile</div>'
-            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is an <em>estimated</em> percentile (e.g. &ldquo;~72nd percentile&rdquo;), with the raw 0–100 score shown as secondary. Percentiles use a normal-CDF formula fitted to the current dive.db scored population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics regenerated after ranking. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, QAQS recency, combined flat, and combined recency. This is an approximation, not an exact rank.</p>'
+            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is an <em>estimated</em> percentile (e.g. &ldquo;~72nd percentile&rdquo;), with the raw 0–100 score shown as secondary. Percentiles use a normal-CDF formula fitted to the current dive.db scored population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics regenerated after ranking. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, and QAQS recency. This is an approximation, not an exact rank.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
@@ -5574,31 +5563,6 @@ const searchOutputStatsPaneMethods = {
         return this._ratingScoreBlockCompactHtml(title, block, basisKind, opts);
     },
 
-    _ratingCombinedBlockHtml(block) {
-        if (!block || block.score == null) return '';
-        const scoreDisplay = Math.round(block.score);
-        const pct = block.estimatedPercentile;
-        const pctLabel = pct != null ? this._ratingFormatPercentile(pct) : '';
-        const primaryHtml = pctLabel
-            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 11px; font-weight: 500;"> percentile</span>')
-            : dashEscHtml(String(scoreDisplay));
-        const secondaryHtml = pctLabel
-            ? (' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
-                + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
-            : (' <span style="font-size: 11px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
-        let blendLine = '';
-        if (block.writerRatio != null && block.qaRatio != null) {
-            const wPct = Math.round(block.writerRatio * 100);
-            const qPct = Math.round(block.qaRatio * 100);
-            blendLine = wPct + '% writer · ' + qPct + '% QA';
-        }
-        return '<div style="' + this._ratingPercentilePanelStyle(pct) + '">'
-            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 3px; color: var(--muted-foreground, #64748b);">Combined</div>'
-            + '<div style="font-size: 18px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
-            + (blendLine ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 3px;">' + dashEscHtml(blendLine) + '</div>' : '')
-            + '</div>';
-    },
-
     _ratingWorkerCardHtml(worker, scoreTypes) {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
@@ -5609,13 +5573,8 @@ const searchOutputStatsPaneMethods = {
 
         const twqsBlock = this._ratingBlockForWeighting(worker, 'twqs');
         const qaqsBlock = this._ratingBlockForWeighting(worker, 'qaqs');
-        const combinedBlock = this._ratingBlockForWeighting(worker, 'combined');
         const hasTwqs = !!(types.showTwqs && twqsBlock && twqsBlock.score != null);
         const hasQaqs = !!(types.showQaqs && qaqsBlock && qaqsBlock.score != null);
-        // Combined is redundant when the card only has one role score.
-        const combinedHtml = (hasTwqs && hasQaqs)
-            ? this._ratingCombinedBlockHtml(combinedBlock)
-            : '';
         const twqsHtml = hasTwqs
             ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqsBlock, 'tasks', {
                 expanded,
@@ -5654,7 +5613,6 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-expand="1" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">' + expandLabel + '</button>'
             + '</div>'
             + '</div>'
-            + combinedHtml
             + twqsHtml
             + qaqsHtml
             + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
@@ -5855,8 +5813,8 @@ const searchOutputStatsPaneMethods = {
         // Derive a scoreType label for the filename from what is present.
         const hasTwqs = worker.twqs && (worker.twqs.flat || worker.twqs.recency || worker.twqs.score != null);
         const hasQaqs = worker.qaqs && (worker.qaqs.flat || worker.qaqs.recency || worker.qaqs.score != null);
-        let scoreType = 'combined';
-        if (hasTwqs && hasQaqs) scoreType = 'combined';
+        let scoreType = 'scores';
+        if (hasTwqs && hasQaqs) scoreType = 'twqs-qaqs';
         else if (hasTwqs) scoreType = 'twqs';
         else if (hasQaqs) scoreType = 'qaqs';
 
@@ -5898,7 +5856,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.13',
+    _version: '10.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
