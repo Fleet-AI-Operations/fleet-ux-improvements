@@ -5085,6 +5085,28 @@ const searchOutputStatsPaneMethods = {
         return this._state.ratingsExpandedWorkers;
     },
 
+    _ensureRatingsCohortSliceExpanded() {
+        if (!this._state.ratingsCohortSliceExpanded) {
+            this._state.ratingsCohortSliceExpanded = new Set();
+        }
+        return this._state.ratingsCohortSliceExpanded;
+    },
+
+    _ratingCohortSliceExpandKey(workerId, scoreKind, dimension, sliceKey) {
+        return [
+            String(workerId || '').trim(),
+            String(scoreKind || '').trim(),
+            String(dimension || '').trim(),
+            String(sliceKey || '').trim(),
+        ].join('\u001f');
+    },
+
+    _isRatingCohortSliceExpanded(workerId, scoreKind, dimension, sliceKey) {
+        return this._ensureRatingsCohortSliceExpanded().has(
+            this._ratingCohortSliceExpandKey(workerId, scoreKind, dimension, sliceKey)
+        );
+    },
+
     _isRatingWorkerExpanded(workerId) {
         const set = this._ensureRatingsExpandedWorkers();
         return set.has(String(workerId || '').trim());
@@ -5353,40 +5375,72 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _ratingCohortSectionHtml(title, scoreDisplay, weightOrMeta, meta, axes) {
-        const axesList = [...(axes || [])].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
-        const axesHtml = axesList.length
-            ? axesList.map((axis) => this._ratingAxisBarHtml(axis, true)).join('')
+    _ratingCohortSectionHtml(opts) {
+        const o = opts || {};
+        const title = o.title || '';
+        const scoreDisplay = o.scoreDisplay;
+        const weightOrMeta = o.weightOrMeta || '';
+        const meta = o.meta || '';
+        const axes = o.axes || [];
+        const expanded = !!o.expanded;
+        const workerId = String(o.workerId || '').trim();
+        const scoreKind = String(o.scoreKind || '').trim();
+        const dimension = String(o.dimension || '').trim();
+        const sliceKey = String(o.sliceKey || '').trim();
+        const canExpand = !!(workerId && scoreKind && dimension && sliceKey && axes.length);
+        const axesList = [...axes].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
+        const axesHtml = (expanded && axesList.length)
+            ? ('<div style="margin-top: 6px; padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, transparent);">'
+                + axesList.map((axis) => this._ratingAxisBarHtml(axis, true)).join('')
+                + '</div>')
             : '';
+        const chevron = canExpand
+            ? ('<span style="display: inline-block; width: 10px; color: var(--muted-foreground, #64748b); transform: rotate('
+                + (expanded ? '90deg' : '0deg') + '); transition: transform 120ms ease;">▸</span> ')
+            : '';
+        const headerAttrs = canExpand
+            ? (' role="button" tabindex="0" aria-expanded="' + (expanded ? 'true' : 'false') + '"'
+                + ' data-wf-dash-rating-cohort-slice="1"'
+                + ' data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '"'
+                + ' data-wf-dash-rating-score-kind="' + dashEscHtml(scoreKind) + '"'
+                + ' data-wf-dash-rating-cohort-dim="' + dashEscHtml(dimension) + '"'
+                + ' data-wf-dash-rating-cohort-key="' + dashEscHtml(sliceKey) + '"'
+                + ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; user-select: none;"')
+            : ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"';
         return '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 55%, transparent);">'
-            + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
+            + '<div' + headerAttrs + '>'
             + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;">'
-            + dashEscHtml(title) + '</div>'
+            + chevron + dashEscHtml(title) + '</div>'
             + '<div style="font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b);">'
             + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—')
             + (weightOrMeta ? ' · ' + dashEscHtml(String(weightOrMeta)) : '')
             + '</div>'
             + '</div>'
             + (meta
-                ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;">'
+                ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;'
+                    + (canExpand ? ' padding-left: 14px;' : '') + '">'
                     + dashEscHtml(meta) + '</div>')
                 : '')
-            + (axesHtml ? '<div style="margin-top: 2px;">' + axesHtml + '</div>' : '')
+            + axesHtml
             + '</div>';
     },
 
-    _ratingCohortBreakdownHtml(title, blend) {
+    _ratingCohortBreakdownHtml(title, blend, workerId, scoreKind) {
         if (!blend || !blend.main || blend.main.score == null) return '';
         let sectionsHtml = '';
         const mainScore = Math.round(blend.main.score * 10) / 10;
         const mainWt = this._ratingPctOneDecimal(blend.main.weight);
-        sectionsHtml += this._ratingCohortSectionHtml(
-            'Main',
-            mainScore,
-            mainWt != null ? (mainWt + '% wt') : '',
-            '',
-            blend.main.axes
-        );
+        sectionsHtml += this._ratingCohortSectionHtml({
+            title: 'Main',
+            scoreDisplay: mainScore,
+            weightOrMeta: mainWt != null ? (mainWt + '% wt') : '',
+            axes: blend.main.axes,
+            expanded: this._isRatingCohortSliceExpanded(workerId, scoreKind, 'main', 'main'),
+            workerId,
+            scoreKind,
+            dimension: 'main',
+            sliceKey: 'main',
+        });
 
         const dimMeta = [
             { id: 'team', label: 'Team' },
@@ -5401,17 +5455,22 @@ const searchOutputStatsPaneMethods = {
                 + dashEscHtml(dim.label) + '</div>';
             for (const slice of slices) {
                 if (!slice || slice.score == null) continue;
+                const key = String(slice.key || '—');
                 const scoreDisplay = Math.round(slice.score * 10) / 10;
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
                     : '';
-                sectionsHtml += this._ratingCohortSectionHtml(
-                    String(slice.key || '—'),
+                sectionsHtml += this._ratingCohortSectionHtml({
+                    title: key,
                     scoreDisplay,
-                    vol,
-                    '',
-                    slice.axes
-                );
+                    weightOrMeta: vol,
+                    axes: slice.axes,
+                    expanded: this._isRatingCohortSliceExpanded(workerId, scoreKind, dim.id, key),
+                    workerId,
+                    scoreKind,
+                    dimension: dim.id,
+                    sliceKey: key,
+                });
             }
         }
         return '<div style="margin-top: 12px;">'
@@ -5421,10 +5480,10 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _ratingScoreBlockDetailHtml(title, block, cohortBlend) {
+    _ratingScoreBlockDetailHtml(title, block, cohortBlend, workerId, scoreKind) {
         const blend = cohortBlend || (block && block.cohortBlend) || null;
         if (blend) {
-            return this._ratingCohortBreakdownHtml(title, blend);
+            return this._ratingCohortBreakdownHtml(title, blend, workerId, scoreKind);
         }
         if (!block || block.score == null) {
             return '';
@@ -5558,10 +5617,10 @@ const searchOutputStatsPaneMethods = {
         if (expanded) {
             const detailParts = [];
             if (hasTwqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', twqsBlock));
+                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', twqsBlock, null, workerId, 'twqs'));
             }
             if (hasQaqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', qaqsBlock));
+                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', qaqsBlock, null, workerId, 'qaqs'));
             }
             if (detailParts.length) {
                 detailHtml = '<div data-wf-dash-rating-detail="1" style="margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border, #e2e8f0);">'
@@ -5838,7 +5897,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.11',
+    _version: '9.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

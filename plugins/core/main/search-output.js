@@ -5270,6 +5270,24 @@ function attachSearchOutputListeners(modal, dash) {
                 }
                 return;
             }
+            const ratingCohortSliceBtn = e.target.closest('[data-wf-dash-rating-cohort-slice]');
+            if (ratingCohortSliceBtn && modal.contains(ratingCohortSliceBtn)) {
+                const workerId = String(ratingCohortSliceBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
+                const scoreKind = String(ratingCohortSliceBtn.getAttribute('data-wf-dash-rating-score-kind') || '').trim();
+                const dimension = String(ratingCohortSliceBtn.getAttribute('data-wf-dash-rating-cohort-dim') || '').trim();
+                const sliceKey = String(ratingCohortSliceBtn.getAttribute('data-wf-dash-rating-cohort-key') || '').trim();
+                if (workerId && scoreKind && dimension && sliceKey && typeof dash._ratingCohortSliceExpandKey === 'function') {
+                    const set = dash._ensureRatingsCohortSliceExpanded();
+                    const key = dash._ratingCohortSliceExpandKey(workerId, scoreKind, dimension, sliceKey);
+                    const nextOpen = !set.has(key);
+                    if (nextOpen) set.add(key);
+                    else set.delete(key);
+                    Logger.log('search-output: ratings cohort slice ' + (nextOpen ? 'expanded' : 'collapsed')
+                        + ' — ' + workerId + ' · ' + scoreKind + ' · ' + dimension + ' · ' + sliceKey);
+                    dash._renderRatingsPanel({ recompute: false });
+                }
+                return;
+            }
             const ratingsBulkExportBtn = e.target.closest('[data-wf-dash-ratings-export-bulk]');
             if (ratingsBulkExportBtn && modal.contains(ratingsBulkExportBtn)) {
                 dash._exportFilteredRatingsJson();
@@ -5746,7 +5764,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.10',
+    _version: '9.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
