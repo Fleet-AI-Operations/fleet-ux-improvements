@@ -5244,8 +5244,6 @@ const searchOutputStatsPaneMethods = {
                 if (raw.upheld != null && raw.resolved != null && raw.resolved > 0) {
                     const defPct = this._ratingPctOneDecimal(raw.upheld / raw.resolved);
                     lines.push('Upheld ' + (defPct != null ? defPct + '%' : '') + ' (' + raw.upheld + ' / ' + raw.resolved + ' as sole negative reviewer)');
-                } else if (raw.resolved != null) {
-                    lines.push(raw.resolved + ' resolved dispute(s) as sole negative reviewer');
                 }
                 break;
             }
@@ -5869,7 +5867,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.2',
+    _version: '10.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
