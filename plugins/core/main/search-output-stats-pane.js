@@ -42,7 +42,7 @@ const searchOutputStatsPaneMethods = {
             + this._statsChartsPanelContentHtml()
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
-            + '<div id="wf-dash-ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: ' + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; box-sizing: border-box;">'
+            + '<div id="wf-dash-ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: ' + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
             + this._ratingsToolbarHtml()
@@ -5887,7 +5887,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.5',
+    _version: '10.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
