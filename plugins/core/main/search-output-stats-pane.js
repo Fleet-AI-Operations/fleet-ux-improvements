@@ -5358,10 +5358,22 @@ const searchOutputStatsPaneMethods = {
         const canExpand = !!(workerId && scoreKind && (cohortBlend || this._ratingSortedAxes(block).length));
         let bodyHtml = '';
         if (expanded) {
-            // Cohort per-X lives inside the tinted card; skip flat/main axes (already summarized above).
-            bodyHtml = this._ratingScoreBlockDetailHtml(title, block, cohortBlend, workerId, scoreKind, {
+            // Top-level: overall weighted axis bars (main blend or raw score axes).
+            const mainAxes = (cohortBlend && cohortBlend.main && cohortBlend.main.axes)
+                ? cohortBlend.main.axes
+                : this._ratingSortedAxes(block);
+            const mainAxesHtml = this._ratingSortedAxes({ axes: mainAxes })
+                .map((axis) => this._ratingAxisBarHtml(axis, true))
+                .join('');
+            const topBars = mainAxesHtml
+                ? ('<div style="margin-top: 8px;">' + mainAxesHtml + '</div>')
+                : '';
+            // Below: per team / env / month (or non-cohort weight table).
+            const detailHtml = this._ratingScoreBlockDetailHtml(title, block, cohortBlend, workerId, scoreKind, {
                 nestInScoreCard: true,
+                omitMainAxes: true,
             });
+            bodyHtml = topBars + detailHtml;
         } else if (!cohortBlend) {
             // Non-cohort: keep sub-axis bars visible even when collapsed.
             const axesHtml = this._ratingSortedAxes(block)
@@ -5499,6 +5511,10 @@ const searchOutputStatsPaneMethods = {
         const blend = cohortBlend || (block && block.cohortBlend) || null;
         if (blend) {
             return this._ratingCohortBreakdownHtml(title, blend, workerId, scoreKind, opts);
+        }
+        // Nested score cards already render overall axis bars above; skip the weight table.
+        if (nestInScoreCard && opts && opts.omitMainAxes) {
+            return '';
         }
         if (!block || block.score == null) {
             return '';
@@ -5867,7 +5883,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.3',
+    _version: '10.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
