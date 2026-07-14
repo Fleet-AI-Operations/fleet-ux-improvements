@@ -4714,6 +4714,7 @@ const searchOutputStatsPaneMethods = {
                 volume: null,
                 provisional: false,
                 keys: [],
+                axes: Array.isArray(blend.main.axes) ? blend.main.axes : [],
             });
         }
         const labels = { team: 'Team', env: 'Environment', month: 'Month' };
@@ -4728,9 +4729,40 @@ const searchOutputStatsPaneMethods = {
                 volume: channel.volume,
                 provisional: !!channel.provisional,
                 keys: Array.isArray(channel.keys) ? channel.keys : [],
+                axes: Array.isArray(channel.axes) ? channel.axes : [],
             });
         }
         return rows;
+    },
+
+    /** Red (0) → yellow (50) → green (100) tint for top-level score panels. */
+    _ratingPercentileFillColor(percentile) {
+        if (percentile == null || !Number.isFinite(Number(percentile))) return null;
+        const t = Math.max(0, Math.min(100, Number(percentile))) / 100;
+        let r; let g; let b;
+        if (t <= 0.5) {
+            const u = t / 0.5;
+            r = Math.round(239 + (234 - 239) * u);
+            g = Math.round(68 + (179 - 68) * u);
+            b = Math.round(68 + (8 - 68) * u);
+        } else {
+            const u = (t - 0.5) / 0.5;
+            r = Math.round(234 + (34 - 234) * u);
+            g = Math.round(179 + (197 - 179) * u);
+            b = Math.round(8 + (94 - 8) * u);
+        }
+        return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+    },
+
+    _ratingPercentilePanelStyle(percentile) {
+        const fill = this._ratingPercentileFillColor(percentile);
+        if (!fill) {
+            return 'margin-top: 10px; padding: 8px 10px; border-radius: 6px;'
+                + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #fff));';
+        }
+        return 'margin-top: 10px; padding: 8px 10px; border-radius: 6px;'
+            + ' background: color-mix(in srgb, ' + fill + ' 22%, var(--card, #fff));'
+            + ' border: 1px solid color-mix(in srgb, ' + fill + ' 45%, var(--border, #e2e8f0));';
     },
 
     _ensureRatingsSortKey(committed) {
@@ -5276,10 +5308,11 @@ const searchOutputStatsPaneMethods = {
         }
         const subPct = this._ratingPctOneDecimal(axis.score);
         const fillPct = Math.max(0, Math.min(100, subPct != null ? subPct : 0));
+        const barFill = this._ratingPercentileFillColor(fillPct) || 'var(--brand, #3b82f6)';
         const trackStyle = 'flex: 1; min-width: 48px; height: 6px; border-radius: 3px;'
             + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 22%, transparent); overflow: hidden;';
         const fillStyle = 'height: 100%; width: ' + fillPct + '%; border-radius: 3px;'
-            + ' background: color-mix(in srgb, var(--brand, #3b82f6) 70%, transparent);';
+            + ' background: color-mix(in srgb, ' + barFill + ' 78%, transparent);';
         let html = '<div style="margin-top: 6px;">'
             + '<div style="display: flex; align-items: center; gap: 8px; font-size: 10px;">'
             + '<span style="flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
@@ -5336,11 +5369,11 @@ const searchOutputStatsPaneMethods = {
                 + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
             : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
+        // Show every sub-axis (including omitted) with a bar where scored.
         const axesHtml = this._ratingSortedAxes(block)
-            .filter((axis) => axis.defined !== false && axis.score != null)
             .map((axis) => this._ratingAxisBarHtml(axis, false))
             .join('');
-        return '<div style="margin-top: 10px;">'
+        return '<div style="' + this._ratingPercentilePanelStyle(pct) + '">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
             + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
@@ -5356,12 +5389,9 @@ const searchOutputStatsPaneMethods = {
     _ratingCohortBreakdownHtml(title, blend) {
         const rows = this._ratingCohortChannelRows(blend);
         if (!rows.length) return '';
-        const thStyle = 'padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);';
-        const tdStyle = 'padding: 4px 6px; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 50%, transparent);';
-        const tdNum = tdStyle + ' text-align: right; white-space: nowrap;';
         const compositeTerms = [];
         let compositeSum = 0;
-        let rowsHtml = '';
+        let sectionsHtml = '';
         for (const row of rows) {
             const scoreDisplay = row.score != null
                 ? (Math.round(row.score * 10) / 10)
@@ -5381,34 +5411,34 @@ const searchOutputStatsPaneMethods = {
                 const more = row.keys.length > 3 ? ' +' + (row.keys.length - 3) : '';
                 meta = (meta ? meta + ' · ' : '') + shown + more;
             }
-            rowsHtml += '<tr>'
-                + '<td style="' + tdStyle + '">'
-                + '<div style="font-weight: 600;">' + dashEscHtml(row.label) + '</div>'
+            const axes = [...(row.axes || [])].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
+            const axesHtml = axes.length
+                ? axes.map((axis) => this._ratingAxisBarHtml(axis, true)).join('')
+                : '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px;">No sub-axis scores</div>';
+            sectionsHtml += '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 55%, transparent);">'
+                + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
+                + '<div style="font-size: 11px; font-weight: 600;">' + dashEscHtml(row.label) + '</div>'
+                + '<div style="font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b);">'
+                + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—')
+                + (wtPct != null ? ' · ' + dashEscHtml(String(wtPct) + '% wt') : '')
+                + '</div>'
+                + '</div>'
                 + (meta
                     ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;">'
                         + dashEscHtml(meta) + '</div>')
                     : '')
-                + '</td>'
-                + '<td style="' + tdNum + '">' + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—') + '</td>'
-                + '<td style="' + tdNum + '">' + (wtPct != null ? dashEscHtml(String(wtPct) + '%') : '—') + '</td>'
-                + '</tr>';
+                + '<div style="margin-top: 2px;">' + axesHtml + '</div>'
+                + '</div>';
         }
         const compositeRounded = Math.round(compositeSum * 10) / 10;
         const compositeLine = compositeTerms.length
             ? (dashEscHtml(String(compositeRounded)) + ' ≈ ' + dashEscHtml(compositeTerms.join(' + ')))
             : '';
         return '<div style="margin-top: 12px;">'
-            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' · cohort mix</div>'
-            + '<table style="width: 100%; border-collapse: collapse; font-size: 10px;">'
-            + '<thead><tr>'
-            + '<th style="' + thStyle + '">Channel</th>'
-            + '<th style="' + thStyle + ' text-align: right;">Score</th>'
-            + '<th style="' + thStyle + ' text-align: right;">Weight</th>'
-            + '</tr></thead>'
-            + '<tbody>' + rowsHtml + '</tbody>'
-            + '</table>'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 2px;">' + dashEscHtml(title) + ' · cohort mix</div>'
+            + sectionsHtml
             + (compositeLine
-                ? ('<div style="font-size: 10px; margin-top: 6px; color: var(--foreground, #0f172a);">' + compositeLine + '</div>')
+                ? ('<div style="font-size: 10px; margin-top: 8px; color: var(--foreground, #0f172a);">' + compositeLine + '</div>')
                 : '')
             + '</div>';
     },
@@ -5515,7 +5545,7 @@ const searchOutputStatsPaneMethods = {
             const qPct = Math.round(block.qaRatio * 100);
             blendLine = wPct + '% writer · ' + qPct + '% QA';
         }
-        return '<div style="margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--primary, #6366f1) 6%, var(--card, #fff));">'
+        return '<div style="' + this._ratingPercentilePanelStyle(pct) + '">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 3px; color: var(--muted-foreground, #64748b);">Combined</div>'
             + '<div style="font-size: 18px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
             + (blendLine ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 3px;">' + dashEscHtml(blendLine) + '</div>' : '')
@@ -5533,22 +5563,26 @@ const searchOutputStatsPaneMethods = {
         const twqsBlock = this._ratingBlockForWeighting(worker, 'twqs');
         const qaqsBlock = this._ratingBlockForWeighting(worker, 'qaqs');
         const combinedBlock = this._ratingBlockForWeighting(worker, 'combined');
-
-        const combinedHtml = this._ratingCombinedBlockHtml(combinedBlock);
-        const twqsHtml = types.showTwqs
+        const hasTwqs = !!(types.showTwqs && twqsBlock && twqsBlock.score != null);
+        const hasQaqs = !!(types.showQaqs && qaqsBlock && qaqsBlock.score != null);
+        // Combined is redundant when the card only has one role score.
+        const combinedHtml = (hasTwqs && hasQaqs)
+            ? this._ratingCombinedBlockHtml(combinedBlock)
+            : '';
+        const twqsHtml = hasTwqs
             ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqsBlock, 'tasks')
             : '';
-        const qaqsHtml = types.showQaqs
+        const qaqsHtml = hasQaqs
             ? this._ratingScoreBlockCompactHtml('QA Quality Score', qaqsBlock, 'feedbacks')
             : '';
 
         let detailHtml = '';
         if (expanded) {
             const detailParts = [];
-            if (types.showTwqs && twqsBlock) {
+            if (hasTwqs) {
                 detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', twqsBlock));
             }
-            if (types.showQaqs && qaqsBlock) {
+            if (hasQaqs) {
                 detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', qaqsBlock));
             }
             if (detailParts.length) {
@@ -5826,7 +5860,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.7',
+    _version: '9.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

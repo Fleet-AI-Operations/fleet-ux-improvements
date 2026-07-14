@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS / Combined computation for Worker Output Search Ratings tab.
-// Engine v6.2: recalibrated TW/QA/combined percentile μ/σ from rebuilt dive.db.
+// Engine v6.3: cohort channels carry volume-weighted sub-axis scores for expand UI.
 
-const RE_VERSION = '6.2';
+const RE_VERSION = '6.3';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -308,6 +308,41 @@ function reCohortKey(task, dimension) {
     return '';
 }
 
+function reVolumeWeightedAxes(usable) {
+    const byId = new Map();
+    for (const row of usable || []) {
+        const vol = Number(row.volume) || 0;
+        if (vol <= 0 || !row.block) continue;
+        for (const axis of row.block.axes || []) {
+            if (!axis || axis.defined === false || axis.score == null) continue;
+            const id = axis.id || axis.label;
+            if (!id) continue;
+            let agg = byId.get(id);
+            if (!agg) {
+                agg = {
+                    id: axis.id,
+                    label: axis.label,
+                    baseWeight: axis.baseWeight,
+                    scoreSum: 0,
+                    volume: 0,
+                };
+                byId.set(id, agg);
+            }
+            agg.scoreSum += axis.score * vol;
+            agg.volume += vol;
+        }
+    }
+    return [...byId.values()].map((agg) => ({
+        id: agg.id,
+        label: agg.label,
+        baseWeight: agg.baseWeight,
+        score: agg.volume > 0 ? agg.scoreSum / agg.volume : null,
+        defined: true,
+        effectiveWeight: null,
+        raw: { volume: Math.round(agg.volume * 1000) / 1000 },
+    }));
+}
+
 function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
     if (!mainBlock || mainBlock.score == null) return null;
     let mainWeight = 0.5;
@@ -318,7 +353,9 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
         const initialWeight = 1 / 6;
         if (!usable.length) {
             mainWeight += initialWeight;
-            channels[dimension] = { score: null, volume: 0, weight: 0, provisional: false, keys: [] };
+            channels[dimension] = {
+                score: null, volume: 0, weight: 0, provisional: false, keys: [], axes: [],
+            };
             continue;
         }
         const totalVolume = usable.reduce((sum, row) => sum + row.volume, 0);
@@ -332,6 +369,7 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
             weight,
             provisional,
             keys: usable.map((row) => row.key),
+            axes: reVolumeWeightedAxes(usable),
         };
     }
     const score = mainWeight * mainBlock.score
@@ -341,7 +379,11 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
         band: reBandLabel(score),
         estimatedPercentile: mainBlock.estimatedPercentile,
         confidence: mainBlock.confidence,
-        main: { score: mainBlock.score, weight: mainWeight },
+        main: {
+            score: mainBlock.score,
+            weight: mainWeight,
+            axes: (mainBlock.axes || []).map((axis) => ({ ...axis })),
+        },
         channels,
     };
 }
@@ -1285,7 +1327,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
