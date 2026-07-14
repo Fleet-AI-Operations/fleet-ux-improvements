@@ -5339,10 +5339,14 @@ const searchOutputStatsPaneMethods = {
         return String(v) + suffix;
     },
 
-    _ratingScoreBlockCompactHtml(title, block, basisKind) {
+    _ratingScoreBlockCompactHtml(title, block, basisKind, opts) {
         if (!block || block.score == null) {
             return '';
         }
+        const options = opts || {};
+        const expanded = !!options.expanded;
+        const workerId = String(options.workerId || '').trim();
+        const scoreKind = String(options.scoreKind || '').trim();
         const conf = block.confidence || {};
         const confStyle = conf.tier === 'provisional'
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
@@ -5358,10 +5362,20 @@ const searchOutputStatsPaneMethods = {
                 + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
             : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
-        // Show every sub-axis (including omitted) with a bar where scored.
-        const axesHtml = this._ratingSortedAxes(block)
-            .map((axis) => this._ratingAxisBarHtml(axis, false))
-            .join('');
+        const cohortBlend = block.cohortBlend || null;
+        let bodyHtml = '';
+        if (expanded) {
+            // Cohort per-X lives inside the tinted card; skip flat/main axes (already summarized above).
+            bodyHtml = this._ratingScoreBlockDetailHtml(title, block, cohortBlend, workerId, scoreKind, {
+                nestInScoreCard: true,
+            });
+        } else if (!cohortBlend) {
+            // Non-cohort: keep sub-axis bars visible even when collapsed.
+            const axesHtml = this._ratingSortedAxes(block)
+                .map((axis) => this._ratingAxisBarHtml(axis, false))
+                .join('');
+            if (axesHtml) bodyHtml = '<div style="margin-top: 4px;">' + axesHtml + '</div>';
+        }
         return '<div style="' + this._ratingPercentilePanelStyle(pct) + '">'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
@@ -5371,7 +5385,7 @@ const searchOutputStatsPaneMethods = {
             + (basisLine
                 ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px;">' + dashEscHtml(basisLine) + '</div>')
                 : '')
-            + (axesHtml ? '<div style="margin-top: 4px;">' + axesHtml + '</div>' : '')
+            + bodyHtml
             + '</div>';
     },
 
@@ -5425,22 +5439,11 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _ratingCohortBreakdownHtml(title, blend, workerId, scoreKind) {
+    _ratingCohortBreakdownHtml(title, blend, workerId, scoreKind, opts) {
         if (!blend || !blend.main || blend.main.score == null) return '';
+        const nestInScoreCard = !!(opts && opts.nestInScoreCard);
         let sectionsHtml = '';
-        const mainScore = Math.round(blend.main.score * 10) / 10;
-        const mainWt = this._ratingPctOneDecimal(blend.main.weight);
-        sectionsHtml += this._ratingCohortSectionHtml({
-            title: 'Main',
-            scoreDisplay: mainScore,
-            weightOrMeta: mainWt != null ? (mainWt + '% wt') : '',
-            axes: blend.main.axes,
-            expanded: this._isRatingCohortSliceExpanded(workerId, scoreKind, 'main', 'main'),
-            workerId,
-            scoreKind,
-            dimension: 'main',
-            sliceKey: 'main',
-        });
+        // Main is the card headline / overall score — only render per-team / env / month slices.
 
         const dimMeta = [
             { id: 'team', label: 'Team' },
@@ -5473,6 +5476,10 @@ const searchOutputStatsPaneMethods = {
                 });
             }
         }
+        if (!sectionsHtml) return '';
+        if (nestInScoreCard) {
+            return '<div style="margin-top: 8px;">' + sectionsHtml + '</div>';
+        }
         return '<div style="margin-top: 12px;">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 2px;">'
             + dashEscHtml(title) + ' · by team / env / month</div>'
@@ -5480,10 +5487,11 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _ratingScoreBlockDetailHtml(title, block, cohortBlend, workerId, scoreKind) {
+    _ratingScoreBlockDetailHtml(title, block, cohortBlend, workerId, scoreKind, opts) {
+        const nestInScoreCard = !!(opts && opts.nestInScoreCard);
         const blend = cohortBlend || (block && block.cohortBlend) || null;
         if (blend) {
-            return this._ratingCohortBreakdownHtml(title, blend, workerId, scoreKind);
+            return this._ratingCohortBreakdownHtml(title, blend, workerId, scoreKind, opts);
         }
         if (!block || block.score == null) {
             return '';
@@ -5540,8 +5548,10 @@ const searchOutputStatsPaneMethods = {
             contextLine = (contextLine ? contextLine + ' · ' : '')
                 + 'raw ' + Math.round(block.score) + ' / 100';
         }
-        return '<div style="margin-top: 12px;">'
-            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' breakdown</div>'
+        return '<div style="margin-top: ' + (nestInScoreCard ? '8' : '12') + 'px;">'
+            + (nestInScoreCard
+                ? ''
+                : ('<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' breakdown</div>'))
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px;">'
             + '<thead><tr>'
             + '<th style="' + thStyle + '">Axis</th>'
@@ -5560,8 +5570,8 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _ratingScoreBlockHtml(title, block, basisKind) {
-        return this._ratingScoreBlockCompactHtml(title, block, basisKind);
+    _ratingScoreBlockHtml(title, block, basisKind, opts) {
+        return this._ratingScoreBlockCompactHtml(title, block, basisKind, opts);
     },
 
     _ratingCombinedBlockHtml(block) {
@@ -5607,27 +5617,19 @@ const searchOutputStatsPaneMethods = {
             ? this._ratingCombinedBlockHtml(combinedBlock)
             : '';
         const twqsHtml = hasTwqs
-            ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqsBlock, 'tasks')
+            ? this._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqsBlock, 'tasks', {
+                expanded,
+                workerId,
+                scoreKind: 'twqs',
+            })
             : '';
         const qaqsHtml = hasQaqs
-            ? this._ratingScoreBlockCompactHtml('QA Quality Score', qaqsBlock, 'feedbacks')
+            ? this._ratingScoreBlockCompactHtml('QA Quality Score', qaqsBlock, 'feedbacks', {
+                expanded,
+                workerId,
+                scoreKind: 'qaqs',
+            })
             : '';
-
-        let detailHtml = '';
-        if (expanded) {
-            const detailParts = [];
-            if (hasTwqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('Task Writer Quality Score', twqsBlock, null, workerId, 'twqs'));
-            }
-            if (hasQaqs) {
-                detailParts.push(this._ratingScoreBlockDetailHtml('QA Quality Score', qaqsBlock, null, workerId, 'qaqs'));
-            }
-            if (detailParts.length) {
-                detailHtml = '<div data-wf-dash-rating-detail="1" style="margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--border, #e2e8f0);">'
-                    + detailParts.join('')
-                    + '</div>';
-            }
-        }
 
         const btnCls = this._dashBtnClass('basic', 'nav');
         const diagnosticsBtnHtml = Context.isDevBranch
@@ -5655,7 +5657,6 @@ const searchOutputStatsPaneMethods = {
             + combinedHtml
             + twqsHtml
             + qaqsHtml
-            + detailHtml
             + '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;">'
             + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
             + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
@@ -5897,7 +5898,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.12',
+    _version: '9.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
