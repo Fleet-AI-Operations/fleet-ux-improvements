@@ -4942,17 +4942,17 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Outcome Quality',        weight: '40%', measures: 'Blend (50/50) of status-weighted terminal quality (production 1.0, bugged 0.5, escalated-fleet-review 0.5, discarded 0.15) and the same calc excluding bugged statuses. In-flight tasks are excluded.' },
+            { label: 'Outcome Quality',        weight: '40%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
             { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory).' },
             { label: 'Non-Bottom Score Rate',  weight: '15%', measures: 'Share of explicitly scored feedback that was not the lowest possible rating.' },
             { label: 'First-Pass Acceptance',  weight: '15%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
-            { label: 'Dispute Win Rate',       weight: '10%', measures: 'Share of their resolved disputes decided in their favor (unweighted counts).' },
+            { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score.' },
         ];
         const qaqsRows = [
             { label: 'Return Effectiveness',  weight: '30%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
             { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
             { label: 'Label Discrimination',  weight: '25%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality.' },
-            { label: 'Dispute Defense',       weight: '20%', measures: 'Share of resolved disputes against their calls where they were the sole negative reviewer and the decision upheld them (unweighted counts).' },
+            { label: 'Dispute Loss Avoidance',weight: '20%', measures: 'For sole-negative reviews, only disputes approved for the writer reduce the score. QA wins are neutral.' },
         ];
         const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
         return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
@@ -4982,7 +4982,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li><strong>Percentile first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The bar is the axis sub-score (0–100%). An omitted axis redistributes its weight to the others.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
@@ -5002,7 +5002,7 @@ const searchOutputStatsPaneMethods = {
             + '<li>Scores cover the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>, regardless of which search toggles (tasks, QA, sessions, disputes, etc.) produced those results.</li>'
             + '<li>The <strong>Filtered / All</strong> scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.</li>'
             + '<li>With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.</li>'
-            + '<li>Only <strong>terminal</strong> tasks count toward TWQS outcome quality (production, bugged, discarded, escalated-fleet-review). Outcome Quality is a <strong>50/50 blend</strong> of status-weighted scores and a variant that ignores bugged statuses. In-flight tasks are excluded. Disputes move a score only once <strong>resolved</strong>.</li>'
+            + '<li>Outcome Quality blends the current terminal calculation with a flat closure sub-score over production, discarded, and dismissed. The closure sub-score ignores bugged/flagged paths and has no recency decay. Disputes move a score only once <strong>resolved</strong>.</li>'
             + '<li>Self-reviews are excluded from all feedback axes.</li>'
             + '</ul>'
 

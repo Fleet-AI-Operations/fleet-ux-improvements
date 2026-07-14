@@ -1,8 +1,7 @@
 // rating-engine.js — TWQS / QAQS / Combined computation for Worker Output Search Ratings tab.
-// Engine v5.0: Outcome Quality blends status-weighted terminal scores with a
-// bugged-excluded variant (50/50). Aligned otherwise with rank-workers.py WPS v1.2.
+// Engine v6.0: adds flat closure outcomes and loss-only dispute accountability.
 
-const RE_VERSION = '5.2';
+const RE_VERSION = '6.0';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -17,6 +16,11 @@ const RE_STATUS_QUALITY = {
     discarded: 0.15,
     dismissed: 0.0,
 };
+const RE_CLOSURE_QUALITY = {
+    production: 1.0,
+    discarded: 0.5,
+    dismissed: 0.0,
+};
 
 // WPS (TWQS) per-axis shrinkage constants calibrated from dive.db baseline (rank-workers v1.2).
 const RE_TWQS_C = {
@@ -24,14 +28,14 @@ const RE_TWQS_C = {
     positiveFeedbackRate: 10,
     nonBottomScoreRate:    5,
     firstPassAcceptance:   5,
-    disputeWinRate:        5,
+    disputeLossAvoidance:  5,
 };
 const RE_TWQS_PRIOR = {
     outcomeQuality:       0.7906,
     positiveFeedbackRate: 0.4800,
     nonBottomScoreRate:   0.9635,
     firstPassAcceptance:  0.4606,
-    disputeWinRate:       0.6829,
+    disputeLossAvoidance: 1.0,
 };
 
 // QPS (QAQS) per-axis shrinkage constants calibrated from dive.db baseline (rank-qa v2.0).
@@ -40,7 +44,7 @@ const RE_QAQS_RET_EFF_PRIOR     = 0.4893;
 const RE_QAQS_RET_ACT_C         = 10;
 const RE_QAQS_RET_ACT_PRIOR     = 0.6891;
 const RE_QAQS_DISPUTE_DEF_C     = 5;
-const RE_QAQS_DISPUTE_DEF_PRIOR = 0.3263;
+const RE_QAQS_DISPUTE_DEF_PRIOR = 1.0;
 const RE_QAQS_LABEL_DISC_C      = 5;
 const RE_QAQS_LABEL_DISC_PRIOR  = 0.1205;
 
@@ -49,13 +53,13 @@ const RE_TWQS_AXES = [
     { id: 'positiveFeedbackRate', label: 'Positive Feedback Rate', weight: 0.20 },
     { id: 'nonBottomScoreRate',   label: 'Non-Bottom Score Rate',  weight: 0.15 },
     { id: 'firstPassAcceptance',  label: 'First-Pass Acceptance',  weight: 0.15 },
-    { id: 'disputeWinRate',       label: 'Dispute Win Rate',       weight: 0.10 },
+    { id: 'disputeLossAvoidance', label: 'Dispute Loss Avoidance', weight: 0.10 },
 ];
 
 const RE_QAQS_AXES = [
     { id: 'returnEffectiveness', label: 'Return Effectiveness', weight: 0.40 },
     { id: 'returnActionability', label: 'Return Actionability', weight: 0.25 },
-    { id: 'disputeDefense',      label: 'Dispute Defense',      weight: 0.20 },
+    { id: 'disputeDefense',      label: 'Dispute Loss Avoidance', weight: 0.20 },
     { id: 'labelDiscrimination', label: 'Label Discrimination', weight: 0.15 },
 ];
 
@@ -141,6 +145,14 @@ function reTaskTerminalQuality(task, nowMs) {
         return RE_STATUS_QUALITY.discarded;
     }
     const quality = RE_STATUS_QUALITY[status];
+    return quality !== undefined ? quality : null;
+}
+
+// Closure quality intentionally does not apply the discarded stale-age gate.
+// It measures the eventual path for tasks that were not bugged/flagged.
+function reTaskClosureQuality(task) {
+    const status = String((task && task.status) || '').toLowerCase().trim();
+    const quality = RE_CLOSURE_QUALITY[status];
     return quality !== undefined ? quality : null;
 }
 
@@ -273,6 +285,60 @@ function reCombineAxes(axisDefs) {
     return { score, band: reBandLabel(score), axes: axisDefs };
 }
 
+function reCohortPriors(kind, cohort) {
+    const global = kind === 'twqs' ? RE_TWQS_PRIOR : {
+        returnEffectiveness: RE_QAQS_RET_EFF_PRIOR,
+        returnActionability: RE_QAQS_RET_ACT_PRIOR,
+        disputeDefense: RE_QAQS_DISPUTE_DEF_PRIOR,
+        labelDiscrimination: RE_QAQS_LABEL_DISC_PRIOR,
+    };
+    const supplied = cohort && cohort.priors && cohort.priors[kind];
+    return { ...global, ...(supplied || {}) };
+}
+
+function reCohortKey(task, dimension) {
+    if (!task) return '';
+    if (dimension === 'team') return String(task.team || task.teamId || '').trim();
+    if (dimension === 'env') return String(task.envKey || task.environment || '').trim();
+    if (dimension === 'month') {
+        const ts = String(task.createdAt || task.created_at || '').trim();
+        return /^\d{4}-\d{2}/.test(ts) ? ts.slice(0, 7) : '';
+    }
+    return '';
+}
+
+function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
+    if (!mainBlock || mainBlock.score == null) return null;
+    let mainWeight = 0.5;
+    const channels = {};
+    for (const dimension of ['team', 'env', 'month']) {
+        const rows = slices[dimension] || [];
+        const usable = rows.filter((row) => row.block && row.block.score != null && row.volume > 0);
+        const initialWeight = 1 / 6;
+        if (!usable.length) {
+            mainWeight += initialWeight;
+            channels[dimension] = { score: null, volume: 0, weight: 0, provisional: false };
+            continue;
+        }
+        const totalVolume = usable.reduce((sum, row) => sum + row.volume, 0);
+        const score = usable.reduce((sum, row) => sum + row.block.score * row.volume, 0) / totalVolume;
+        const provisional = confidenceFn(totalVolume).tier === 'provisional';
+        const weight = provisional ? initialWeight / 2 : initialWeight;
+        mainWeight += initialWeight - weight;
+        channels[dimension] = { score, volume: totalVolume, weight, provisional };
+    }
+    const score = mainWeight * mainBlock.score
+        + Object.values(channels).reduce((sum, channel) => sum + (channel.score == null ? 0 : channel.weight * channel.score), 0);
+    return {
+        score: Math.round(score * 10) / 10,
+        band: reBandLabel(score),
+        estimatedPercentile: mainBlock.estimatedPercentile,
+        confidence: mainBlock.confidence,
+        main: { score: mainBlock.score, weight: mainWeight },
+        channels,
+    };
+}
+
 function reHumanFeedbackChronological(task) {
     return (task.allFeedback || [])
         .filter(reIsHumanFeedback)
@@ -395,9 +461,9 @@ function reWorkerJsonExport(workerReport) {
 function reAxisOmitReason(axis) {
     if (!axis || axis.defined !== false) return null;
     switch (axis.id) {
-        case 'disputeWinRate':
         case 'disputeDefense':
-            return 'No resolved disputes in scope';
+        case 'disputeLossAvoidance':
+            return 'Always defined; only dispute losses reduce this score';
         case 'returnActionability':
             return 'No negative feedback on production tasks in scope';
         default:
@@ -495,6 +561,9 @@ const RatingEngine = {
     VERSION: RE_VERSION,
     ordinalSuffix: reOrdinalSuffix,
     formatPercentile: reFormatPercentile,
+    setCohortBaselines(baselines) {
+        Context.ratingCohortBaselines = baselines || {};
+    },
 
     compute(options) {
         const opts = options || {};
@@ -506,6 +575,7 @@ const RatingEngine = {
         const unhydratedCount = cachedItems.length - hydratedItems.length;
         const window = reResolveWindow(committed);
         const profiles = opts.workerProfiles || {};
+        const cohortBaselines = opts.cohortBaselines || Context.ratingCohortBaselines || {};
 
         const workers = authorIds.map((workerId) => {
             const profile = profiles[workerId] || {};
@@ -521,6 +591,10 @@ const RatingEngine = {
 
             const flatCombined = reCombinedScoreBlock(flatTwqs, flatQaqs, nTerminal, nFeedback, 'flat');
             const recencyCombined = reCombinedScoreBlock(recencyTwqs, recencyQaqs, nTerminal, nFeedback, 'recency');
+            const cohort = this._computeCohortBlend(
+                workerId, hydratedItems, window, nowMs, cohortBaselines,
+                { flatTwqs, recencyTwqs, flatQaqs, recencyQaqs }
+            );
 
             return {
                 workerId,
@@ -532,6 +606,7 @@ const RatingEngine = {
                 combined: (flatCombined || recencyCombined)
                     ? { flat: flatCombined, recency: recencyCombined }
                     : null,
+                cohort,
                 meta: { hydratedCount: hydratedItems.length, unhydratedCount }
             };
         });
@@ -550,6 +625,45 @@ const RatingEngine = {
         };
     },
 
+    _computeCohortBlend(workerId, hydratedItems, window, nowMs, baselines, main) {
+        const output = { flat: {}, recency: {} };
+        for (const weighting of ['flat', 'recency']) {
+            const twSlices = { team: [], env: [], month: [] };
+            const qaSlices = { team: [], env: [], month: [] };
+            for (const dimension of ['team', 'env', 'month']) {
+                const keyedItems = new Map();
+                for (const item of hydratedItems) {
+                    const key = reCohortKey(item.task, dimension);
+                    if (!key) continue;
+                    if (!keyedItems.has(key)) keyedItems.set(key, []);
+                    keyedItems.get(key).push(item);
+                }
+                for (const [key, sliceItems] of keyedItems) {
+                    const baseline = baselines && baselines[dimension] && baselines[dimension][key];
+                    const twBlock = this._computeTwqs(workerId, sliceItems, weighting, window, nowMs, baseline);
+                    const qaBlock = this._computeQaqs(workerId, sliceItems, weighting, window, nowMs, baseline);
+                    if (twBlock) twSlices[dimension].push({
+                        key,
+                        block: twBlock,
+                        volume: (twBlock.display && twBlock.display.terminalTaskCount) || 0,
+                    });
+                    if (qaBlock) qaSlices[dimension].push({
+                        key,
+                        block: qaBlock,
+                        volume: (qaBlock.display && qaBlock.display.inScopeFeedbackCount) || 0,
+                    });
+                }
+            }
+            const twqs = reBlendCohortBlocks(main[weighting + 'Twqs'], twSlices, reTwqsConfidenceBadge);
+            const qaqs = reBlendCohortBlocks(main[weighting + 'Qaqs'], qaSlices, reQaqsConfidenceBadge);
+            const nTerminal = (main[weighting + 'Twqs'] && main[weighting + 'Twqs'].display.terminalTaskCount) || 0;
+            const nFeedback = (main[weighting + 'Qaqs'] && main[weighting + 'Qaqs'].display.inScopeFeedbackCount) || 0;
+            const combined = reCombinedScoreBlock(twqs, qaqs, nTerminal, nFeedback, weighting);
+            output[weighting] = { twqs, qaqs, combined };
+        }
+        return output;
+    },
+
     _writerItems(workerId, hydratedItems) {
         return hydratedItems.filter((item) => {
             const authorId = item.task && item.task.author && item.task.author.id;
@@ -558,7 +672,7 @@ const RatingEngine = {
     },
 
     // Computes WPS-aligned TWQS (five-axis, rank-workers.py v1.2 formula).
-    _computeTwqs(workerId, hydratedItems, weighting, window, nowMs) {
+    _computeTwqs(workerId, hydratedItems, weighting, window, nowMs, cohort) {
         const writerItems = this._writerItems(workerId, hydratedItems);
         if (writerItems.length === 0) return null;
 
@@ -573,8 +687,11 @@ const RatingEngine = {
         // First-Pass Acceptance: one per task (earliest in-scope feedback), recency-weighted
         let fpKsum = 0, fpNsum = 0;
         const fpSeenTasks = new Set();
-        // Dispute Win Rate: unweighted resolved disputes
-        let dwApproved = 0, dwResolved = 0;
+        // Closure outcome: flat-only production/discarded/dismissed path.
+        let oqClosureKsum = 0, oqClosureN = 0;
+        const oqClosureStatuses = { production: 0, discarded: 0, dismissed: 0 };
+        // Dispute Loss Avoidance: only rejected writer disputes are adverse.
+        let dwLosses = 0, dwResolved = 0, dwWins = 0;
 
         let earliestTs = null;
 
@@ -602,6 +719,14 @@ const RatingEngine = {
                         oqNsumB += taskW;
                     }
                 }
+            }
+
+            // Intentionally flat in both variants; window filtering still applies.
+            const closureQuality = reTaskClosureQuality(task);
+            if (closureQuality !== null && taskInScope) {
+                oqClosureKsum += closureQuality;
+                oqClosureN += 1;
+                oqClosureStatuses[taskStatus] += 1;
             }
 
             // Human feedback axes: positive rate, non-bottom, first-pass
@@ -632,27 +757,34 @@ const RatingEngine = {
                 }
             }
 
-            // Dispute Win Rate: unweighted but respects date window
+            // Dispute Loss Avoidance: wins are informational only.
             for (const dispute of item.disputes || []) {
                 if (!dispute.resolutionAt) continue;
                 if (reEventWeight(dispute.resolutionAt, 'flat', nowMs, window) <= 0) continue;
                 dwResolved += 1;
-                if (dispute.isApproved) dwApproved += 1;
+                if (dispute.isRejected) dwLosses += 1;
+                if (dispute.isApproved) dwWins += 1;
             }
         }
 
-        const oqScoreA = reShrunkRate(oqKsumA, oqNsumA, RE_TWQS_C.outcomeQuality, RE_TWQS_PRIOR.outcomeQuality);
+        const priors = reCohortPriors('twqs', cohort);
+        const oqScoreA = reShrunkRate(oqKsumA, oqNsumA, RE_TWQS_C.outcomeQuality, priors.outcomeQuality);
         const oqScoreB = oqNsumB > 0
-            ? reShrunkRate(oqKsumB, oqNsumB, RE_TWQS_C.outcomeQuality, RE_TWQS_PRIOR.outcomeQuality)
+            ? reShrunkRate(oqKsumB, oqNsumB, RE_TWQS_C.outcomeQuality, priors.outcomeQuality)
             : null;
-        const oqScore = oqScoreB != null
+        const oqCurrentScore = oqScoreB != null
             ? (0.5 * oqScoreA + 0.5 * oqScoreB)
             : oqScoreA;
-        const pfScore = reShrunkRate(pfKsum, pfNsum, RE_TWQS_C.positiveFeedbackRate, RE_TWQS_PRIOR.positiveFeedbackRate);
-        const nbScore = reShrunkRate(nbKsum, nbNsum, RE_TWQS_C.nonBottomScoreRate, RE_TWQS_PRIOR.nonBottomScoreRate);
-        const fpScore = reShrunkRate(fpKsum, fpNsum, RE_TWQS_C.firstPassAcceptance, RE_TWQS_PRIOR.firstPassAcceptance);
-        const dwDefined = dwResolved > 0;
-        const dwScore = dwDefined ? reShrunkRate(dwApproved, dwResolved, RE_TWQS_C.disputeWinRate, RE_TWQS_PRIOR.disputeWinRate) : null;
+        const oqClosureScore = oqClosureN > 0
+            ? reShrunkRate(oqClosureKsum, oqClosureN, RE_TWQS_C.outcomeQuality, priors.outcomeQuality)
+            : null;
+        const oqScore = oqClosureScore != null
+            ? (0.5 * oqCurrentScore + 0.5 * oqClosureScore)
+            : oqCurrentScore;
+        const pfScore = reShrunkRate(pfKsum, pfNsum, RE_TWQS_C.positiveFeedbackRate, priors.positiveFeedbackRate);
+        const nbScore = reShrunkRate(nbKsum, nbNsum, RE_TWQS_C.nonBottomScoreRate, priors.nonBottomScoreRate);
+        const fpScore = reShrunkRate(fpKsum, fpNsum, RE_TWQS_C.firstPassAcceptance, priors.firstPassAcceptance);
+        const dwScore = reShrunkRate(0, dwLosses, RE_TWQS_C.disputeLossAvoidance, priors.disputeLossAvoidance);
 
         const axes = RE_TWQS_AXES.map((def) => {
             let score = null;
@@ -668,7 +800,13 @@ const RatingEngine = {
                         statusWeightedScore: Math.round(oqScoreA * 1000) / 1000,
                         ignoreBuggedScore: oqScoreB != null ? Math.round(oqScoreB * 1000) / 1000 : null,
                         ignoreBuggedWeightedN: Math.round(oqNsumB * 1000) / 1000,
-                        blend: '0.5*statusWeighted + 0.5*ignoreBugged'
+                        currentScore: Math.round(oqCurrentScore * 1000) / 1000,
+                        closureScore: oqClosureScore != null ? Math.round(oqClosureScore * 1000) / 1000 : null,
+                        closureN: oqClosureN,
+                        closureStatusCounts: oqClosureStatuses,
+                        blend: oqClosureScore != null
+                            ? '0.5*currentOutcome + 0.5*closureOutcome'
+                            : 'currentOutcome (no closure outcomes)'
                     };
                     break;
                 case 'positiveFeedbackRate':
@@ -693,10 +831,9 @@ const RatingEngine = {
                         taskCount: fpSeenTasks.size
                     };
                     break;
-                case 'disputeWinRate':
-                    defined = dwDefined;
+                case 'disputeLossAvoidance':
                     score = dwScore;
-                    raw = { approved: dwApproved, resolved: dwResolved };
+                    raw = { losses: dwLosses, wins: dwWins, resolved: dwResolved };
                     break;
                 default:
                     break;
@@ -724,7 +861,10 @@ const RatingEngine = {
             nbNsum: Math.round(nbNsum * 1000) / 1000,
             fpKsum: Math.round(fpKsum * 1000) / 1000,
             fpNsum: Math.round(fpNsum * 1000) / 1000,
-            dwApproved,
+            oqClosureKsum: Math.round(oqClosureKsum * 1000) / 1000,
+            oqClosureN,
+            dwLosses,
+            dwWins,
             dwResolved
         };
 
@@ -732,7 +872,7 @@ const RatingEngine = {
     },
 
     // Computes QPS-aligned QAQS (four-axis, rank-qa.py v2.1 formula).
-    _computeQaqs(workerId, hydratedItems, weighting, window, nowMs) {
+    _computeQaqs(workerId, hydratedItems, weighting, window, nowMs, cohort) {
         const feedbackRows = reCollectQaqsFeedbackRows(workerId, hydratedItems);
         if (feedbackRows.length === 0) return null;
 
@@ -742,8 +882,8 @@ const RatingEngine = {
         let raKsum = 0, raNsum = 0;
         // Label Discrimination: explicit score labels (qualityRatingRaw)
         let ldKsum = 0, ldNsum = 0;
-        // Dispute Defense: sole-neg attribution (unweighted)
-        let ddUpheld = 0, ddDenom = 0;
+        // Dispute Loss Avoidance: sole-neg attribution, unweighted.
+        let ddLosses = 0, ddDenom = 0, ddWins = 0;
 
         let inScopeFeedbackCount = 0;
         let earliestTs = null;
@@ -812,18 +952,19 @@ const RatingEngine = {
                 if (!dispute.resolutionAt) continue;
                 if (reEventWeight(dispute.resolutionAt, 'flat', nowMs, window) <= 0) continue;
                 ddDenom += 1;
-                if (dispute.isRejected) ddUpheld += 1;
+                if (dispute.isApproved) ddLosses += 1;
+                if (dispute.isRejected) ddWins += 1;
             }
         }
 
         // Shrunk scores.
         // returnEffectiveness and labelDiscrimination are always defined (prior when n=0).
-        const reScore = reShrunkRate(reKsum, reNsum, RE_QAQS_RET_EFF_C, RE_QAQS_RET_EFF_PRIOR);
+        const priors = reCohortPriors('qaqs', cohort);
+        const reScore = reShrunkRate(reKsum, reNsum, RE_QAQS_RET_EFF_C, priors.returnEffectiveness);
         const raDefined = raNsum > 0;
-        const raScore = raDefined ? reShrunkRate(raKsum, raNsum, RE_QAQS_RET_ACT_C, RE_QAQS_RET_ACT_PRIOR) : null;
-        const ldScore = reShrunkRate(ldKsum, ldNsum, RE_QAQS_LABEL_DISC_C, RE_QAQS_LABEL_DISC_PRIOR);
-        const ddDefined = ddDenom > 0;
-        const ddScore = ddDefined ? reShrunkRate(ddUpheld, ddDenom, RE_QAQS_DISPUTE_DEF_C, RE_QAQS_DISPUTE_DEF_PRIOR) : null;
+        const raScore = raDefined ? reShrunkRate(raKsum, raNsum, RE_QAQS_RET_ACT_C, priors.returnActionability) : null;
+        const ldScore = reShrunkRate(ldKsum, ldNsum, RE_QAQS_LABEL_DISC_C, priors.labelDiscrimination);
+        const ddScore = reShrunkRate(0, ddLosses, RE_QAQS_DISPUTE_DEF_C, priors.disputeDefense);
 
         const axes = RE_QAQS_AXES.map((def) => {
             let score = null;
@@ -846,9 +987,8 @@ const RatingEngine = {
                     };
                     break;
                 case 'disputeDefense':
-                    defined = ddDefined;
                     score = ddScore;
-                    raw = { upheld: ddUpheld, resolved: ddDenom };
+                    raw = { losses: ddLosses, wins: ddWins, resolved: ddDenom };
                     break;
                 case 'labelDiscrimination':
                     score = ldScore;
@@ -883,7 +1023,8 @@ const RatingEngine = {
             raNsum: Math.round(raNsum * 1000) / 1000,
             ldKsum: Math.round(ldKsum * 1000) / 1000,
             ldNsum: Math.round(ldNsum * 1000) / 1000,
-            ddUpheld,
+            ddLosses,
+            ddWins,
             ddDenom
         };
 
@@ -1137,7 +1278,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '5.2',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
