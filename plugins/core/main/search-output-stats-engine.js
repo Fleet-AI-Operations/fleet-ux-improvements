@@ -1,7 +1,7 @@
 // search-output-stats-engine.js — Worker Output Search stats dashboard catalog, aggregation, persistence
 
 const STATS_LAYOUT_STORAGE_KEY = 'fleet-ux:dash-stats-dashboard';
-const STATS_LAYOUT_SCHEMA_VERSION = 6;
+const STATS_LAYOUT_SCHEMA_VERSION = 7;
 const STATS_MAX_DASHBOARDS = 5;
 
 const STATS_DEFAULT_LAYOUT_JSON = '{"schemaVersion":5,"charts":[{"id":"chart-mr9if575-n0g8zx2","title":"Current Task Status","type":"pie","groupBy":"statuses","series":[{"metricId":"count","agg":"count","label":"Count"}],"height":220,"presetKey":"status","chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9l3yl0-ne9fwit","title":"Return Reasons","type":"polarArea","groupBy":"taskIssues","series":[{"metricId":"count","agg":"count","label":""}],"height":140,"presetKey":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":["returned"],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9mmfih-7eeey9y","title":"Avg # Task Versions/Workflow Time vs Environment","type":"barLine","groupBy":"envKeys","series":[{"metricId":"prompt_version_count","agg":"avg","label":"Avg Task Versions","renderAs":"bar","yAxis":"y","segmentBy":null},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"Avg v1 Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"},{"metricId":"qa_time_minutes","agg":"avg","label":"Avg QA Time (mins)","renderAs":"line","yAxis":"y1","lineStyle":"line"}],"height":280,"presetKey":null,"barLayout":"grouped","orientation":"vertical","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9n8ud7-liveetc","title":"Count of Tasks by Env vs Current Status","type":"barLine","groupBy":"envKeys","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"horizontal","lineAreaLayout":"origin","categorySort":{"seriesIndex":0,"direction":"desc"},"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}},{"id":"chart-mr9y70g0-qrk1ewp","title":"Tasks by Week and Status vs Avg v1 Creation Time","type":"barLine","groupBy":"taskCreatedWeek","series":[{"metricId":"count","agg":"count","label":"","renderAs":"bar","yAxis":"y","segmentBy":"statuses"},{"metricId":"v1_creation_time_minutes","agg":"avg","label":"","renderAs":"line","yAxis":"y1","lineStyle":"shaded","segmentBy":null}],"height":320,"presetKey":null,"barLayout":"stacked","orientation":"vertical","lineAreaLayout":"origin","categorySort":null,"chartFilters":{"teamIds":[],"projectIds":[],"envKeys":[],"statuses":[],"contributorIds":[],"promptRatings":[],"taskIssues":[],"returnTypes":[],"promptHistory":[],"qaHelpfulness":[],"v1CreationTimeMinutes":[],"qaTimeMinutes":[],"disputeResolutionTimeMinutes":[]}}]}';
@@ -65,8 +65,8 @@ const STATS_ALL_GROUP_BY = '__all__';
 const STATS_LEGACY_BAR_LINE_TYPES = new Set(['bar', 'line', 'combo']);
 
 const STATS_CHART_TYPE_META = {
-    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 120 },
-    pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true },
+    scorecard: { id: 'scorecard', label: 'Scorecard', minSeries: 1, maxSeries: 1, allowCountAxis: true, skipGroupBy: true, defaultHeight: 120, allowsHorizontalStack: true },
+    pie: { id: 'pie', label: 'Pie', minSeries: 1, maxSeries: 1, allowCountAxis: true, allowsHorizontalStack: true },
     barLine: {
         id: 'barLine',
         label: 'Bar/Line',
@@ -79,8 +79,8 @@ const STATS_CHART_TYPE_META = {
         needsLineAreaLayout: true,
         needsOrientation: true
     },
-    polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true },
-    radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true },
+    polarArea: { id: 'polarArea', label: 'Polar area', minSeries: 1, maxSeries: 1, allowCountAxis: true, allowsHorizontalStack: true },
+    radar: { id: 'radar', label: 'Radar', minSeries: 1, maxSeries: 6, allowCountAxis: true, allowsHorizontalStack: true },
     scatter: { id: 'scatter', label: 'Scatter', minSeries: 2, maxSeries: 2, allowCountAxis: false, needsPointMode: true },
     bubble: { id: 'bubble', label: 'Bubble', minSeries: 2, maxSeries: 3, allowCountAxis: false, needsPointMode: true },
     histogram: {
@@ -483,6 +483,9 @@ function statsNormalizeChartEntry(c) {
     if (meta.needsBarLayout) {
         chart.categorySort = statsNormalizeCategorySort(c.categorySort, series.length);
     }
+    if (meta.allowsHorizontalStack) {
+        chart.allowHorizontalStack = c.allowHorizontalStack !== false;
+    }
     // Label options live on series only (legacy chart-level fields migrated above).
     chart.chartFilters = statsNormalizeChartFilters(c.chartFilters, null);
     return chart;
@@ -530,6 +533,7 @@ function statsDefaultStore() {
     return {
         schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
         activeDashboardId: dashboard.id,
+        allowHorizontalStack: true,
         dashboards: [dashboard]
     };
 }
@@ -544,6 +548,7 @@ function statsWrapLegacyLayout(raw) {
     return {
         schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
         activeDashboardId: dashboard.id,
+        allowHorizontalStack: true,
         dashboards: [dashboard]
     };
 }
@@ -591,6 +596,7 @@ function statsNormalizeStore(raw) {
     return {
         schemaVersion: STATS_LAYOUT_SCHEMA_VERSION,
         activeDashboardId,
+        allowHorizontalStack: raw.allowHorizontalStack !== false,
         dashboards
     };
 }
@@ -677,6 +683,12 @@ function statsCopyChartToDashboard(store, chartId, fromDashboardId, toDashboardI
     }));
     toDash.charts.push(clone);
     return { store: normalized, chart: clone };
+}
+
+function statsSetAllowHorizontalStack(store, allowed) {
+    const normalized = statsNormalizeStore(store);
+    normalized.allowHorizontalStack = allowed !== false;
+    return normalized;
 }
 
 function statsResetDashboardCharts(store, dashboardId) {
@@ -1063,10 +1075,11 @@ function statsAggDataHasFiniteValues(chart, aggData) {
 }
 
 function statsSeriesMetricValue(item, seriesEntry, getMetricValue) {
-    if (!seriesEntry || typeof getMetricValue !== 'function') return null;
+    if (!seriesEntry) return null;
     if (seriesEntry.metricId === 'count') {
-        return seriesEntry.agg === 'count' ? 1 : null;
+        return 1;
     }
+    if (typeof getMetricValue !== 'function') return null;
     const v = getMetricValue(item, seriesEntry.metricId);
     return v != null && Number.isFinite(v) ? v : null;
 }
@@ -1143,10 +1156,7 @@ function statsValidateChart(chart, catalog, items, ctx) {
 
     for (const s of series) {
         if (s.metricId === 'count') {
-            if (s.agg !== 'count') {
-                missing.push({ id: 'count', label: 'Count metric requires Count aggregation' });
-            }
-            if (!meta.allowCountAxis && s.agg === 'count') {
+            if (!meta.allowCountAxis) {
                 missing.push({ id: 'count', label: 'Numeric metric' });
             }
             continue;
@@ -1509,9 +1519,11 @@ function statsComputeSpreadBand(values) {
 }
 
 function statsPushSeriesValue(bucket, seriesEntry, item, getMetricValue) {
-    if (seriesEntry.metricId === 'count' && seriesEntry.agg === 'count') {
+    if (seriesEntry.metricId === 'count') {
         bucket.push(1);
-    } else if (typeof getMetricValue === 'function') {
+        return;
+    }
+    if (typeof getMetricValue === 'function') {
         const v = getMetricValue(item, seriesEntry.metricId);
         if (v != null && Number.isFinite(v)) bucket.push(v);
     }
@@ -1522,7 +1534,6 @@ function statsBuildSegmentedSeriesDatasets(seriesEntry, segmentBy, segmentDim, k
     const splitLabelById = new Map(segmentDim.options.map((o) => [o.id, o.label]));
     const unknownKey = '__unknown__';
     const matrix = new Map();
-    const isCount = seriesEntry.metricId === 'count' && seriesEntry.agg === 'count';
     const getMetricValue = ctx && ctx.getMetricValue;
 
     const ensureCell = (pk, sk) => {
@@ -1563,7 +1574,7 @@ function statsBuildSegmentedSeriesDatasets(seriesEntry, segmentBy, segmentDim, k
             const row = matrix.get(pk);
             const cell = row && row.get(sk);
             if (!cell || !cell.length) {
-                return isCount ? 0 : null;
+                return seriesEntry.metricId === 'count' && seriesEntry.agg === 'count' ? 0 : null;
             }
             return statsApplyAgg(cell, seriesEntry.agg);
         });
@@ -1597,7 +1608,10 @@ function statsBucketSeriesValue(bucket, seriesEntry, seriesIndex) {
     if (seriesEntry.metricId === 'count' && seriesEntry.agg === 'count') {
         return bucket.counts.length;
     }
-    const v = statsApplyAgg(bucket.series[seriesIndex], seriesEntry.agg);
+    const seriesValues = seriesEntry.metricId === 'count' && !(bucket.series[seriesIndex] || []).length
+        ? bucket.counts
+        : bucket.series[seriesIndex];
+    const v = statsApplyAgg(seriesValues || [], seriesEntry.agg);
     return v != null && Number.isFinite(v) ? v : null;
 }
 
@@ -1938,6 +1952,7 @@ function statsDefaultBuilderDraft(catalog) {
         lineAreaLayout: 'origin',
         categorySort: null,
         presetKey: null,
+        allowHorizontalStack: true,
         chartFilters: statsEmptyChartFilters()
     };
 }
@@ -1946,7 +1961,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '7.0',
+    _version: '8.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1975,6 +1990,7 @@ const plugin = {
             addDashboard: (store, name) => statsAddDashboard(store, name),
             renameDashboard: (store, dashboardId, name) => statsRenameDashboard(store, dashboardId, name),
             deleteDashboard: (store, dashboardId) => statsDeleteDashboard(store, dashboardId),
+            setAllowHorizontalStack: (store, allowed) => statsSetAllowHorizontalStack(store, allowed),
             copyChartToDashboard: (store, chartId, fromDashboardId, toDashboardId) => (
                 statsCopyChartToDashboard(store, chartId, fromDashboardId, toDashboardId)
             ),
