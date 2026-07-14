@@ -5005,7 +5005,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
             + '<p style="margin: 0 0 8px;">Each card computes <strong>two variants</strong> of every score simultaneously. Toggle between them per card:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/90) to activity inside the window, so recent events weigh more. Matches the <code>--recency 90</code> local ranker run.</li>'
+            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/30) to activity inside the window, so recent events weigh more. Matches the <code>--recency 30</code> local ranker run.</li>'
             + '<li><strong>Flat</strong> — all in-scope events count equally. Matches the baseline (no-recency) local ranker run.</li>'
             + '</ul>'
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
@@ -5869,7 +5869,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.1',
+    _version: '10.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
