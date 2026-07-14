@@ -8,6 +8,8 @@ const STATS_CIRCULAR_CHART_TYPES = new Set(['pie', 'polarArea', 'radar']);
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 const STATS_LINE_BORDER_WIDTH = 2.25;
 const STATS_LINE_TENSION = 0.2;
+/** Max content width for Ratings tab (cards stay readable when the pane is wide). */
+const RATINGS_CONTENT_MAX_WIDTH_PX = 640;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -40,10 +42,12 @@ const searchOutputStatsPaneMethods = {
             + this._statsChartsPanelContentHtml()
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
+            + '<div id="wf-dash-ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: ' + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; box-sizing: border-box;">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
             + this._ratingsToolbarHtml()
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
+            + '</div>'
             + '</div>'
             + '</div>';
     },
@@ -5883,7 +5887,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.4',
+    _version: '10.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
