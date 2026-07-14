@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS / Combined computation for Worker Output Search Ratings tab.
-// Engine v6.3: cohort channels carry volume-weighted sub-axis scores for expand UI.
+// Engine v6.4: cohort blend exposes per-key team/env/month slices for expand UI.
 
-const RE_VERSION = '6.3';
+const RE_VERSION = '6.4';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -354,7 +354,7 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
         if (!usable.length) {
             mainWeight += initialWeight;
             channels[dimension] = {
-                score: null, volume: 0, weight: 0, provisional: false, keys: [], axes: [],
+                score: null, volume: 0, weight: 0, provisional: false, keys: [], axes: [], slices: [],
             };
             continue;
         }
@@ -370,6 +370,18 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
             provisional,
             keys: usable.map((row) => row.key),
             axes: reVolumeWeightedAxes(usable),
+            slices: usable
+                .slice()
+                .sort((a, b) => (b.volume || 0) - (a.volume || 0) || String(a.key).localeCompare(String(b.key)))
+                .map((row) => ({
+                    key: row.key,
+                    score: row.block.score,
+                    volume: row.volume,
+                    estimatedPercentile: row.block.estimatedPercentile != null
+                        ? row.block.estimatedPercentile
+                        : null,
+                    axes: (row.block.axes || []).map((axis) => ({ ...axis })),
+                })),
         };
     }
     const score = mainWeight * mainBlock.score
@@ -1327,7 +1339,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '6.3',
+    _version: '6.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

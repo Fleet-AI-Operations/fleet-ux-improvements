@@ -5746,7 +5746,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.8',
+    _version: '9.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

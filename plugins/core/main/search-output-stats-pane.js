@@ -4702,39 +4702,6 @@ const searchOutputStatsPaneMethods = {
         return bestTier * 100000 + bestCount;
     },
 
-    _ratingCohortChannelRows(blend) {
-        if (!blend || !blend.main) return [];
-        const rows = [];
-        if (blend.main.weight > 1e-9 && blend.main.score != null) {
-            rows.push({
-                id: 'main',
-                label: 'Main',
-                score: blend.main.score,
-                weight: blend.main.weight,
-                volume: null,
-                provisional: false,
-                keys: [],
-                axes: Array.isArray(blend.main.axes) ? blend.main.axes : [],
-            });
-        }
-        const labels = { team: 'Team', env: 'Environment', month: 'Month' };
-        for (const dimension of ['team', 'env', 'month']) {
-            const channel = blend.channels && blend.channels[dimension];
-            if (!channel || channel.weight <= 1e-9 || channel.score == null) continue;
-            rows.push({
-                id: dimension,
-                label: labels[dimension],
-                score: channel.score,
-                weight: channel.weight,
-                volume: channel.volume,
-                provisional: !!channel.provisional,
-                keys: Array.isArray(channel.keys) ? channel.keys : [],
-                axes: Array.isArray(channel.axes) ? channel.axes : [],
-            });
-        }
-        return rows;
-    },
-
     /** Red (0) → yellow (50) → green (100) tint for top-level score panels. */
     _ratingPercentileFillColor(percentile) {
         if (percentile == null || !Number.isFinite(Number(percentile))) return null;
@@ -5386,60 +5353,71 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _ratingCohortBreakdownHtml(title, blend) {
-        const rows = this._ratingCohortChannelRows(blend);
-        if (!rows.length) return '';
-        const compositeTerms = [];
-        let compositeSum = 0;
-        let sectionsHtml = '';
-        for (const row of rows) {
-            const scoreDisplay = row.score != null
-                ? (Math.round(row.score * 10) / 10)
-                : null;
-            const wtPct = this._ratingPctOneDecimal(row.weight);
-            if (scoreDisplay != null && wtPct != null) {
-                compositeTerms.push(String(scoreDisplay) + '×' + wtPct + '%');
-                compositeSum += row.score * row.weight;
-            }
-            let meta = '';
-            if (row.provisional) meta = 'provisional weight';
-            if (row.volume != null && Number.isFinite(row.volume) && row.volume > 0) {
-                meta = (meta ? meta + ' · ' : '') + row.volume + ' vol';
-            }
-            if (row.keys && row.keys.length) {
-                const shown = row.keys.slice(0, 3).join(', ');
-                const more = row.keys.length > 3 ? ' +' + (row.keys.length - 3) : '';
-                meta = (meta ? meta + ' · ' : '') + shown + more;
-            }
-            const axes = [...(row.axes || [])].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
-            const axesHtml = axes.length
-                ? axes.map((axis) => this._ratingAxisBarHtml(axis, true)).join('')
-                : '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 4px;">No sub-axis scores</div>';
-            sectionsHtml += '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 55%, transparent);">'
-                + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
-                + '<div style="font-size: 11px; font-weight: 600;">' + dashEscHtml(row.label) + '</div>'
-                + '<div style="font-size: 10px; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b);">'
-                + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—')
-                + (wtPct != null ? ' · ' + dashEscHtml(String(wtPct) + '% wt') : '')
-                + '</div>'
-                + '</div>'
-                + (meta
-                    ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;">'
-                        + dashEscHtml(meta) + '</div>')
-                    : '')
-                + '<div style="margin-top: 2px;">' + axesHtml + '</div>'
-                + '</div>';
-        }
-        const compositeRounded = Math.round(compositeSum * 10) / 10;
-        const compositeLine = compositeTerms.length
-            ? (dashEscHtml(String(compositeRounded)) + ' ≈ ' + dashEscHtml(compositeTerms.join(' + ')))
+    _ratingCohortSectionHtml(title, scoreDisplay, weightOrMeta, meta, axes) {
+        const axesList = [...(axes || [])].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
+        const axesHtml = axesList.length
+            ? axesList.map((axis) => this._ratingAxisBarHtml(axis, true)).join('')
             : '';
-        return '<div style="margin-top: 12px;">'
-            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 2px;">' + dashEscHtml(title) + ' · cohort mix</div>'
-            + sectionsHtml
-            + (compositeLine
-                ? ('<div style="font-size: 10px; margin-top: 8px; color: var(--foreground, #0f172a);">' + compositeLine + '</div>')
+        return '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 55%, transparent);">'
+            + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
+            + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;">'
+            + dashEscHtml(title) + '</div>'
+            + '<div style="font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b);">'
+            + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—')
+            + (weightOrMeta ? ' · ' + dashEscHtml(String(weightOrMeta)) : '')
+            + '</div>'
+            + '</div>'
+            + (meta
+                ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;">'
+                    + dashEscHtml(meta) + '</div>')
                 : '')
+            + (axesHtml ? '<div style="margin-top: 2px;">' + axesHtml + '</div>' : '')
+            + '</div>';
+    },
+
+    _ratingCohortBreakdownHtml(title, blend) {
+        if (!blend || !blend.main || blend.main.score == null) return '';
+        let sectionsHtml = '';
+        const mainScore = Math.round(blend.main.score * 10) / 10;
+        const mainWt = this._ratingPctOneDecimal(blend.main.weight);
+        sectionsHtml += this._ratingCohortSectionHtml(
+            'Main',
+            mainScore,
+            mainWt != null ? (mainWt + '% wt') : '',
+            '',
+            blend.main.axes
+        );
+
+        const dimMeta = [
+            { id: 'team', label: 'Team' },
+            { id: 'env', label: 'Environment' },
+            { id: 'month', label: 'Month' },
+        ];
+        for (const dim of dimMeta) {
+            const channel = blend.channels && blend.channels[dim.id];
+            const slices = (channel && Array.isArray(channel.slices)) ? channel.slices : [];
+            if (!slices.length) continue;
+            sectionsHtml += '<div style="margin-top: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: var(--muted-foreground, #64748b); text-transform: uppercase;">'
+                + dashEscHtml(dim.label) + '</div>';
+            for (const slice of slices) {
+                if (!slice || slice.score == null) continue;
+                const scoreDisplay = Math.round(slice.score * 10) / 10;
+                const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
+                    ? (Math.round(slice.volume * 10) / 10) + ' vol'
+                    : '';
+                sectionsHtml += this._ratingCohortSectionHtml(
+                    String(slice.key || '—'),
+                    scoreDisplay,
+                    vol,
+                    '',
+                    slice.axes
+                );
+            }
+        }
+        return '<div style="margin-top: 12px;">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 2px;">'
+            + dashEscHtml(title) + ' · by team / env / month</div>'
+            + sectionsHtml
             + '</div>';
     },
 
@@ -5860,7 +5838,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.9',
+    _version: '9.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
