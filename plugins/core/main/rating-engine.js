@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS / Combined computation for Worker Output Search Ratings tab.
-// Engine v6.0: adds flat closure outcomes and loss-only dispute accountability.
+// Engine v6.1: expanded cohort blend metadata (channel keys for UI breakdown).
 
-const RE_VERSION = '6.0';
+const RE_VERSION = '6.1';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 90;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -317,7 +317,7 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
         const initialWeight = 1 / 6;
         if (!usable.length) {
             mainWeight += initialWeight;
-            channels[dimension] = { score: null, volume: 0, weight: 0, provisional: false };
+            channels[dimension] = { score: null, volume: 0, weight: 0, provisional: false, keys: [] };
             continue;
         }
         const totalVolume = usable.reduce((sum, row) => sum + row.volume, 0);
@@ -325,7 +325,13 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn) {
         const provisional = confidenceFn(totalVolume).tier === 'provisional';
         const weight = provisional ? initialWeight / 2 : initialWeight;
         mainWeight += initialWeight - weight;
-        channels[dimension] = { score, volume: totalVolume, weight, provisional };
+        channels[dimension] = {
+            score,
+            volume: totalVolume,
+            weight,
+            provisional,
+            keys: usable.map((row) => row.key),
+        };
     }
     const score = mainWeight * mainBlock.score
         + Object.values(channels).reduce((sum, channel) => sum + (channel.score == null ? 0 : channel.weight * channel.score), 0);
@@ -1278,7 +1284,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS, QAQS, and Combined computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

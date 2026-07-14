@@ -4654,15 +4654,30 @@ const searchOutputStatsPaneMethods = {
     },
 
     // Returns the score block for a given weighting variant (twqs, qaqs, or combined).
+    // When a cohort blend exists, TWQS/QAQS keep axis detail from the main score but
+    // surface the blended score/band; Combined uses the blend's combined block.
     _ratingBlockForWeighting(worker, scoreKey) {
         if (!worker) return null;
         const weighting = this._ratingWorkerWeighting(worker.workerId);
         const entry = worker[scoreKey];
-        if (!entry) return null;
-        if (typeof entry === 'object' && ('flat' in entry || 'recency' in entry)) {
-            return entry[weighting] || null;
+        const main = !entry
+            ? null
+            : (typeof entry === 'object' && ('flat' in entry || 'recency' in entry)
+                ? (entry[weighting] || null)
+                : entry);
+        const cohortEntry = worker.cohort
+            && worker.cohort[weighting]
+            && worker.cohort[weighting][scoreKey];
+        if (scoreKey === 'combined') {
+            return (cohortEntry && cohortEntry.score != null) ? cohortEntry : main;
         }
-        return entry;
+        if (!main) return null;
+        if (!cohortEntry || cohortEntry.score == null) return main;
+        return Object.assign({}, main, {
+            score: cohortEntry.score,
+            band: cohortEntry.band || main.band,
+            cohortBlend: cohortEntry,
+        });
     },
 
     _ratingWorkerConfidenceSortValue(worker, scoreTypes) {
@@ -4685,6 +4700,37 @@ const searchOutputStatsPaneMethods = {
             }
         }
         return bestTier * 100000 + bestCount;
+    },
+
+    _ratingCohortChannelRows(blend) {
+        if (!blend || !blend.main) return [];
+        const rows = [];
+        if (blend.main.weight > 1e-9 && blend.main.score != null) {
+            rows.push({
+                id: 'main',
+                label: 'Main',
+                score: blend.main.score,
+                weight: blend.main.weight,
+                volume: null,
+                provisional: false,
+                keys: [],
+            });
+        }
+        const labels = { team: 'Team', env: 'Environment', month: 'Month' };
+        for (const dimension of ['team', 'env', 'month']) {
+            const channel = blend.channels && blend.channels[dimension];
+            if (!channel || channel.weight <= 1e-9 || channel.score == null) continue;
+            rows.push({
+                id: dimension,
+                label: labels[dimension],
+                score: channel.score,
+                weight: channel.weight,
+                volume: channel.volume,
+                provisional: !!channel.provisional,
+                keys: Array.isArray(channel.keys) ? channel.keys : [],
+            });
+        }
+        return rows;
     },
 
     _ensureRatingsSortKey(committed) {
@@ -4982,7 +5028,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li><strong>Percentile first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Expand a card to see only the channels that received weight.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
@@ -5291,6 +5337,7 @@ const searchOutputStatsPaneMethods = {
             : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
         const axesHtml = this._ratingSortedAxes(block)
+            .filter((axis) => axis.defined !== false && axis.score != null)
             .map((axis) => this._ratingAxisBarHtml(axis, false))
             .join('');
         return '<div style="margin-top: 10px;">'
@@ -5306,7 +5353,71 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
-    _ratingScoreBlockDetailHtml(title, block) {
+    _ratingCohortBreakdownHtml(title, blend) {
+        const rows = this._ratingCohortChannelRows(blend);
+        if (!rows.length) return '';
+        const thStyle = 'padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);';
+        const tdStyle = 'padding: 4px 6px; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 50%, transparent);';
+        const tdNum = tdStyle + ' text-align: right; white-space: nowrap;';
+        const compositeTerms = [];
+        let compositeSum = 0;
+        let rowsHtml = '';
+        for (const row of rows) {
+            const scoreDisplay = row.score != null
+                ? (Math.round(row.score * 10) / 10)
+                : null;
+            const wtPct = this._ratingPctOneDecimal(row.weight);
+            if (scoreDisplay != null && wtPct != null) {
+                compositeTerms.push(String(scoreDisplay) + '×' + wtPct + '%');
+                compositeSum += row.score * row.weight;
+            }
+            let meta = '';
+            if (row.provisional) meta = 'provisional weight';
+            if (row.volume != null && Number.isFinite(row.volume) && row.volume > 0) {
+                meta = (meta ? meta + ' · ' : '') + row.volume + ' vol';
+            }
+            if (row.keys && row.keys.length) {
+                const shown = row.keys.slice(0, 3).join(', ');
+                const more = row.keys.length > 3 ? ' +' + (row.keys.length - 3) : '';
+                meta = (meta ? meta + ' · ' : '') + shown + more;
+            }
+            rowsHtml += '<tr>'
+                + '<td style="' + tdStyle + '">'
+                + '<div style="font-weight: 600;">' + dashEscHtml(row.label) + '</div>'
+                + (meta
+                    ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;">'
+                        + dashEscHtml(meta) + '</div>')
+                    : '')
+                + '</td>'
+                + '<td style="' + tdNum + '">' + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—') + '</td>'
+                + '<td style="' + tdNum + '">' + (wtPct != null ? dashEscHtml(String(wtPct) + '%') : '—') + '</td>'
+                + '</tr>';
+        }
+        const compositeRounded = Math.round(compositeSum * 10) / 10;
+        const compositeLine = compositeTerms.length
+            ? (dashEscHtml(String(compositeRounded)) + ' ≈ ' + dashEscHtml(compositeTerms.join(' + ')))
+            : '';
+        return '<div style="margin-top: 12px;">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 6px;">' + dashEscHtml(title) + ' · cohort mix</div>'
+            + '<table style="width: 100%; border-collapse: collapse; font-size: 10px;">'
+            + '<thead><tr>'
+            + '<th style="' + thStyle + '">Channel</th>'
+            + '<th style="' + thStyle + ' text-align: right;">Score</th>'
+            + '<th style="' + thStyle + ' text-align: right;">Weight</th>'
+            + '</tr></thead>'
+            + '<tbody>' + rowsHtml + '</tbody>'
+            + '</table>'
+            + (compositeLine
+                ? ('<div style="font-size: 10px; margin-top: 6px; color: var(--foreground, #0f172a);">' + compositeLine + '</div>')
+                : '')
+            + '</div>';
+    },
+
+    _ratingScoreBlockDetailHtml(title, block, cohortBlend) {
+        const blend = cohortBlend || (block && block.cohortBlend) || null;
+        if (blend) {
+            return this._ratingCohortBreakdownHtml(title, blend);
+        }
         if (!block || block.score == null) {
             return '';
         }
@@ -5319,23 +5430,22 @@ const searchOutputStatsPaneMethods = {
         let compositeSum = 0;
         for (const axis of sortedAxes) {
             const omitted = axis.defined === false || axis.score == null;
-            const subPct = omitted ? null : this._ratingPctOneDecimal(axis.score);
+            if (omitted) continue;
+            const subPct = this._ratingPctOneDecimal(axis.score);
             const basePct = this._ratingPctOneDecimal(axis.baseWeight);
-            const effPct = omitted ? 0 : this._ratingPctOneDecimal(axis.effectiveWeight);
-            if (!omitted && subPct != null && effPct != null) {
+            const effPct = this._ratingPctOneDecimal(axis.effectiveWeight);
+            if (subPct != null && effPct != null) {
                 compositeTerms.push(subPct + '×' + effPct + '%');
                 compositeSum += (axis.score || 0) * (axis.effectiveWeight || 0);
             }
-            const effDisplay = omitted
-                ? '—'
-                : (String(effPct) + '%'
-                    + (basePct != null && effPct != null && Math.abs(effPct - basePct) >= 0.05
-                        ? ' <span style="color: var(--muted-foreground, #64748b);">(base ' + basePct + '%)</span>'
-                        : ''));
+            const effDisplay = String(effPct) + '%'
+                + (basePct != null && effPct != null && Math.abs(effPct - basePct) >= 0.05
+                    ? ' <span style="color: var(--muted-foreground, #64748b);">(base ' + basePct + '%)</span>'
+                    : '');
             const axisCellHtml = this._ratingAxisBarHtml(axis, true);
             rowsHtml += '<tr>'
                 + '<td style="' + tdStyle + '">' + axisCellHtml + '</td>'
-                + '<td style="' + tdNum + '">' + (omitted ? '<span style="color: var(--muted-foreground, #64748b);">omitted</span>' : dashEscHtml(String(subPct) + '%')) + '</td>'
+                + '<td style="' + tdNum + '">' + dashEscHtml(String(subPct) + '%') + '</td>'
                 + '<td style="' + tdNum + '">' + (basePct != null ? dashEscHtml(String(basePct) + '%') : '—') + '</td>'
                 + '<td style="' + tdNum + '">' + effDisplay + '</td>'
                 + '</tr>';
@@ -5716,7 +5826,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '9.5',
+    _version: '9.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
