@@ -1218,10 +1218,7 @@ const searchOutputCoreMethods = {
                     }
                     item.disputes = [];
                     this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
-                    if (!item.kinds.includes('dispute')) {
-                        item.kinds.push('dispute');
-                        item.kinds.sort((a, b) => dashKindMergeOrder().indexOf(a) - dashKindMergeOrder().indexOf(b));
-                    }
+                    this._addItemOutputKind(item, 'dispute');
                 }
             } catch (disputeErr) {
                 Logger.debug('search-output: card rehydrate task-disputes refresh failed — ' + itemId, disputeErr);
@@ -1674,12 +1671,27 @@ const searchOutputCoreMethods = {
     },
 
     _onPrefetchComplete(kind) {
-        if (!this._state.cachedItems || this._state.cachedItems.length === 0) return;
-        void this._reoverlayAllCachedItems().then(() => {
+        if (typeof this._syncResultsPrefetchBannerUi === 'function') {
+            this._syncResultsPrefetchBannerUi();
+        }
+        if (typeof this._updateResultsStatus === 'function') {
+            this._updateResultsStatus();
+        }
+        if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
+            Logger.debug('dashboard: ' + this._prefetchLabel(kind)
+                + ' prefetch complete — no cached cards to re-overlay');
+            return;
+        }
+        void this._reoverlayAllCachedItems().then((changedIds) => {
+            if (changedIds && changedIds.length > 0 && typeof this._updateResultsKindTabsUi === 'function') {
+                this._updateResultsKindTabsUi();
+            }
             this._renderRatingsPanel();
             if ((this._state.statsTab || 'stats') === 'stats') {
                 void this._renderStatsPanel();
             }
+        }).catch((e) => {
+            Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
         });
     },
 
@@ -1687,6 +1699,12 @@ const searchOutputCoreMethods = {
         const slot = this._getPrefetchSlot(kind);
         if (!slot) return 0;
         slot.status = 'loading';
+        if (typeof this._syncResultsPrefetchBannerUi === 'function') {
+            this._syncResultsPrefetchBannerUi();
+        }
+        if (typeof this._updateResultsStatus === 'function') {
+            this._updateResultsStatus();
+        }
         try {
             const ready = await this._awaitBootstrapForPrefetch();
             if (!ready) {
@@ -1750,6 +1768,13 @@ const searchOutputCoreMethods = {
             slot.byTaskId = new Map();
             slot.status = 'error';
             return 0;
+        } finally {
+            if (typeof this._syncResultsPrefetchBannerUi === 'function') {
+                this._syncResultsPrefetchBannerUi();
+            }
+            if (typeof this._updateResultsStatus === 'function') {
+                this._updateResultsStatus();
+            }
         }
     },
 
@@ -1929,13 +1954,17 @@ const searchOutputCoreMethods = {
     _getCachedResolvedDisputeRows(taskId) {
         const cache = this._getPrefetchCache('resolvedDisputes');
         if (!cache) return [];
-        return cache.get(taskId) || [];
+        const tid = taskId != null ? String(taskId) : '';
+        if (!tid) return [];
+        return cache.get(tid) || [];
     },
 
     _getCachedOpenDisputeRows(taskId) {
         const cache = this._getPrefetchCache('openDisputes');
         if (!cache) return [];
-        return cache.get(taskId) || [];
+        const tid = taskId != null ? String(taskId) : '';
+        if (!tid) return [];
+        return cache.get(tid) || [];
     },
 
     _getAllCachedOpenDisputeRows(taskId) {
@@ -1947,10 +1976,12 @@ const searchOutputCoreMethods = {
     },
 
     _getAllCachedFlagRows(taskId) {
+        const tid = taskId != null ? String(taskId) : '';
+        if (!tid) return [];
         const pendingCache = this._getPrefetchCache('pendingFlags');
         const resolvedCache = this._getPrefetchCache('resolvedFlags');
-        const pending = pendingCache ? (pendingCache.get(taskId) || []) : [];
-        const resolved = resolvedCache ? (resolvedCache.get(taskId) || []) : [];
+        const pending = pendingCache ? (pendingCache.get(tid) || []) : [];
+        const resolved = resolvedCache ? (resolvedCache.get(tid) || []) : [];
         return [...pending, ...resolved];
     },
 
@@ -2370,10 +2401,28 @@ const searchOutputCoreMethods = {
         item.flags = merged;
     },
 
+    _ensureItemKindsArray(item) {
+        if (!item) return [];
+        if (Array.isArray(item.kinds) && item.kinds.length > 0) return item.kinds;
+        const kind = item.kind || 'task_creation';
+        item.kinds = [kind];
+        return item.kinds;
+    },
+
+    _addItemOutputKind(item, kind) {
+        if (!item || !kind) return;
+        const kinds = this._ensureItemKindsArray(item);
+        if (!kinds.includes(kind)) {
+            kinds.push(kind);
+            kinds.sort((a, b) => dashKindMergeOrder().indexOf(a) - dashKindMergeOrder().indexOf(b));
+        }
+    },
+
     async _overlayDisputesAndFlagsForItem(item, profilesMap, scope, afterIso, beforeIso, contributorSet) {
         if (!item || !item.task || !item.task.id) return false;
         const taskId = item.task.id;
         let changed = false;
+        this._ensureItemKindsArray(item);
 
         const openRows = this._getAllCachedOpenDisputeRows(taskId);
         let resolvedRows = this._getAllCachedResolvedDisputeRows(taskId);
@@ -2394,10 +2443,7 @@ const searchOutputCoreMethods = {
                 await this._supplementProfilesMap(profilesMap, resolverProfileIds);
             }
             this._mergeBulkDisputesOntoItem(item, combinedDisputes, profilesMap);
-            if (!item.kinds.includes('dispute')) {
-                item.kinds.push('dispute');
-                item.kinds.sort((a, b) => dashKindMergeOrder().indexOf(a) - dashKindMergeOrder().indexOf(b));
-            }
+            this._addItemOutputKind(item, 'dispute');
             changed = true;
         }
 
@@ -2412,10 +2458,7 @@ const searchOutputCoreMethods = {
                 await this._supplementProfilesMap(profilesMap, flagProfileIds);
             }
             this._mergeBulkFlagsOntoItem(item, flagRows, profilesMap);
-            if (!item.kinds.includes('senior_review')) {
-                item.kinds.push('senior_review');
-                item.kinds.sort((a, b) => dashKindMergeOrder().indexOf(a) - dashKindMergeOrder().indexOf(b));
-            }
+            this._addItemOutputKind(item, 'senior_review');
             changed = true;
         }
         return changed;
@@ -2449,16 +2492,20 @@ const searchOutputCoreMethods = {
 
     async _reoverlayAllCachedItems() {
         const items = (this._state.cachedItems || []).filter((it) => it && it.hydrated);
-        if (items.length === 0) return;
+        if (items.length === 0) return [];
         const profilesMap = this._profilesMapFromHydrateItems(items);
         const changedIds = [];
         for (const item of items) {
             const beforeDisputes = (item.disputes || []).length;
             const beforeFlags = (item.flags || []).length;
+            const beforeKinds = ((item.kinds && item.kinds.length) ? item.kinds : [item.kind]).join(',');
             await this._overlayDisputesAndFlags([item], profilesMap);
             const afterDisputes = (item.disputes || []).length;
             const afterFlags = (item.flags || []).length;
-            if (afterDisputes !== beforeDisputes || afterFlags !== beforeFlags) {
+            const afterKinds = ((item.kinds && item.kinds.length) ? item.kinds : [item.kind]).join(',');
+            if (afterDisputes !== beforeDisputes
+                || afterFlags !== beforeFlags
+                || afterKinds !== beforeKinds) {
                 changedIds.push(item.id);
             }
         }
@@ -2466,6 +2513,7 @@ const searchOutputCoreMethods = {
         if (changedIds.length > 0) {
             Logger.log('dashboard: prefetch re-overlay — ' + changedIds.length + ' card(s)');
         }
+        return changedIds;
     },
 
     _disputeRowsToDisplays(rows, profilesMap) {
@@ -2586,7 +2634,7 @@ const searchOutputCoreMethods = {
                 + ' · source ' + (versionOverride ? 'version-at-feedback' : 'current-version-embed'));
         }
         return {
-            id: row.id,
+            id: row.id != null ? String(row.id) : '',
             key: row.key || '',
             author: {
                 id: row.created_by || '',
@@ -3052,6 +3100,7 @@ const searchOutputCoreMethods = {
         return tasks.map((task) => ({
             id: 'task-' + task.id,
             kind: 'task_creation',
+            kinds: ['task_creation'],
             sortAt: task.createdAt,
             task,
             selectedFeedbackId: null,
@@ -3073,6 +3122,7 @@ const searchOutputCoreMethods = {
             return {
                 id: 'task-' + task.id,
                 kind: 'sessions',
+                kinds: ['sessions'],
                 sortAt,
                 task,
                 selectedFeedbackId: null,
@@ -5767,7 +5817,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.12',
+    _version: '9.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

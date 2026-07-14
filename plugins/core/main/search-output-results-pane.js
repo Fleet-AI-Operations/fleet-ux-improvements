@@ -330,6 +330,7 @@ const searchOutputResultsPaneMethods = {
                             </div>
                             <div style="display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end;">
                                 <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 1 auto;"></div>
+                                <div id="wf-dash-results-prefetch-banner" style="display: none; flex: 0 1 auto;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
                                 <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Diff Included Results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
@@ -1253,6 +1254,8 @@ const searchOutputResultsPaneMethods = {
 
     _syncResultsToolbarDerivedUi() {
         this._syncResultsRangeCountUi();
+        this._syncResultsHydrateBannerUi();
+        this._syncResultsPrefetchBannerUi();
         this._syncBulkHydrateUi();
         this._syncDiffIncludedUi();
         this._syncDropExcludedUi();
@@ -1420,6 +1423,28 @@ const searchOutputResultsPaneMethods = {
             + '<span>Hydrating tasks</span></span>';
         this._syncVersionModeDropdownUi();
         this._renderRatingsPanel();
+    },
+
+    _syncResultsPrefetchBannerUi() {
+        const el = this._q('#wf-dash-results-prefetch-banner');
+        if (!el) return;
+        const active = typeof this._prefetchLoadingActive === 'function'
+            ? this._prefetchLoadingActive()
+            : false;
+        if (!active) {
+            el.style.display = 'none';
+            el.innerHTML = '';
+            return;
+        }
+        const label = this._labelStyle();
+        el.style.display = 'inline-flex';
+        if (el.querySelector('[data-wf-dash-prefetch-mark]')) return;
+        el.innerHTML = `<span style="display: inline-flex; align-items: center; gap: 8px; ${label}">`
+            + this._loadingSpinnerHtml(14).replace(
+                '<span class="fleet-ui-spinner"',
+                '<span data-wf-dash-prefetch-mark="1" class="fleet-ui-spinner"'
+            )
+            + '<span>Fetching Disputes/Flags</span></span>';
     },
 
     _syncDropExcludedUi() {
@@ -5055,10 +5080,7 @@ const searchOutputResultsPaneMethods = {
             const flagsNote = s.flagsBulkIncomplete
                 ? ' · Sr Review list may be incomplete (narrow date range)'
                 : '';
-            const prefetchLoadingNote = this._prefetchLoadingActive()
-                ? ' · loading prefetch caches…'
-                : '';
-            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}${dashEscHtml(prefetchLoadingNote)}</span>`;
+            el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(authorLabel)} · ${modeHtml}${dashEscHtml(disputesNote)}${dashEscHtml(flagsNote)}</span>`;
             return;
         }
         el.textContent = '';
@@ -6243,7 +6265,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.7',
+    _version: '5.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
