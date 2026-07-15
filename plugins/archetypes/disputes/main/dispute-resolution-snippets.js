@@ -1,6 +1,6 @@
 // ============= dispute-resolution-snippets.js =============
 // Mounts shared named resolution-message toolbar under the native
-// "Your Resolution" textarea on Fleet dispute-detail.
+// "Your Resolution" textarea on Fleet disputes list (active/claimed card).
 
 const TOOLBAR_ATTR = 'data-fleet-dispute-msg-toolbar';
 

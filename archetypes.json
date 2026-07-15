@@ -1,7 +1,7 @@
 {
   "version": "11.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.177",
+  "archetypesVersion": "13.178",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "dispute-resolution-messages.js",
-      "version": "1.0",
-      "hash": "sha256-4d6d073114382bbe16ee03b230485970016c3c712d57b75ad8f650da97a4749a",
+      "version": "1.1",
+      "hash": "sha256-86d893782d7e210f3775b7af52ae9c0f911e5c5a64d855ea48e6f638cde662eb",
       "log": false
     },
     {
@@ -544,6 +544,12 @@
           "version": "2.2",
           "log": false,
           "hash": "sha256-e67d8ce6569bac931716086afa76f418edb69d04257ccd8bfe7d30f9a1010bc6"
+        },
+        {
+          "name": "dispute-resolution-snippets.js",
+          "version": "1.1",
+          "hash": "sha256-80f2eb4f294e5eb5159a451e55cb22fd026b71567b54b88361d7eda4b54e7476",
+          "log": false
         }
       ]
     },
@@ -610,8 +616,8 @@
         },
         {
           "name": "dispute-resolution-snippets.js",
-          "version": "1.0",
-          "hash": "sha256-b4b73094f1babb29bf31cb4dfee776559a192b32f21379b2d620e08e6f46a36c",
+          "version": "1.1",
+          "hash": "sha256-a337831b374f85a5e9c5cff155fcc44c614dbfafbb78c1952ea56349d0cc1403",
           "log": false
         }
       ]
