@@ -27,7 +27,7 @@ const plugin = {
     id: 'chart-js',
     name: 'Chart.js Loader',
     description: 'Lazy-loads Chart.js from jsDelivr for Worker Output Search stats charts',
-    _version: '1.0',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
 

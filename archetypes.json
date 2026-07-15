@@ -1,7 +1,7 @@
 {
   "version": "12.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.0",
+  "archetypesVersion": "14.2",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -27,12 +27,6 @@
       "log": false
     },
     {
-      "name": "chart-js.js",
-      "version": "1.0",
-      "hash": "sha256-589a070a4952e68cac2bab2cae3c7876c0aefb2082cea83140237e4a6562919d",
-      "log": false
-    },
-    {
       "name": "ops-tab.js",
       "version": "9.2",
       "hash": "sha256-59870e57a58477d52b1f5264e721a7bfeabaf24c69b9bfdc4048b956bf278eb7",
@@ -53,9 +47,69 @@
   ],
   "libraries": [
     {
+      "name": "accept-task-modal-improvements.js",
+      "version": "2.0",
+      "hash": "sha256-9d5ee312d7661d966cecec31a3c98383e5a68db11d3f16d2069ee2f91bb544f0",
+      "log": false
+    },
+    {
+      "name": "action-counter.js",
+      "version": "2.0",
+      "hash": "sha256-d4a350ba60137188f7f50cd70f98e9147e22184bf431577595801e293f4f2f06",
+      "log": false
+    },
+    {
+      "name": "chart-js.js",
+      "version": "2.0",
+      "hash": "sha256-77c529645b4a00b1401a9cf0c3bdf7bf3c2f367bb0f352b4d062e443c33b121f",
+      "log": false
+    },
+    {
+      "name": "copy-verifier-output.js",
+      "version": "5.0",
+      "hash": "sha256-5431ed84ebedb7a98bdfc1c1a0582cf5bcee57fb1d747dcffee963ea6ec827ca",
+      "log": false
+    },
+    {
       "name": "dispute-resolution-messages.js",
       "version": "1.2",
       "hash": "sha256-4096817cf76723fc5ac33ee080e4a26b42915b1c9183f377f377add8fb280c20",
+      "log": false
+    },
+    {
+      "name": "embedded-urlbar-fit.js",
+      "version": "2.0",
+      "hash": "sha256-46680e913bca4286a0ae3a22d0d90105e468fed8f402058652a762f2817036a4",
+      "log": false
+    },
+    {
+      "name": "notes-resize-handle.js",
+      "version": "2.0",
+      "hash": "sha256-fa25ca852d7d5547fdc569e925fd43454e98ed44ed3b4808e707a96dd6d175f5",
+      "log": false
+    },
+    {
+      "name": "prompt-scratchpad.js",
+      "version": "3.0",
+      "hash": "sha256-2a41c009b44a0732655a5c21a3912a3afa55d9b7384d12298a1c6a093b5d998d",
+      "log": false
+    },
+    {
+      "name": "request-revisions-screenshot-upload-improvement.js",
+      "version": "2.0",
+      "hash": "sha256-7d52c82409ee0760cdb1d03e980ccf8395c9e01ddc78c6aa8a38a82ef056d4b0",
+      "log": false
+    },
+    {
+      "name": "top-nav-horizontal-scroll.js",
+      "version": "2.0",
+      "hash": "sha256-cf245176446dd7877960b41be0ac65b9ffeae62ded936cb8c7af5662cbbb7e58",
+      "log": false
+    },
+    {
+      "name": "vnc-helper.js",
+      "version": "2.0",
+      "hash": "sha256-62b6e3872580124ac37eeff55859edd76f74a471595707793e6b793901eb5f35",
       "log": false
     }
   ],
@@ -146,7 +200,8 @@
     }
   ],
   "opsDashboardLibraries": [
-    "dispute-resolution-messages.js"
+    "dispute-resolution-messages.js",
+    "chart-js.js"
   ],
   "devPlugins": [
     {
@@ -200,11 +255,14 @@
       "description": "Page for creating K-type workflow tasks",
       "urlPattern": "work/problems/create-tool-use*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "notes-resize-handle.js"
+      ],
       "plugins": [
         {
           "name": "notes-resize-handle.js",
-          "version": "1.1",
-          "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
+          "version": "1.2",
+          "hash": "sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a",
           "log": false
         },
         {
@@ -235,6 +293,9 @@
       "disambiguationSelectors": [
         "text:Task Designers - Special Projects Tasks"
       ],
+      "libraries": [
+        "notes-resize-handle.js"
+      ],
       "plugins": [
         {
           "name": "json-editor-online.js",
@@ -244,8 +305,8 @@
         },
         {
           "name": "notes-resize-handle.js",
-          "version": "1.1",
-          "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
+          "version": "1.2",
+          "hash": "sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a",
           "log": false
         },
         {
@@ -268,11 +329,14 @@
       "description": "Page for reviewing and fixing previously submitted tool use tasks",
       "urlPattern": "work/problems/respond-feedback/edit-tool-use*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "prompt-scratchpad.js"
+      ],
       "plugins": [
         {
           "name": "prompt-scratchpad.js",
-          "version": "2.2",
-          "hash": "sha256-5101095eb5529be43a7ffd39fe900631c11704d9c8ff4af9c774c68125c423eb",
+          "version": "2.3",
+          "hash": "sha256-82432dd241762fefdae9d4602b7900ecf54a3b37a37c0d5222f1cc4fbcee5728",
           "log": false
         },
         {
@@ -318,23 +382,28 @@
       "description": "Page for creating computer use tasks",
       "urlPattern": "work/problems/create*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "notes-resize-handle.js",
+        "embedded-urlbar-fit.js",
+        "action-counter.js"
+      ],
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.5",
+          "version": "1.6",
           "log": false,
-          "hash": "sha256-8ea110eb20a8d8a291378fb1ae8f1d9f05a1b9d7acd7c08574ce7d858aabd404"
+          "hash": "sha256-6f8586045843cb62a9787340c7c7ab02f4747e4508fa3c260e0eb2862a326922"
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.1",
-          "hash": "sha256-62a6d3bced59a7b0dedf6b11d6d7d884c8f04c060bea9e61d9a1e0c2b0a0038d",
+          "version": "1.2",
+          "hash": "sha256-af74f8721b45ca18eff146a4edf8c6487826c6dfe9dab9e7f0a73d2ab93b1a6f",
           "log": false
         },
         {
           "name": "notes-resize-handle.js",
-          "version": "1.1",
-          "hash": "sha256-486984de524baabc206224d0f66f5dfdb68a7705a83091c159bdedca0f71c831",
+          "version": "1.2",
+          "hash": "sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a",
           "log": false
         },
         {
@@ -351,23 +420,28 @@
       "description": "Page for reviewing and fixing previously submitted computer use tasks",
       "urlPattern": "work/problems/respond-feedback/edit*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "embedded-urlbar-fit.js",
+        "prompt-scratchpad.js",
+        "action-counter.js"
+      ],
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.5",
+          "version": "1.6",
           "log": false,
-          "hash": "sha256-8ea110eb20a8d8a291378fb1ae8f1d9f05a1b9d7acd7c08574ce7d858aabd404"
+          "hash": "sha256-6f8586045843cb62a9787340c7c7ab02f4747e4508fa3c260e0eb2862a326922"
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.1",
-          "hash": "sha256-a2ccd26d441e89d897e8dad9979894038c84c4b492b47080f92814577173a614",
+          "version": "1.2",
+          "hash": "sha256-cca653428acbc93995fea150e9169d44c5c5a9337aff413579824e4126dd90aa",
           "log": false
         },
         {
           "name": "prompt-scratchpad.js",
-          "version": "2.2",
-          "hash": "sha256-bc927b4a1a2100e8974283857dfdaaca33373162fe00192b8ca4b871a6b2d117",
+          "version": "2.3",
+          "hash": "sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e",
           "log": false
         }
       ]
@@ -378,17 +452,23 @@
       "description": "Page for reviewing and approving tasks",
       "urlPattern": "work/problems/qa-tool-use/*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "accept-task-modal-improvements.js",
+        "request-revisions-screenshot-upload-improvement.js",
+        "copy-verifier-output.js",
+        "top-nav-horizontal-scroll.js"
+      ],
       "plugins": [
         {
           "name": "accept-task-modal-improvements.js",
-          "version": "1.7",
-          "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6",
+          "version": "1.8",
+          "hash": "sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6",
           "log": false
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "4.0",
-          "hash": "sha256-c1c164fe89f35c7360d51f1fb857adff32087aec67cec1a78bc992cfeeaad571",
+          "version": "4.1",
+          "hash": "sha256-f1c1c2347b110c25bbe15d4106108f7e737fa012203bc33c8863693a91dfe347",
           "log": false
         },
         {
@@ -399,8 +479,8 @@
         },
         {
           "name": "request-revisions-screenshot-upload-improvement.js",
-          "version": "1.1",
-          "hash": "sha256-3320a58ee98138b6fb104062db428c48d7442a7042d02c10b6e518a6401f6d41",
+          "version": "1.2",
+          "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
           "log": false
         },
         {
@@ -411,8 +491,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.1",
-          "hash": "sha256-6d158742912ce5c8b246903c50db712a4013066dce5ee131caaeb374759bd9db",
+          "version": "1.2",
+          "hash": "sha256-cb761036c9419e7529586829c2e26cd7abbefe104fd92a1f49d47589868a5f26",
           "log": false
         },
         {
@@ -435,6 +515,9 @@
       "description": "Page for reviewing session traces",
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "top-nav-horizontal-scroll.js"
+      ],
       "plugins": [
         {
           "name": "auto-expand-verifier-section.js",
@@ -444,8 +527,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.1",
-          "hash": "sha256-ffade6bbd99aa2c9922b1acfa7313719a5354f5dedb0662d2d46c557e99daade",
+          "version": "1.2",
+          "hash": "sha256-decc8534f155f4aefd64812132fb2ad453b78c2d9adb8662b2aaa0688de36479",
           "log": false
         }
       ]
@@ -456,11 +539,18 @@
       "description": "Page for  reviewing and approving tasks",
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "accept-task-modal-improvements.js",
+        "request-revisions-screenshot-upload-improvement.js",
+        "copy-verifier-output.js",
+        "embedded-urlbar-fit.js",
+        "top-nav-horizontal-scroll.js"
+      ],
       "plugins": [
         {
           "name": "accept-task-modal-improvements.js",
-          "version": "1.7",
-          "hash": "sha256-e2730a6179222f9ad78d7aa4b206766115819a6cc2e24210bdbfaefe42a620a6",
+          "version": "1.8",
+          "hash": "sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6",
           "log": false
         },
         {
@@ -483,14 +573,14 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "3.0",
-          "hash": "sha256-e42c471ea2153a7039e399b7af00ec1730018c7c292bdeeea1478e3d6eeb108d",
+          "version": "4.1",
+          "hash": "sha256-f1c1c2347b110c25bbe15d4106108f7e737fa012203bc33c8863693a91dfe347",
           "log": false
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.1",
-          "hash": "sha256-3fdb50b395300911e404fea9f7e510c566b6e4106f614eaadaa696317b392747",
+          "version": "1.2",
+          "hash": "sha256-58491167edb29153eafe3448763e68dea1209ec4073036a1b77721478a8dc3cf",
           "log": false
         },
         {
@@ -501,8 +591,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.1",
-          "hash": "sha256-ab65e41862ffac8e2377de8d40bd242761eb168fa5e9b4faee2c5d427ce20b75",
+          "version": "1.2",
+          "hash": "sha256-02860c2a144499de84a2f160a251337918c28193eaaa413b07418695537bc0ad",
           "log": false
         },
         {
@@ -513,8 +603,8 @@
         },
         {
           "name": "request-revisions-screenshot-upload-improvement.js",
-          "version": "1.1",
-          "hash": "sha256-3320a58ee98138b6fb104062db428c48d7442a7042d02c10b6e518a6401f6d41",
+          "version": "1.2",
+          "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
           "log": false
         },
         {
@@ -568,13 +658,16 @@
       "urlPattern": "work/problems/disputes/*",
       "disambiguationSelectors": [],
       "libraries": [
-        "dispute-resolution-messages.js"
+        "dispute-resolution-messages.js",
+        "copy-verifier-output.js",
+        "vnc-helper.js",
+        "embedded-urlbar-fit.js"
       ],
       "plugins": [
         {
           "name": "copy-verifier-output.js",
-          "version": "3.0",
-          "hash": "sha256-ec63d034decdf50818ca7da4a4182b68cbad67a9fc60ea04c9722af84f4a345e",
+          "version": "4.1",
+          "hash": "sha256-f1c1c2347b110c25bbe15d4106108f7e737fa012203bc33c8863693a91dfe347",
           "log": false
         },
         {
@@ -585,8 +678,8 @@
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.1",
-          "hash": "sha256-9f84363d236b768b5344a8a71bdd5843ccd1b3c7f323920b071d67091a23cf86",
+          "version": "1.2",
+          "hash": "sha256-0bd9cac617ff209a365f6fea6650b18724ac033ebb19912945c42936e1e7df6a",
           "log": false
         },
         {
@@ -615,8 +708,8 @@
         },
         {
           "name": "vnc-helper.js",
-          "version": "1.7",
-          "hash": "sha256-5a752f8810727b23a9c029d0f90d05c27a7f19113c99605cf61a6b206aab51e4",
+          "version": "1.8",
+          "hash": "sha256-2776632629292b01207360bb41fdf3a1bd0c5b17538dcee0b0b4c8454bcefb5f",
           "log": false
         },
         {
@@ -702,11 +795,14 @@
       "description": "noVNC remote desktop instances on fleet environment subdomains",
       "urlPattern": "_novnc",
       "disambiguationSelectors": [],
+      "libraries": [
+        "vnc-helper.js"
+      ],
       "plugins": [
         {
           "name": "vnc-helper.js",
-          "version": "1.7",
-          "hash": "sha256-9369c3b7b2114234117469318bbe6e9754c9c10a50273d8a415f3c8df0965097",
+          "version": "1.8",
+          "hash": "sha256-2776632629292b01207360bb41fdf3a1bd0c5b17538dcee0b0b4c8454bcefb5f",
           "log": false
         }
       ]
