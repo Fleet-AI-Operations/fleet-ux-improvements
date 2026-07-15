@@ -1,7 +1,7 @@
 {
-  "version": "11.1",
+  "version": "12.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "13.178",
+  "archetypesVersion": "14.0",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -18,12 +18,6 @@
       "name": "ui-lib.js",
       "version": "2.4",
       "hash": "sha256-bbe1f3fb53a9eb93d7501c825b6753268a7aa2a3369d8cbfbdd251ec843b0213",
-      "log": false
-    },
-    {
-      "name": "dispute-resolution-messages.js",
-      "version": "1.1",
-      "hash": "sha256-86d893782d7e210f3775b7af52ae9c0f911e5c5a64d855ea48e6f638cde662eb",
       "log": false
     },
     {
@@ -54,6 +48,14 @@
       "name": "fos-embedded-watcher.js",
       "version": "1.1",
       "hash": "sha256-e4ea8afe3bf982acd2a5393e9bdfc0682e891e046dc205b7d3b2a9554dfa3aac",
+      "log": false
+    }
+  ],
+  "libraries": [
+    {
+      "name": "dispute-resolution-messages.js",
+      "version": "1.2",
+      "hash": "sha256-4096817cf76723fc5ac33ee080e4a26b42915b1c9183f377f377add8fb280c20",
       "log": false
     }
   ],
@@ -142,6 +144,9 @@
       "hash": "sha256-aaa686af251b83e49b1ff5c465eb750161ae4c2249fe660853324eabde8fd9e3",
       "log": false
     }
+  ],
+  "opsDashboardLibraries": [
+    "dispute-resolution-messages.js"
   ],
   "devPlugins": [
     {
@@ -538,6 +543,9 @@
       "description": "Page for reviewing writer disputes",
       "urlPattern": "work/problems/disputes",
       "disambiguationSelectors": [],
+      "libraries": [
+        "dispute-resolution-messages.js"
+      ],
       "plugins": [
         {
           "name": "flag-as-bug-modal-improvements.js",
@@ -559,6 +567,9 @@
       "description": "Page for reviewing a single writer dispute",
       "urlPattern": "work/problems/disputes/*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "dispute-resolution-messages.js"
+      ],
       "plugins": [
         {
           "name": "copy-verifier-output.js",

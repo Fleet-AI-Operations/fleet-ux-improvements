@@ -113,6 +113,12 @@ function drmEnsureStyles() {
     if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
         Context.uiLib.ensureStyles();
     }
+    // Button chrome comes only from ui-lib scoped sheets.
+    if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+        Context.uiLib.ensureButtonStyles('[data-fleet-dispute-msg-toolbar="1"]');
+        Context.uiLib.ensureButtonStyles('[data-wf-dash-dispute-msg-toolbar="1"]');
+        Context.uiLib.ensureButtonStyles('#' + DRM_DIALOG_ID);
+    }
     const cssText = [
         '#' + DRM_DIALOG_ID + ' {',
         '  position: fixed;',
@@ -198,41 +204,6 @@ function drmEnsureStyles() {
         '  border: 1px solid var(--border, rgba(148, 163, 184, 0.4));',
         '  background: var(--background, transparent);',
         '  color: inherit;',
-        '}',
-        '[data-fleet-dispute-msg-toolbar="1"] button.fleet-drm-btn {',
-        '  appearance: none;',
-        '  -webkit-appearance: none;',
-        '  box-sizing: border-box;',
-        '  display: inline-flex;',
-        '  align-items: center;',
-        '  justify-content: center;',
-        '  margin: 0;',
-        '  font: inherit;',
-        '  font-size: 12px;',
-        '  font-weight: 500;',
-        '  line-height: 1.25;',
-        '  white-space: nowrap;',
-        '  padding: 4px 10px;',
-        '  border-radius: 6px;',
-        '  border: 1px solid var(--border, rgba(148, 163, 184, 0.45));',
-        '  background: color-mix(in srgb, var(--muted, #64748b) 14%, transparent);',
-        '  color: var(--foreground, inherit);',
-        '  cursor: pointer;',
-        '  transition: background 0.15s, border-color 0.15s, opacity 0.15s;',
-        '}',
-        '[data-fleet-dispute-msg-toolbar="1"] button.fleet-drm-btn:hover {',
-        '  background: color-mix(in srgb, var(--muted, #64748b) 24%, transparent);',
-        '}',
-        '[data-fleet-dispute-msg-toolbar="1"] button.fleet-drm-btn--primary {',
-        '  border-color: color-mix(in srgb, var(--brand, #2563eb) 55%, var(--border, rgba(148,163,184,0.45)));',
-        '  background: color-mix(in srgb, var(--brand, #2563eb) 22%, transparent);',
-        '}',
-        '[data-fleet-dispute-msg-toolbar="1"] button.fleet-drm-btn--primary:hover {',
-        '  background: color-mix(in srgb, var(--brand, #2563eb) 32%, transparent);',
-        '}',
-        '[data-fleet-dispute-msg-toolbar="1"] button.fleet-drm-btn:disabled {',
-        '  opacity: 0.5;',
-        '  cursor: not-allowed;',
         '}'
     ].join('\n');
 
@@ -452,9 +423,9 @@ function drmMountToolbar(opts) {
         const insertExisting = existing.querySelector('[data-fleet-dispute-msg-insert]');
         const deleteExisting = existing.querySelector('[data-fleet-dispute-msg-delete]');
         const createExisting = existing.querySelector('[data-fleet-dispute-msg-create]');
-        if (insertExisting) insertExisting.className = 'fleet-drm-btn fleet-drm-btn--primary';
-        if (deleteExisting) deleteExisting.className = 'fleet-drm-btn';
-        if (createExisting) createExisting.className = 'fleet-drm-btn';
+        if (insertExisting) insertExisting.className = drmBtnClass('secondary', 'compact');
+        if (deleteExisting) deleteExisting.className = drmBtnClass('basic', 'compact');
+        if (createExisting) createExisting.className = drmBtnClass('basic', 'compact');
         return existing;
     }
 
@@ -471,19 +442,19 @@ function drmMountToolbar(opts) {
     const insertBtn = document.createElement('button');
     insertBtn.type = 'button';
     insertBtn.textContent = 'Insert';
-    insertBtn.className = 'fleet-drm-btn fleet-drm-btn--primary';
+    insertBtn.className = drmBtnClass('secondary', 'compact');
     insertBtn.setAttribute('data-fleet-dispute-msg-insert', '1');
 
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.textContent = 'Delete';
-    deleteBtn.className = 'fleet-drm-btn';
+    deleteBtn.className = drmBtnClass('basic', 'compact');
     deleteBtn.setAttribute('data-fleet-dispute-msg-delete', '1');
 
     const createBtn = document.createElement('button');
     createBtn.type = 'button';
     createBtn.textContent = 'Create';
-    createBtn.className = 'fleet-drm-btn';
+    createBtn.className = drmBtnClass('basic', 'compact');
     createBtn.setAttribute('data-fleet-dispute-msg-create', '1');
 
     wrap.appendChild(select);
@@ -545,7 +516,7 @@ const plugin = {
     name: 'Dispute Resolution Messages',
     description:
         'Shared cached named messages for dispute resolution textareas (create, insert, delete)',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
