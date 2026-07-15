@@ -3838,6 +3838,14 @@ const searchOutputCoreMethods = {
             }));
     },
 
+    _buildTaskCreatedTimeFilterOptions(scopeItems, granularity) {
+        const lib = dashLib();
+        if (lib && typeof lib.buildTaskCreatedTimeFilterOptions === 'function') {
+            return lib.buildTaskCreatedTimeFilterOptions(scopeItems, granularity);
+        }
+        return [];
+    },
+
     _buildV1CreationTimeFilterOptions(scopeItems) {
         const lib = dashLib();
         return this._buildTimeBucketFilterOptions(scopeItems, (item) => lib.itemV1CreationTimeBuckets(item));
@@ -4199,6 +4207,10 @@ const searchOutputCoreMethods = {
             { sessionQaUi: this._state.sessionQaUi || {} }
         );
         options.qaHelpfulness = this._buildQaHelpfulnessFilterOptions(scopeItems);
+        const taskCreatedFilters = (lib && lib.taskCreatedTimeFilters) || [];
+        for (const dim of taskCreatedFilters) {
+            options[dim.optionsKey] = this._buildTaskCreatedTimeFilterOptions(scopeItems, dim.granularity);
+        }
         options.v1CreationTimeMinutes = this._buildV1CreationTimeFilterOptions(scopeItems);
         options.qaTimeMinutes = this._buildQaTimeFilterOptions(scopeItems);
         options.disputeResolutionTimeMinutes = this._buildDisputeResolutionTimeFilterOptions(scopeItems);
@@ -5817,7 +5829,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.13',
+    _version: '9.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
