@@ -5527,6 +5527,33 @@ function attachSearchOutputListeners(modal, dash) {
                 if (disputeId && itemId) void dash._handleDisputeResolve(disputeId, itemId);
                 return;
             }
+            const disputeMsgInsertBtn = e.target.closest('[data-wf-dash-dispute-msg-insert]');
+            if (disputeMsgInsertBtn && modal.contains(disputeMsgInsertBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const disputeId = disputeMsgInsertBtn.getAttribute('data-dispute-id');
+                const itemId = disputeMsgInsertBtn.getAttribute('data-item-id');
+                if (disputeId && itemId) dash._handleDisputeMsgInsert(disputeId, itemId);
+                return;
+            }
+            const disputeMsgDeleteBtn = e.target.closest('[data-wf-dash-dispute-msg-delete]');
+            if (disputeMsgDeleteBtn && modal.contains(disputeMsgDeleteBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const disputeId = disputeMsgDeleteBtn.getAttribute('data-dispute-id');
+                const itemId = disputeMsgDeleteBtn.getAttribute('data-item-id');
+                if (disputeId && itemId) dash._handleDisputeMsgDelete(disputeId, itemId);
+                return;
+            }
+            const disputeMsgCreateBtn = e.target.closest('[data-wf-dash-dispute-msg-create]');
+            if (disputeMsgCreateBtn && modal.contains(disputeMsgCreateBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const disputeId = disputeMsgCreateBtn.getAttribute('data-dispute-id');
+                const itemId = disputeMsgCreateBtn.getAttribute('data-item-id');
+                if (disputeId && itemId) dash._handleDisputeMsgCreate(disputeId, itemId);
+                return;
+            }
             const thumbBtn = e.target.closest('[data-wf-dash-thumb]');
             if (thumbBtn && modal.contains(thumbBtn)) {
                 e.stopPropagation();
@@ -5817,6 +5844,15 @@ function attachSearchOutputListeners(modal, dash) {
                 }
                 return;
             }
+            const disputeMsgSelect = e.target.closest('[data-wf-dash-dispute-msg-select]');
+            if (disputeMsgSelect && modal.contains(disputeMsgSelect)) {
+                const disputeId = disputeMsgSelect.getAttribute('data-dispute-id');
+                const itemId = disputeMsgSelect.getAttribute('data-item-id');
+                if (disputeId && itemId) {
+                    dash._handleDisputeMsgSelectChange(disputeId, itemId, disputeMsgSelect.value);
+                }
+                return;
+            }
             const flagCreateReason = e.target.closest('[data-wf-dash-flag-create-reason]');
             if (flagCreateReason && modal.contains(flagCreateReason)) {
                 const itemId = flagCreateReason.getAttribute('data-item-id');
@@ -5829,7 +5865,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.14',
+    _version: '9.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

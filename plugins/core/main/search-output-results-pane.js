@@ -4239,6 +4239,7 @@ const searchOutputResultsPaneMethods = {
                 resolutionReason: '',
                 resolutionKey: '',
                 bugCategoryKey: '',
+                messageSnippetId: '',
                 claimedAt: null,
                 submitting: false
             };
@@ -4249,12 +4250,16 @@ const searchOutputResultsPaneMethods = {
                 resolutionReason: '',
                 resolutionKey: '',
                 bugCategoryKey: '',
+                messageSnippetId: '',
                 claimedAt: null,
                 submitting: false
             };
         }
         if (this._state.disputeClaimUi[id].bugCategoryKey == null) {
             this._state.disputeClaimUi[id].bugCategoryKey = '';
+        }
+        if (this._state.disputeClaimUi[id].messageSnippetId == null) {
+            this._state.disputeClaimUi[id].messageSnippetId = '';
         }
         return this._state.disputeClaimUi[id];
     },
@@ -4366,8 +4371,20 @@ const searchOutputResultsPaneMethods = {
                 + '</select>'
             : '';
 
+        const msgApi = Context.disputeResolutionMessages;
+        const snippetsToolbarHtml = msgApi && typeof msgApi.toolbarHtml === 'function'
+            ? msgApi.toolbarHtml({
+                mode: 'dashboard',
+                disputeId,
+                itemId,
+                selectedId: ui.messageSnippetId || '',
+                disabled: Boolean(ui.submitting)
+            })
+            : '';
+
         return `<div data-wf-dash-dispute-resolution="${escDisputeId}" data-item-id="${escItemId}" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent); display: flex; flex-direction: column; gap: 8px;">`
             + `<textarea ${DASH_AUTO_GROW_TEXTAREA_ATTR}="1" data-wf-dash-dispute-resolution-input="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" rows="2" placeholder="Resolution reason…" style="${textareaStyle}"${disabled}>${dashEscHtml(reason)}</textarea>`
+            + snippetsToolbarHtml
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">`
             + `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;">`
             + `<select data-wf-dash-dispute-resolution-status="1" data-dispute-id="${escDisputeId}" data-item-id="${escItemId}" style="${selectStyle}"${disabled}>`
@@ -4437,6 +4454,90 @@ const searchOutputResultsPaneMethods = {
         if (!this._patchDisputeResolutionPanel(id, itemId)) {
             this._patchTaskCard(itemId);
         }
+    },
+
+    _handleDisputeMsgSelectChange(disputeId, itemId, snippetId) {
+        const id = String(disputeId || '').trim();
+        if (!id) return;
+        const ui = this._getDisputeClaimUi(id);
+        ui.messageSnippetId = String(snippetId || '').trim();
+    },
+
+    _handleDisputeMsgInsert(disputeId, itemId) {
+        const id = String(disputeId || '').trim();
+        const iid = String(itemId || '').trim();
+        if (!id || !iid) return;
+        const msgApi = Context.disputeResolutionMessages;
+        if (!msgApi) {
+            Logger.warn('search-output: dispute message insert skipped — API unavailable');
+            return;
+        }
+        const ui = this._getDisputeClaimUi(id);
+        const entry = msgApi.get(ui.messageSnippetId);
+        if (!entry) {
+            Logger.warn('search-output: dispute message insert blocked — no message selected');
+            return;
+        }
+        const next = msgApi.appendBody(ui.resolutionReason || '', entry.body);
+        ui.resolutionReason = next;
+        Logger.log('search-output: inserted resolution message — ' + entry.name
+            + ' (dispute ' + id + ')');
+        if (!this._patchDisputeResolutionPanel(id, iid)) {
+            this._patchTaskCard(iid);
+        }
+    },
+
+    _handleDisputeMsgDelete(disputeId, itemId) {
+        const id = String(disputeId || '').trim();
+        const iid = String(itemId || '').trim();
+        if (!id || !iid) return;
+        const msgApi = Context.disputeResolutionMessages;
+        if (!msgApi) {
+            Logger.warn('search-output: dispute message delete skipped — API unavailable');
+            return;
+        }
+        const ui = this._getDisputeClaimUi(id);
+        const entry = msgApi.get(ui.messageSnippetId);
+        if (!entry) {
+            Logger.warn('search-output: dispute message delete blocked — no message selected');
+            return;
+        }
+        if (!window.confirm('Delete saved message "' + entry.name + '"?')) return;
+        if (!msgApi.remove(entry.id)) {
+            Logger.warn('search-output: dispute message delete failed — ' + entry.id);
+            return;
+        }
+        ui.messageSnippetId = '';
+        Logger.log('search-output: deleted resolution message — ' + entry.name);
+        if (!this._patchDisputeResolutionPanel(id, iid)) {
+            this._patchTaskCard(iid);
+        }
+    },
+
+    _handleDisputeMsgCreate(disputeId, itemId) {
+        const id = String(disputeId || '').trim();
+        const iid = String(itemId || '').trim();
+        if (!id || !iid) return;
+        const msgApi = Context.disputeResolutionMessages;
+        if (!msgApi || typeof msgApi.openCreateDialog !== 'function') {
+            Logger.warn('search-output: dispute message create skipped — API unavailable');
+            return;
+        }
+        const ui = this._getDisputeClaimUi(id);
+        const self = this;
+        msgApi.openCreateDialog({
+            initialBody: ui.resolutionReason || '',
+            onSaved(created) {
+                if (created && created.id) {
+                    ui.messageSnippetId = created.id;
+                }
+                Logger.log('search-output: saved resolution message — '
+                    + ((created && created.name) || '(unnamed)'));
+                if (!self._patchDisputeResolutionPanel(id, iid)) {
+                    self._patchTaskCard(iid);
+                }
+            }
+        });
     },
 
     async _handleDisputeRelease(disputeId, itemId) {
@@ -4627,6 +4728,7 @@ const searchOutputResultsPaneMethods = {
                 ui.resolutionReason = '';
                 ui.resolutionKey = '';
                 ui.bugCategoryKey = '';
+                ui.messageSnippetId = '';
                 ui.submitting = false;
                 Logger.log('search-output: dispute claimed — ' + id
                     + (retriedAfterRelease ? ' (after releasing prior lease)' : ''));
@@ -6265,7 +6367,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.8',
+    _version: '5.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
