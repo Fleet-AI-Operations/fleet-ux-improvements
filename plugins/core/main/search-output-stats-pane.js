@@ -5332,7 +5332,8 @@ const searchOutputStatsPaneMethods = {
                 + dashEscHtml(label) + ' — ' + dashEscHtml(reason)
                 + '</div></div>';
         }
-        const subPct = this._ratingPctOneDecimal(axis.score);
+        const subPctRaw = this._ratingPctOneDecimal(axis.score);
+        const subPct = subPctRaw != null ? Math.round(subPctRaw) : null;
         const fillPct = Math.max(0, Math.min(100, subPct != null ? subPct : 0));
         const barFill = this._ratingPercentileFillColor(fillPct) || 'var(--brand, #3b82f6)';
         const trackStyle = 'flex: 1; min-width: 48px; height: 6px; border-radius: 3px;'
@@ -5345,7 +5346,7 @@ const searchOutputStatsPaneMethods = {
             + dashEscHtml(label) + '</span>'
             + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
             + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
-            + dashEscHtml(String(subPct) + '%') + '</span>'
+            + dashEscHtml(subPct != null ? (String(subPct) + '%') : '—') + '</span>'
             + '</div>';
         if (showDetail) {
             const breakdownLines = this._ratingAxisBreakdownLines(axis);
@@ -5957,7 +5958,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.2',
+    _version: '11.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
