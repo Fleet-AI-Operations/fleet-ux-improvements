@@ -5334,6 +5334,78 @@ const searchOutputStatsPaneMethods = {
         return lines;
     },
 
+    /** Unweighted / denom sample size used to judge axis confidence. */
+    _ratingAxisSampleN(axis) {
+        if (!axis) return null;
+        const raw = axis.raw || {};
+        switch (axis.id) {
+            case 'outcomeQuality':
+                if (raw.terminalTaskCount != null) return Number(raw.terminalTaskCount);
+                if (raw.nTerminal != null) return Number(raw.nTerminal);
+                return null;
+            case 'positiveFeedbackRate':
+                if (raw.weightedTotal != null) return Number(raw.weightedTotal);
+                if (raw.total != null) return Number(raw.total);
+                return null;
+            case 'nonBottomScoreRate':
+                if (raw.weightedScored != null) return Number(raw.weightedScored);
+                if (raw.total != null) return Number(raw.total);
+                return null;
+            case 'firstPassAcceptance':
+                if (raw.taskCount != null) return Number(raw.taskCount);
+                if (raw.weightedEligible != null) return Number(raw.weightedEligible);
+                if (raw.total != null) return Number(raw.total);
+                return null;
+            case 'disputeLossAvoidance':
+            case 'disputeWinRate':
+            case 'disputeDefense':
+            case 'disputeOutcomes':
+            case 'reviewCallAccuracy':
+                if (raw.resolved != null) return Number(raw.resolved);
+                return null;
+            case 'returnEffectiveness':
+                if (raw.weightedNegTerminal != null) return Number(raw.weightedNegTerminal);
+                return null;
+            case 'returnActionability':
+            case 'feedbackResolution':
+                if (raw.weightedNegProduction != null) return Number(raw.weightedNegProduction);
+                return null;
+            case 'labelDiscrimination':
+                if (raw.sampleN != null) return Number(raw.sampleN);
+                if (raw.weightedScored != null) return Number(raw.weightedScored);
+                return null;
+            default:
+                return null;
+        }
+    },
+
+    /** TWQS axes use terminal-style provisional (&lt;10); QAQS use feedback-style (&lt;25). */
+    _ratingAxisIsProvisional(axis) {
+        if (!axis || axis.defined === false || axis.score == null) return false;
+        const n = this._ratingAxisSampleN(axis);
+        if (n == null || !Number.isFinite(n)) return false;
+        const twIds = {
+            outcomeQuality: 1,
+            positiveFeedbackRate: 1,
+            nonBottomScoreRate: 1,
+            firstPassAcceptance: 1,
+            disputeLossAvoidance: 1,
+            disputeWinRate: 1,
+        };
+        const qaIds = {
+            returnEffectiveness: 1,
+            returnActionability: 1,
+            disputeDefense: 1,
+            labelDiscrimination: 1,
+            feedbackResolution: 1,
+            reviewCallAccuracy: 1,
+            disputeOutcomes: 1,
+        };
+        if (twIds[axis.id]) return n < 10;
+        if (qaIds[axis.id]) return n < 25;
+        return false;
+    },
+
     _ratingAxisBarHtml(axis, showDetail) {
         if (!axis) return '';
         const omitted = axis.defined === false || axis.score == null;
@@ -5345,6 +5417,10 @@ const searchOutputStatsPaneMethods = {
                 + dashEscHtml(label) + ' — ' + dashEscHtml(reason)
                 + '</div></div>';
         }
+        const provisional = this._ratingAxisIsProvisional(axis);
+        const labelColor = provisional
+            ? ' color: var(--muted-foreground, #64748b);'
+            : '';
         const subPctRaw = this._ratingPctOneDecimal(axis.score);
         const subPct = subPctRaw != null ? Math.round(subPctRaw) : null;
         const fillPct = Math.max(0, Math.min(100, subPct != null ? subPct : 0));
@@ -5355,7 +5431,8 @@ const searchOutputStatsPaneMethods = {
             + ' background: color-mix(in srgb, ' + barFill + ' 78%, transparent);';
         let html = '<div style="margin-top: 6px;">'
             + '<div style="display: flex; align-items: center; gap: 8px; font-size: 10px;">'
-            + '<span style="flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
+            + '<span style="flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'
+            + labelColor + '">'
             + dashEscHtml(label) + '</span>'
             + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
             + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
@@ -5987,7 +6064,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.9',
+    _version: '11.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
