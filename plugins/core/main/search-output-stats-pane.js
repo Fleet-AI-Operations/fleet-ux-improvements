@@ -5433,7 +5433,16 @@ const searchOutputStatsPaneMethods = {
                 nestInScoreCard: true,
                 omitMainAxes: true,
             });
-            bodyHtml = topBars + detailHtml;
+            // Neutral band under the axis bars so tier-colored slice cards stand out.
+            const detailWrap = detailHtml
+                ? ('<div style="margin: 10px -10px -8px; padding: 10px 10px 10px;'
+                    + ' border-top: 1px solid var(--border, #e2e8f0);'
+                    + ' border-radius: 0 0 6px 6px;'
+                    + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, var(--card, #fff));">'
+                    + detailHtml
+                    + '</div>')
+                : '';
+            bodyHtml = topBars + detailWrap;
         } else if (!cohortBlend) {
             // Non-cohort: keep sub-axis bars visible even when collapsed.
             const axesHtml = this._ratingSortedAxes(block)
@@ -5567,7 +5576,7 @@ const searchOutputStatsPaneMethods = {
         }
         if (!sectionsHtml) return '';
         if (nestInScoreCard) {
-            return '<div style="margin-top: 8px;">' + sectionsHtml + '</div>';
+            return '<div style="margin-top: 0;">' + sectionsHtml + '</div>';
         }
         return '<div style="margin-top: 12px;">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 2px;">'
@@ -5975,7 +5984,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.6',
+    _version: '11.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
