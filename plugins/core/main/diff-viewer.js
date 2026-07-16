@@ -9,6 +9,7 @@ const DV_STASH_KEY = 'fleet-ux:diff-viewer-stash';
 const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
+const DV_LINK_SPLITS_KEY = 'fleet-ux:diff-viewer-link-splits';
 const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
 const DV_MAX_SLOTS = 6;
 const DV_MAX_STASH = 100;
@@ -39,6 +40,7 @@ const _dvState = {
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
     highlightModality: 'differences', // 'differences' | 'similarities'
+    linkSplits: false, // similarities: bridge one-sided equal-run gaps as one both-or-none unit
     highlightMinLength: null,   // null = use highlightLengthRange.min
     highlightLengthRange: { min: 0, max: 0 },
     rollingLeft: 0,      // left index of rolling comparison pair
@@ -214,7 +216,11 @@ function _dvRefreshHighlightLengthRange(modal) {
     let globalMin = Infinity;
     let globalMax = 0;
     const allLengths = [];
-    const opts = { granularity: _dvState.granularity, highlightModality: _dvState.highlightModality };
+    const opts = {
+        granularity: _dvState.granularity,
+        highlightModality: _dvState.highlightModality,
+        linkSplits: _dvState.linkSplits
+    };
     for (const pair of pairs) {
         const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
         if (range.lengths.length) {
@@ -251,7 +257,8 @@ function _dvDiffPair(baseText, compareText, granularity) {
         granularity,
         showHighlights: _dvState.showHighlights,
         highlightModality: _dvState.highlightModality,
-        minHighlightLength: _dvEffectiveHighlightMinLength()
+        minHighlightLength: _dvEffectiveHighlightMinLength(),
+        linkSplits: _dvState.linkSplits
     });
 }
 
@@ -1259,6 +1266,8 @@ function _dvPanelHtml(dash) {
     const compMode = _dvState.compMode;
     const showHighlights = _dvState.showHighlights;
     const highlightModality = _dvState.highlightModality;
+    const linkSplits = _dvState.linkSplits;
+    const showLinkSplits = showHighlights && highlightModality === 'similarities';
 
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
@@ -1267,6 +1276,13 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Type', `<div class="dv-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
             ${_dvToggleCell(label, 'Granularity', `<div class="dv-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
+            <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
+                <div style="${label}margin-bottom:6px;">Link Splits</div>
+                <div class="dv-seg-group" role="group" aria-label="Link split similarity matches">
+                    ${_dvSegBtn('data-dv-link-splits', 'off', 'Off', !linkSplits, true)}
+                    ${_dvSegBtn('data-dv-link-splits', 'on', 'On', linkSplits, false)}
+                </div>
+            </div>
             <div id="dv-highlight-length-wrap" class="dv-highlight-length-wrap" style="display:${showHighlights ? 'flex' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Min Highlight Length</div>
                 <div class="dv-highlight-length-row">
@@ -1446,6 +1462,7 @@ function _dvAboveLabelInnerHtml() {
         highlightModality: _dvState.highlightModality,
         showHighlights: _dvState.showHighlights,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
+        linkSplits: _dvState.linkSplits,
         lengthRange: _dvState.highlightLengthRange
     });
 }
@@ -2053,6 +2070,17 @@ function _dvSyncGranularityUi(modal) {
 function _dvSyncHighlightModalityUi(modal) {
     if (!modal) return;
     _dvSyncSegPressed(modal, 'data-dv-highlight-modality', _dvState.highlightModality);
+    _dvSyncLinkSplitsUi(modal);
+}
+
+function _dvSyncLinkSplitsUi(modal) {
+    if (!modal) return;
+    const wrap = _dvQ(modal, 'dv-link-splits-wrap');
+    if (wrap) {
+        const show = _dvState.showHighlights && _dvState.highlightModality === 'similarities';
+        wrap.style.display = show ? 'block' : 'none';
+    }
+    _dvSyncSegPressed(modal, 'data-dv-link-splits', _dvState.linkSplits ? 'on' : 'off');
 }
 
 function _dvSyncCompModeUi(modal) {
@@ -2101,6 +2129,7 @@ function _dvSyncHighlightsUi(modal) {
     if (right) right.classList.toggle('dv-highlights-off', !_dvState.showHighlights);
     _dvSyncSegPressed(modal, 'data-dv-highlights', _dvState.showHighlights ? 'on' : 'off');
     _dvSyncHighlightLengthUi(modal);
+    _dvSyncLinkSplitsUi(modal);
     if (!_dvState.showHighlights) _dvRemoveRollingOverlay(modal);
 }
 
@@ -2185,6 +2214,22 @@ function _dvAttachListeners(modal) {
                 _dvUpdateAboveLabels(modal);
                 if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
                 Logger.log('diff-viewer: highlight modality → ' + modality);
+            }
+            return;
+        }
+
+        // ── Link Splits toggle (similarities correspondence bridging) ──
+        const linkSplitsBtn = e.target.closest('[data-dv-link-splits]');
+        if (linkSplitsBtn && modal.contains(linkSplitsBtn)) {
+            const enabled = linkSplitsBtn.getAttribute('data-dv-link-splits') === 'on';
+            if (enabled !== _dvState.linkSplits) {
+                _dvState.linkSplits = enabled;
+                try { Storage.setData(DV_LINK_SPLITS_KEY, enabled ? 'on' : 'off'); } catch (_e) { /* no-op */ }
+                _dvSyncLinkSplitsUi(modal);
+                _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
+                if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                Logger.log('diff-viewer: link splits → ' + (enabled ? 'on' : 'off'));
             }
             return;
         }
@@ -3050,7 +3095,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3095,6 +3140,13 @@ const plugin = {
             }
         } catch (_e) { /* no-op */ }
 
+        // Restore persisted Link Splits (similarities bridging)
+        try {
+            const storedLinkSplits = Storage.getData(DV_LINK_SPLITS_KEY, null);
+            if (storedLinkSplits === 'on') _dvState.linkSplits = true;
+            else if (storedLinkSplits === 'off') _dvState.linkSplits = false;
+        } catch (_e) { /* no-op */ }
+
         // Inject styles
         _dvInjectStyles();
 
@@ -3121,6 +3173,7 @@ const plugin = {
                 _dvAttachRollingOverlayListeners(modal);
                 _dvSyncHighlightsUi(modal);
                 _dvSyncHighlightModalityUi(modal);
+                _dvSyncLinkSplitsUi(modal);
                 _dvSyncCompModeUi(modal);
                 _dvSyncHighlightLengthUi(modal);
                 // Restore session slots (if any were captured)
@@ -3130,6 +3183,7 @@ const plugin = {
                 _dvRenderAll(modal);
                 _dvSyncHighlightsUi(modal);
                 _dvSyncHighlightModalityUi(modal);
+                _dvSyncLinkSplitsUi(modal);
                 _dvSyncCompModeUi(modal);
                 _dvScheduleReelLensSync(modal);
                 requestAnimationFrame(() => {
