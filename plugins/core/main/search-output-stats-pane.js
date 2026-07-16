@@ -5554,6 +5554,16 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    /** Slice / card volume below confidence provisional threshold for this score kind. */
+    _ratingVolumeIsProvisional(volume, scoreKind) {
+        const n = Number(volume);
+        if (!Number.isFinite(n) || n < 0) return true;
+        const kind = String(scoreKind || '').toLowerCase();
+        if (kind.indexOf('qa') === 0) return n < 25;
+        // TWQS / combined / default: terminal-style threshold.
+        return n < 10;
+    },
+
     _ratingCohortSectionHtml(opts) {
         const o = opts || {};
         const title = o.title || '';
@@ -5567,6 +5577,9 @@ const searchOutputStatsPaneMethods = {
         const scoreKind = String(o.scoreKind || '').trim();
         const dimension = String(o.dimension || '').trim();
         const sliceKey = String(o.sliceKey || '').trim();
+        const provisional = o.provisional != null
+            ? !!o.provisional
+            : this._ratingVolumeIsProvisional(o.volume, scoreKind);
         const canExpand = !!(workerId && scoreKind && dimension && sliceKey && axes.length);
         const axesList = [...axes].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
         const axesHtml = (expanded && axesList.length)
@@ -5587,9 +5600,13 @@ const searchOutputStatsPaneMethods = {
                 + ' data-wf-dash-rating-cohort-key="' + dashEscHtml(sliceKey) + '"'
                 + ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; user-select: none;"')
             : ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"';
+        const titleColor = provisional
+            ? ' color: var(--muted-foreground, #64748b);'
+            : '';
         return '<div style="' + this._ratingTierSliceStyle(tierId) + '">'
             + '<div' + headerAttrs + '>'
-            + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;">'
+            + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;'
+            + titleColor + '">'
             + chevron + dashEscHtml(title) + '</div>'
             + '<div style="font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b);">'
             + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—')
@@ -5644,6 +5661,8 @@ const searchOutputStatsPaneMethods = {
                     title: key,
                     scoreDisplay,
                     weightOrMeta: vol,
+                    volume: slice.volume,
+                    provisional: this._ratingVolumeIsProvisional(slice.volume, scoreKind),
                     tierId,
                     axes: slice.axes,
                     expanded: this._isRatingCohortSliceExpanded(workerId, scoreKind, dim.id, key),
@@ -6064,7 +6083,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.10',
+    _version: '11.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
