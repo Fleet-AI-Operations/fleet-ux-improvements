@@ -7,6 +7,7 @@ const REPLICA_MARKER = 'data-fleet-user-story-replica';
 const PROSE_ATTR = 'data-fleet-user-story-prose';
 const LABEL_TEXT = 'User Story';
 const TASK_INSTRUCTIONS_RE = /^\s*Task Instructions\s*$/i;
+const SCENARIO_INTRO_RE = /Write a problem inspired by the following scenario/i;
 
 const MODAL_FRAME_CLASSES = [
     'mt-1',
@@ -27,6 +28,13 @@ const MODAL_FRAME_CLASSES = [
 
 const EMBEDDED_BODY_CLASSES = [
     'mt-1',
+    'text-sm',
+    'text-blue-700',
+    'dark:text-blue-300'
+].join(' ');
+
+const CREATION_EMBEDDED_BODY_CLASSES = [
+    'mt-2',
     'text-sm',
     'text-blue-700',
     'dark:text-blue-300'
@@ -146,9 +154,39 @@ const UserStoryMarkdownApi = {
         return bodies;
     },
 
+    isBlueStoryBox(el) {
+        if (!el || !el.className) return false;
+        const cls = String(el.className);
+        return /\bborder-blue-200\b/.test(cls) && /\bbg-blue-50\b/.test(cls);
+    },
+
+    findCreationScenarioBodies(seen) {
+        const intros = document.querySelectorAll('p');
+        const bodies = [];
+        for (const intro of intros) {
+            if (!SCENARIO_INTRO_RE.test(this.normalizeLabelText(intro.textContent))) continue;
+
+            const blueBox = intro.closest('div.rounded-lg.border');
+            if (!blueBox || !this.isBlueStoryBox(blueBox)) continue;
+
+            const scope = intro.parentElement || blueBox;
+            const candidates = scope.querySelectorAll('p.whitespace-pre-wrap, div.whitespace-pre-wrap');
+            for (const body of candidates) {
+                if (body === intro) continue;
+                if (seen.has(body)) continue;
+                if (body.closest('[' + REPLICA_MARKER + '="true"]')) continue;
+                seen.add(body);
+                bodies.push(body);
+            }
+        }
+        return bodies;
+    },
+
     findBodies() {
         const seen = new Set();
-        return this.findLabeledBodies(seen).concat(this.findCreationInstructionBodies(seen));
+        return this.findLabeledBodies(seen)
+            .concat(this.findCreationInstructionBodies(seen))
+            .concat(this.findCreationScenarioBodies(seen));
     },
 
     getVariant(body) {
@@ -162,6 +200,9 @@ const UserStoryMarkdownApi = {
         }
         if (hasLeftAccent || hasBlueFill) {
             return 'modal';
+        }
+        if (/\bmt-2\b/.test(cls)) {
+            return 'creationEmbedded';
         }
         return 'embedded';
     },
@@ -182,9 +223,15 @@ const UserStoryMarkdownApi = {
             ['\u2018', '\u2019'],
             ["'", "'"]
         ];
-        for (const [open, close] of pairs) {
-            if (s.length >= 2 && s.startsWith(open) && s.endsWith(close)) {
-                return s.slice(open.length, s.length - close.length).trim();
+        let changed = true;
+        while (changed && s.length >= 2) {
+            changed = false;
+            for (const [open, close] of pairs) {
+                if (s.startsWith(open) && s.endsWith(close)) {
+                    s = s.slice(open.length, s.length - close.length).trim();
+                    changed = true;
+                    break;
+                }
             }
         }
         return s;
@@ -268,6 +315,7 @@ const UserStoryMarkdownApi = {
         const variant = this.getVariant(body);
         if (variant === 'creationQuote') return CREATION_QUOTE_CLASSES;
         if (variant === 'modal') return MODAL_FRAME_CLASSES;
+        if (variant === 'creationEmbedded') return CREATION_EMBEDDED_BODY_CLASSES;
         return EMBEDDED_BODY_CLASSES;
     },
 
@@ -399,7 +447,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
