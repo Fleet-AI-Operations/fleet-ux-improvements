@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
-// Engine v9.2: Poor/Top tier volume soft gates.
+// Engine v9.3: omit Label Discrimination when QA sample < 10.
 
-const RE_VERSION = '9.2';
+const RE_VERSION = '9.3';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -50,6 +50,8 @@ const RE_QAQS_DISPUTE_DEF_C     = 5;
 const RE_QAQS_DISPUTE_DEF_PRIOR = 1.0;
 const RE_QAQS_LABEL_DISC_C      = 5;
 const RE_QAQS_LABEL_DISC_PRIOR  = 0.1245;
+// Omit Label Discrimination on thin QA samples (matches TW provisional threshold).
+const RE_QAQS_LABEL_DISC_MIN_N  = 10;
 
 const RE_TWQS_AXES = [
     { id: 'outcomeQuality',       label: 'Outcome Quality',        weight: 0.40 },
@@ -1033,12 +1035,16 @@ const RatingEngine = {
         }
 
         // Shrunk scores.
-        // returnEffectiveness and labelDiscrimination are always defined (prior when n=0).
+        // returnEffectiveness stays defined (prior when n=0).
+        // labelDiscrimination requires a minimum sample (else omitted; weight renormalizes).
         const priors = reCohortPriors('qaqs', cohort);
         const reScore = reShrunkRate(reKsum, reNsum, RE_QAQS_RET_EFF_C, priors.returnEffectiveness);
         const raDefined = raNsum > 0;
         const raScore = raDefined ? reShrunkRate(raKsum, raNsum, RE_QAQS_RET_ACT_C, priors.returnActionability) : null;
-        const ldScore = reShrunkRate(ldKsum, ldNsum, RE_QAQS_LABEL_DISC_C, priors.labelDiscrimination);
+        const ldDefined = inScopeFeedbackCount >= RE_QAQS_LABEL_DISC_MIN_N;
+        const ldScore = ldDefined
+            ? reShrunkRate(ldKsum, ldNsum, RE_QAQS_LABEL_DISC_C, priors.labelDiscrimination)
+            : null;
         const ddScore = reShrunkRate(0, ddLosses, RE_QAQS_DISPUTE_DEF_C, priors.disputeDefense);
 
         const axes = RE_QAQS_AXES.map((def) => {
@@ -1066,10 +1072,13 @@ const RatingEngine = {
                     raw = { losses: ddLosses, wins: ddWins, resolved: ddDenom };
                     break;
                 case 'labelDiscrimination':
+                    defined = ldDefined;
                     score = ldScore;
                     raw = {
                         weightedNonStd: Math.round(ldKsum * 1000) / 1000,
-                        weightedScored: Math.round(ldNsum * 1000) / 1000
+                        weightedScored: Math.round(ldNsum * 1000) / 1000,
+                        sampleN: inScopeFeedbackCount,
+                        minSampleN: RE_QAQS_LABEL_DISC_MIN_N
                     };
                     break;
                 default:
@@ -1332,7 +1341,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '9.2',
+    _version: '9.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

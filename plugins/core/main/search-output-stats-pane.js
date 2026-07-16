@@ -5042,10 +5042,10 @@ const searchOutputStatsPaneMethods = {
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score.' },
         ];
         const qaqsRows = [
-            { label: 'Return Effectiveness',  weight: '30%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
+            { label: 'Return Effectiveness',  weight: '40%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
             { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
-            { label: 'Label Discrimination',  weight: '25%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality.' },
             { label: 'Dispute Loss Avoidance',weight: '20%', measures: 'For sole-negative reviews, only disputes approved for the writer reduce the score. QA wins are neutral.' },
+            { label: 'Label Discrimination',  weight: '15%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality. Omitted when fewer than 10 feedback rows are in scope.' },
         ];
         const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
         return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
@@ -5197,7 +5197,7 @@ const searchOutputStatsPaneMethods = {
             case 'returnActionability':
                 return 'No return feedback episodes in scope';
             case 'labelDiscrimination':
-                return 'No explicit score labels by this reviewer in scope';
+                return 'Fewer than 10 feedback rows in scope';
             case 'disputeDefense':
                 return 'No resolved sole-negative-reviewer disputes in scope';
             // Legacy / fallback
@@ -5987,7 +5987,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.8',
+    _version: '11.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
