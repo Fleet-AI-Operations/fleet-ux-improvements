@@ -1,7 +1,7 @@
 // ============= user-story-markdown.js =============
 // Shared Context.userStoryMarkdown library wrapper for the Task Scenario modal on the
-// disputes list page, plus a copy button next to the Scenario label that copies the
-// whole story with H1 sub-headers and --- separators (same format as task detail).
+// disputes list page, plus a copy button next to the Task Scenario title that copies
+// the whole story with H1 sub-headers and --- separators (same format as task detail).
 
 const MODAL_TITLE_TEXT = 'Task Scenario';
 const SCENARIO_LABEL_TEXT = 'Scenario';
@@ -34,11 +34,41 @@ const plugin = {
     onMutation(state) {
         const api = Context.userStoryMarkdown;
         if (!api || typeof api.run !== 'function') return;
+        this._captureOriginalStoryWidth();
         api.run(state, {
             pluginId: this.id,
             logTag: this.id
         });
+        this._applyReplicaMaxWidth();
         this._ensureModalCopyButton(state);
+    },
+
+    /**
+     * Record the story blockquote's rendered width before the library hides it,
+     * so the markdown replica can be capped to the same width (long markdown
+     * paragraphs would otherwise stretch the dialog to its viewport max-width).
+     */
+    _captureOriginalStoryWidth() {
+        const dialog = this._findTaskScenarioDialog();
+        if (!dialog) return;
+        const storyLabel = this._findSectionLabel(dialog, USER_STORY_LABEL_TEXT);
+        if (!storyLabel) return;
+        const body = storyLabel.nextElementSibling;
+        if (!body || body.getAttribute('data-fleet-user-story-original') === 'true') return;
+        if (body.dataset.fleetOriginalWidth) return;
+        const width = body.getBoundingClientRect().width;
+        if (width > 50) body.dataset.fleetOriginalWidth = String(Math.round(width));
+    },
+
+    _applyReplicaMaxWidth() {
+        const dialog = this._findTaskScenarioDialog();
+        if (!dialog) return;
+        const original = dialog.querySelector('[data-fleet-user-story-original="true"][data-fleet-original-width]');
+        if (!original) return;
+        const replica = original.nextElementSibling;
+        if (!replica || replica.getAttribute('data-fleet-user-story-replica') !== 'true') return;
+        const maxWidth = original.dataset.fleetOriginalWidth + 'px';
+        if (replica.style.maxWidth !== maxWidth) replica.style.maxWidth = maxWidth;
     },
 
     _normalizeText(text) {
@@ -122,8 +152,8 @@ const plugin = {
         }
         if (dialog.querySelector('[' + COPY_BTN_ATTR + '="1"]')) return;
 
-        const scenarioLabel = this._findSectionLabel(dialog, SCENARIO_LABEL_TEXT);
-        if (!scenarioLabel) return;
+        const heading = dialog.querySelector('h2');
+        if (!heading) return;
 
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
@@ -150,8 +180,8 @@ const plugin = {
             }
         });
 
-        scenarioLabel.classList.add('flex', 'items-center', 'gap-1.5');
-        scenarioLabel.appendChild(copyBtn);
+        // h2 title row already uses flex items-center gap-2
+        heading.appendChild(copyBtn);
 
         if (!state.copyButtonLogged) {
             Logger.log(this.id + ': copy button injected in Task Scenario modal');
