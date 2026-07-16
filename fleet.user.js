@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [fix/port] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.0
+// @version      12.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.0';
+    const VERSION = '12.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -3608,17 +3608,20 @@
         },
 
         runLibraryPluginInit(plugin) {
-            if (plugin.state && plugin.state.libInitialized) {
+            // Prefer the registered entry (has state); callers may pass the pre-register object
+            const registered = (plugin && plugin.id && this.get(plugin.id)) || plugin;
+            if (!registered) return;
+            if (registered.state && registered.state.libInitialized) {
                 return;
             }
             try {
-                if (plugin.init) plugin.init(plugin.state, Context);
+                if (registered.init) registered.init(registered.state, Context);
             } catch (e) {
-                Logger.error(`Error in library plugin ${plugin.id}:`, e);
+                Logger.error(`Error in library plugin ${registered.id}:`, e);
                 return;
             }
-            if (plugin.state) plugin.state.libInitialized = true;
-            Logger.log(`✓ Library plugin initialized: ${plugin.id}`);
+            if (registered.state) registered.state.libInitialized = true;
+            Logger.log(`✓ Library plugin initialized: ${registered.id}`);
         },
 
         runOpsDashboardPluginInit(plugin) {
@@ -3751,7 +3754,8 @@
                     plugin._isCore = true;
                     plugin._isLib = true;
                     PluginManager.register(plugin);
-                    PluginManager.runLibraryPluginInit(plugin);
+                    // register() stores a copy with initialized state; init must use that entry
+                    PluginManager.runLibraryPluginInit(PluginManager.get(plugin.id));
                     loadedLibraryNames.add(filename);
                     Logger.log(`✓ Loaded library: ${filename} v${loadedVersion}`);
                 } catch (err) {
