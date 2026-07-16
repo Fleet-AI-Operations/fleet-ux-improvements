@@ -5521,17 +5521,18 @@ const searchOutputStatsPaneMethods = {
                 + ' data-wf-dash-rating-score-kind="' + dashEscHtml(scoreKind) + '"'
                 + ' data-wf-dash-rating-cohort-dim="' + dashEscHtml(dimension) + '"'
                 + ' data-wf-dash-rating-cohort-key="' + dashEscHtml(sliceKey) + '"'
-                + ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; user-select: none;"')
-            : ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"';
+                + ' style="display: flex; align-items: baseline; gap: 6px; cursor: pointer; user-select: none; min-width: 0;"')
+            : ' style="display: flex; align-items: baseline; gap: 6px; min-width: 0;"';
         const titleColor = provisional
             ? ' color: var(--muted-foreground, #64748b);'
             : '';
         return '<div style="' + this._ratingTierSliceStyle(tierId) + '">'
             + '<div' + headerAttrs + '>'
-            + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;'
+            + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'
             + titleColor + '">'
             + chevron + dashEscHtml(title) + '</div>'
-            + '<div style="font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b);">'
+            + '<span style="flex-shrink: 0; color: var(--muted-foreground, #64748b);">·</span>'
+            + '<div style="font-size: 10px; flex: 1; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
             + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—')
             + (weightOrMeta ? ' · ' + dashEscHtml(String(weightOrMeta)) : '')
             + '</div>'
@@ -6006,7 +6007,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.12',
+    _version: '11.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
