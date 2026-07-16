@@ -4682,6 +4682,7 @@ const searchOutputStatsPaneMethods = {
         return Object.assign({}, main, {
             score: cohortEntry.score,
             band: cohortEntry.band || main.band,
+            tierId: cohortEntry.tierId || main.tierId,
             cohortBlend: cohortEntry,
         });
     },
@@ -4708,23 +4709,56 @@ const searchOutputStatsPaneMethods = {
         return bestTier * 100000 + bestCount;
     },
 
-    /** Red (0) → yellow (50) → green (100) tint for top-level score panels. */
-    _ratingPercentileFillColor(percentile) {
-        if (percentile == null || !Number.isFinite(Number(percentile))) return null;
-        const t = Math.max(0, Math.min(100, Number(percentile))) / 100;
+    /** Red (0) → yellow (~0.5) → green (1) tint used by axis bars and tier panels. */
+    _ratingRampFillColor(t) {
+        if (t == null || !Number.isFinite(Number(t))) return null;
+        const x = Math.max(0, Math.min(1, Number(t)));
         let r; let g; let b;
-        if (t <= 0.5) {
-            const u = t / 0.5;
+        if (x <= 0.5) {
+            const u = x / 0.5;
             r = Math.round(239 + (234 - 239) * u);
             g = Math.round(68 + (179 - 68) * u);
             b = Math.round(68 + (8 - 68) * u);
         } else {
-            const u = (t - 0.5) / 0.5;
+            const u = (x - 0.5) / 0.5;
             r = Math.round(234 + (34 - 234) * u);
             g = Math.round(179 + (197 - 179) * u);
             b = Math.round(8 + (94 - 8) * u);
         }
         return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+    },
+
+    /** Legacy helper: map 0–100 value onto the shared ramp (axis bars). */
+    _ratingPercentileFillColor(percentile) {
+        if (percentile == null || !Number.isFinite(Number(percentile))) return null;
+        return this._ratingRampFillColor(Math.max(0, Math.min(100, Number(percentile))) / 100);
+    },
+
+    /**
+     * Four-stop ramp for population tiers (Poor / Below / Typical / Above+Top).
+     * Above average and Top tier share the top green.
+     */
+    _ratingTierFillColor(tierId) {
+        const stops = {
+            poor: 0,
+            below_average: 1 / 3,
+            typical: 2 / 3,
+            above_average: 1,
+            top_tier: 1,
+        };
+        if (!tierId || !(tierId in stops)) return null;
+        return this._ratingRampFillColor(stops[tierId]);
+    },
+
+    _ratingTierPanelStyle(tierId) {
+        const fill = this._ratingTierFillColor(tierId);
+        if (!fill) {
+            return 'margin-top: 10px; padding: 8px 10px; border-radius: 6px;'
+                + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #fff));';
+        }
+        return 'margin-top: 10px; padding: 8px 10px; border-radius: 6px;'
+            + ' background: color-mix(in srgb, ' + fill + ' 22%, var(--card, #fff));'
+            + ' border: 1px solid color-mix(in srgb, ' + fill + ' 45%, var(--border, #e2e8f0));';
     },
 
     _ratingPercentilePanelStyle(percentile) {
@@ -5021,12 +5055,12 @@ const searchOutputStatsPaneMethods = {
             + '</ul>'
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
-            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Estimated percentile</div>'
-            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is an <em>estimated</em> percentile (e.g. &ldquo;~72nd percentile&rdquo;), with the raw 0–100 score shown as secondary. Percentiles use a normal-CDF formula fitted to the current dive.db scored population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics regenerated after ranking. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, and QAQS recency. This is an approximation, not an exact rank.</p>'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
+            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the current dive.db scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Percentile first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
+            + '<li><strong>Tier first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain. The tier places that score in the current dive.db population.</li>'
             + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
@@ -5355,12 +5389,13 @@ const searchOutputStatsPaneMethods = {
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
         const scoreDisplay = Math.round(block.score);
-        const pct = block.estimatedPercentile;
-        const pctLabel = pct != null ? this._ratingFormatPercentile(pct) : '';
-        const primaryHtml = pctLabel
-            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 12px; font-weight: 500;"> percentile</span>')
+        const tierLabel = String(block.band || '').trim();
+        const tierId = block.tierId || null;
+        const hasTier = !!(tierLabel && tierLabel !== '—');
+        const primaryHtml = hasTier
+            ? dashEscHtml(tierLabel)
             : dashEscHtml(String(scoreDisplay));
-        const secondaryHtml = pctLabel
+        const secondaryHtml = hasTier
             ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
                 + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
             : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
@@ -5403,7 +5438,7 @@ const searchOutputStatsPaneMethods = {
                 + ' data-wf-dash-rating-score-kind="' + dashEscHtml(scoreKind) + '"'
                 + ' style="cursor: pointer; user-select: none;"')
             : '';
-        return '<div style="' + this._ratingPercentilePanelStyle(pct) + '">'
+        return '<div style="' + this._ratingTierPanelStyle(tierId) + '">'
             + '<div' + headerAttrs + '>'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">'
             + chevron + dashEscHtml(title) + '</div>'
@@ -5578,7 +5613,11 @@ const searchOutputStatsPaneMethods = {
             contextLine = (contextLine ? contextLine + ' · ' : '') + 'Tenure ' + display.tenureDays + ' day(s)';
         }
         const pct = block.estimatedPercentile;
-        if (pct != null) {
+        // Prefer tier label context; keep muted raw score note when expanding.
+        if (block.band && block.band !== '—') {
+            contextLine = (contextLine ? contextLine + ' · ' : '')
+                + block.band + ' · ' + Math.round(block.score) + ' / 100';
+        } else if (pct != null) {
             contextLine = (contextLine ? contextLine + ' · ' : '')
                 + 'raw ' + Math.round(block.score) + ' / 100';
         }
@@ -5894,7 +5933,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.7',
+    _version: '11.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
