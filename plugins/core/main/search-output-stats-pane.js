@@ -5524,7 +5524,13 @@ const searchOutputStatsPaneMethods = {
             for (const slice of slices) {
                 if (!slice || slice.score == null) continue;
                 const key = String(slice.key || '—');
-                const scoreDisplay = Math.round(slice.score * 10) / 10;
+                const weighting = this._ratingWorkerWeighting(workerId);
+                const engine = Context.ratingEngine;
+                let scoreDisplay = Math.round(slice.score * 10) / 10;
+                if (engine && typeof engine.populationTier === 'function') {
+                    const tier = engine.populationTier(slice.score, scoreKind, weighting);
+                    if (tier && tier.label && tier.label !== '—') scoreDisplay = tier.label;
+                }
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
                     : '';
@@ -5951,7 +5957,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.1',
+    _version: '11.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
