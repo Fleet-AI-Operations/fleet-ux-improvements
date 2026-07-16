@@ -3,6 +3,7 @@
 
 const FLEET_UI_STYLE_ID = 'fleet-ui-styles';
 const FLEET_UI_SCOPED_STYLE_PREFIX = 'fleet-ui-btn-scope-';
+const FLEET_UI_USER_STORY_PROSE_STYLE_ID = 'fleet-ui-user-story-prose';
 
 const FLASH_PULSE_MS = 600;
 const FLASH_PULSE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -331,11 +332,57 @@ function fleetUiFlashTabSuccess(tabEl) {
     Logger.debug('ui-lib: tab pulse');
 }
 
+function fleetUiUserStoryProseCssText() {
+    const p = '[data-fleet-user-story-prose]';
+    return [
+        p + ' {',
+        '  font-size: 0.875rem;',
+        '  line-height: 1.5;',
+        '  color: inherit;',
+        '}',
+        p + ' > :first-child { margin-top: 0; }',
+        p + ' > :last-child { margin-bottom: 0; }',
+        p + ' p { margin: 0.4em 0; }',
+        p + ' h1, ' + p + ' h2, ' + p + ' h3, ' + p + ' h4, ' + p + ' h5 {',
+        '  font-weight: 600;',
+        '  line-height: 1.35;',
+        '  color: inherit;',
+        '  margin: 0.75em 0 0.35em;',
+        '}',
+        p + ' h1 { font-size: 1.15em; }',
+        p + ' h2 { font-size: 1.08em; }',
+        p + ' h3 { font-size: 1.02em; }',
+        p + ' h4, ' + p + ' h5 { font-size: 1em; }',
+        p + ' ul {',
+        '  margin: 0.4em 0;',
+        '  padding-left: 1.35em;',
+        '  list-style-type: disc;',
+        '}',
+        p + ' li {',
+        '  margin: 0.15em 0;',
+        '  display: list-item;',
+        '}',
+        p + ' strong { font-weight: 700; color: inherit; }',
+        p + ' code {',
+        '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
+        '  font-size: 0.92em;',
+        '  padding: 0.1em 0.3em;',
+        '  border-radius: 0.25rem;',
+        '  background: color-mix(in srgb, currentColor 10%, transparent);',
+        '}',
+        p + ' a {',
+        '  color: var(--brand, #2563eb);',
+        '  text-decoration: underline;',
+        '  text-underline-offset: 2px;',
+        '}'
+    ].join('\n');
+}
+
 const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -368,6 +415,18 @@ const plugin = {
             target.appendChild(style);
         }
 
+        function ensureUserStoryMarkdownStyles() {
+            ensureStyles();
+            if (document.getElementById(FLEET_UI_USER_STORY_PROSE_STYLE_ID)) return;
+            const style = document.createElement('style');
+            style.id = FLEET_UI_USER_STORY_PROSE_STYLE_ID;
+            style.textContent = fleetUiUserStoryProseCssText();
+            (document.head || document.documentElement).appendChild(style);
+            if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
+                CleanupRegistry.registerElement(style);
+            }
+        }
+
         ensureStyles();
 
         Context.uiLib = {
@@ -382,6 +441,7 @@ const plugin = {
 
             ensureStyles,
             ensureButtonStyles,
+            ensureUserStoryMarkdownStyles,
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,

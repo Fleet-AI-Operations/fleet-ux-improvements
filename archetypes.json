@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.23",
+  "archetypesVersion": "14.24",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "2.4",
-      "hash": "sha256-bbe1f3fb53a9eb93d7501c825b6753268a7aa2a3369d8cbfbdd251ec843b0213",
+      "version": "2.5",
+      "hash": "sha256-f2482f2641c35fab8e813ff8e113aec1618d6b82c5f4a2c565d68227a49c97e6",
       "log": false
     },
     {
@@ -104,6 +104,12 @@
       "name": "top-nav-horizontal-scroll.js",
       "version": "2.0",
       "hash": "sha256-cf245176446dd7877960b41be0ac65b9ffeae62ded936cb8c7af5662cbbb7e58",
+      "log": false
+    },
+    {
+      "name": "user-story-markdown.js",
+      "version": "1.0",
+      "hash": "sha256-b43ab134602c66a9518befe6343f2a2cdb21a49f3eabacc9e8845ee94a4c2b81",
       "log": false
     },
     {
@@ -256,7 +262,8 @@
       "urlPattern": "work/problems/create-tool-use*",
       "disambiguationSelectors": [],
       "libraries": [
-        "notes-resize-handle.js"
+        "notes-resize-handle.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -282,6 +289,12 @@
           "version": "2.2",
           "hash": "sha256-744e07c945113b7b51ce2b20ba79bbd18aec9b54a380dd376e588c8361bf9fd2",
           "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
         }
       ]
     },
@@ -294,7 +307,8 @@
         "text:Task Designers - Special Projects Tasks"
       ],
       "libraries": [
-        "notes-resize-handle.js"
+        "notes-resize-handle.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -320,6 +334,12 @@
           "version": "2.2",
           "hash": "sha256-744e07c945113b7b51ce2b20ba79bbd18aec9b54a380dd376e588c8361bf9fd2",
           "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
         }
       ]
     },
@@ -330,7 +350,8 @@
       "urlPattern": "work/problems/respond-feedback/edit-tool-use*",
       "disambiguationSelectors": [],
       "libraries": [
-        "prompt-scratchpad.js"
+        "prompt-scratchpad.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -349,6 +370,12 @@
           "name": "tool-results-resize-handle.js",
           "version": "3.2",
           "hash": "sha256-8911cf93e15914872a6575ba38854a2fcd10b214d2d62a9055b35e08b43569ee",
+          "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
           "log": false
         }
       ]
@@ -385,7 +412,8 @@
       "libraries": [
         "notes-resize-handle.js",
         "embedded-urlbar-fit.js",
-        "action-counter.js"
+        "action-counter.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -411,6 +439,12 @@
           "version": "4.0",
           "hash": "sha256-8425e2ec9464248eb3f45b335845167a078f918c0c21638bcdaeddcad66b4712",
           "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
         }
       ]
     },
@@ -423,7 +457,8 @@
       "libraries": [
         "embedded-urlbar-fit.js",
         "prompt-scratchpad.js",
-        "action-counter.js"
+        "action-counter.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -443,6 +478,12 @@
           "version": "2.3",
           "hash": "sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e",
           "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
         }
       ]
     },
@@ -456,7 +497,8 @@
         "accept-task-modal-improvements.js",
         "request-revisions-screenshot-upload-improvement.js",
         "copy-verifier-output.js",
-        "top-nav-horizontal-scroll.js"
+        "top-nav-horizontal-scroll.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -506,6 +548,12 @@
           "version": "3.0",
           "hash": "sha256-8ee1accb7ae9a4173ef6c5603d55455986ffdb3d4ae2f9c703c1f030b1fbd261",
           "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
         }
       ]
     },
@@ -544,7 +592,8 @@
         "request-revisions-screenshot-upload-improvement.js",
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
-        "top-nav-horizontal-scroll.js"
+        "top-nav-horizontal-scroll.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -618,6 +667,12 @@
           "version": "1.9",
           "log": false,
           "hash": "sha256-96e76698cdc83a6539a60fa1586d144d1873931df2434eb21066071afad15a38"
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
         },
         {
           "name": "vnc-prompt-writer.js",
