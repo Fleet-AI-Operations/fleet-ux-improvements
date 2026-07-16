@@ -8,6 +8,11 @@ const COPY_BUTTON_MARKER = 'data-fleet-copy-verifier-output';
 const COPY_RAW_OUTPUT_MARKER = 'data-fleet-copy-verifier-raw-output';
 const RAW_OUTPUT_ROW_MARKER = 'data-fleet-copy-verifier-raw-row';
 const EPIC_CRITERION_LINE_RE = /^\[C\]\s+((?:\[NICE\]\s+)?.+:\s+(0\.0|1\.0)\/1\.0\s+—\s+.+)$/;
+const VERIFIER_CHECK_PREFIX_RE = /^\[(?:C|X)\]\s*/i;
+
+function stripVerifierCheckPrefix(text) {
+    return String(text || '').replace(VERIFIER_CHECK_PREFIX_RE, '').trim();
+}
 
 function markdownFenceFor(content) {
     let maxRun = 0;
@@ -28,7 +33,7 @@ const CopyVerifierOutputApi = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '5.0',
+    _version: '5.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -447,8 +452,12 @@ const CopyVerifierOutputApi = {
         const pct = total ? Math.round((passCount / total) * 100) : 0;
         lines.push(`## ${label}: ${passCount}/${total} (${pct}%)`);
         const sections = [];
-        const failures = criteria.filter((c) => c.score === '0.0').map((c) => `❌ ${c.line}`);
-        const successes = criteria.filter((c) => c.score === '1.0').map((c) => `✅ ${c.line}`);
+        const failures = criteria
+            .filter((c) => c.score === '0.0')
+            .map((c) => `❌ ${stripVerifierCheckPrefix(c.line)}`);
+        const successes = criteria
+            .filter((c) => c.score === '1.0')
+            .map((c) => `✅ ${stripVerifierCheckPrefix(c.line)}`);
         if (failures.length > 0) {
             sections.push({ label: 'Failures', items: failures });
         }
@@ -525,7 +534,9 @@ const CopyVerifierOutputApi = {
             if (!svg) continue;
             const cls = svg.getAttribute('class') || '';
             const span = row.querySelector(':scope > span');
-            const text = span ? String(span.textContent || '').replace(/\s+/g, ' ').trim() : '';
+            const text = stripVerifierCheckPrefix(
+                span ? String(span.textContent || '').replace(/\s+/g, ' ').trim() : ''
+            );
             if (!text) continue;
             if (cls.includes('text-emerald')) {
                 successes.push(text);
@@ -787,7 +798,7 @@ const plugin = {
     id: 'copyVerifierOutputLib',
     name: 'Copy Verifier Output (library)',
     description: 'Shared API for copying verifier expected/actual output',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

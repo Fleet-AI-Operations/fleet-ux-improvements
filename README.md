@@ -84,6 +84,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Tool Use Task Creation Page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Tool Use Task Creation Page (OpenClaw / Special Projects)
 *Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*
@@ -94,19 +95,23 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Tool Use Task Revision Page
 - **Explore GUI**: Opens the underlying tool environment in a new tab (captures MCP instance URL from network traffic; acknowledgment modal before opening)
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Computer Use Task Creation Page
 - **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
+- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Computer Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
+- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### QA Tool Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
@@ -117,6 +122,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Useful Link Buttons**: Add useful link buttons to the page
+- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### QA Computer Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
@@ -125,6 +131,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
+- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text

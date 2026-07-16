@@ -28,7 +28,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '6.0',
+    _version: '6.1',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -614,7 +614,9 @@ const plugin = {
             if (!svg) continue;
             const cls = svg.getAttribute('class') || '';
             const span = row.querySelector(':scope > span');
-            const text = span ? String(span.textContent || '').replace(/\s+/g, ' ').trim() : '';
+            const text = (span ? String(span.textContent || '').replace(/\s+/g, ' ').trim() : '')
+                .replace(/^\[(?:C|X)\]\s*/i, '')
+                .trim();
             if (!text) continue;
             if (cls.includes('text-emerald')) {
                 successes.push(text);
