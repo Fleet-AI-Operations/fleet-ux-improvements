@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.22",
+  "archetypesVersion": "14.23",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -66,8 +66,8 @@
     },
     {
       "name": "copy-verifier-output.js",
-      "version": "5.0",
-      "hash": "sha256-5431ed84ebedb7a98bdfc1c1a0582cf5bcee57fb1d747dcffee963ea6ec827ca",
+      "version": "5.1",
+      "hash": "sha256-2100444ea3d747b509fa6bf5f9ed7cec35d273468e5585b2c8f27a1832585aa9",
       "log": false
     },
     {
@@ -473,8 +473,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "7.0",
-          "hash": "sha256-e008512094c2bdf1b9943d167adc9260c3de029ee1a259433a8262499719897a",
+          "version": "7.1",
+          "hash": "sha256-28f06828e5baa571a28a7c902a54c565a5feb5450d961eeee0cc935ff0ff558c",
           "log": false
         },
         {
@@ -597,8 +597,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "6.0",
-          "hash": "sha256-fe2dba0da3080fc178d1248e92161c5c8f7541753f34f7aa9dcda4e77a08d46d",
+          "version": "6.1",
+          "hash": "sha256-be76622b85155a799ef2b4978640392a65f4a68cc89f84346270f7760762ba65",
           "log": false
         },
         {
