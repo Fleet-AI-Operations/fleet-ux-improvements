@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.32",
+  "archetypesVersion": "14.33",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -74,6 +74,12 @@
       "name": "dispute-resolution-messages.js",
       "version": "1.2",
       "hash": "sha256-4096817cf76723fc5ac33ee080e4a26b42915b1c9183f377f377add8fb280c20",
+      "log": false
+    },
+    {
+      "name": "dispute-screenshot-upload-improvement.js",
+      "version": "1.0",
+      "hash": "sha256-8403bf6b45ff1985c82a82f15152349442becd7618c3f96912cd6d695c886aab",
       "log": false
     },
     {
@@ -689,9 +695,22 @@
       "urlPattern": "work/problems/disputes",
       "disambiguationSelectors": [],
       "libraries": [
-        "dispute-resolution-messages.js"
+        "dispute-resolution-messages.js",
+        "dispute-screenshot-upload-improvement.js"
       ],
       "plugins": [
+        {
+          "name": "dispute-id-display.js",
+          "version": "1.0",
+          "hash": "sha256-21a34807f347f2e96ecd942cc7a1f3ee83c740934f0bf845528a22d67d0d6dd3",
+          "log": false
+        },
+        {
+          "name": "dispute-screenshot-upload-improvement.js",
+          "version": "1.0",
+          "hash": "sha256-209a36300a1cff37ff8133a66cbe46c7c4c5c37bfadfdc4280d951db12fa4977",
+          "log": false
+        },
         {
           "name": "flag-as-bug-modal-improvements.js",
           "version": "2.2",
@@ -714,6 +733,7 @@
       "disambiguationSelectors": [],
       "libraries": [
         "dispute-resolution-messages.js",
+        "dispute-screenshot-upload-improvement.js",
         "copy-verifier-output.js",
         "vnc-helper.js",
         "embedded-urlbar-fit.js"
@@ -727,8 +747,8 @@
         },
         {
           "name": "dispute-screenshot-upload-improvement.js",
-          "version": "1.3",
-          "hash": "sha256-9d74ac8cb55848ed0d4eb51c2e44dd5e2250f4080bd8f2768dd9a21bce57b09a",
+          "version": "2.0",
+          "hash": "sha256-e2b32a6370d5c94201aa06928ef667ffd0e9b5a6310452618ae4567977734017",
           "log": false
         },
         {
