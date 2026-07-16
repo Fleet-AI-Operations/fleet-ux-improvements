@@ -4682,6 +4682,7 @@ const searchOutputStatsPaneMethods = {
         return Object.assign({}, main, {
             score: cohortEntry.score,
             band: cohortEntry.band || main.band,
+            tierId: cohortEntry.tierId || main.tierId,
             cohortBlend: cohortEntry,
         });
     },
@@ -4708,23 +4709,69 @@ const searchOutputStatsPaneMethods = {
         return bestTier * 100000 + bestCount;
     },
 
-    /** Red (0) → yellow (50) → green (100) tint for top-level score panels. */
-    _ratingPercentileFillColor(percentile) {
-        if (percentile == null || !Number.isFinite(Number(percentile))) return null;
-        const t = Math.max(0, Math.min(100, Number(percentile))) / 100;
+    /** Red (0) → yellow (~0.5) → green (1) tint used by axis bars and tier panels. */
+    _ratingRampFillColor(t) {
+        if (t == null || !Number.isFinite(Number(t))) return null;
+        const x = Math.max(0, Math.min(1, Number(t)));
         let r; let g; let b;
-        if (t <= 0.5) {
-            const u = t / 0.5;
+        if (x <= 0.5) {
+            const u = x / 0.5;
             r = Math.round(239 + (234 - 239) * u);
             g = Math.round(68 + (179 - 68) * u);
             b = Math.round(68 + (8 - 68) * u);
         } else {
-            const u = (t - 0.5) / 0.5;
+            const u = (x - 0.5) / 0.5;
             r = Math.round(234 + (34 - 234) * u);
             g = Math.round(179 + (197 - 179) * u);
             b = Math.round(8 + (94 - 8) * u);
         }
         return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+    },
+
+    /** Legacy helper: map 0–100 value onto the shared ramp (axis bars). */
+    _ratingPercentileFillColor(percentile) {
+        if (percentile == null || !Number.isFinite(Number(percentile))) return null;
+        return this._ratingRampFillColor(Math.max(0, Math.min(100, Number(percentile))) / 100);
+    },
+
+    /**
+     * Four-stop ramp for population tiers (Poor / Below / Typical / Above+Top).
+     * Above average and Top tier share the top green.
+     */
+    _ratingTierFillColor(tierId) {
+        const stops = {
+            poor: 0,
+            below_average: 1 / 3,
+            typical: 2 / 3,
+            above_average: 1,
+            top_tier: 1,
+        };
+        if (!tierId || !(tierId in stops)) return null;
+        return this._ratingRampFillColor(stops[tierId]);
+    },
+
+    _ratingTierPanelStyle(tierId) {
+        const fill = this._ratingTierFillColor(tierId);
+        if (!fill) {
+            return 'margin-top: 10px; padding: 8px 10px; border-radius: 6px;'
+                + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #fff));';
+        }
+        return 'margin-top: 10px; padding: 8px 10px; border-radius: 6px;'
+            + ' background: color-mix(in srgb, ' + fill + ' 22%, var(--card, #fff));'
+            + ' border: 1px solid color-mix(in srgb, ' + fill + ' 45%, var(--border, #e2e8f0));';
+    },
+
+    /** Nested cohort-slice chrome — same tier colors, slightly tighter padding. */
+    _ratingTierSliceStyle(tierId) {
+        const fill = this._ratingTierFillColor(tierId);
+        if (!fill) {
+            return 'margin-top: 8px; padding: 8px 10px; border-radius: 6px;'
+                + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #fff));'
+                + ' border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, transparent);';
+        }
+        return 'margin-top: 8px; padding: 8px 10px; border-radius: 6px;'
+            + ' background: color-mix(in srgb, ' + fill + ' 18%, var(--card, #fff));'
+            + ' border: 1px solid color-mix(in srgb, ' + fill + ' 40%, var(--border, #e2e8f0));';
     },
 
     _ratingPercentilePanelStyle(percentile) {
@@ -4984,6 +5031,60 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _ratingsAboutTierCutoffFmt(n) {
+        if (n == null || !Number.isFinite(Number(n))) return '—';
+        const v = Math.round(Number(n) * 10) / 10;
+        return (Math.abs(v - Math.round(v)) < 1e-9)
+            ? String(Math.round(v))
+            : String(v);
+    },
+
+    /** Flat + Recency cutoff table for one score kind (from engine TIER_THRESHOLDS). */
+    _ratingsAboutTierScaleTableHtml(title, kind) {
+        const engine = Context.ratingEngine;
+        const pack = engine && engine.TIER_THRESHOLDS && engine.TIER_THRESHOLDS[kind];
+        if (!pack || !pack.flat || !pack.recency) return '';
+        const fmt = (n) => this._ratingsAboutTierCutoffFmt(n);
+        const rowsFor = (params) => {
+            const p10 = Number(params.p10);
+            const p30 = Number(params.p30);
+            const p70 = Number(params.p70);
+            const topMin = Number(params.topMin);
+            return [
+                { tier: 'Poor', label: '< ' + fmt(p10) },
+                { tier: 'Below average', label: fmt(p10) + ' – ' + fmt(p30) },
+                { tier: 'Typical', label: fmt(p30) + ' – ' + fmt(p70) },
+                { tier: 'Above average', label: fmt(p70) + ' – ' + fmt(topMin) },
+                { tier: 'Top tier', label: '≥ ' + fmt(topMin) },
+            ];
+        };
+        const flatRows = rowsFor(pack.flat);
+        const recRows = rowsFor(pack.recency);
+        const th = 'padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);';
+        const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent); white-space: nowrap;';
+        let body = '';
+        for (let i = 0; i < flatRows.length; i++) {
+            const isLast = i === flatRows.length - 1;
+            const cell = isLast ? 'padding: 4px 6px; white-space: nowrap;' : td;
+            body += '<tr>'
+                + '<td style="' + cell + '">' + dashEscHtml(flatRows[i].tier) + '</td>'
+                + '<td style="' + cell + '">' + dashEscHtml(flatRows[i].label) + '</td>'
+                + '<td style="' + cell + '">' + dashEscHtml(recRows[i].label) + '</td>'
+                + '</tr>';
+        }
+        return '<div style="margin-top: 8px; margin-bottom: 10px;">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
+            + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35;">'
+            + '<thead><tr>'
+            + '<th style="' + th + '">Tier</th>'
+            + '<th style="' + th + '">Flat</th>'
+            + '<th style="' + th + '">Recency</th>'
+            + '</tr></thead>'
+            + '<tbody>' + body + '</tbody>'
+            + '</table>'
+            + '</div>';
+    },
+
     _ratingsAboutSectionHtml() {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
@@ -4995,10 +5096,10 @@ const searchOutputStatsPaneMethods = {
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score.' },
         ];
         const qaqsRows = [
-            { label: 'Return Effectiveness',  weight: '30%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
+            { label: 'Return Effectiveness',  weight: '40%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
             { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
-            { label: 'Label Discrimination',  weight: '25%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality.' },
             { label: 'Dispute Loss Avoidance',weight: '20%', measures: 'For sole-negative reviews, only disputes approved for the writer reduce the score. QA wins are neutral.' },
+            { label: 'Label Discrimination',  weight: '15%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality. Omitted when fewer than 10 feedback rows are in scope.' },
         ];
         const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
         return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
@@ -5016,17 +5117,19 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
             + '<p style="margin: 0 0 8px;">Each card computes <strong>two variants</strong> of every score simultaneously. Toggle between them per card:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/30) to activity inside the window, so recent events weigh more. Matches the <code>--recency 30</code> local ranker run.</li>'
-            + '<li><strong>Flat</strong> — all in-scope events count equally. Matches the baseline (no-recency) local ranker run.</li>'
+            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/30) to activity inside the window, so recent events weigh more.</li>'
+            + '<li><strong>Flat</strong> — all in-scope events count equally.</li>'
             + '</ul>'
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
-            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Estimated percentile</div>'
-            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is an <em>estimated</em> percentile (e.g. &ldquo;~72nd percentile&rdquo;), with the raw 0–100 score shown as secondary. Percentiles use a normal-CDF formula fitted to the current dive.db scored population: <strong>Φ((score − μ) / σ)</strong>, where μ and σ are anonymous summary statistics regenerated after ranking. Separate μ/σ parameters are used for TWQS flat, TWQS recency, QAQS flat, and QAQS recency. This is an approximation, not an exact rank.</p>'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
+            + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
+            + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Percentile first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain.</li>'
+            + '<li><strong>Tier first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain. The tier places that score relative to the scored population.</li>'
             + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
@@ -5150,7 +5253,7 @@ const searchOutputStatsPaneMethods = {
             case 'returnActionability':
                 return 'No return feedback episodes in scope';
             case 'labelDiscrimination':
-                return 'No explicit score labels by this reviewer in scope';
+                return 'Fewer than 10 feedback rows in scope';
             case 'disputeDefense':
                 return 'No resolved sole-negative-reviewer disputes in scope';
             // Legacy / fallback
@@ -5298,7 +5401,8 @@ const searchOutputStatsPaneMethods = {
                 + dashEscHtml(label) + ' — ' + dashEscHtml(reason)
                 + '</div></div>';
         }
-        const subPct = this._ratingPctOneDecimal(axis.score);
+        const subPctRaw = this._ratingPctOneDecimal(axis.score);
+        const subPct = subPctRaw != null ? Math.round(subPctRaw) : null;
         const fillPct = Math.max(0, Math.min(100, subPct != null ? subPct : 0));
         const barFill = this._ratingPercentileFillColor(fillPct) || 'var(--brand, #3b82f6)';
         const trackStyle = 'flex: 1; min-width: 48px; height: 6px; border-radius: 3px;'
@@ -5311,7 +5415,7 @@ const searchOutputStatsPaneMethods = {
             + dashEscHtml(label) + '</span>'
             + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
             + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
-            + dashEscHtml(String(subPct) + '%') + '</span>'
+            + dashEscHtml(subPct != null ? (String(subPct) + '%') : '—') + '</span>'
             + '</div>';
         if (showDetail) {
             const breakdownLines = this._ratingAxisBreakdownLines(axis);
@@ -5355,12 +5459,13 @@ const searchOutputStatsPaneMethods = {
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
         const scoreDisplay = Math.round(block.score);
-        const pct = block.estimatedPercentile;
-        const pctLabel = pct != null ? this._ratingFormatPercentile(pct) : '';
-        const primaryHtml = pctLabel
-            ? ('~' + dashEscHtml(pctLabel) + '<span style="font-size: 12px; font-weight: 500;"> percentile</span>')
+        const tierLabel = String(block.band || '').trim();
+        const tierId = block.tierId || null;
+        const hasTier = !!(tierLabel && tierLabel !== '—');
+        const primaryHtml = hasTier
+            ? dashEscHtml(tierLabel)
             : dashEscHtml(String(scoreDisplay));
-        const secondaryHtml = pctLabel
+        const secondaryHtml = hasTier
             ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
                 + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
             : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
@@ -5384,7 +5489,16 @@ const searchOutputStatsPaneMethods = {
                 nestInScoreCard: true,
                 omitMainAxes: true,
             });
-            bodyHtml = topBars + detailHtml;
+            // Neutral band under the axis bars so tier-colored slice cards stand out.
+            const detailWrap = detailHtml
+                ? ('<div style="margin: 10px -10px -8px; padding: 10px 10px 10px;'
+                    + ' border-top: 1px solid var(--border, #e2e8f0);'
+                    + ' border-radius: 0 0 6px 6px;'
+                    + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, var(--card, #fff));">'
+                    + detailHtml
+                    + '</div>')
+                : '';
+            bodyHtml = topBars + detailWrap;
         } else if (!cohortBlend) {
             // Non-cohort: keep sub-axis bars visible even when collapsed.
             const axesHtml = this._ratingSortedAxes(block)
@@ -5403,7 +5517,7 @@ const searchOutputStatsPaneMethods = {
                 + ' data-wf-dash-rating-score-kind="' + dashEscHtml(scoreKind) + '"'
                 + ' style="cursor: pointer; user-select: none;"')
             : '';
-        return '<div style="' + this._ratingPercentilePanelStyle(pct) + '">'
+        return '<div style="' + this._ratingTierPanelStyle(tierId) + '">'
             + '<div' + headerAttrs + '>'
             + '<div style="font-size: 12px; font-weight: 600; margin-bottom: 4px;">'
             + chevron + dashEscHtml(title) + '</div>'
@@ -5419,6 +5533,16 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    /** Slice / card volume below confidence provisional threshold for this score kind. */
+    _ratingVolumeIsProvisional(volume, scoreKind) {
+        const n = Number(volume);
+        if (!Number.isFinite(n) || n < 0) return true;
+        const kind = String(scoreKind || '').toLowerCase();
+        if (kind.indexOf('qa') === 0) return n < 25;
+        // TWQS / combined / default: terminal-style threshold.
+        return n < 10;
+    },
+
     _ratingCohortSectionHtml(opts) {
         const o = opts || {};
         const title = o.title || '';
@@ -5426,11 +5550,15 @@ const searchOutputStatsPaneMethods = {
         const weightOrMeta = o.weightOrMeta || '';
         const meta = o.meta || '';
         const axes = o.axes || [];
+        const tierId = o.tierId || null;
         const expanded = !!o.expanded;
         const workerId = String(o.workerId || '').trim();
         const scoreKind = String(o.scoreKind || '').trim();
         const dimension = String(o.dimension || '').trim();
         const sliceKey = String(o.sliceKey || '').trim();
+        const provisional = o.provisional != null
+            ? !!o.provisional
+            : this._ratingVolumeIsProvisional(o.volume, scoreKind);
         const canExpand = !!(workerId && scoreKind && dimension && sliceKey && axes.length);
         const axesList = [...axes].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
         const axesHtml = (expanded && axesList.length)
@@ -5449,13 +5577,18 @@ const searchOutputStatsPaneMethods = {
                 + ' data-wf-dash-rating-score-kind="' + dashEscHtml(scoreKind) + '"'
                 + ' data-wf-dash-rating-cohort-dim="' + dashEscHtml(dimension) + '"'
                 + ' data-wf-dash-rating-cohort-key="' + dashEscHtml(sliceKey) + '"'
-                + ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; user-select: none;"')
-            : ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"';
-        return '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 55%, transparent);">'
+                + ' style="display: flex; align-items: baseline; gap: 6px; cursor: pointer; user-select: none; min-width: 0;"')
+            : ' style="display: flex; align-items: baseline; gap: 6px; min-width: 0;"';
+        const titleColor = provisional
+            ? ' color: var(--muted-foreground, #64748b);'
+            : '';
+        return '<div style="' + this._ratingTierSliceStyle(tierId) + '">'
             + '<div' + headerAttrs + '>'
-            + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;">'
+            + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'
+            + titleColor + '">'
             + chevron + dashEscHtml(title) + '</div>'
-            + '<div style="font-size: 10px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b);">'
+            + '<span style="flex-shrink: 0; color: var(--muted-foreground, #64748b);">·</span>'
+            + '<div style="font-size: 10px; flex: 1; min-width: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted-foreground, #64748b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
             + (scoreDisplay != null ? dashEscHtml(String(scoreDisplay)) : '—')
             + (weightOrMeta ? ' · ' + dashEscHtml(String(weightOrMeta)) : '')
             + '</div>'
@@ -5489,7 +5622,18 @@ const searchOutputStatsPaneMethods = {
             for (const slice of slices) {
                 if (!slice || slice.score == null) continue;
                 const key = String(slice.key || '—');
-                const scoreDisplay = Math.round(slice.score * 10) / 10;
+                const weighting = this._ratingWorkerWeighting(workerId);
+                const engine = Context.ratingEngine;
+                const rawScore = Math.round(slice.score);
+                let scoreDisplay = String(rawScore) + ' / 100';
+                let tierId = null;
+                if (engine && typeof engine.populationTier === 'function') {
+                    const tier = engine.populationTier(slice.score, scoreKind, weighting, slice.volume);
+                    if (tier && tier.label && tier.label !== '—') {
+                        scoreDisplay = tier.label + ' ' + rawScore + ' / 100';
+                    }
+                    if (tier && tier.id) tierId = tier.id;
+                }
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
                     : '';
@@ -5497,6 +5641,9 @@ const searchOutputStatsPaneMethods = {
                     title: key,
                     scoreDisplay,
                     weightOrMeta: vol,
+                    volume: slice.volume,
+                    provisional: this._ratingVolumeIsProvisional(slice.volume, scoreKind),
+                    tierId,
                     axes: slice.axes,
                     expanded: this._isRatingCohortSliceExpanded(workerId, scoreKind, dim.id, key),
                     workerId,
@@ -5508,7 +5655,7 @@ const searchOutputStatsPaneMethods = {
         }
         if (!sectionsHtml) return '';
         if (nestInScoreCard) {
-            return '<div style="margin-top: 8px;">' + sectionsHtml + '</div>';
+            return '<div style="margin-top: 0;">' + sectionsHtml + '</div>';
         }
         return '<div style="margin-top: 12px;">'
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 2px;">'
@@ -5578,7 +5725,11 @@ const searchOutputStatsPaneMethods = {
             contextLine = (contextLine ? contextLine + ' · ' : '') + 'Tenure ' + display.tenureDays + ' day(s)';
         }
         const pct = block.estimatedPercentile;
-        if (pct != null) {
+        // Prefer tier label context; keep muted raw score note when expanding.
+        if (block.band && block.band !== '—') {
+            contextLine = (contextLine ? contextLine + ' · ' : '')
+                + block.band + ' · ' + Math.round(block.score) + ' / 100';
+        } else if (pct != null) {
             contextLine = (contextLine ? contextLine + ' · ' : '')
                 + 'raw ' + Math.round(block.score) + ' / 100';
         }
@@ -5606,6 +5757,17 @@ const searchOutputStatsPaneMethods = {
 
     _ratingScoreBlockHtml(title, block, basisKind, opts) {
         return this._ratingScoreBlockCompactHtml(title, block, basisKind, opts);
+    },
+
+    _ratingCopyChipHtml(text, styleExtras) {
+        const value = String(text == null ? '' : text).trim();
+        if (!value) return '';
+        const style = 'display: inline-block; max-width: 100%; padding: 0; margin: 0; border: none; border-radius: 4px;'
+            + ' background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;'
+            + (styleExtras ? (' ' + styleExtras) : '');
+        return '<button type="button" data-wf-dash-copy="' + dashEscHtml(value) + '" title="Click to copy"'
+            + ' aria-label="Copy ' + dashEscHtml(value) + '"'
+            + ' style="' + style + '">' + dashEscHtml(value) + '</button>';
     },
 
     _ratingWorkerCardHtml(worker, scoreTypes) {
@@ -5643,11 +5805,18 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" class="dv-seg-btn" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'false' : 'true') + '">Flat</button>'
             + '</div>';
 
+        const nameHtml = this._ratingCopyChipHtml(name, 'font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);');
+        const emailHtml = worker.email
+            ? ('<div style="margin-top: 2px;">'
+                + this._ratingCopyChipHtml(worker.email, 'font-size: 10px; font-weight: 500; color: var(--muted-foreground, #64748b);')
+                + '</div>')
+            : '';
+
         return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
             + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
             + '<div style="min-width: 0;">'
-            + '<div style="font-size: 13px; font-weight: 600;">' + dashEscHtml(name) + '</div>'
-            + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(worker.email) + '</div>' : '')
+            + '<div>' + nameHtml + '</div>'
+            + emailHtml
             + '</div>'
             + toggleHtml
             + '</div>'
@@ -5894,7 +6063,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '10.7',
+    _version: '11.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

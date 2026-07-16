@@ -37,10 +37,10 @@ const STATS_DYNAMIC_DIMENSION = {
 };
 
 const STATS_TIME_GROUP_DIMENSIONS = [
-    { key: 'taskCreatedYear', granularity: 'year', label: 'Task created (year)' },
-    { key: 'taskCreatedMonth', granularity: 'month', label: 'Task created (month)' },
-    { key: 'taskCreatedWeek', granularity: 'week', label: 'Task created (week)' },
-    { key: 'taskCreatedDay', granularity: 'day', label: 'Task created (day)' }
+    { key: 'taskCreatedYear', granularity: 'year', label: 'Task Created Year' },
+    { key: 'taskCreatedMonth', granularity: 'month', label: 'Task Created Month' },
+    { key: 'taskCreatedWeek', granularity: 'week', label: 'Task Created Week' },
+    { key: 'taskCreatedDay', granularity: 'day', label: 'Task Created Day' }
 ];
 
 const STATS_METRIC_LABELS = {
@@ -762,94 +762,38 @@ function statsDimensionLabel(scopeKey, resolveScopeLabel) {
 }
 
 function statsItemTaskCreatedMs(item) {
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.itemTaskCreatedMs === 'function') {
+        return lib.itemTaskCreatedMs(item);
+    }
     const task = item && item.task;
     if (!task || !task.createdAt) return null;
     const ms = Date.parse(String(task.createdAt));
     return Number.isFinite(ms) ? ms : null;
 }
 
-function statsUtcDateParts(ms) {
-    const d = new Date(ms);
-    return {
-        y: d.getUTCFullYear(),
-        m: d.getUTCMonth() + 1,
-        d: d.getUTCDate()
-    };
-}
-
 function statsTimeBucketId(granularity, ms) {
-    const { y, m, d } = statsUtcDateParts(ms);
-    if (granularity === 'year') return String(y);
-    if (granularity === 'month') return y + '-' + String(m).padStart(2, '0');
-    if (granularity === 'day') {
-        return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-    }
-    if (granularity === 'week') {
-        const tmp = new Date(Date.UTC(y, m - 1, d));
-        const dow = tmp.getUTCDay() || 7;
-        tmp.setUTCDate(tmp.getUTCDate() + 4 - dow);
-        const weekYear = tmp.getUTCFullYear();
-        const yearStart = new Date(Date.UTC(weekYear, 0, 1));
-        const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
-        return weekYear + '-W' + String(weekNo).padStart(2, '0');
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.timeBucketId === 'function') {
+        return lib.timeBucketId(granularity, ms);
     }
     return '';
 }
 
 function statsTimeBucketLabel(granularity, bucketId) {
-    if (!bucketId) return bucketId;
-    if (granularity === 'year') return bucketId;
-    if (granularity === 'month') {
-        const parts = bucketId.split('-');
-        const year = Number(parts[0]);
-        const month = Number(parts[1]);
-        return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
-            month: 'long',
-            year: 'numeric',
-            timeZone: 'UTC'
-        });
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.timeBucketLabel === 'function') {
+        return lib.timeBucketLabel(granularity, bucketId);
     }
-    if (granularity === 'day') {
-        const parts = bucketId.split('-').map(Number);
-        return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2])).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            timeZone: 'UTC'
-        });
-    }
-    if (granularity === 'week') {
-        const match = /^(\d{4})-W(\d{2})$/.exec(bucketId);
-        if (!match) return bucketId;
-        const weekYear = Number(match[1]);
-        const weekNo = Number(match[2]);
-        const jan4 = new Date(Date.UTC(weekYear, 0, 4));
-        const jan4Dow = jan4.getUTCDay() || 7;
-        const monday = new Date(jan4);
-        monday.setUTCDate(jan4.getUTCDate() - jan4Dow + 1 + (weekNo - 1) * 7);
-        const monLabel = monday.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            timeZone: 'UTC'
-        });
-        return 'Week of ' + monLabel;
-    }
-    return bucketId;
+    return bucketId || '';
 }
 
 function statsBuildTimeDimensionOptions(items, granularity) {
-    const ids = new Set();
-    for (const item of items || []) {
-        const ms = statsItemTaskCreatedMs(item);
-        if (ms == null) continue;
-        const id = statsTimeBucketId(granularity, ms);
-        if (id) ids.add(id);
+    const lib = Context.dashboardLib;
+    if (lib && typeof lib.buildTaskCreatedTimeFilterOptions === 'function') {
+        return lib.buildTaskCreatedTimeFilterOptions(items, granularity);
     }
-    return [...ids].sort().map((id) => ({
-        id,
-        label: statsTimeBucketLabel(granularity, id)
-    }));
+    return [];
 }
 
 function statsTimeGroupGranularity(dimKey) {
@@ -1961,7 +1905,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '8.1',
+    _version: '8.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

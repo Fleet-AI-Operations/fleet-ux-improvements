@@ -14,10 +14,10 @@
 #
 # Effects:
 #   1. Reads @version and const VERSION from fleet.user.js; if they differ, normalizes both to the higher value.
-#   2. Collects _version from plugin .js files (core/main, core/dev, archetypes/*/main, archetypes/*/dev).
+#   2. Collects _version from plugin .js files (core/main, core/dev, libs, archetypes/*/main, archetypes/*/dev).
 #   3. Collects version (first line) from docs/settings-modal/*.md (information-tab.md, features-tab.md).
 #   4. Updates archetypes.json: version (only when fleet canonical is higher than current), corePlugins,
-#      opsDashboardPlugins, devPlugins, settingsModalDocs, each archetype's plugins, each devArchetype's plugins.
+#      libraries, opsDashboardPlugins, devPlugins, settingsModalDocs, each archetype's plugins, each devArchetype's plugins.
 #   5. If any version was updated, bumps archetypesVersion by 0.1 (minor; e.g. 3.9 -> 3.10).
 #
 # Prerequisites: jq (must be on PATH). Can be run from anywhere inside the repo
@@ -123,6 +123,7 @@ fleet_path="${fleet_path:-$root/fleet.user.js}"
 
 core_dir="$plugins_dir/core/main"
 dev_dir="$plugins_dir/core/dev"
+libs_dir="$plugins_dir/libs"
 archetypes_dir="$plugins_dir/archetypes"
 settings_modal_dir="$root/docs/settings-modal"
 
@@ -195,6 +196,25 @@ for f in "$core_dir"/*.js; do
 done
 core_json+="}"
 
+# Build library versions JSON (key: filename) — plugins/libs/
+libs_json="{"
+first_lib=1
+if [[ -d "$libs_dir" ]]; then
+  for f in "$libs_dir"/*.js; do
+    [[ -f "$f" ]] || continue
+    name="$(basename "$f")"
+    ver="$(get_plugin_version "$f")"
+    if [[ -z "$ver" ]]; then
+      echo "[warn] No _version found in libs/$name" >&2
+      continue
+    fi
+    [[ $first_lib -eq 1 ]] || libs_json+=","
+    first_lib=0
+    libs_json+="$(printf '%s' "$name" | jq -Rs .): $(printf '%s' "$ver" | jq -Rs .)"
+  done
+fi
+libs_json+="}"
+
 # Build dev plugin versions JSON (key: filename)
 dev_json="{"
 first_dev=1
@@ -261,15 +281,17 @@ settings_modal_json+="}"
 
 versions_json=$(jq -n \
   --argjson core "$core_json" \
+  --argjson libs "$libs_json" \
   --argjson dev "$dev_json" \
   --argjson plugins "$plugins_json" \
   --argjson settingsModal "$settings_modal_json" \
   --arg fleet "${version_for_archetypes:-}" \
-  '{ core: $core, dev: $dev, plugins: $plugins, settingsModal: $settingsModal, fleet: $fleet }')
+  '{ core: $core, libs: $libs, dev: $dev, plugins: $plugins, settingsModal: $settingsModal, fleet: $fleet }')
 
-# Check we have something to do (core/dev/plugins/settingsModal/fleet)
+# Check we have something to do (core/libs/dev/plugins/settingsModal/fleet)
 has_versions=false
 [[ "$core_json" != "{}" ]] && has_versions=true
+[[ "$libs_json" != "{}" ]] && has_versions=true
 [[ "$dev_json" != "{}" ]] && has_versions=true
 [[ "$plugins_json" != "{}" ]] && has_versions=true
 [[ "$settings_modal_json" != "{}" ]] && has_versions=true
@@ -288,6 +310,7 @@ jq -n --slurpfile arch "$archetypes_path" --argjson v "$versions_json" '
   | $a
   | .version = (if $v.fleet != "" then $v.fleet else .version end)
   | .corePlugins |= (map(.name as $n | .version = ($v.core[$n] // .version)))
+  | (.libraries // []) |= (map(.name as $n | .version = ($v.libs[$n] // .version)))
   | (.opsDashboardPlugins // []) |= (map(.name as $n | .version = ($v.core[$n] // .version)))
   | .devPlugins |= (map(.name as $n | .version = ($v.dev[$n] // .version)))
   | (.settingsModalDocs // []) |= (map(.name as $n | .version = ($v.settingsModal[$n] // .version)))
@@ -321,6 +344,13 @@ enumerate_archetypes_changes() {
       echo "  $arch_name: corePlugins[\"$name\"].version: \"$o\" -> \"$n\""
     fi
   done < <(jq -r '.corePlugins[].name' "$old_path")
+  while IFS= read -r name; do
+    o="$(jq -r --arg n "$name" '(.libraries // [])[] | select(.name==$n) | .version' "$old_path")"
+    n="$(jq -r --arg n "$name" '(.libraries // [])[] | select(.name==$n) | .version' "$new_path")"
+    if [[ "$o" != "$n" ]]; then
+      echo "  $arch_name: libraries[\"$name\"].version: \"$o\" -> \"$n\""
+    fi
+  done < <(jq -r '(.libraries // [])[].name' "$old_path")
   while IFS= read -r name; do
     o="$(jq -r --arg n "$name" '.devPlugins[] | select(.name==$n) | .version' "$old_path")"
     n="$(jq -r --arg n "$name" '.devPlugins[] | select(.name==$n) | .version' "$new_path")"

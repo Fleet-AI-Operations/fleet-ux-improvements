@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      11.1
+// @version      12.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '11.1';
+    const VERSION = '12.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -2168,6 +2168,7 @@
             }
         };
         ingestPluginList(config.corePlugins);
+        ingestPluginList(config.libraries);
         ingestPluginList(config.devPlugins);
         (config.archetypes || []).forEach((a) => ingestPluginList(a.plugins));
         (config.devArchetypes || []).forEach((a) => ingestPluginList(a.plugins));
@@ -2236,7 +2237,9 @@
         archetypes: [],
         devArchetypes: [],
         corePlugins: [],
+        libraries: [],
         opsDashboardPlugins: [],
+        opsDashboardLibraries: [],
         devPlugins: [],
         currentArchetype: null,
         currentDevArchetype: null,
@@ -2280,7 +2283,11 @@
                                 this.archetypes = config.archetypes || [];
                                 this.devArchetypes = config.devArchetypes || [];
                                 this.corePlugins = config.corePlugins || [];
+                                this.libraries = config.libraries || [];
                                 this.opsDashboardPlugins = config.opsDashboardPlugins || [];
+                                this.opsDashboardLibraries = Array.isArray(config.opsDashboardLibraries)
+                                    ? config.opsDashboardLibraries
+                                    : [];
                                 this.devPlugins = config.devPlugins || [];
                                 this.settingsModalDocs = config.settingsModalDocs || [];
                                 
@@ -2345,8 +2352,42 @@
             return this.corePlugins || [];
         },
 
+        getLibraries() {
+            return this.libraries || [];
+        },
+
         getOpsDashboardPlugins() {
             return this.opsDashboardPlugins || [];
+        },
+
+        getOpsDashboardLibraries() {
+            return this.opsDashboardLibraries || [];
+        },
+
+        /**
+         * Resolve library filenames to registry entries from the top-level `libraries` list.
+         * Unknown names are skipped with a warning.
+         * @param {string[]|undefined|null} names
+         * @returns {Array<{name: string, version: string, hash?: string, log?: boolean}>}
+         */
+        resolveLibraryEntries(names) {
+            if (!names || !Array.isArray(names) || names.length === 0) return [];
+            const registry = this.getLibraries();
+            const byName = Object.create(null);
+            for (const entry of registry) {
+                if (entry && entry.name) byName[entry.name] = entry;
+            }
+            const resolved = [];
+            for (const name of names) {
+                if (typeof name !== 'string' || !name) continue;
+                const entry = byName[name];
+                if (!entry) {
+                    Logger.warn(`Unknown library "${name}" (not in archetypes.json libraries registry)`);
+                    continue;
+                }
+                resolved.push(entry);
+            }
+            return resolved;
         },
 
         getDevPlugins() {
@@ -2983,6 +3024,31 @@
         },
 
         /**
+         * Load a shared library module with versioning and hash verification.
+         * Libraries live under plugins/libs/ and are loaded only when an archetype
+         * (or ops dashboard) declares them.
+         * @param {string} filename - Library filename
+         * @param {string} version - Required version
+         * @param {string} [hash] - Expected integrity hash
+         * @returns {Promise<Object>} - Plugin object
+         */
+        async loadLibrary(filename, version, hash) {
+            if (filename.includes('/')) {
+                throw new Error(
+                    `Invalid library name "${filename}". Library names must be filenames only (no folder paths).`
+                );
+            }
+            const sourcePath = `libs/${filename}`;
+            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
+
+            const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
+            const plugin = this.parsePluginCode(code, filename, { useModuleLogger: false });
+            this._loadedPluginFiles.add(sourcePath);
+            Logger.debug(`Loaded library ${filename} v${version}`);
+            return plugin;
+        },
+
+        /**
          * Load a dev plugin with versioning and hash verification
          * @param {string} filename - Plugin filename
          * @param {string} version - Required version
@@ -3464,6 +3530,10 @@
         getOpsDashboardPlugins() {
             return this.getAll().filter(p => p._isOps === true);
         },
+
+        getLibraryPlugins() {
+            return this.getAll().filter(p => p._isLib === true);
+        },
         
         isEnabled(id) {
             if (this._enabledCache.has(id)) return this._enabledCache.get(id);
@@ -3526,7 +3596,7 @@
         
         runCorePlugins() {
             this.getCorePlugins()
-                .filter(p => p._isOps !== true && this.isEnabled(p.id))
+                .filter(p => p._isOps !== true && p._isLib !== true && this.isEnabled(p.id))
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
@@ -3535,6 +3605,20 @@
                         Logger.error(`Error in core plugin ${plugin.id}:`, e);
                     }
                 });
+        },
+
+        runLibraryPluginInit(plugin) {
+            if (plugin.state && plugin.state.libInitialized) {
+                return;
+            }
+            try {
+                if (plugin.init) plugin.init(plugin.state, Context);
+            } catch (e) {
+                Logger.error(`Error in library plugin ${plugin.id}:`, e);
+                return;
+            }
+            if (plugin.state) plugin.state.libInitialized = true;
+            Logger.log(`✓ Library plugin initialized: ${plugin.id}`);
         },
 
         runOpsDashboardPluginInit(plugin) {
@@ -3606,6 +3690,8 @@
     let navigationPendingUrl = null;
 
     let opsDashboardLoadPromise = null;
+    let librariesLoadPromise = null;
+    const loadedLibraryNames = new Set();
 
     async function loadMissingOpsDashboardPluginsFromConfig(configList) {
         if (!configList || configList.length === 0) return;
@@ -3625,6 +3711,73 @@
         Logger.log('ops dashboard: loaded ' + toLoad.length + ' missing plugin(s)');
     }
 
+    /**
+     * Idempotently load shared library modules by filename.
+     * Libraries stay registered across SPA navigations once loaded.
+     * @param {string[]|undefined|null} names
+     * @returns {Promise<boolean>}
+     */
+    async function ensureLibrariesLoaded(names) {
+        if (!names || !Array.isArray(names) || names.length === 0) {
+            return true;
+        }
+        const pendingNames = names.filter((n) => typeof n === 'string' && n && !loadedLibraryNames.has(n));
+        if (pendingNames.length === 0) {
+            return true;
+        }
+
+        const runLoad = async () => {
+            await ArchetypeManager.loadArchetypes();
+            const entries = ArchetypeManager.resolveLibraryEntries(pendingNames);
+            if (entries.length === 0) {
+                return true;
+            }
+            Logger.log(`Loading ${entries.length} library module(s)...`);
+            for (const pluginDef of entries) {
+                const filename = pluginDef.name;
+                const version = pluginDef.version;
+                const hash = pluginDef.hash || undefined;
+                if (loadedLibraryNames.has(filename)) continue;
+                const already = PluginManager.getAll().some((p) => p._isLib && p._sourceFile === filename);
+                if (already) {
+                    loadedLibraryNames.add(filename);
+                    continue;
+                }
+                try {
+                    const plugin = await PluginLoader.loadLibrary(filename, version, hash);
+                    const loadedVersion = plugin._version || plugin.version || version;
+                    plugin._sourceFile = filename;
+                    plugin._version = loadedVersion;
+                    plugin._isCore = true;
+                    plugin._isLib = true;
+                    PluginManager.register(plugin);
+                    PluginManager.runLibraryPluginInit(plugin);
+                    loadedLibraryNames.add(filename);
+                    Logger.log(`✓ Loaded library: ${filename} v${loadedVersion}`);
+                } catch (err) {
+                    Logger.error(`✗ Failed to load library: ${filename} v${version}`, err);
+                }
+            }
+            return true;
+        };
+
+        if (librariesLoadPromise) {
+            await librariesLoadPromise;
+            // After the prior load finishes, retry for any names still missing
+            // (another caller may have loaded a different subset concurrently).
+            return ensureLibrariesLoaded(names);
+        }
+
+        librariesLoadPromise = runLoad();
+        try {
+            return await librariesLoadPromise;
+        } finally {
+            librariesLoadPromise = null;
+        }
+    }
+
+    Context.ensureLibrariesLoaded = ensureLibrariesLoaded;
+
     async function ensureOpsDashboardPluginsLoaded() {
         if (!Context.opsTab || !Context.opsTab.isEnabled()) {
             return false;
@@ -3634,6 +3787,7 @@
         }
         opsDashboardLoadPromise = (async () => {
             await ArchetypeManager.loadArchetypes();
+            await ensureLibrariesLoaded(ArchetypeManager.getOpsDashboardLibraries());
             const configList = ArchetypeManager.getOpsDashboardPlugins();
             if (!configList.length) {
                 Context.opsDashboardPluginsLoaded = true;
@@ -3730,6 +3884,9 @@
                 Logger.warn('No matching archetype found. No archetype plugins will load.');
                 return;
             }
+
+            // Load shared libraries declared by this archetype before page plugins
+            await ensureLibrariesLoaded(archetype.libraries);
             
             // Load archetype-specific plugins
             const pluginsToLoad = ArchetypeManager.getPluginsForCurrentArchetype();

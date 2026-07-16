@@ -92,6 +92,14 @@ const DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS = {
     gt_120: '> 120 minutes'
 };
 
+/** Calendar Task Created buckets for sidebar filters (UTC). */
+const DASH_LIB_TASK_CREATED_TIME_FILTERS = [
+    { scopeKey: 'filter-task-created-year', optionsKey: 'taskCreatedYear', draftKey: 'taskCreatedYear', granularity: 'year' },
+    { scopeKey: 'filter-task-created-month', optionsKey: 'taskCreatedMonth', draftKey: 'taskCreatedMonth', granularity: 'month' },
+    { scopeKey: 'filter-task-created-week', optionsKey: 'taskCreatedWeek', draftKey: 'taskCreatedWeek', granularity: 'week' },
+    { scopeKey: 'filter-task-created-day', optionsKey: 'taskCreatedDay', draftKey: 'taskCreatedDay', granularity: 'day' }
+];
+
 /** Shared filter sidebar scope keys (search-output + dashboard multiselect). */
 const DASH_LIB_FILTER_SCOPES = [
     { scopeKey: 'filter-contributors', optionsKey: 'contributors', draftKey: 'contributorIds' },
@@ -106,6 +114,9 @@ const DASH_LIB_FILTER_SCOPES = [
     { scopeKey: 'filter-session-qa-outcome', optionsKey: 'sessionQaOutcomes', draftKey: 'sessionQaOutcomes' },
     { scopeKey: 'filter-dispute-outcome', optionsKey: 'disputeOutcomes', draftKey: 'disputeOutcomes' },
     { scopeKey: 'filter-sr-review-outcome', optionsKey: 'srReviewOutcomes', draftKey: 'srReviewOutcomes' },
+    ...DASH_LIB_TASK_CREATED_TIME_FILTERS.map(({ scopeKey, optionsKey, draftKey }) => ({
+        scopeKey, optionsKey, draftKey
+    })),
     { scopeKey: 'filter-v1-creation-time', optionsKey: 'v1CreationTimeMinutes', draftKey: 'v1CreationTimeMinutes' },
     { scopeKey: 'filter-qa-time', optionsKey: 'qaTimeMinutes', draftKey: 'qaTimeMinutes' },
     { scopeKey: 'filter-dispute-resolution-time', optionsKey: 'disputeResolutionTimeMinutes', draftKey: 'disputeResolutionTimeMinutes' },
@@ -521,6 +532,99 @@ function dashLibV1CreationTimeBucketId(minutes) {
     return 'gt_120';
 }
 
+function dashLibUtcDateParts(ms) {
+    const d = new Date(ms);
+    return {
+        y: d.getUTCFullYear(),
+        m: d.getUTCMonth() + 1,
+        d: d.getUTCDate()
+    };
+}
+
+/** UTC calendar bucket id for Task Created filters/stats (year / month / week / day). */
+function dashLibTimeBucketId(granularity, ms) {
+    if (!Number.isFinite(ms)) return '';
+    const { y, m, d } = dashLibUtcDateParts(ms);
+    if (granularity === 'year') return String(y);
+    if (granularity === 'month') return y + '-' + String(m).padStart(2, '0');
+    if (granularity === 'day') {
+        return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    }
+    if (granularity === 'week') {
+        const tmp = new Date(Date.UTC(y, m - 1, d));
+        const dow = tmp.getUTCDay() || 7;
+        tmp.setUTCDate(tmp.getUTCDate() + 4 - dow);
+        const weekYear = tmp.getUTCFullYear();
+        const yearStart = new Date(Date.UTC(weekYear, 0, 1));
+        const weekNo = Math.ceil((((tmp - yearStart) / DASH_LIB_MS_PER_DAY) + 1) / 7);
+        return weekYear + '-W' + String(weekNo).padStart(2, '0');
+    }
+    return '';
+}
+
+function dashLibTimeBucketLabel(granularity, bucketId) {
+    if (!bucketId) return bucketId;
+    if (granularity === 'year') return bucketId;
+    if (granularity === 'month') {
+        const parts = bucketId.split('-');
+        const year = Number(parts[0]);
+        const month = Number(parts[1]);
+        return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', {
+            month: 'long',
+            year: 'numeric',
+            timeZone: 'UTC'
+        });
+    }
+    if (granularity === 'day') {
+        const parts = bucketId.split('-').map(Number);
+        return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2])).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: 'UTC'
+        });
+    }
+    if (granularity === 'week') {
+        const match = /^(\d{4})-W(\d{2})$/.exec(bucketId);
+        if (!match) return bucketId;
+        const weekYear = Number(match[1]);
+        const weekNo = Number(match[2]);
+        const jan4 = new Date(Date.UTC(weekYear, 0, 4));
+        const jan4Dow = jan4.getUTCDay() || 7;
+        const monday = new Date(jan4);
+        monday.setUTCDate(jan4.getUTCDate() - jan4Dow + 1 + (weekNo - 1) * 7);
+        const monLabel = monday.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            timeZone: 'UTC'
+        });
+        return 'Week Of ' + monLabel;
+    }
+    return bucketId;
+}
+
+function dashLibItemTaskCreatedMs(item) {
+    const task = item && item.task;
+    if (!task || !task.createdAt) return null;
+    const ms = Date.parse(String(task.createdAt));
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function dashLibBuildTaskCreatedTimeFilterOptions(items, granularity) {
+    const ids = new Set();
+    for (const item of items || []) {
+        const ms = dashLibItemTaskCreatedMs(item);
+        if (ms == null) continue;
+        const id = dashLibTimeBucketId(granularity, ms);
+        if (id) ids.add(id);
+    }
+    return [...ids].sort().map((id) => ({
+        id,
+        label: dashLibTimeBucketLabel(granularity, id)
+    }));
+}
+
 /** ISO timestamp → relative "N units ago"; never emits a zero unit (minimum: 1 minute). */
 function dashLibRelativeAgo(iso, options) {
     if (!iso) return '';
@@ -696,7 +800,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '7.0',
+    _version: '8.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -818,6 +922,7 @@ const plugin = {
             projectDisplayLabel: dashLibProjectDisplayLabel,
 
             filterScopes: DASH_LIB_FILTER_SCOPES,
+            taskCreatedTimeFilters: DASH_LIB_TASK_CREATED_TIME_FILTERS,
             sortDefault: DASH_LIB_SORT_DEFAULT,
             sortMetrics: DASH_LIB_SORT_METRICS,
             sortOptions: DASH_LIB_SORT_OPTIONS,
@@ -844,6 +949,10 @@ const plugin = {
             V1_CREATION_TIME_BUCKET_LABELS: DASH_LIB_V1_CREATION_TIME_BUCKET_LABELS,
             v1CreationTimeMinutes: dashLibV1CreationTimeMinutes,
             v1CreationTimeBucketId: dashLibV1CreationTimeBucketId,
+            timeBucketId: dashLibTimeBucketId,
+            timeBucketLabel: dashLibTimeBucketLabel,
+            itemTaskCreatedMs: dashLibItemTaskCreatedMs,
+            buildTaskCreatedTimeFilterOptions: dashLibBuildTaskCreatedTimeFilterOptions,
             itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
             itemQaHelpfulness: bind(self._itemQaHelpfulness),
             itemPromptHistory: bind(self._itemPromptHistory),
@@ -855,7 +964,8 @@ const plugin = {
             itemQaTimeMinutes: bind(self._itemQaTimeMinutes),
             itemQaTimeMinutesBuckets: bind(self._itemQaTimeMinutesBuckets),
             itemDisputeResolutionTimeMinutes: bind(self._itemDisputeResolutionTimeMinutes),
-            itemDisputeResolutionTimeMinutesBuckets: bind(self._itemDisputeResolutionTimeMinutesBuckets)
+            itemDisputeResolutionTimeMinutesBuckets: bind(self._itemDisputeResolutionTimeMinutesBuckets),
+            itemTaskCreatedBuckets: bind(self._itemTaskCreatedBuckets)
         };
         Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
     },
@@ -1536,6 +1646,36 @@ const plugin = {
         return dashLibPassesDimension(this._itemDisputeResolutionTimeMinutesBuckets(item), effective, count);
     },
 
+    _itemTaskCreatedBuckets(item, granularity) {
+        const ms = dashLibItemTaskCreatedMs(item);
+        if (ms == null) return [];
+        const bucketId = dashLibTimeBucketId(granularity, ms);
+        return bucketId ? [bucketId] : [];
+    },
+
+    _itemPassesTaskCreatedTimeFilter(item, draft, listBounds, draftKey, granularity, forceIncludeId) {
+        const selected = (draft && draft[draftKey]) || [];
+        const count = ((listBounds && listBounds[draftKey]) || []).length;
+        if (count === 0) return true;
+        let effective = selected;
+        if (forceIncludeId !== undefined) {
+            effective = [...new Set([...selected, forceIncludeId])];
+        }
+        return dashLibPassesDimension(this._itemTaskCreatedBuckets(item, granularity), effective, count);
+    },
+
+    _itemPassesAllTaskCreatedTimeFilters(item, draft, listBounds, excludeDraftKey, forceIncludeId) {
+        for (const dim of DASH_LIB_TASK_CREATED_TIME_FILTERS) {
+            const forceId = excludeDraftKey === dim.draftKey ? forceIncludeId : undefined;
+            if (!this._itemPassesTaskCreatedTimeFilter(
+                item, draft, listBounds, dim.draftKey, dim.granularity, forceId
+            )) {
+                return false;
+            }
+        }
+        return true;
+    },
+
     _applyClientWorkerOutputFilters(items, filters, listBounds, sortContext) {
         const lib = Context.dashboardLib;
         const f = filters || {};
@@ -1576,6 +1716,13 @@ const plugin = {
             passed = passed.filter((item) => this._itemPassesQaHelpfulnessFilter(
                 item, f, bounds, helpfulnessUi, undefined, currentUserId
             ));
+        }
+        for (const dim of DASH_LIB_TASK_CREATED_TIME_FILTERS) {
+            if (((bounds[dim.draftKey] || []).length) > 0) {
+                passed = passed.filter((item) => this._itemPassesTaskCreatedTimeFilter(
+                    item, f, bounds, dim.draftKey, dim.granularity
+                ));
+            }
         }
         const v1CreationTimeCount = (bounds.v1CreationTimeMinutes || []).length;
         if (v1CreationTimeCount > 0) {
@@ -1841,6 +1988,9 @@ const plugin = {
         result.disputeOutcomes = new Set();
         result.srReviewOutcomes = new Set();
         result.qaHelpfulness = new Set();
+        for (const dim of DASH_LIB_TASK_CREATED_TIME_FILTERS) {
+            result[dim.draftKey] = new Set();
+        }
         result.v1CreationTimeMinutes = new Set();
         result.qaTimeMinutes = new Set();
         result.disputeResolutionTimeMinutes = new Set();
@@ -1895,6 +2045,11 @@ const plugin = {
             item, draft, listBounds, helpfulnessUi,
             itemKey === 'qaHelpfulness' ? forceId : undefined,
             currentUserId
+        )) {
+            return false;
+        }
+        if (!this._itemPassesAllTaskCreatedTimeFilters(
+            item, draft, listBounds, itemKey, forceId
         )) {
             return false;
         }
@@ -1985,6 +2140,19 @@ const plugin = {
             ));
             if (!hasMatch) irrelevantHelpfulness.add(id);
         }
+        for (const dim of DASH_LIB_TASK_CREATED_TIME_FILTERS) {
+            const optionList = (options && options[dim.optionsKey]) || [];
+            const irrelevant = result[dim.draftKey];
+            for (const { id } of optionList) {
+                const hasMatch = items.some((item) => (
+                    this._itemTaskCreatedBuckets(item, dim.granularity).includes(id)
+                    && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                        itemKey: dim.draftKey, forceIncludeId: id
+                    })
+                ));
+                if (!hasMatch) irrelevant.add(id);
+            }
+        }
         const v1CreationTimeOptions = (options && options.v1CreationTimeMinutes) || [];
         const irrelevantV1CreationTime = result.v1CreationTimeMinutes;
         for (const { id } of v1CreationTimeOptions) {
@@ -2030,6 +2198,9 @@ const plugin = {
         result.disputeOutcomes = new Map();
         result.srReviewOutcomes = new Map();
         result.qaHelpfulness = new Map();
+        for (const dim of DASH_LIB_TASK_CREATED_TIME_FILTERS) {
+            result[dim.draftKey] = new Map();
+        }
         result.v1CreationTimeMinutes = new Map();
         result.qaTimeMinutes = new Map();
         result.disputeResolutionTimeMinutes = new Map();
@@ -2104,6 +2275,19 @@ const plugin = {
                 })
             )).length;
             helpfulnessCounts.set(id, count);
+        }
+        for (const dim of DASH_LIB_TASK_CREATED_TIME_FILTERS) {
+            const optionList = (options && options[dim.optionsKey]) || [];
+            const counts = result[dim.draftKey];
+            for (const { id } of optionList) {
+                const count = items.filter((item) => (
+                    this._itemTaskCreatedBuckets(item, dim.granularity).includes(id)
+                    && this._itemPassesFilterDraft(item, draft, listBounds, ctx, {
+                        itemKey: dim.draftKey, forceIncludeId: id
+                    })
+                )).length;
+                counts.set(id, count);
+            }
         }
         const v1CreationTimeOptions = (options && options.v1CreationTimeMinutes) || [];
         const v1CreationTimeCounts = result.v1CreationTimeMinutes;

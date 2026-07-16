@@ -7,6 +7,7 @@ const APPROVE_LABEL = 'Flag as Bugged (Approve Dispute)';
 const REJECT_LABEL = 'Flag as Bugged (Reject Dispute)';
 const MIN_DESCRIPTION_CHARS = 100;
 const VIEW_TASK_PREFIX = '/work/problems/view-task/';
+const DISPUTES_LIST_PATH = '/work/problems/disputes';
 const ENHANCED_ATTR = 'data-fleet-flag-bug-modal-enhanced';
 const REJECT_BTN_ATTR = 'data-fleet-flag-bug-reject';
 const APPROVE_BTN_ATTR = 'data-fleet-flag-bug-approve';
@@ -16,8 +17,8 @@ const plugin = {
     id: 'flagAsBugModalImprovements',
     name: 'Flag-as-Bug Modal Improvements',
     description:
-        'Adds Flag as Bugged (Reject Dispute) before native submit; renames submit to Flag as Bugged (Approve Dispute)',
-    _version: '2.1',
+        'Adds Flag as Bugged (Reject Dispute) before native submit; renames submit to Flag as Bugged (Approve Dispute); redirects to disputes list on approve success',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -101,6 +102,15 @@ const plugin = {
         this.renameApproveButton(approveBtn);
         approveBtn.setAttribute(APPROVE_BTN_ATTR, '1');
         approveBtn.setAttribute('data-fleet-plugin', this.id);
+        if (approveBtn.getAttribute('data-fleet-flag-bug-approve-bound') !== '1') {
+            approveBtn.setAttribute('data-fleet-flag-bug-approve-bound', '1');
+            approveBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const rejectBtn = dialog.querySelector(`[${REJECT_BTN_ATTR}]`);
+                void this.handleApproveSubmit(dialog, approveBtn, rejectBtn);
+            });
+        }
 
         if (dialog.querySelector(`[${REJECT_BTN_ATTR}]`)) {
             return true;
@@ -110,6 +120,7 @@ const plugin = {
         rejectBtn.setAttribute(REJECT_BTN_ATTR, '1');
         rejectBtn.setAttribute('data-fleet-plugin', this.id);
         rejectBtn.removeAttribute(APPROVE_BTN_ATTR);
+        rejectBtn.removeAttribute('data-fleet-flag-bug-approve-bound');
         this.setButtonLabel(rejectBtn, REJECT_LABEL);
         rejectBtn.addEventListener('click', (ev) => {
             ev.preventDefault();
@@ -308,6 +319,64 @@ const plugin = {
         return 0;
     },
 
+    async handleApproveSubmit(dialog, approveBtn, rejectBtn) {
+        const reason = this.readBugReason(dialog);
+        const description = this.readDescription(dialog);
+        const { disputeId, evalTaskId } = await this.resolveIdsForSubmit(dialog);
+
+        if (!reason) {
+            Logger.warn('flagAsBugModalImprovements: approve blocked — bug reason not selected');
+            this.flashButtonFailure(approveBtn);
+            return;
+        }
+        if (description.length < MIN_DESCRIPTION_CHARS) {
+            Logger.warn('flagAsBugModalImprovements: approve blocked — description under '
+                + MIN_DESCRIPTION_CHARS + ' chars');
+            this.flashButtonFailure(approveBtn);
+            return;
+        }
+        if (!disputeId || !evalTaskId) {
+            Logger.warn('flagAsBugModalImprovements: approve blocked — missing dispute or task id');
+            this.flashButtonFailure(approveBtn);
+            return;
+        }
+
+        approveBtn.disabled = true;
+        if (rejectBtn) rejectBtn.disabled = true;
+
+        const resolutionReason = 'Flagged as product bug: [' + reason + '] ' + description;
+        const reviewSeconds = this.scrapeReviewDurationSeconds();
+        const referer = location.origin + '/work/problems/disputes'
+            + (disputeId ? '/' + encodeURIComponent(disputeId) : '');
+
+        try {
+            await this.fleetWebPost(
+                '/api/flag-bugged/' + encodeURIComponent(evalTaskId),
+                { reason, description },
+                referer
+            );
+            await this.fleetWebPost(
+                '/api/disputes/' + encodeURIComponent(disputeId) + '/resolve',
+                {
+                    status: 'approved',
+                    resolutionReason,
+                    disputeReviewDurationSeconds: reviewSeconds,
+                    skipWorkflowSignal: true
+                },
+                referer
+            );
+            Logger.log('flagAsBugModalImprovements: flag-bugged + approve resolve — dispute '
+                + disputeId);
+            this.flashButtonSuccess(approveBtn);
+            this.navigateToMainDisputesPage();
+        } catch (e) {
+            Logger.error('flagAsBugModalImprovements: approve submit failed — dispute ' + disputeId, e);
+            this.flashButtonFailure(approveBtn);
+            approveBtn.disabled = false;
+            if (rejectBtn) rejectBtn.disabled = false;
+        }
+    },
+
     async handleRejectSubmit(dialog, rejectBtn, approveBtn) {
         const reason = this.readBugReason(dialog);
         const description = this.readDescription(dialog);
@@ -407,6 +476,19 @@ const plugin = {
             return (b.textContent || '').trim() === 'Cancel';
         });
         if (cancel) cancel.click();
+    },
+
+    navigateToMainDisputesPage() {
+        const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const path = String(pageWindow.location.pathname || '').replace(/\/+$/, '') || '/';
+        if (path === DISPUTES_LIST_PATH) {
+            Logger.log('flagAsBugModalImprovements: already on disputes list — refreshing');
+            pageWindow.location.reload();
+            return;
+        }
+        const target = pageWindow.location.origin + DISPUTES_LIST_PATH;
+        Logger.log('flagAsBugModalImprovements: redirecting to disputes list — ' + target);
+        pageWindow.location.assign(target);
     },
 
     flashButtonSuccess(btn) {

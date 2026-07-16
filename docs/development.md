@@ -15,7 +15,8 @@ This document defines the **step-by-step** workflow for creating, testing, and p
 - **Module / Plugin**: A JS file that exports a `plugin` object and is loaded based on `archetypes.json`.
 - **Archetype**: A page type (e.g., `qa-tool-use`) with its own plugin list, URL pattern, and optional disambiguation selectors.
 - **Userscript**: `fleet.user.js` installed in Tampermonkey, which fetches `archetypes.json` and plugins from GitHub at runtime.
-- **Core plugin**: Runs on every page regardless of archetype (e.g., settings UI, Ops dashboard).
+- **Core plugin**: Runs on every page regardless of archetype (e.g., settings UI, Ops dashboard gate).
+- **Library**: Shared module under `plugins/libs/`, registered once in top-level `libraries`, and loaded only when an archetype (or the ops dashboard) declares it. Prefer libraries over putting page-specific shared code in `corePlugins`.
 - **Dev plugin**: Like a core plugin but only loaded on non-main-like branches (e.g., logger panel).
 - **Archetype plugin**: Runs only on the matching archetype's URL.
 
@@ -28,6 +29,7 @@ plugins/
   core/
     main/      # Core plugins (run on every page)
     dev/       # Dev-only core plugins (e.g. logger panel)
+  libs/        # Shared libraries (loaded only when declared by an archetype or ops dashboard)
   archetypes/
     <archetype-id>/
       main/    # Production archetype plugins
@@ -115,7 +117,10 @@ Plugins can declare a `subOptions` array to expose per-plugin toggles in the set
 | `logs` | object | Remote log flags: `{ debug, verbose, submodule }`. When set, overrides local GM storage defaults. Used to enable logging for all users without them changing settings. |
 | `opsAccess` | object | `{ passwordHash: "sha256-..." }`. Hash for the Ops dashboard password gate. Generate with `hash-ops-password.sh`. |
 | `opsSecrets` | object | `{ encryptedFile: "ops-secrets.enc.json" }`. Path (repo root) to the committed encrypted secrets JSON. Plaintext lives in gitignored `local/ops-bundle.json`; encrypt with `encrypt-ops-bundle.sh`. |
-| `corePlugins` | array | Core plugins loaded on every page (all branches). |
+| `corePlugins` | array | Core plugins loaded on every page (all branches). Keep this list small; page-specific shared code belongs in `libraries`. |
+| `libraries` | array | Shared library registry (`plugins/libs/`). Same entry shape as plugins (`name`, `version`, `hash`, `log`). Loaded only when declared by an archetype or `opsDashboardLibraries`. |
+| `opsDashboardPlugins` | array | Ops dashboard modules under `plugins/core/main/`; lazy-loaded after Ops unlock via `ensureOpsDashboardPluginsLoaded`. |
+| `opsDashboardLibraries` | array of strings | Library filenames from `libraries` to load before ops dashboard plugins. |
 | `devPlugins` | array | Dev-only core plugins; only loaded on non-main-like branches. |
 | `settingsModalDocs` | array | Markdown docs to fetch and cache for the settings modal. Format: `[{ name, version }]`. Files live in `docs/settings-modal/`. |
 | `archetypes` | array | Main archetype definitions. |
@@ -123,7 +128,7 @@ Plugins can declare a `subOptions` array to expose per-plugin toggles in the set
 
 ### Plugin Entry Fields
 
-Each entry in `corePlugins`, `devPlugins`, and archetype `plugins` arrays:
+Each entry in `corePlugins`, `libraries`, `devPlugins`, `opsDashboardPlugins`, and archetype `plugins` arrays:
 
 ```json
 {
@@ -150,11 +155,22 @@ Each entry in `corePlugins`, `devPlugins`, and archetype `plugins` arrays:
   "description": "...",
   "urlPattern": "work/tasks/*",
   "disambiguationSelectors": [],
+  "libraries": ["shared-lib.js"],
   "plugins": [ ... ]
 }
 ```
 
 `urlPattern` supports exact match, `/*` segment wildcards, and `*` trailing wildcard. When multiple archetypes match a URL, the most specific pattern wins. `disambiguationSelectors` can hold CSS selectors or `text:<exact text>` values; all must be present in the DOM to confirm the archetype.
+
+Optional `libraries` is an array of filenames from the top-level `libraries` registry. Those modules load (via `ensureLibrariesLoaded`) **before** the archetype's `plugins` so APIs on `Context` are available when page plugins run.
+
+### Choosing core vs library vs archetype
+
+| Need | Place it in |
+|------|-------------|
+| Must run on every Fleet page (settings, Ops gate, shared UI chrome) | `corePlugins` → `plugins/core/main/` |
+| Shared by multiple archetypes / the ops dashboard, but **not** needed elsewhere | `libraries` → `plugins/libs/`, declare on each consumer archetype (and/or `opsDashboardLibraries`) |
+| Only one page / archetype | That archetype's `plugins` → `plugins/archetypes/<id>/main/` (duplicate per archetype if historically preferred; libraries are preferred for new shared logic) |
 
 ## Hash-Based Integrity Verification
 
@@ -233,7 +249,7 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
 **update-versions.sh** — `./dev/utils/update-versions.sh [--dry-run] [options]`
 
-- Reads `@version` and const `VERSION` from `fleet.user.js`; if they differ, normalizes both to the higher value. Collects `_version` from plugin files, updates `archetypes.json` (corePlugins, devPlugins, archetype plugins, archetypesVersion). Optional args: `--root`, `--plugins-dir`, `--archetypes`, `--fleet`.
+- Reads `@version` and const `VERSION` from `fleet.user.js`; if they differ, normalizes both to the higher value. Collects `_version` from plugin files (including `plugins/libs/`), updates `archetypes.json` (corePlugins, libraries, opsDashboardPlugins, devPlugins, archetype plugins, archetypesVersion). Optional args: `--root`, `--plugins-dir`, `--archetypes`, `--fleet`.
 - Requires `jq`. Used by `push.sh`; run standalone when you need to sync versions without committing.
 
 **compute-hashes.sh** — `./dev/utils/compute-hashes.sh`
@@ -286,6 +302,7 @@ Steps:
    - `plugins/archetypes/<archetype-id>/main/<plugin>.js` for production modules.
    - `plugins/archetypes/<archetype-id>/dev/<plugin>.js` for dev-only modules.
    - `plugins/core/main` or `plugins/core/dev` for core modules.
+   - `plugins/libs/<lib>.js` for shared libraries (register under top-level `libraries` and declare on consumers).
 3. Ensure the plugin has a unique `id` and valid lifecycle hooks.
 4. Update `archetypes.json`:
    - Add the plugin entry or update its version in the correct archetype list.
