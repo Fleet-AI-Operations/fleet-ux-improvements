@@ -447,14 +447,17 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         Context.userStoryMarkdown = {
-            run: (s, options) => UserStoryMarkdownApi.run(s, options)
+            run: (s, options) => UserStoryMarkdownApi.run(s, options),
+            markdownToHtml: (md) => UserStoryMarkdownApi.markdownToHtml(md),
+            ensureProseStyles: () => UserStoryMarkdownApi.ensureProseStyles(),
+            PROSE_ATTR
         };
         if (!state.registered) {
             Logger.log('userStoryMarkdownLib: module registered (Context.userStoryMarkdown)');

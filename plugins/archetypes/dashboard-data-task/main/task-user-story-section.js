@@ -17,8 +17,8 @@ const OPS_BUNDLE_WAIT_TIMEOUT_MS = 30000;
 const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
-    description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '2.0',
+    description: 'Shows task user story between Project and Contributors with markdown rendering, copy and vertical resize',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -391,6 +391,15 @@ const plugin = {
 
     _createFieldBody(value) {
         const body = document.createElement('div');
+        const md = Context.userStoryMarkdown;
+        if (md && typeof md.markdownToHtml === 'function') {
+            body.className =
+                'break-words border-l-[3px] border-border pl-3 pt-1.5 pb-0.5 text-sm text-muted-foreground';
+            if (typeof md.ensureProseStyles === 'function') md.ensureProseStyles();
+            body.setAttribute(md.PROSE_ATTR || 'data-fleet-user-story-prose', '');
+            body.innerHTML = md.markdownToHtml(value);
+            return body;
+        }
         body.className =
             'whitespace-pre-wrap break-words border-l-[3px] border-border pl-3 pt-1.5 pb-0.5 text-sm text-muted-foreground';
         body.textContent = value;

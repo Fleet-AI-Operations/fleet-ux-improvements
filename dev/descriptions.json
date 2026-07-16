@@ -391,7 +391,7 @@
     {
       "file": "task-user-story-section.js",
       "name": "Task User Story Section",
-      "description": "Shows task user story between Project and Contributors with copy and vertical resize"
+      "description": "Shows task user story between Project and Contributors with markdown rendering, copy and vertical resize"
     }
   ],
   "archetypes/dashboard-data-expert/main": [

@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.29",
+  "archetypesVersion": "14.30",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -108,8 +108,8 @@
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.2",
-      "hash": "sha256-699ca593d6a2544cc9c2c8214c5ac5ccf05608ae0356ae0deec77252ab37c663",
+      "version": "1.3",
+      "hash": "sha256-1b5282a3032772e8e8effeaa867c6cf0bb3a1011483593a582589b2a9a18b81a",
       "log": false
     },
     {
@@ -802,6 +802,9 @@
       "description": "Dashboard task detail page at dashboard/data/tasks/task_*",
       "urlPattern": "dashboard/data/tasks/*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "user-story-markdown.js"
+      ],
       "plugins": [
         {
           "name": "verifier-code-block.js",
@@ -817,8 +820,8 @@
         },
         {
           "name": "task-user-story-section.js",
-          "version": "2.0",
-          "hash": "sha256-64bb5fccc4cb96a962fb9f876e34238dfc03cd66c4d63a9382db0aa59ace5219",
+          "version": "2.1",
+          "hash": "sha256-6dc829aa0d91a763cf5063bbc088157a2a465d9c4de72447ac100cee953f20e0",
           "log": false
         }
       ]
