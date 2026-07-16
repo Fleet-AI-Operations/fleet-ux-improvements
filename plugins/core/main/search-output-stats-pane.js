@@ -5647,6 +5647,17 @@ const searchOutputStatsPaneMethods = {
         return this._ratingScoreBlockCompactHtml(title, block, basisKind, opts);
     },
 
+    _ratingCopyChipHtml(text, styleExtras) {
+        const value = String(text == null ? '' : text).trim();
+        if (!value) return '';
+        const style = 'display: inline-block; max-width: 100%; padding: 0; margin: 0; border: none; border-radius: 4px;'
+            + ' background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;'
+            + (styleExtras ? (' ' + styleExtras) : '');
+        return '<button type="button" data-wf-dash-copy="' + dashEscHtml(value) + '" title="Click to copy"'
+            + ' aria-label="Copy ' + dashEscHtml(value) + '"'
+            + ' style="' + style + '">' + dashEscHtml(value) + '</button>';
+    },
+
     _ratingWorkerCardHtml(worker, scoreTypes) {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
@@ -5682,11 +5693,18 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" class="dv-seg-btn" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'false' : 'true') + '">Flat</button>'
             + '</div>';
 
+        const nameHtml = this._ratingCopyChipHtml(name, 'font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);');
+        const emailHtml = worker.email
+            ? ('<div style="margin-top: 2px;">'
+                + this._ratingCopyChipHtml(worker.email, 'font-size: 10px; font-weight: 500; color: var(--muted-foreground, #64748b);')
+                + '</div>')
+            : '';
+
         return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
             + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
             + '<div style="min-width: 0;">'
-            + '<div style="font-size: 13px; font-weight: 600;">' + dashEscHtml(name) + '</div>'
-            + (worker.email ? '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px;">' + dashEscHtml(worker.email) + '</div>' : '')
+            + '<div>' + nameHtml + '</div>'
+            + emailHtml
             + '</div>'
             + toggleHtml
             + '</div>'
@@ -5933,7 +5951,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.0',
+    _version: '11.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
