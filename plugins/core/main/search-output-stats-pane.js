@@ -5117,19 +5117,19 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
             + '<p style="margin: 0 0 8px;">Each card computes <strong>two variants</strong> of every score simultaneously. Toggle between them per card:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/30) to activity inside the window, so recent events weigh more. Matches the <code>--recency 30</code> local ranker run.</li>'
-            + '<li><strong>Flat</strong> — all in-scope events count equally. Matches the baseline (no-recency) local ranker run.</li>'
+            + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/30) to activity inside the window, so recent events weigh more.</li>'
+            + '<li><strong>Flat</strong> — all in-scope events count equally.</li>'
             + '</ul>'
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
-            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the current dive.db scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
             + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
             + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Tier first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain. The tier places that score in the current dive.db population.</li>'
+            + '<li><strong>Tier first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain. The tier places that score relative to the scored population.</li>'
             + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
@@ -6063,7 +6063,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.14',
+    _version: '11.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
