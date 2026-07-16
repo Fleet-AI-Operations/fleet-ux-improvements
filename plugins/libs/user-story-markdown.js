@@ -6,6 +6,7 @@ const ORIGINAL_MARKER = 'data-fleet-user-story-original';
 const REPLICA_MARKER = 'data-fleet-user-story-replica';
 const PROSE_ATTR = 'data-fleet-user-story-prose';
 const LABEL_TEXT = 'User Story';
+const TASK_INSTRUCTIONS_RE = /^\s*Task Instructions\s*$/i;
 
 const MODAL_FRAME_CLASSES = [
     'mt-1',
@@ -27,6 +28,15 @@ const MODAL_FRAME_CLASSES = [
 const EMBEDDED_BODY_CLASSES = [
     'mt-1',
     'text-sm',
+    'text-blue-700',
+    'dark:text-blue-300'
+].join(' ');
+
+const CREATION_QUOTE_CLASSES = [
+    'border-l-4',
+    'border-blue-300',
+    'pl-4',
+    'text-base',
     'text-blue-700',
     'dark:text-blue-300'
 ].join(' ');
@@ -76,6 +86,11 @@ const UserStoryMarkdownApi = {
         return this.normalizeLabelText(el.textContent) === LABEL_TEXT;
     },
 
+    isTaskInstructionsHeading(el) {
+        if (!el) return false;
+        return TASK_INSTRUCTIONS_RE.test(this.normalizeLabelText(el.textContent));
+    },
+
     findBodyForLabel(label) {
         if (!label) return null;
         const parent = label.parentElement;
@@ -100,10 +115,9 @@ const UserStoryMarkdownApi = {
         return null;
     },
 
-    findBodies() {
+    findLabeledBodies(seen) {
         const labels = document.querySelectorAll('label, span');
         const bodies = [];
-        const seen = new Set();
         for (const el of labels) {
             if (!this.isUserStoryLabel(el)) continue;
             const body = this.findBodyForLabel(el);
@@ -114,9 +128,42 @@ const UserStoryMarkdownApi = {
         return bodies;
     },
 
-    isModalVariant(body) {
+    findCreationInstructionBodies(seen) {
+        const dialogs = document.querySelectorAll('[role="alertdialog"], [role="dialog"]');
+        const bodies = [];
+        for (const dialog of dialogs) {
+            const heading = dialog.querySelector('h2');
+            if (!heading || !this.isTaskInstructionsHeading(heading)) continue;
+
+            const quotes = dialog.querySelectorAll('blockquote.whitespace-pre-wrap');
+            for (const quote of quotes) {
+                if (seen.has(quote)) continue;
+                if (quote.closest('[' + REPLICA_MARKER + '="true"]')) continue;
+                seen.add(quote);
+                bodies.push(quote);
+            }
+        }
+        return bodies;
+    },
+
+    findBodies() {
+        const seen = new Set();
+        return this.findLabeledBodies(seen).concat(this.findCreationInstructionBodies(seen));
+    },
+
+    getVariant(body) {
         const cls = body.className || '';
-        return /\bborder-l-4\b/.test(cls) || /\bborder-blue-200\b/.test(cls);
+        const isBlockquote = body.tagName === 'BLOCKQUOTE';
+        const hasLeftAccent = /\bborder-l-4\b/.test(cls);
+        const hasBlueFill = /\bbg-blue-50\b/.test(cls) || /\bborder-blue-200\b/.test(cls);
+
+        if (isBlockquote || (hasLeftAccent && !hasBlueFill)) {
+            return 'creationQuote';
+        }
+        if (hasLeftAccent || hasBlueFill) {
+            return 'modal';
+        }
+        return 'embedded';
     },
 
     escapeHtml(s) {
@@ -151,6 +198,15 @@ const UserStoryMarkdownApi = {
             return '<a href="' + safeHref + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
         });
         s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        // Autolink bare URLs only in text segments (not inside tags we just emitted).
+        s = s.split(/(<[^>]+>)/).map((part, idx) => {
+            if (idx % 2 === 1) return part;
+            return part.replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+                const trimmed = url.replace(/[.,;:!?)]+$/, '');
+                const trailing = url.slice(trimmed.length);
+                return '<a href="' + trimmed + '" target="_blank" rel="noopener noreferrer">' + trimmed + '</a>' + trailing;
+            });
+        }).join('');
         return s;
     },
 
@@ -180,7 +236,7 @@ const UserStoryMarkdownApi = {
             const h3 = /^###\s+(.+)$/.exec(trimmed);
             const h2 = /^##\s+(.+)$/.exec(trimmed);
             const h1 = /^#\s+(.+)$/.exec(trimmed);
-            const ul = /^-\s+(.+)$/.exec(trimmed);
+            const ul = /^[-•]\s+(.+)$/.exec(trimmed);
 
             if (h1 || h2 || h3 || h4) {
                 closeList();
@@ -209,9 +265,9 @@ const UserStoryMarkdownApi = {
     },
 
     replicaClassName(body) {
-        if (this.isModalVariant(body)) {
-            return MODAL_FRAME_CLASSES;
-        }
+        const variant = this.getVariant(body);
+        if (variant === 'creationQuote') return CREATION_QUOTE_CLASSES;
+        if (variant === 'modal') return MODAL_FRAME_CLASSES;
         return EMBEDDED_BODY_CLASSES;
     },
 
@@ -343,7 +399,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

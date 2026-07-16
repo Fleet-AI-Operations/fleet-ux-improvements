@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.24",
+  "archetypesVersion": "14.25",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -108,8 +108,8 @@
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.0",
-      "hash": "sha256-b43ab134602c66a9518befe6343f2a2cdb21a49f3eabacc9e8845ee94a4c2b81",
+      "version": "1.1",
+      "hash": "sha256-a2ed96af90aa1ff4bc9e5d42bb0d776cabcba3b40ada787c85be9c8f775547c6",
       "log": false
     },
     {
