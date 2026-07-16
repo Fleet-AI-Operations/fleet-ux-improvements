@@ -18,7 +18,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with markdown rendering, copy and vertical resize',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -370,22 +370,21 @@ const plugin = {
 
     _scenarioCopyText(fields) {
         const blocks = [];
-        if (fields.scenarioTitle) blocks.push('Scenario Title\n' + fields.scenarioTitle);
+        if (fields.scenarioTitle) blocks.push('# Scenario Title\n' + fields.scenarioTitle);
         if (fields.humanAnnotatorInstructions) {
-            blocks.push('Annotator Instructions\n' + fields.humanAnnotatorInstructions);
+            blocks.push('# Annotator Instructions\n' + fields.humanAnnotatorInstructions);
         }
-        if (fields.userStory) blocks.push('User Story\n' + fields.userStory);
-        return blocks.join('\n\n');
+        if (fields.userStory) blocks.push('# User Story\n' + fields.userStory);
+        return blocks.join('\n\n---\n\n');
     },
 
-    _createFieldHeader(label, copyText) {
+    _createFieldHeader(label) {
         const header = document.createElement('div');
         header.className = 'mb-1 flex items-center gap-1.5';
         const fieldLabel = document.createElement('div');
         fieldLabel.className = 'text-sm text-muted-foreground font-medium';
         fieldLabel.textContent = label;
         header.appendChild(fieldLabel);
-        header.appendChild(this._createCopyButton(copyText, label));
         return header;
     },
 
@@ -492,12 +491,12 @@ const plugin = {
             const value = fields[key];
             if (!value) continue;
             const block = document.createElement('div');
-            block.appendChild(this._createFieldHeader(label, value));
+            block.appendChild(this._createFieldHeader(label));
             block.appendChild(this._createFieldBody(value));
             content.appendChild(block);
         }
 
-        actions.replaceChildren();
+        actions.replaceChildren(this._createCopyButton(this._scenarioCopyText(fields), SECTION_LABEL));
         this._attachResizeHandle(content);
     }
 };

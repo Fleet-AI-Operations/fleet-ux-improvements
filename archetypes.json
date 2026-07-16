@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.30",
+  "archetypesVersion": "14.31",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -820,8 +820,8 @@
         },
         {
           "name": "task-user-story-section.js",
-          "version": "2.1",
-          "hash": "sha256-6dc829aa0d91a763cf5063bbc088157a2a465d9c4de72447ac100cee953f20e0",
+          "version": "2.2",
+          "hash": "sha256-6e8a158cdd191110dc229118faac195a463b3797d65aaffc79f3a7f0afb0033f",
           "log": false
         }
       ]
