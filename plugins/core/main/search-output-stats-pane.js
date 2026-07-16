@@ -5031,6 +5031,60 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _ratingsAboutTierCutoffFmt(n) {
+        if (n == null || !Number.isFinite(Number(n))) return '—';
+        const v = Math.round(Number(n) * 10) / 10;
+        return (Math.abs(v - Math.round(v)) < 1e-9)
+            ? String(Math.round(v))
+            : String(v);
+    },
+
+    /** Flat + Recency cutoff table for one score kind (from engine TIER_THRESHOLDS). */
+    _ratingsAboutTierScaleTableHtml(title, kind) {
+        const engine = Context.ratingEngine;
+        const pack = engine && engine.TIER_THRESHOLDS && engine.TIER_THRESHOLDS[kind];
+        if (!pack || !pack.flat || !pack.recency) return '';
+        const fmt = (n) => this._ratingsAboutTierCutoffFmt(n);
+        const rowsFor = (params) => {
+            const p10 = Number(params.p10);
+            const p30 = Number(params.p30);
+            const p70 = Number(params.p70);
+            const topMin = Number(params.topMin);
+            return [
+                { tier: 'Poor', label: '< ' + fmt(p10) },
+                { tier: 'Below average', label: fmt(p10) + ' – ' + fmt(p30) },
+                { tier: 'Typical', label: fmt(p30) + ' – ' + fmt(p70) },
+                { tier: 'Above average', label: fmt(p70) + ' – ' + fmt(topMin) },
+                { tier: 'Top tier', label: '≥ ' + fmt(topMin) },
+            ];
+        };
+        const flatRows = rowsFor(pack.flat);
+        const recRows = rowsFor(pack.recency);
+        const th = 'padding: 4px 6px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border, #e2e8f0);';
+        const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent); white-space: nowrap;';
+        let body = '';
+        for (let i = 0; i < flatRows.length; i++) {
+            const isLast = i === flatRows.length - 1;
+            const cell = isLast ? 'padding: 4px 6px; white-space: nowrap;' : td;
+            body += '<tr>'
+                + '<td style="' + cell + '">' + dashEscHtml(flatRows[i].tier) + '</td>'
+                + '<td style="' + cell + '">' + dashEscHtml(flatRows[i].label) + '</td>'
+                + '<td style="' + cell + '">' + dashEscHtml(recRows[i].label) + '</td>'
+                + '</tr>';
+        }
+        return '<div style="margin-top: 8px; margin-bottom: 10px;">'
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">' + dashEscHtml(title) + '</div>'
+            + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35;">'
+            + '<thead><tr>'
+            + '<th style="' + th + '">Tier</th>'
+            + '<th style="' + th + '">Flat</th>'
+            + '<th style="' + th + '">Recency</th>'
+            + '</tr></thead>'
+            + '<tbody>' + body + '</tbody>'
+            + '</table>'
+            + '</div>';
+    },
+
     _ratingsAboutSectionHtml() {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
@@ -5069,7 +5123,9 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
-            + '<p style="margin: 0 0 10px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the current dive.db scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the current dive.db scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
+            + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
+            + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
@@ -6007,7 +6063,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.13',
+    _version: '11.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
