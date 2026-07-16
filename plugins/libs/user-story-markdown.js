@@ -124,7 +124,10 @@ const UserStoryMarkdownApi = {
     },
 
     findLabeledBodies(seen) {
-        const labels = document.querySelectorAll('label, span');
+        // label/span: native form fields; div.font-medium: dialog section labels (e.g. disputes Task Scenario modal)
+        const labels = document.querySelectorAll(
+            'label, span, div.text-sm.text-muted-foreground.font-medium, div.font-medium.text-sm.text-muted-foreground'
+        );
         const bodies = [];
         for (const el of labels) {
             if (!this.isUserStoryLabel(el)) continue;
@@ -447,7 +450,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

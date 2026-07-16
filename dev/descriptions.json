@@ -375,6 +375,11 @@
       "file": "dispute-ids-enhancer.js",
       "name": "Dispute IDs Enhancer",
       "description": "Surface Dispute and Task IDs at top of dispute cards."
+    },
+    {
+      "file": "user-story-markdown.js",
+      "name": "User Story Markdown",
+      "description": "Markdown-rendered User Story replica and full-story copy button in the Task Scenario modal"
     }
   ],
   "archetypes/dashboard-data-task/main": [

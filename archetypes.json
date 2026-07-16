@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.33",
+  "archetypesVersion": "14.34",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -114,8 +114,8 @@
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.3",
-      "hash": "sha256-1b5282a3032772e8e8effeaa867c6cf0bb3a1011483593a582589b2a9a18b81a",
+      "version": "1.4",
+      "hash": "sha256-9ded2c4014a36940653aad1da2e163147e58290dc55706ebc5e2ac654fd6be93",
       "log": false
     },
     {
@@ -696,7 +696,8 @@
       "disambiguationSelectors": [],
       "libraries": [
         "dispute-resolution-messages.js",
-        "dispute-screenshot-upload-improvement.js"
+        "dispute-screenshot-upload-improvement.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -721,6 +722,12 @@
           "name": "dispute-resolution-snippets.js",
           "version": "1.1",
           "hash": "sha256-80f2eb4f294e5eb5159a451e55cb22fd026b71567b54b88361d7eda4b54e7476",
+          "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-18aa50df5f74f62b296523409e1b250d3803c801a3abc9d5e8f73a7a7c98575a",
           "log": false
         }
       ]
