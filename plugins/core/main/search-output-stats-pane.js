@@ -4761,6 +4761,19 @@ const searchOutputStatsPaneMethods = {
             + ' border: 1px solid color-mix(in srgb, ' + fill + ' 45%, var(--border, #e2e8f0));';
     },
 
+    /** Nested cohort-slice chrome — same tier colors, slightly tighter padding. */
+    _ratingTierSliceStyle(tierId) {
+        const fill = this._ratingTierFillColor(tierId);
+        if (!fill) {
+            return 'margin-top: 8px; padding: 8px 10px; border-radius: 6px;'
+                + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 8%, var(--card, #fff));'
+                + ' border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, transparent);';
+        }
+        return 'margin-top: 8px; padding: 8px 10px; border-radius: 6px;'
+            + ' background: color-mix(in srgb, ' + fill + ' 18%, var(--card, #fff));'
+            + ' border: 1px solid color-mix(in srgb, ' + fill + ' 40%, var(--border, #e2e8f0));';
+    },
+
     _ratingPercentilePanelStyle(percentile) {
         const fill = this._ratingPercentileFillColor(percentile);
         if (!fill) {
@@ -5462,6 +5475,7 @@ const searchOutputStatsPaneMethods = {
         const weightOrMeta = o.weightOrMeta || '';
         const meta = o.meta || '';
         const axes = o.axes || [];
+        const tierId = o.tierId || null;
         const expanded = !!o.expanded;
         const workerId = String(o.workerId || '').trim();
         const scoreKind = String(o.scoreKind || '').trim();
@@ -5487,7 +5501,7 @@ const searchOutputStatsPaneMethods = {
                 + ' data-wf-dash-rating-cohort-key="' + dashEscHtml(sliceKey) + '"'
                 + ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; cursor: pointer; user-select: none;"')
             : ' style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"';
-        return '<div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 55%, transparent);">'
+        return '<div style="' + this._ratingTierSliceStyle(tierId) + '">'
             + '<div' + headerAttrs + '>'
             + '<div style="font-size: 11px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis;">'
             + chevron + dashEscHtml(title) + '</div>'
@@ -5528,9 +5542,11 @@ const searchOutputStatsPaneMethods = {
                 const weighting = this._ratingWorkerWeighting(workerId);
                 const engine = Context.ratingEngine;
                 let scoreDisplay = Math.round(slice.score * 10) / 10;
+                let tierId = null;
                 if (engine && typeof engine.populationTier === 'function') {
                     const tier = engine.populationTier(slice.score, scoreKind, weighting);
                     if (tier && tier.label && tier.label !== '—') scoreDisplay = tier.label;
+                    if (tier && tier.id) tierId = tier.id;
                 }
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
@@ -5539,6 +5555,7 @@ const searchOutputStatsPaneMethods = {
                     title: key,
                     scoreDisplay,
                     weightOrMeta: vol,
+                    tierId,
                     axes: slice.axes,
                     expanded: this._isRatingCohortSliceExpanded(workerId, scoreKind, dim.id, key),
                     workerId,
@@ -5958,7 +5975,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.3',
+    _version: '11.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
