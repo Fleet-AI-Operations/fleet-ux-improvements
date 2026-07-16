@@ -18,7 +18,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with markdown rendering, copy and vertical resize',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -157,7 +157,7 @@ const plugin = {
         section.className = 'rounded-md border border-border p-3';
 
         const headerRow = document.createElement('div');
-        headerRow.className = 'mb-2 flex flex-wrap items-center justify-between gap-2';
+        headerRow.className = 'mb-2 flex flex-wrap items-center gap-1.5';
 
         const label = document.createElement('div');
         label.className = 'text-sm text-muted-foreground font-medium';
