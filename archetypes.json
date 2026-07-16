@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.28",
+  "archetypesVersion": "14.29",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -805,14 +805,14 @@
       "plugins": [
         {
           "name": "verifier-code-block.js",
-          "version": "2.0",
-          "hash": "sha256-d967bc1fa39bf091e5d216c19aa153cb6c7671b9eefcf24cd7595ec7c0cc6f68",
+          "version": "2.1",
+          "hash": "sha256-bb2ab462d2fa2a8b0f9dc7fe33ef2d016fc5eda043c699c6c497a09c1951ab37",
           "log": false
         },
         {
           "name": "prompt-version-actions.js",
-          "version": "2.0",
-          "hash": "sha256-298f686b11b479e23bd5a9e1d060e2ddfc012d9464522c2f52764d14dfec832a",
+          "version": "2.1",
+          "hash": "sha256-4a89398aba2cb31900b2d9cc00469c621a512a74246a21151f5d68b93a3f1cdf",
           "log": false
         },
         {

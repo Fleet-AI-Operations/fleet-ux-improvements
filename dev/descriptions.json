@@ -381,7 +381,7 @@
     {
       "file": "verifier-code-block.js",
       "name": "Verifier Code Block",
-      "description": "Fetches and displays verifier Python code on dashboard task pages that show \"No verifier\""
+      "description": "Fetches and displays verifier Python code on dashboard task pages (No verifier or Verifier sanity checks)"
     },
     {
       "file": "prompt-version-actions.js",

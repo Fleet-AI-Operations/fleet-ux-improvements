@@ -1,10 +1,11 @@
 // verifier-code-block.js
-// When the dashboard task view shows "No verifier", fetch verifier code and render it highlighted.
+// Fetch and display verifier Python on dashboard task pages (legacy "No verifier" or "Verifier sanity checks").
 
 const TASK_KEY_FROM_PATH_RE = /\/dashboard\/data\/tasks\/(task_[^/?#]+)/i;
 const PLUGIN_ID = 'verifier-code-block';
 const NO_VERIFIER_TEXT = 'No verifier';
 const VERIFIER_LABEL_TEXT = 'Verifier';
+const SANITY_CHECKS_LABEL_TEXT = 'Verifier sanity checks';
 const NAV_BTN_CLASS =
     'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground h-7 text-xs pl-2 pr-2 py-1 gap-1.5';
 const COPY_ICON_SVG =
@@ -18,8 +19,9 @@ const OPS_BUNDLE_WAIT_TIMEOUT_MS = 30000;
 const plugin = {
     id: PLUGIN_ID,
     name: 'Verifier Code Block',
-    description: 'Fetches and displays verifier Python code on dashboard task pages that show "No verifier"',
-    _version: '2.0',
+    description:
+        'Fetches and displays verifier Python code on dashboard task pages (No verifier or Verifier sanity checks)',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -39,10 +41,10 @@ const plugin = {
         if (state.fetchDone || state.bundleUnavailable) return;
         if (state.fetchStarted && !state.bundleWaitStarted) return;
 
-        const slot = this._findNoVerifierSlot();
+        const slot = this._findVerifierAnchor();
         if (!slot) {
             if (!state.missingLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for "No verifier" section');
+                Logger.debug(PLUGIN_ID + ': waiting for verifier anchor');
                 state.missingLogged = true;
             }
             return;
@@ -128,7 +130,7 @@ const plugin = {
         return /^task_/i.test(last) ? last : '';
     },
 
-    _findNoVerifierSlot() {
+    _findLegacyNoVerifierSlot() {
         const nodes = document.querySelectorAll('div, motion.div');
         for (const el of nodes) {
             if (el.childElementCount !== 0) continue;
@@ -137,9 +139,42 @@ const plugin = {
             if (!parent) continue;
             const label = parent.querySelector('.font-medium.mb-2, .text-sm.text-muted-foreground.font-medium.mb-2');
             if (!label || (label.textContent || '').trim() !== VERIFIER_LABEL_TEXT) continue;
-            return { parent, placeholder: el, label };
+            return {
+                mode: 'legacy',
+                parent,
+                placeholder: el,
+                label,
+                checklist: null
+            };
         }
         return null;
+    },
+
+    _findSanityChecksSlot() {
+        const labels = document.querySelectorAll(
+            'div.text-sm.text-muted-foreground.font-medium, div.font-medium.text-sm.text-muted-foreground'
+        );
+        for (const label of labels) {
+            if ((label.textContent || '').trim() !== SANITY_CHECKS_LABEL_TEXT) continue;
+            const headerRow = label.parentElement;
+            if (!headerRow) continue;
+            const section = headerRow.parentElement;
+            if (!section) continue;
+            const checklist = section.querySelector(':scope > div.space-y-3');
+            if (!checklist) continue;
+            return {
+                mode: 'sanity-checks',
+                parent: section,
+                placeholder: null,
+                label,
+                checklist
+            };
+        }
+        return null;
+    },
+
+    _findVerifierAnchor() {
+        return this._findLegacyNoVerifierSlot() || this._findSanityChecksSlot();
     },
 
     _createNavButton(label, slot) {
@@ -235,6 +270,22 @@ const plugin = {
 
         headerRow.appendChild(actions);
         ui.headerRow = headerRow;
+    },
+
+    _buildSanityChecksActionsRow(source, ui) {
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'mt-3 mb-2 flex flex-wrap items-center gap-1';
+        actionsRow.setAttribute('data-fleet-plugin', PLUGIN_ID + '-header');
+        actionsRow.setAttribute('data-slot', 'sanity-checks-actions');
+
+        ui.showBtn = this._createNavButton('Show verifier', 'show-verifier');
+        ui.showBtn.addEventListener('click', () => {
+            this._setVerifierVisible(ui, !ui.state.verifierVisible);
+        });
+        actionsRow.appendChild(ui.showBtn);
+        actionsRow.appendChild(this._createCopyButton(source));
+        ui.headerRow = actionsRow;
+        return actionsRow;
     },
 
     _buildSearchToolbar(state, ui) {
@@ -524,13 +575,25 @@ const plugin = {
                 return;
             }
 
-            if (!slot.parent.isConnected || !slot.placeholder.isConnected) {
+            const isSanityChecks = slot.mode === 'sanity-checks';
+            if (!slot.parent.isConnected) {
+                Logger.debug(PLUGIN_ID + ': DOM changed before render — skipping');
+                return;
+            }
+            if (isSanityChecks) {
+                if (!slot.checklist || !slot.checklist.isConnected) {
+                    Logger.debug(PLUGIN_ID + ': DOM changed before render — skipping');
+                    return;
+                }
+            } else if (!slot.placeholder || !slot.placeholder.isConnected) {
                 Logger.debug(PLUGIN_ID + ': DOM changed before render — skipping');
                 return;
             }
 
-            slot.placeholder.classList.add('fleet-wf-hidden-no-verifier');
-            slot.placeholder.style.display = 'none';
+            if (!isSanityChecks && slot.placeholder) {
+                slot.placeholder.classList.add('fleet-wf-hidden-no-verifier');
+                slot.placeholder.style.display = 'none';
+            }
 
             state.verifierSource = source;
             state.verifierVisible = false;
@@ -538,12 +601,9 @@ const plugin = {
 
             const ui = { state, themeSubscribed: false };
 
-            this._attachVerifierHeader(slot, source, ui);
-
             this._ensureVerifierCodeStyles();
 
             const searchToolbar = this._buildSearchToolbar(state, ui);
-            slot.parent.insertBefore(searchToolbar, slot.placeholder.nextSibling);
 
             const wrap = document.createElement('div');
             wrap.setAttribute('data-fleet-plugin', PLUGIN_ID);
@@ -561,7 +621,20 @@ const plugin = {
 
             pre.appendChild(code);
             wrap.appendChild(pre);
-            slot.parent.insertBefore(wrap, searchToolbar.nextSibling);
+
+            if (isSanityChecks) {
+                const bottomBlock = document.createElement('div');
+                bottomBlock.setAttribute('data-fleet-plugin', PLUGIN_ID);
+                bottomBlock.setAttribute('data-slot', 'sanity-checks-verifier');
+                bottomBlock.appendChild(this._buildSanityChecksActionsRow(source, ui));
+                bottomBlock.appendChild(searchToolbar);
+                bottomBlock.appendChild(wrap);
+                slot.checklist.insertAdjacentElement('afterend', bottomBlock);
+            } else {
+                this._attachVerifierHeader(slot, source, ui);
+                slot.parent.insertBefore(searchToolbar, slot.placeholder.nextSibling);
+                slot.parent.insertBefore(wrap, searchToolbar.nextSibling);
+            }
 
             ui.wrap = wrap;
             ui.codeEl = code;
