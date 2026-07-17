@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.2
+// @version      12.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -16,6 +16,7 @@
 // @grant        GM_xmlhttpRequest
 // @connect      raw.githubusercontent.com
 // @connect      cdn.jsdelivr.net
+// @connect      openrouter.ai
 // @run-at       document-start
 // @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/dashboard/fleet.user.js
 // @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/dashboard/fleet.user.js
@@ -38,7 +39,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.2';
+    const VERSION = '12.3';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -66,6 +67,7 @@
         'fleet-ux:verifier-fetcher-scratchpad-width',
         'fleet-ux:verifier-fetcher-scratchpad-open',
         'fleet-ux:verifier-fetcher-scratchpad-text',
+        'fleet-ux:ai-openrouter-key',
         'fleet-ux:diff-viewer-stash',
         'fleet-ux:diff-viewer-granularity',
         'fleet-ux:diff-viewer-comp-mode',

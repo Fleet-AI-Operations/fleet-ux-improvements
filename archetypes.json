@@ -1,7 +1,7 @@
 {
-  "version": "12.2",
+  "version": "12.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.36",
+  "archetypesVersion": "14.37",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,8 +28,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.2",
-      "hash": "sha256-59870e57a58477d52b1f5264e721a7bfeabaf24c69b9bfdc4048b956bf278eb7",
+      "version": "9.3",
+      "hash": "sha256-9855d49ad54b21eba069a1d5f9f07deaacb72769e0f96753ed5680016dfab32e",
       "log": false
     },
     {
@@ -202,6 +202,12 @@
       "name": "verifier-fetcher.js",
       "version": "3.0",
       "hash": "sha256-93776e7552754229070f8f26a5e6603fa6a1ad3057103e9b147acb2dc9c27144",
+      "log": false
+    },
+    {
+      "name": "dashboard-settings.js",
+      "version": "1.0",
+      "hash": "sha256-07588b673f1f083a033ef32b2b334bddec1dbc6ce224a4e03061c05df2a7ed47",
       "log": false
     }
   ],
@@ -804,7 +810,7 @@
         {
           "name": "user-story-markdown.js",
           "version": "1.0",
-          "hash": "sha256-238deae430bcf4bbb0ee030cef2858b020501475cb0fc57bac8098a2e59116d7",
+          "hash": "sha256-5b19f9cc14eab054311624045adcac2aa9e978c0be40e3a5fba2d639a7b572e0",
           "log": false
         }
       ]
