@@ -5091,7 +5091,7 @@ const searchOutputStatsPaneMethods = {
         const twqsRows = [
             { label: 'Outcome Quality',        weight: '40%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
             { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory).' },
-            { label: 'Non-Bottom Score Rate',  weight: '15%', measures: 'Share of explicitly scored feedback that was not the lowest possible rating.' },
+            { label: 'Task Rating Quality',    weight: '15%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
             { label: 'First-Pass Acceptance',  weight: '15%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score.' },
         ];
@@ -5130,7 +5130,8 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li><strong>Tier first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain. The tier places that score relative to the scored population.</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where encrypted cohort baselines are available (Ops unlock), the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
+            + '<li>Team / environment / month slice scores shrink toward a <strong>subset prior</strong> only when that baseline was shipped (TWQS: ≥ 500 tasks and ≥ 20 writers; QAQS: ≥ 500 feedback rows and ≥ 20 reviewers at generation time). Unshipped slices fall back to the global prior while still showing the breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
@@ -5241,11 +5242,13 @@ const searchOutputStatsPaneMethods = {
                 return 'No terminal tasks in scope';
             case 'positiveFeedbackRate':
                 return 'No human feedback on authored tasks in scope';
+            case 'taskRatingQuality':
             case 'nonBottomScoreRate':
                 return 'No explicitly scored feedback in scope';
             case 'firstPassAcceptance':
                 return 'No authored tasks with human feedback in scope';
             case 'disputeWinRate':
+            case 'disputeLossAvoidance':
                 return 'No resolved disputes in scope';
             // QAQS (QPS) axes
             case 'returnEffectiveness':
@@ -5308,10 +5311,25 @@ const searchOutputStatsPaneMethods = {
                 }
                 break;
             }
+            case 'taskRatingQuality':
             case 'nonBottomScoreRate': {
-                if (raw.nonBottom != null && raw.total != null && raw.total > 0) {
-                    const nbPct = this._ratingPctOneDecimal(raw.nonBottom / raw.total);
-                    lines.push('Non-bottom ' + (nbPct != null ? nbPct + '%' : '') + ' (' + Math.round(raw.nonBottom * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
+                const points = raw.qualityPoints != null ? raw.qualityPoints
+                    : (raw.weightedQualityPoints != null ? raw.weightedQualityPoints : raw.nonBottom);
+                const total = raw.total != null ? raw.total
+                    : (raw.weightedScored != null ? raw.weightedScored : null);
+                if (points != null && total != null && total > 0) {
+                    const meanPct = this._ratingPctOneDecimal(points / total);
+                    lines.push('Mean rating quality ' + (meanPct != null ? meanPct + '%' : '')
+                        + ' (' + Math.round(points * 10) / 10 + ' pts / ' + Math.round(total * 10) / 10 + ' scored)');
+                }
+                const bottom = raw.weightedBottom;
+                const average = raw.weightedAverage;
+                const top = raw.weightedTop;
+                if (bottom != null || average != null || top != null) {
+                    lines.push('Labels · Bottom '
+                        + (Math.round((bottom || 0) * 10) / 10)
+                        + ' · Average ' + (Math.round((average || 0) * 10) / 10)
+                        + ' · Top ' + (Math.round((top || 0) * 10) / 10));
                 }
                 break;
             }
@@ -5602,6 +5620,17 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _ratingPriorSourceMeta(priorSource) {
+        if (!priorSource || !priorSource.source) return { short: '', detail: '' };
+        if (priorSource.source === 'subset') {
+            return { short: 'subset prior', detail: 'Shrunk toward this subset prior.' };
+        }
+        return {
+            short: 'global prior',
+            detail: 'Shrunk toward the global prior (no baseline shipped for this slice — below volume cutoffs).',
+        };
+    },
+
     _ratingCohortBreakdownHtml(title, blend, workerId, scoreKind, opts) {
         if (!blend || !blend.main || blend.main.score == null) return '';
         const nestInScoreCard = !!(opts && opts.nestInScoreCard);
@@ -5637,10 +5666,13 @@ const searchOutputStatsPaneMethods = {
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
                     : '';
+                const priorMeta = this._ratingPriorSourceMeta(slice.priorSource);
+                const weightOrMeta = [vol, priorMeta.short].filter(Boolean).join(' · ');
                 sectionsHtml += this._ratingCohortSectionHtml({
                     title: key,
                     scoreDisplay,
-                    weightOrMeta: vol,
+                    weightOrMeta,
+                    meta: priorMeta.detail || '',
                     volume: slice.volume,
                     provisional: this._ratingVolumeIsProvisional(slice.volume, scoreKind),
                     tierId,
@@ -5885,12 +5917,24 @@ const searchOutputStatsPaneMethods = {
             this._state.ratingsReport = report;
             const scopeLabel = this._ratingsScopeLabel();
             const workerCount = (report.workers || []).length;
-            Logger.log('search-output: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
-                + (committed.ratingsEveryone ? ' (@everyone)' : '')
-                + (this._state.ratingsFromResults && !committed.ratingsEveryone ? ' (from results)' : ''));
+            if (report && report.error && report.error.code === 'baselinesUnavailable') {
+                Logger.warn('search-output: ratings blocked — baselines unavailable');
+            } else {
+                Logger.log('search-output: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
+                    + (committed.ratingsEveryone ? ' (@everyone)' : '')
+                    + (this._state.ratingsFromResults && !committed.ratingsEveryone ? ' (from results)' : ''));
+            }
         }
 
         const report = this._state.ratingsReport;
+        if (report && report.error && report.error.code === 'baselinesUnavailable') {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">'
+                + dashEscHtml(report.error.message
+                    || 'Rating baselines are unavailable. Unlock the Ops dashboard so encrypted priors can load, then retry.')
+                + '</p>';
+            this._syncRatingsToolbarUi(0, 0);
+            return;
+        }
         const allWorkers = (report && report.workers) || [];
 
         if (allWorkers.length === 0) {
@@ -6063,7 +6107,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.15',
+    _version: '11.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
