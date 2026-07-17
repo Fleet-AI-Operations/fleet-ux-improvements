@@ -1,7 +1,7 @@
 {
   "version": "12.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.46",
+  "archetypesVersion": "14.47",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -104,6 +104,12 @@
       "name": "request-revisions-screenshot-upload-improvement.js",
       "version": "2.0",
       "hash": "sha256-7d52c82409ee0760cdb1d03e980ccf8395c9e01ddc78c6aa8a38a82ef056d4b0",
+      "log": false
+    },
+    {
+      "name": "request-revisions-task-only.js",
+      "version": "1.0",
+      "hash": "sha256-4cd9d9230bdbdfe827d8726412983a7c7977d080f6e98d112d54cbedd86be4e2",
       "log": false
     },
     {
@@ -503,6 +509,7 @@
       "libraries": [
         "accept-task-modal-improvements.js",
         "request-revisions-screenshot-upload-improvement.js",
+        "request-revisions-task-only.js",
         "copy-verifier-output.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js"
@@ -530,6 +537,12 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.2",
           "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
+          "log": false
+        },
+        {
+          "name": "request-revisions-task-only.js",
+          "version": "1.0",
+          "hash": "sha256-9d6007eb6be110b83c6fd33c1820927abaf613b8f011892bcbb9f7fcd9f4b4f2",
           "log": false
         },
         {
@@ -597,6 +610,7 @@
       "libraries": [
         "accept-task-modal-improvements.js",
         "request-revisions-screenshot-upload-improvement.js",
+        "request-revisions-task-only.js",
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
         "top-nav-horizontal-scroll.js",
@@ -661,6 +675,12 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.2",
           "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
+          "log": false
+        },
+        {
+          "name": "request-revisions-task-only.js",
+          "version": "1.0",
+          "hash": "sha256-9d6007eb6be110b83c6fd33c1820927abaf613b8f011892bcbb9f7fcd9f4b4f2",
           "log": false
         },
         {
