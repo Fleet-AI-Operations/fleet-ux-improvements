@@ -5,8 +5,8 @@ const plugin = {
     id: 'requestRevisionsTaskOnly',
     name: 'Request Revisions Task-Only Issues',
     description:
-        'Hides Environment and Grading on Request Revisions and auto-selects the Task issue section',
-    _version: '1.0',
+        'Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

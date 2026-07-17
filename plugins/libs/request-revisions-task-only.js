@@ -1,5 +1,5 @@
 // ============= request-revisions-task-only.js =============
-// On Request Revisions modal: hide Environment/Grading issue buttons via CSS tags,
+// On Request Revisions modal: hide Task/Environment/Grading issue buttons via CSS tags,
 // and auto-select Task once per modal open.
 
 const STYLE_ID = 'fleet-request-revisions-task-only-style';
@@ -10,7 +10,7 @@ const RequestRevisionsTaskOnlyApi = {
     id: 'requestRevisionsTaskOnly',
     name: 'Request Revisions Task-Only Issues',
     description:
-        'Hides Environment and Grading issue buttons on Request Revisions and auto-selects Task',
+        'Hides Task/Environment/Grading issue buttons on Request Revisions and auto-selects Task',
 
     run(state, options) {
         const pluginId = (options && options.pluginId) || this.id;
@@ -40,33 +40,30 @@ const RequestRevisionsTaskOnlyApi = {
         }
         state.warnLogged = false;
 
-        let hidEnvironment = false;
-        let hidGrading = false;
+        const hidParts = [];
         let clickedTask = false;
         let taskAlreadySelected = false;
 
         const buttons = buttonRow.querySelectorAll('button[type="button"]');
         for (const btn of buttons) {
             const label = this.getIssueButtonLabel(btn);
-            if (label === 'Environment' || label === 'Grading') {
-                btn.setAttribute(HIDDEN_ATTR, '1');
-                if (label === 'Environment') hidEnvironment = true;
-                if (label === 'Grading') hidGrading = true;
-            } else if (label === 'Task') {
+            if (label === 'Task') {
                 if (this.isIssueButtonSelected(btn)) {
                     taskAlreadySelected = true;
                 } else {
                     btn.click();
                     clickedTask = true;
                 }
+                btn.setAttribute(HIDDEN_ATTR, '1');
+                hidParts.push('Task');
+            } else if (label === 'Environment' || label === 'Grading') {
+                btn.setAttribute(HIDDEN_ATTR, '1');
+                hidParts.push(label);
             }
         }
 
         modal.setAttribute(DIALOG_ATTR, '1');
 
-        const hidParts = [];
-        if (hidEnvironment) hidParts.push('Environment');
-        if (hidGrading) hidParts.push('Grading');
         const hidSummary = hidParts.length ? `hid ${hidParts.join('+')}` : 'no issue buttons to hide';
         const taskSummary = clickedTask
             ? 'auto-selected Task'
@@ -149,8 +146,8 @@ const plugin = {
     id: 'requestRevisionsTaskOnlyLib',
     name: 'Request Revisions Task-Only Issues (library)',
     description:
-        'Shared API to hide Environment/Grading and auto-select Task on Request Revisions',
-    _version: '1.0',
+        'Shared API to hide Task/Environment/Grading and auto-select Task on Request Revisions',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

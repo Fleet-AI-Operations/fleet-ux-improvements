@@ -1,7 +1,7 @@
 {
   "version": "12.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.47",
+  "archetypesVersion": "14.48",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -108,8 +108,8 @@
     },
     {
       "name": "request-revisions-task-only.js",
-      "version": "1.0",
-      "hash": "sha256-4cd9d9230bdbdfe827d8726412983a7c7977d080f6e98d112d54cbedd86be4e2",
+      "version": "1.1",
+      "hash": "sha256-8216a34a390a65cf7958f33c5262d00fb18cfdb18f4f25fd3e0ce10ce2f9f256",
       "log": false
     },
     {
@@ -541,8 +541,8 @@
         },
         {
           "name": "request-revisions-task-only.js",
-          "version": "1.0",
-          "hash": "sha256-9d6007eb6be110b83c6fd33c1820927abaf613b8f011892bcbb9f7fcd9f4b4f2",
+          "version": "1.1",
+          "hash": "sha256-adb2f7c84f6078d4117d1b6eea1405ab494d55cc2a7d4690e02452257038f926",
           "log": false
         },
         {
@@ -679,8 +679,8 @@
         },
         {
           "name": "request-revisions-task-only.js",
-          "version": "1.0",
-          "hash": "sha256-9d6007eb6be110b83c6fd33c1820927abaf613b8f011892bcbb9f7fcd9f4b4f2",
+          "version": "1.1",
+          "hash": "sha256-adb2f7c84f6078d4117d1b6eea1405ab494d55cc2a7d4690e02452257038f926",
           "log": false
         },
         {
