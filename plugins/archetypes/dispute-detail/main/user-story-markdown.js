@@ -206,8 +206,10 @@ const plugin = {
             void doCopy(event);
         });
 
-        // Insert after the "Scenario / User Story" title span inside the toggle button.
-        root.headerSpan.insertAdjacentElement('afterend', copyBtn);
+        // Nest inside the title span so the control hugs the text; the toggle's
+        // justify-between would otherwise center a third flex child in the row.
+        root.headerSpan.classList.add('inline-flex', 'items-center', 'gap-1.5');
+        root.headerSpan.appendChild(copyBtn);
 
         if (!state.copyButtonLogged) {
             Logger.log(this.id + ': copy control injected in Scenario / User Story header');
