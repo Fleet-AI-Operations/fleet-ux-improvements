@@ -153,9 +153,11 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
     let aborted = false;
     let processedLen = 0;
     let lineBuf = '';
+    let rawAll = '';
     let fullText = '';
     let model = '';
     let finished = false;
+    let usingReader = false;
 
     const finishOk = () => {
         if (finished || aborted) return;
@@ -206,21 +208,50 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
         }
     };
 
-    const ingestChunk = (text) => {
-        if (aborted || finished) return;
-        const raw = String(text || '');
-        if (raw.length <= processedLen) return;
-        const added = raw.slice(processedLen);
-        processedLen = raw.length;
+    const ingestRaw = (added) => {
+        if (aborted || finished || !added) return;
+        rawAll += added;
         lineBuf += added;
         const parts = lineBuf.split('\n\n');
         lineBuf = parts.pop() || '';
         for (const part of parts) consumeSseBlock(part);
     };
 
+    const ingestChunk = (text) => {
+        if (aborted || finished) return;
+        const raw = String(text || '');
+        if (raw.length <= processedLen) return;
+        const added = raw.slice(processedLen);
+        processedLen = raw.length;
+        ingestRaw(added);
+    };
+
+    const flushAndFinish = () => {
+        if (aborted || finished) return;
+        if (lineBuf.trim()) consumeSseBlock(lineBuf);
+        lineBuf = '';
+        if (!fullText && rawAll.trim().startsWith('{')) {
+            // Non-SSE body: likely a JSON error payload from OpenRouter.
+            try {
+                const parsed = JSON.parse(rawAll);
+                const message = parsed && parsed.error && parsed.error.message;
+                if (message) {
+                    fail(new Error('OpenRouter error: ' + message));
+                    return;
+                }
+            } catch (_e) { /* fall through */ }
+        }
+        finishOk();
+    };
+
+    // MV3 Tampermonkey buffers responses, so onprogress never yields partial
+    // responseText. responseType 'stream' exposes a ReadableStream in
+    // onloadstart for true incremental delivery; onprogress remains as the
+    // fallback for managers without stream support.
     const req = GM_xmlhttpRequest({
         method: 'POST',
         url: OPENROUTER_CHAT_COMPLETIONS_URL,
+        responseType: 'stream',
         headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer ' + apiKey,
@@ -229,8 +260,31 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
             Accept: 'text/event-stream'
         },
         data: JSON.stringify({ messages, stream: true }),
+        onloadstart: (response) => {
+            if (aborted || finished) return;
+            const body = response && response.response;
+            if (!body || typeof body.getReader !== 'function') return;
+            usingReader = true;
+            const reader = body.getReader();
+            const decoder = new TextDecoder();
+            const pump = () => {
+                reader.read().then(({ done, value }) => {
+                    if (aborted || finished) return;
+                    if (done) {
+                        ingestRaw(decoder.decode());
+                        flushAndFinish();
+                        return;
+                    }
+                    ingestRaw(decoder.decode(value, { stream: true }));
+                    pump();
+                }).catch((err) => {
+                    if (!aborted) fail(err);
+                });
+            };
+            pump();
+        },
         onprogress: (response) => {
-            if (aborted) return;
+            if (aborted || usingReader) return;
             if (response.status && (response.status < 200 || response.status >= 300)) {
                 // Wait for onload for full error body when possible.
                 return;
@@ -247,10 +301,9 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
                 fail(new Error('OpenRouter error (HTTP ' + response.status + ')'));
                 return;
             }
+            if (usingReader) return; // reader path finishes via flushAndFinish
             ingestChunk(response.responseText || '');
-            if (lineBuf.trim()) consumeSseBlock(lineBuf);
-            lineBuf = '';
-            finishOk();
+            flushAndFinish();
         },
         onerror: () => fail(new Error('Network error contacting OpenRouter')),
         ontimeout: () => fail(new Error('OpenRouter request timed out')),
@@ -656,7 +709,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for the Ops dashboard (AI Integration / OpenRouter)',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
