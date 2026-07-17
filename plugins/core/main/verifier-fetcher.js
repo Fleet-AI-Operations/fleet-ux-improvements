@@ -1,7 +1,7 @@
 // ============= verifier-fetcher.js =============
 // Verifier Fetcher tab for the Ops dashboard.
 //
-// AI gating: Decode Output, Chat toggle, and the chat pane stay hidden unless
+// AI gating: Diagnose Issues, Chat toggle, and the chat pane stay hidden unless
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
 
@@ -461,19 +461,19 @@ async function decodeVerifierOutput(modal) {
     const outputText = ta ? String(ta.value || '').trim() : '';
 
     if (!codeText) {
-        Logger.warn('verifier-fetcher: Decode Output blocked — empty verifier code');
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty verifier code');
         if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
         return;
     }
     if (!outputText) {
-        Logger.warn('verifier-fetcher: Decode Output blocked — empty Verifier Output');
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty Verifier Output');
         if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
         return;
     }
 
     const state = getVerifierChatState(modal);
     if (state.streaming) {
-        Logger.warn('verifier-fetcher: Decode Output blocked — stream in progress');
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — stream in progress');
         return;
     }
 
@@ -488,11 +488,11 @@ async function decodeVerifierOutput(modal) {
     state.messages.push({
         role: 'user',
         content: userPayload,
-        displayContent: 'Decode Output'
+        displayContent: 'Diagnose Issues'
     });
     state.messages.push({ role: 'assistant', content: '', streaming: true });
     renderVerifierChatMessages(modal);
-    Logger.log('verifier-fetcher: Decode Output started');
+    Logger.log('verifier-fetcher: Diagnose Issues started');
 
     const apiMessages = [
         { role: 'system', content: DECODE_SYSTEM_PROMPT },
@@ -507,7 +507,7 @@ async function decodeVerifierOutput(modal) {
             last.streaming = false;
         }
         renderVerifierChatMessages(modal);
-        Logger.log('verifier-fetcher: Decode Output done (' + (full || '').length + ' chars)');
+        Logger.log('verifier-fetcher: Diagnose Issues done (' + (full || '').length + ' chars)');
     } catch (err) {
         const last = state.messages[state.messages.length - 1];
         if (last && last.role === 'assistant') {
@@ -516,7 +516,7 @@ async function decodeVerifierOutput(modal) {
         }
         renderVerifierChatMessages(modal);
         if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
-        Logger.error('verifier-fetcher: Decode Output failed: ' + ((err && err.message) || err));
+        Logger.error('verifier-fetcher: Diagnose Issues failed: ' + ((err && err.message) || err));
     }
 }
 
@@ -740,7 +740,7 @@ function verifierFetcherPanelHtml() {
                                     padding: 6px 8px;
                                     border-top: 1px solid var(--border, #e5e5e5);
                                 ">
-                                    <button type="button" id="wf-ops-verifier-decode-btn" class="${btnClass('secondary', 'compact')}" style="display: none;">Decode Output</button>
+                                    <button type="button" id="wf-ops-verifier-decode-btn" class="${btnClass('secondary', 'compact')}" style="display: none;">Diagnose Issues</button>
                                 </div>
                             </aside>
                         </div>
@@ -905,7 +905,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
