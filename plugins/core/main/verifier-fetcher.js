@@ -575,22 +575,6 @@ function verifierFetcherPanelHtml() {
 
     return `
             <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
-                <div style="flex-shrink: 0;">
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
-                        Verifier Code Fetcher
-                    </h3>
-                    <p style="${hintStyle} margin: 0 0 10px 0; line-height: 1.45;">
-                        Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
-                    </p>
-                    <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="${monoInputStyle} flex: 1; min-width: 0;">
-                        <button type="button" id="wf-ops-fetch-verifier" class="${btnClass('primary', 'regular')}" style="flex-shrink: 0;">Fetch</button>
-                    </div>
-                    <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
-                        <div id="wf-ops-verifier-status" style="${hintStyle} line-height: 1.45;"></div>
-                    </div>
-                    <select id="wf-ops-verifier-version" aria-label="Verifier version" style="display: none; width: 100%; margin-top: 8px; ${monoInputStyle}"></select>
-                </div>
                 <div id="wf-ops-verifier-workspace" data-wf-ai-chat="0" style="
                     display: flex;
                     justify-content: center;
@@ -598,7 +582,6 @@ function verifierFetcherPanelHtml() {
                     flex: 1;
                     min-height: 0;
                     width: 100%;
-                    margin-top: 8px;
                     align-items: stretch;
                     box-sizing: border-box;
                 ">
@@ -612,9 +595,26 @@ function verifierFetcherPanelHtml() {
                         min-height: 0;
                         box-sizing: border-box;
                     ">
+                        <div style="flex-shrink: 0;">
+                            <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 8px 0; color: var(--foreground, #0f172a);">
+                                Verifier Code Fetcher
+                            </h3>
+                            <p style="${hintStyle} margin: 0 0 10px 0; line-height: 1.45;">
+                                Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
+                            </p>
+                            <div style="display: flex; gap: 8px; align-items: stretch;">
+                                <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="${monoInputStyle} flex: 1; min-width: 0;">
+                                <button type="button" id="wf-ops-fetch-verifier" class="${btnClass('primary', 'regular')}" style="flex-shrink: 0;">Fetch</button>
+                            </div>
+                            <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
+                                <div id="wf-ops-verifier-status" style="${hintStyle} line-height: 1.45;"></div>
+                            </div>
+                            <select id="wf-ops-verifier-version" aria-label="Verifier version" style="display: none; width: 100%; margin-top: 8px; ${monoInputStyle}"></select>
+                        </div>
                         <div id="wf-ops-verifier-output-toolbar" style="
                             display: none;
                             width: 100%;
+                            margin-top: 8px;
                             flex-shrink: 0;
                             align-items: flex-start;
                             justify-content: space-between;
@@ -905,7 +905,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
