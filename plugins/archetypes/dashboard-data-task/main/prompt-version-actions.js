@@ -13,7 +13,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
     description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -282,6 +282,18 @@ const plugin = {
         return { exact, loose };
     },
 
+    _getVersionCardHeaderRow(card) {
+        if (!card) return null;
+        return card.querySelector(':scope > div.flex.flex-wrap.items-center.justify-between.gap-2')
+            || card.querySelector(':scope > div.p-4 > div.mb-3.flex.flex-wrap.items-center.justify-between.gap-2');
+    },
+
+    _getVersionCardMetaDiv(card) {
+        const headerRow = this._getVersionCardHeaderRow(card);
+        if (!headerRow) return null;
+        return headerRow.querySelector(':scope > div.flex.flex-wrap.items-center.gap-x-2.gap-y-1.text-xs.text-muted-foreground');
+    },
+
     _resolveVersionForCard(card, byPrompt, computed) {
         const pre = card.querySelector('pre');
         const cardPrompt = pre ? pre.textContent : '';
@@ -295,9 +307,7 @@ const plugin = {
             return byPrompt.loose.get(looseKey);
         }
 
-        const displayNo = this._parseDisplayVersionNo(
-            card.querySelector(':scope > div.p-4 > div.mb-3.flex.flex-wrap.items-center.justify-between.gap-2 > div.flex.flex-wrap.items-center.gap-x-2.gap-y-1.text-xs.text-muted-foreground')
-        );
+        const displayNo = this._parseDisplayVersionNo(this._getVersionCardMetaDiv(card));
         if (displayNo) {
             return computed.find((v) => v.displayVersionNo === displayNo) || null;
         }
@@ -321,7 +331,11 @@ const plugin = {
     _findPromptHistoryCards() {
         const list = this._findPromptHistorySectionRoot();
         if (!list) return [];
-        return [...list.children].filter((el) => el.matches('div.rounded-xl'));
+        return [...list.children].filter((el) => {
+            if (el.matches('div.rounded-xl')) return true;
+            if (el.matches('div.space-y-2') && el.querySelector(':scope > pre')) return true;
+            return false;
+        });
     },
 
     _parseDisplayVersionNo(metaDiv) {
@@ -334,7 +348,7 @@ const plugin = {
     },
 
     _enhanceVersionCard(card, byPrompt, computed, evalTaskId) {
-        const headerRow = card.querySelector(':scope > div.p-4 > div.mb-3.flex.flex-wrap.items-center.justify-between.gap-2');
+        const headerRow = this._getVersionCardHeaderRow(card);
         if (!headerRow) return false;
 
         const metaDiv = headerRow.querySelector(':scope > div.flex.flex-wrap.items-center.gap-x-2.gap-y-1.text-xs.text-muted-foreground');

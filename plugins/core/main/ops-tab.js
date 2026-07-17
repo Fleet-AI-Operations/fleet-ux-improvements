@@ -1,8 +1,8 @@
 // ops-tab.js
 // Core plugin for the Ops dashboard backend: secrets/password gate, PostgREST,
 // team member search backend, verifier fetch backend, and task link helpers.
-// Dashboard tab UI lives in search-output.js, team-members.js, verifier-fetcher.js;
-// settings-ui.js hosts enable/password toggles only.
+// Dashboard tab UI lives in search-output.js, team-members.js, verifier-fetcher.js,
+// dashboard-settings.js; settings-ui.js hosts enable/password toggles only.
 
 const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
 const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
@@ -128,6 +128,14 @@ async function computeSha256Hex(text) {
     return 'sha256-' + hex;
 }
 
+function opsBase64Encode(bytes) {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+}
+
 function opsBase64Decode(str) {
     const binary = atob(str);
     const out = new Uint8Array(binary.length);
@@ -135,6 +143,16 @@ function opsBase64Decode(str) {
         out[i] = binary.charCodeAt(i);
     }
     return out;
+}
+
+/** Keep in sync with packBlob in dev/utils/ops-password-crypto.mjs */
+function opsPackEncryptedBlob({ salt, iv, ciphertext }) {
+    const buf = new Uint8Array(1 + salt.length + iv.length + ciphertext.length);
+    buf[0] = OPS_CRYPTO_FORMAT_VERSION;
+    buf.set(salt, 1);
+    buf.set(iv, 1 + salt.length);
+    buf.set(ciphertext, 1 + salt.length + iv.length);
+    return buf;
 }
 
 function opsUnpackEncryptedBlob(blob) {
@@ -179,7 +197,32 @@ async function opsDeriveAesKey(password, salt) {
     );
 }
 
+/** Keep in sync with encryptWithPassword in dev/utils/ops-password-crypto.mjs */
+async function opsEncryptWithPassword(plaintext, password) {
+    if (!password) {
+        throw new Error('Password must not be empty');
+    }
+    const enc = new TextEncoder();
+    const salt = crypto.getRandomValues(new Uint8Array(OPS_CRYPTO_SALT_BYTES));
+    const iv = crypto.getRandomValues(new Uint8Array(OPS_CRYPTO_IV_BYTES));
+    const key = await opsDeriveAesKey(password, salt);
+    const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv, tagLength: OPS_CRYPTO_AES_GCM_TAG_LENGTH },
+        key,
+        enc.encode(plaintext)
+    );
+    const packed = opsPackEncryptedBlob({
+        salt,
+        iv,
+        ciphertext: new Uint8Array(ciphertext)
+    });
+    return OPS_CRYPTO_FORMAT_PREFIX + ':' + opsBase64Encode(packed);
+}
+
 async function opsDecryptWithPassword(blob, password) {
+    if (!password) {
+        throw new Error('Password must not be empty');
+    }
     const { salt, iv, ciphertext } = opsUnpackEncryptedBlob(blob);
     const key = await opsDeriveAesKey(password, salt);
     try {
@@ -198,7 +241,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.2',
+    _version: '9.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -345,7 +388,9 @@ const plugin = {
             getUserTaskDesignersTeamCatalog: () => this.getUserTaskDesignersTeamCatalog(),
             hydrateUserTeamCatalog: (profileId, teams) => this._hydrateUserTeamCatalog(profileId, teams),
             isTaskDesignersTeam: (name) => opsIsTaskDesignersTeamName(name),
-            formatTeamDisplayLabel: (name) => opsFormatTeamDisplayLabel(name)
+            formatTeamDisplayLabel: (name) => opsFormatTeamDisplayLabel(name),
+            encryptWithOpsPassword: (plaintext) => this._encryptWithOpsPassword(plaintext),
+            decryptWithOpsPassword: (blob) => this._decryptWithOpsPassword(blob)
         };
         Logger.log('ops-tab: module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
@@ -430,6 +475,38 @@ const plugin = {
     _clearOpsStoredPassword() {
         Storage.delete('ops-tab-stored-password');
         this._clearOpsSecretsCache();
+    },
+
+    /**
+     * Encrypt arbitrary UTF-8 plaintext with the stored Ops password.
+     * @param {string} plaintext
+     * @returns {Promise<string>} fleet-ops1:... blob
+     */
+    async _encryptWithOpsPassword(plaintext) {
+        const password = this._getOpsStoredPassword();
+        if (!password) {
+            throw new Error('Ops password not available');
+        }
+        if (typeof plaintext !== 'string') {
+            throw new Error('plaintext must be a string');
+        }
+        return opsEncryptWithPassword(plaintext, password);
+    },
+
+    /**
+     * Decrypt a fleet-ops1 blob with the stored Ops password.
+     * @param {string} blob
+     * @returns {Promise<string>} UTF-8 plaintext
+     */
+    async _decryptWithOpsPassword(blob) {
+        const password = this._getOpsStoredPassword();
+        if (!password) {
+            throw new Error('Ops password not available');
+        }
+        if (typeof blob !== 'string' || !blob) {
+            throw new Error('blob must be a non-empty string');
+        }
+        return opsDecryptWithPassword(blob, password);
     },
 
     _getOpsSecretsEncryptedFilename() {

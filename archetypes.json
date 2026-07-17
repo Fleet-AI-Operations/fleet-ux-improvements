@@ -1,7 +1,7 @@
 {
-  "version": "12.2",
+  "version": "12.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.27",
+  "archetypesVersion": "14.45",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,8 +28,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.2",
-      "hash": "sha256-59870e57a58477d52b1f5264e721a7bfeabaf24c69b9bfdc4048b956bf278eb7",
+      "version": "9.3",
+      "hash": "sha256-9855d49ad54b21eba069a1d5f9f07deaacb72769e0f96753ed5680016dfab32e",
       "log": false
     },
     {
@@ -77,6 +77,12 @@
       "log": false
     },
     {
+      "name": "dispute-screenshot-upload-improvement.js",
+      "version": "1.0",
+      "hash": "sha256-8403bf6b45ff1985c82a82f15152349442becd7618c3f96912cd6d695c886aab",
+      "log": false
+    },
+    {
       "name": "embedded-urlbar-fit.js",
       "version": "2.0",
       "hash": "sha256-46680e913bca4286a0ae3a22d0d90105e468fed8f402058652a762f2817036a4",
@@ -108,8 +114,8 @@
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.2",
-      "hash": "sha256-699ca593d6a2544cc9c2c8214c5ac5ccf05608ae0356ae0deec77252ab37c663",
+      "version": "1.5",
+      "hash": "sha256-def4c5ee04c5bd3c40e3f1155ddbb3e229179f482ab14e5bfc600210f85afda5",
       "log": false
     },
     {
@@ -140,14 +146,14 @@
     },
     {
       "name": "dashboard.js",
-      "version": "11.7",
-      "hash": "sha256-924fc95898f1cf0403501893ce7afdf730346523c4c53f468a200d8486bd8406",
+      "version": "11.8",
+      "hash": "sha256-8d31f788130b90c7832a0739fbcb06ebea02c34ba88cfa668ea53a4914f59778",
       "log": false
     },
     {
       "name": "diff-engine.js",
-      "version": "2.4",
-      "hash": "sha256-34daf08753701ce6b90b9134b10b1d34557a61b8d7c68a570f3872b38d05d41a",
+      "version": "3.0",
+      "hash": "sha256-a1fe9ddfb881c765ed6ede894cd6436694860a72fa2297624eb0eb8f643ba694",
       "log": false
     },
     {
@@ -182,8 +188,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "3.2",
-      "hash": "sha256-7ae9688a4fa9c31c311d71d1ababc2de091495a973eaf32e9e8ae03fe056c491",
+      "version": "3.3",
+      "hash": "sha256-fbf3cb73b90eb65fcfaf316f85beb7f1f803328e1871fd519f4eeacf32bf44cd",
       "log": false
     },
     {
@@ -194,20 +200,21 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "3.0",
-      "hash": "sha256-93776e7552754229070f8f26a5e6603fa6a1ad3057103e9b147acb2dc9c27144",
+      "version": "4.5",
+      "hash": "sha256-d70c2709778bd8f7e9ba0ae6ef0d40f437c4d69acbfa80dcf38042cd4b1a9f69",
       "log": false
     },
     {
-      "name": "session-fetcher.js",
-      "version": "2.1",
-      "hash": "sha256-aaa686af251b83e49b1ff5c465eb750161ae4c2249fe660853324eabde8fd9e3",
+      "name": "dashboard-settings.js",
+      "version": "1.3",
+      "hash": "sha256-e78f4318f1555ec9c95db2f2ac165006c970938efc66c3c20c2792069ad3a77d",
       "log": false
     }
   ],
   "opsDashboardLibraries": [
     "dispute-resolution-messages.js",
-    "chart-js.js"
+    "chart-js.js",
+    "user-story-markdown.js"
   ],
   "devPlugins": [
     {
@@ -689,9 +696,23 @@
       "urlPattern": "work/problems/disputes",
       "disambiguationSelectors": [],
       "libraries": [
-        "dispute-resolution-messages.js"
+        "dispute-resolution-messages.js",
+        "dispute-screenshot-upload-improvement.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
+        {
+          "name": "dispute-id-display.js",
+          "version": "1.0",
+          "hash": "sha256-21a34807f347f2e96ecd942cc7a1f3ee83c740934f0bf845528a22d67d0d6dd3",
+          "log": false
+        },
+        {
+          "name": "dispute-screenshot-upload-improvement.js",
+          "version": "1.0",
+          "hash": "sha256-209a36300a1cff37ff8133a66cbe46c7c4c5c37bfadfdc4280d951db12fa4977",
+          "log": false
+        },
         {
           "name": "flag-as-bug-modal-improvements.js",
           "version": "2.2",
@@ -702,6 +723,12 @@
           "name": "dispute-resolution-snippets.js",
           "version": "1.1",
           "hash": "sha256-80f2eb4f294e5eb5159a451e55cb22fd026b71567b54b88361d7eda4b54e7476",
+          "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-b51822803b453b517ea04be81b067cde4b0e4a9b21ed30fe08f4081bc9059e86",
           "log": false
         }
       ]
@@ -714,9 +741,11 @@
       "disambiguationSelectors": [],
       "libraries": [
         "dispute-resolution-messages.js",
+        "dispute-screenshot-upload-improvement.js",
         "copy-verifier-output.js",
         "vnc-helper.js",
-        "embedded-urlbar-fit.js"
+        "embedded-urlbar-fit.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -727,8 +756,8 @@
         },
         {
           "name": "dispute-screenshot-upload-improvement.js",
-          "version": "1.3",
-          "hash": "sha256-9d74ac8cb55848ed0d4eb51c2e44dd5e2250f4080bd8f2768dd9a21bce57b09a",
+          "version": "2.0",
+          "hash": "sha256-e2b32a6370d5c94201aa06928ef667ffd0e9b5a6310452618ae4567977734017",
           "log": false
         },
         {
@@ -778,6 +807,12 @@
           "version": "1.1",
           "hash": "sha256-a337831b374f85a5e9c5cff155fcc44c614dbfafbb78c1952ea56349d0cc1403",
           "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-5b19f9cc14eab054311624045adcac2aa9e978c0be40e3a5fba2d639a7b572e0",
+          "log": false
         }
       ]
     },
@@ -802,23 +837,26 @@
       "description": "Dashboard task detail page at dashboard/data/tasks/task_*",
       "urlPattern": "dashboard/data/tasks/*",
       "disambiguationSelectors": [],
+      "libraries": [
+        "user-story-markdown.js"
+      ],
       "plugins": [
         {
           "name": "verifier-code-block.js",
-          "version": "2.0",
-          "hash": "sha256-d967bc1fa39bf091e5d216c19aa153cb6c7671b9eefcf24cd7595ec7c0cc6f68",
+          "version": "2.1",
+          "hash": "sha256-bb2ab462d2fa2a8b0f9dc7fe33ef2d016fc5eda043c699c6c497a09c1951ab37",
           "log": false
         },
         {
           "name": "prompt-version-actions.js",
-          "version": "2.0",
-          "hash": "sha256-298f686b11b479e23bd5a9e1d060e2ddfc012d9464522c2f52764d14dfec832a",
+          "version": "2.1",
+          "hash": "sha256-4a89398aba2cb31900b2d9cc00469c621a512a74246a21151f5d68b93a3f1cdf",
           "log": false
         },
         {
           "name": "task-user-story-section.js",
-          "version": "2.0",
-          "hash": "sha256-64bb5fccc4cb96a962fb9f876e34238dfc03cd66c4d63a9382db0aa59ace5219",
+          "version": "2.3",
+          "hash": "sha256-b1c6b9750ed0df321fa868e3062dfded5e45c1222dbd4bcb12229d03447b276d",
           "log": false
         }
       ]

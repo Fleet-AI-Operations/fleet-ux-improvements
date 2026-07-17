@@ -287,7 +287,111 @@ function _deComputeDiff(baseText, compareText, granularity) {
     return { diff: _deComputeWordDiff(baseText, compareText), effectiveGranularity: effectiveGranularity };
 }
 
-function _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity) {
+/** Maximal consecutive equal-token runs in the full (unfiltered) diff. */
+function _deCollectEqualRuns(diff) {
+    const runs = [];
+    let i = 0;
+    while (i < diff.length) {
+        if (diff[i].type !== 'equal') {
+            i++;
+            continue;
+        }
+        const startIdx = i;
+        const values = [];
+        while (i < diff.length && diff[i].type === 'equal') {
+            values.push(diff[i].value);
+            i++;
+        }
+        runs.push({ startIdx, endIdx: i, values });
+    }
+    return runs;
+}
+
+/**
+ * True when separator between two equal runs is one-sided only (all remove or all add),
+ * so the matches are contiguous on the other pane.
+ */
+function _deCanBridgeEqualRuns(diff, leftRun, rightRun) {
+    if (leftRun.endIdx >= rightRun.startIdx) return false;
+    let sawRemove = false;
+    let sawAdd = false;
+    for (let i = leftRun.endIdx; i < rightRun.startIdx; i++) {
+        const t = diff[i].type;
+        if (t === 'equal') return false;
+        if (t === 'remove') sawRemove = true;
+        else if (t === 'add') sawAdd = true;
+    }
+    return (sawRemove || sawAdd) && !(sawRemove && sawAdd);
+}
+
+function _deBuildCorrespondenceUnits(diff, linkSplits) {
+    const runs = _deCollectEqualRuns(diff);
+    if (!runs.length) return [];
+    if (!linkSplits) {
+        return runs.map((run) => ({
+            values: run.values.slice(),
+            indices: _deRangeIndices(run.startIdx, run.endIdx)
+        }));
+    }
+    const units = [];
+    let cluster = [runs[0]];
+    for (let r = 1; r < runs.length; r++) {
+        if (_deCanBridgeEqualRuns(diff, cluster[cluster.length - 1], runs[r])) {
+            cluster.push(runs[r]);
+        } else {
+            units.push(_deClusterToUnit(cluster));
+            cluster = [runs[r]];
+        }
+    }
+    units.push(_deClusterToUnit(cluster));
+    return units;
+}
+
+function _deRangeIndices(startIdx, endIdx) {
+    const indices = [];
+    for (let i = startIdx; i < endIdx; i++) indices.push(i);
+    return indices;
+}
+
+function _deClusterToUnit(cluster) {
+    const values = [];
+    const indices = [];
+    for (const run of cluster) {
+        values.push(...run.values);
+        for (let i = run.startIdx; i < run.endIdx; i++) indices.push(i);
+    }
+    return { values, indices };
+}
+
+function _deUnitPassesMinLength(unit, effectiveGranularity, minHighlightLength) {
+    const len = _deSectionUnitLength({ values: unit.values }, effectiveGranularity);
+    if (len <= 0) return false;
+    if (!minHighlightLength) return true;
+    return len >= minHighlightLength;
+}
+
+/** Diff indices of equal tokens that should highlight (shared across both panes). */
+function _deQualifyingEqualIndexSet(diff, effectiveGranularity, minHighlightLength, linkSplits) {
+    const set = new Set();
+    const units = _deBuildCorrespondenceUnits(diff, !!linkSplits);
+    for (const unit of units) {
+        if (!_deUnitPassesMinLength(unit, effectiveGranularity, minHighlightLength)) continue;
+        for (const idx of unit.indices) set.add(idx);
+    }
+    return set;
+}
+
+function _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity, linkSplits) {
+    if (highlightModality === 'similarities') {
+        const lengths = [];
+        const units = _deBuildCorrespondenceUnits(diff, !!linkSplits);
+        for (const unit of units) {
+            const len = _deSectionUnitLength({ values: unit.values }, effectiveGranularity);
+            if (len > 0) lengths.push(len);
+        }
+        if (!lengths.length) return { min: 0, max: 0, lengths: [] };
+        return { min: Math.min(...lengths), max: Math.max(...lengths), lengths };
+    }
     const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
     const lengths = [];
     const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight);
@@ -313,7 +417,18 @@ function _deShouldHighlightGroup(group, highlightType, effectiveGranularity, min
     return len > 0 && len >= minHighlightLength;
 }
 
-function _deJoinQualifyingSubsetTexts(diff, highlightModality, effectiveGranularity, minHighlightLength) {
+function _deJoinQualifyingSubsetTexts(diff, highlightModality, effectiveGranularity, minHighlightLength, linkSplits) {
+    if (highlightModality === 'similarities') {
+        const parts = [];
+        const units = _deBuildCorrespondenceUnits(diff, !!linkSplits);
+        for (const unit of units) {
+            if (_deUnitPassesMinLength(unit, effectiveGranularity, minHighlightLength)) {
+                parts.push(unit.values.join(''));
+            }
+        }
+        const subset = parts.join('');
+        return { baseSubset: subset, compareSubset: subset };
+    }
     const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
     const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight);
     const compareGroups = _deGroupConsecutive(diff, ['equal', 'add'], compareHighlight);
@@ -376,11 +491,91 @@ function _deRenderSideHtml(diff, includeTypes, highlightStyle, highlightType, re
     return html;
 }
 
+/**
+ * Similarities render: highlight only equal tokens in the shared qualifying index set,
+ * preserving full-diff run boundaries (no side-filter glue).
+ */
+function _deRenderSimilaritiesSideHtml(diff, includeTypes, highlightStyle, renderOpts) {
+    const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
+    const qualifying = (renderOpts && renderOpts.qualifyingEqualIndices)
+        || _deQualifyingEqualIndexSet(
+            diff,
+            effectiveGranularity,
+            (renderOpts && renderOpts.minHighlightLength) || 0,
+            !!(renderOpts && renderOpts.linkSplits)
+        );
+    let html = '';
+    let pendingValues = [];
+    let pendingHighlight = null;
+    let emittedGroup = false;
+
+    const flush = () => {
+        if (!pendingValues.length || pendingHighlight == null) return;
+        if (emittedGroup && effectiveGranularity === 'line') html += '\n';
+        const group = { type: 'equal', values: pendingValues, trimTrailing: false };
+        const text = _deJoinGroupValues(pendingValues, effectiveGranularity);
+        if (pendingHighlight) {
+            html += _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranularity);
+        } else {
+            html += _deEqualSpanHtml(text);
+        }
+        pendingValues = [];
+        pendingHighlight = null;
+        emittedGroup = true;
+    };
+
+    for (let i = 0; i < diff.length; i++) {
+        const item = diff[i];
+        if (!includeTypes.includes(item.type)) {
+            // Opposite-side-only tokens still bound equal runs — do not glue across them.
+            flush();
+            continue;
+        }
+        const shouldHighlight = item.type === 'equal' && qualifying.has(i);
+        const isNewline = item.value === '\n';
+        if (isNewline) {
+            flush();
+            if (shouldHighlight) {
+                html += _deRenderHighlightGroupHtml(
+                    { type: 'equal', values: ['\n'], trimTrailing: false },
+                    highlightStyle,
+                    '\n',
+                    effectiveGranularity
+                );
+            } else {
+                html += _deEqualSpanHtml('\n');
+            }
+            emittedGroup = true;
+            continue;
+        }
+        if (pendingHighlight === null) {
+            pendingHighlight = shouldHighlight;
+            pendingValues = [item.value];
+            continue;
+        }
+        if (pendingHighlight === shouldHighlight) {
+            pendingValues.push(item.value);
+            continue;
+        }
+        flush();
+        pendingHighlight = shouldHighlight;
+        pendingValues = [item.value];
+    }
+    flush();
+    return html;
+}
+
 function _deRenderBaseHtml(diff, highlightStyle, highlightType, renderOpts) {
+    if (highlightType === 'equal') {
+        return _deRenderSimilaritiesSideHtml(diff, ['equal', 'remove'], highlightStyle, renderOpts);
+    }
     return _deRenderSideHtml(diff, ['equal', 'remove'], highlightStyle, highlightType, renderOpts);
 }
 
 function _deRenderCompareHtml(diff, highlightStyle, highlightType, renderOpts) {
+    if (highlightType === 'equal') {
+        return _deRenderSimilaritiesSideHtml(diff, ['equal', 'add'], highlightStyle, renderOpts);
+    }
     return _deRenderSideHtml(diff, ['equal', 'add'], highlightStyle, highlightType, renderOpts);
 }
 
@@ -407,7 +602,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '2.4',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -441,9 +636,10 @@ const plugin = {
             highlightSectionLengthRange(baseText, compareText, opts) {
                 const granularity = (opts && opts.granularity) || 'word';
                 const highlightModality = (opts && opts.highlightModality) || 'differences';
+                const linkSplits = !!(opts && opts.linkSplits);
                 if (!baseText && !compareText) return { min: 0, max: 0, lengths: [] };
                 const { diff, effectiveGranularity } = _deComputeDiff(baseText || '', compareText || '', granularity);
-                return _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity);
+                return _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity, linkSplits);
             },
 
             diffPair(baseText, compareText, opts) {
@@ -451,6 +647,7 @@ const plugin = {
                 const showHighlights = opts && opts.showHighlights !== false;
                 const highlightModality = (opts && opts.highlightModality) || 'differences';
                 const minHighlightLength = (opts && opts.minHighlightLength) || 0;
+                const linkSplits = !!(opts && opts.linkSplits);
                 if (!showHighlights) {
                     return {
                         baseHtml: _deEqualSpanHtml(baseText || ''),
@@ -460,7 +657,12 @@ const plugin = {
                 const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
                 const styles = _deHighlightStyles();
                 const { diff, effectiveGranularity } = _deComputeDiff(baseText || '', compareText || '', granularity);
-                const renderOpts = { minHighlightLength, effectiveGranularity };
+                const renderOpts = { minHighlightLength, effectiveGranularity, linkSplits };
+                if (highlightModality === 'similarities') {
+                    renderOpts.qualifyingEqualIndices = _deQualifyingEqualIndexSet(
+                        diff, effectiveGranularity, minHighlightLength, linkSplits
+                    );
+                }
                 return {
                     baseHtml: _deRenderBaseHtml(diff, styles[baseHighlight], baseHighlight, renderOpts),
                     compareHtml: _deRenderCompareHtml(diff, styles[compareHighlight], compareHighlight, renderOpts)
@@ -476,6 +678,7 @@ const plugin = {
                 const granularity = (opts && opts.granularity) || 'word';
                 const highlightModality = (opts && opts.highlightModality) || 'differences';
                 const minHighlightLength = (opts && opts.minHighlightLength) || 0;
+                const linkSplits = !!(opts && opts.linkSplits);
                 const lengthRange = (opts && opts.lengthRange) || null;
                 const { percent, noDifference, effectiveGranularity } = this.similarityPercent(leftText, rightText, { granularity });
                 const granLabel = effectiveGranularity === 'char' ? 'char' : (effectiveGranularity === 'line' ? 'line' : 'word');
@@ -491,7 +694,7 @@ const plugin = {
                 if (subsetActive) {
                     const diff = (opts && opts.diff) || _deComputeDiff(leftText, rightText, granularity).diff;
                     const { baseSubset, compareSubset } = _deJoinQualifyingSubsetTexts(
-                        diff, highlightModality, effectiveGranularity, minHighlightLength
+                        diff, highlightModality, effectiveGranularity, minHighlightLength, linkSplits
                     );
                     if (baseSubset || compareSubset) {
                         const subsetResult = this.similarityPercent(baseSubset, compareSubset, { granularity });

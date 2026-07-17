@@ -17,8 +17,8 @@ const OPS_BUNDLE_WAIT_TIMEOUT_MS = 30000;
 const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
-    description: 'Shows task user story between Project and Contributors with copy and vertical resize',
-    _version: '2.0',
+    description: 'Shows task user story between Project and Contributors with markdown rendering, copy and vertical resize',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -157,7 +157,7 @@ const plugin = {
         section.className = 'rounded-md border border-border p-3';
 
         const headerRow = document.createElement('div');
-        headerRow.className = 'mb-2 flex flex-wrap items-center justify-between gap-2';
+        headerRow.className = 'mb-2 flex flex-wrap items-center gap-1.5';
 
         const label = document.createElement('div');
         label.className = 'text-sm text-muted-foreground font-medium';
@@ -370,27 +370,35 @@ const plugin = {
 
     _scenarioCopyText(fields) {
         const blocks = [];
-        if (fields.scenarioTitle) blocks.push('Scenario Title\n' + fields.scenarioTitle);
+        if (fields.scenarioTitle) blocks.push('# Scenario Title\n' + fields.scenarioTitle);
         if (fields.humanAnnotatorInstructions) {
-            blocks.push('Annotator Instructions\n' + fields.humanAnnotatorInstructions);
+            blocks.push('# Annotator Instructions\n' + fields.humanAnnotatorInstructions);
         }
-        if (fields.userStory) blocks.push('User Story\n' + fields.userStory);
-        return blocks.join('\n\n');
+        if (fields.userStory) blocks.push('# User Story\n' + fields.userStory);
+        return blocks.join('\n\n---\n\n');
     },
 
-    _createFieldHeader(label, copyText) {
+    _createFieldHeader(label) {
         const header = document.createElement('div');
         header.className = 'mb-1 flex items-center gap-1.5';
         const fieldLabel = document.createElement('div');
         fieldLabel.className = 'text-sm text-muted-foreground font-medium';
         fieldLabel.textContent = label;
         header.appendChild(fieldLabel);
-        header.appendChild(this._createCopyButton(copyText, label));
         return header;
     },
 
     _createFieldBody(value) {
         const body = document.createElement('div');
+        const md = Context.userStoryMarkdown;
+        if (md && typeof md.markdownToHtml === 'function') {
+            body.className =
+                'break-words border-l-[3px] border-border pl-3 pt-1.5 pb-0.5 text-sm text-muted-foreground';
+            if (typeof md.ensureProseStyles === 'function') md.ensureProseStyles();
+            body.setAttribute(md.PROSE_ATTR || 'data-fleet-user-story-prose', '');
+            body.innerHTML = md.markdownToHtml(value);
+            return body;
+        }
         body.className =
             'whitespace-pre-wrap break-words border-l-[3px] border-border pl-3 pt-1.5 pb-0.5 text-sm text-muted-foreground';
         body.textContent = value;
@@ -483,12 +491,12 @@ const plugin = {
             const value = fields[key];
             if (!value) continue;
             const block = document.createElement('div');
-            block.appendChild(this._createFieldHeader(label, value));
+            block.appendChild(this._createFieldHeader(label));
             block.appendChild(this._createFieldBody(value));
             content.appendChild(block);
         }
 
-        actions.replaceChildren();
+        actions.replaceChildren(this._createCopyButton(this._scenarioCopyText(fields), SECTION_LABEL));
         this._attachResizeHandle(content);
     }
 };
