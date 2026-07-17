@@ -1,14 +1,48 @@
 // ============= verifier-fetcher.js =============
 // Verifier Fetcher tab for the Ops dashboard.
+//
+// AI gating: Decode Output, Chat toggle, and the chat pane stay hidden unless
+// Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
+// require Ops unlock to decrypt the key.
 
 const VERIFIER_SCRATCHPAD_WIDTH_KEY = 'fleet-ux:verifier-fetcher-scratchpad-width';
 const VERIFIER_SCRATCHPAD_OPEN_KEY = 'fleet-ux:verifier-fetcher-scratchpad-open';
 const VERIFIER_SCRATCHPAD_TEXT_KEY = 'fleet-ux:verifier-fetcher-scratchpad-text';
+const VERIFIER_CHAT_OPEN_KEY = 'fleet-ux:verifier-fetcher-chat-open';
 const VERIFIER_SCRATCHPAD_DEFAULT_WIDTH = 320;
 const VERIFIER_SCRATCHPAD_MIN_WIDTH = 200;
 const VERIFIER_SCRATCHPAD_MIN_CODE_WIDTH = 240;
 const VERIFIER_SCRATCHPAD_TEXT_SAVE_MS = 400;
 const VERIFIER_MONO_FONT = 'font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);';
+const VERIFIER_SETTINGS_WIDTH_PX = 640;
+const VERIFIER_MAIN_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX * 2;
+const VERIFIER_CHAT_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX;
+
+const DECODE_SYSTEM_PROMPT =
+    'Trace the python code to determine how the Verifier Output was produced. '
+    + 'Keep the answer concise and efficient.';
+
+function verifierBtnClass(variant, size) {
+    if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+        return Context.uiLib.btnClass(variant, size);
+    }
+    const dash = Context.dashboard;
+    return dash && typeof dash.dashBtnClass === 'function'
+        ? dash.dashBtnClass(variant, size)
+        : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
+}
+
+function ensureVerifierBtnStyles() {
+    if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+        Context.uiLib.ensureButtonStyles('#wf-ops-verifier-panel');
+    }
+}
+
+function hasVerifierAiKey() {
+    return !!(Context.aiOpenRouter
+        && typeof Context.aiOpenRouter.hasStoredKey === 'function'
+        && Context.aiOpenRouter.hasStoredKey());
+}
 
 function readVerifierScratchpadWidthPref() {
     try {
@@ -26,7 +60,7 @@ function writeVerifierScratchpadWidthPref(widthPx) {
         const clamped = Math.max(VERIFIER_SCRATCHPAD_MIN_WIDTH, Math.round(widthPx));
         Storage.setData(VERIFIER_SCRATCHPAD_WIDTH_KEY, String(clamped));
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write scratchpad width pref', err);
+        Logger.warn('verifier-fetcher: failed to write verifier output width pref', err);
     }
 }
 
@@ -42,7 +76,7 @@ function writeVerifierScratchpadOpenPref(open) {
     try {
         Storage.setData(VERIFIER_SCRATCHPAD_OPEN_KEY, open ? '1' : '0');
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write scratchpad open pref', err);
+        Logger.warn('verifier-fetcher: failed to write verifier output open pref', err);
     }
 }
 
@@ -58,7 +92,23 @@ function writeVerifierScratchpadTextPref(text) {
     try {
         Storage.setData(VERIFIER_SCRATCHPAD_TEXT_KEY, text || '');
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write scratchpad text pref', err);
+        Logger.warn('verifier-fetcher: failed to write verifier output text pref', err);
+    }
+}
+
+function readVerifierChatOpenPref() {
+    try {
+        return Storage.getData(VERIFIER_CHAT_OPEN_KEY, null) === '1';
+    } catch (_e) {
+        return false;
+    }
+}
+
+function writeVerifierChatOpenPref(open) {
+    try {
+        Storage.setData(VERIFIER_CHAT_OPEN_KEY, open ? '1' : '0');
+    } catch (err) {
+        Logger.warn('verifier-fetcher: failed to write chat open pref', err);
     }
 }
 
@@ -72,6 +122,88 @@ function clampVerifierScratchpadWidth(root, widthPx) {
         basis - VERIFIER_SCRATCHPAD_MIN_CODE_WIDTH - handleReserve
     );
     return Math.round(Math.max(VERIFIER_SCRATCHPAD_MIN_WIDTH, Math.min(max, widthPx)));
+}
+
+function getVerifierChatState(modal) {
+    if (!modal) return null;
+    if (!modal._wfVerifierChatState) {
+        modal._wfVerifierChatState = {
+            messages: [],
+            streaming: false,
+            streamAbort: null,
+            streamGen: 0
+        };
+    }
+    return modal._wfVerifierChatState;
+}
+
+function renderVerifierChatMessages(modal) {
+    const list = modal && modal.querySelector('#wf-ops-verifier-chat-messages');
+    if (!list) return;
+    const state = getVerifierChatState(modal);
+    const md = Context.userStoryMarkdown;
+    if (md && typeof md.ensureProseStyles === 'function') md.ensureProseStyles();
+    list.innerHTML = '';
+    (state.messages || []).forEach((msg, idx) => {
+        const row = document.createElement('div');
+        row.setAttribute('data-wf-chat-role', msg.role);
+        row.style.cssText = 'display:flex;flex-direction:column;gap:4px;'
+            + (msg.role === 'user' ? 'align-items:flex-end;' : 'align-items:flex-start;');
+        const label = document.createElement('div');
+        label.textContent = msg.role === 'user' ? 'You' : 'Assistant';
+        label.style.cssText = 'font-size:11px;font-weight:600;opacity:0.65;';
+        const bubble = document.createElement('div');
+        bubble.setAttribute('data-wf-chat-bubble', String(idx));
+        bubble.style.cssText = 'max-width:100%;padding:8px 10px;border-radius:8px;font-size:13px;'
+            + 'line-height:1.45;border:1px solid color-mix(in srgb,var(--border,#e2e8f0) 80%,transparent);'
+            + (msg.role === 'user'
+                ? 'background:color-mix(in srgb,var(--primary,#2563eb) 12%,transparent);white-space:pre-wrap;word-break:break-word;'
+                : 'background:color-mix(in srgb,var(--muted,#f1f5f9) 55%,transparent);width:100%;');
+        if (msg.role === 'assistant' && md && typeof md.markdownToHtml === 'function') {
+            bubble.innerHTML = md.markdownToHtml(msg.content || '');
+            if (md.PROSE_ATTR) bubble.setAttribute(md.PROSE_ATTR, '');
+        } else {
+            bubble.textContent = msg.displayContent != null ? String(msg.displayContent) : (msg.content || '');
+        }
+        if (msg.streaming) bubble.setAttribute('data-wf-streaming', '1');
+        row.appendChild(label);
+        row.appendChild(bubble);
+        list.appendChild(row);
+    });
+    list.scrollTop = list.scrollHeight;
+}
+
+function updateVerifierStreamingBubble(modal, content) {
+    const state = getVerifierChatState(modal);
+    const idx = state.messages.length - 1;
+    const msg = state.messages[idx];
+    if (!msg || msg.role !== 'assistant') return;
+    msg.content = content;
+    const bubble = modal.querySelector('[data-wf-chat-bubble="' + idx + '"]');
+    if (!bubble) {
+        renderVerifierChatMessages(modal);
+        return;
+    }
+    const md = Context.userStoryMarkdown;
+    if (md && typeof md.markdownToHtml === 'function') {
+        bubble.innerHTML = md.markdownToHtml(content || '');
+        if (md.PROSE_ATTR) bubble.setAttribute(md.PROSE_ATTR, '');
+    } else {
+        bubble.textContent = content || '';
+    }
+    const list = modal.querySelector('#wf-ops-verifier-chat-messages');
+    if (list) list.scrollTop = list.scrollHeight;
+}
+
+function setVerifierChatStreamingUi(modal, streaming) {
+    const state = getVerifierChatState(modal);
+    state.streaming = !!streaming;
+    const sendBtn = modal.querySelector('#wf-ops-verifier-chat-send');
+    const stopBtn = modal.querySelector('#wf-ops-verifier-chat-stop');
+    const input = modal.querySelector('#wf-ops-verifier-chat-input');
+    if (sendBtn) sendBtn.disabled = !!streaming;
+    if (stopBtn) stopBtn.style.display = streaming ? '' : 'none';
+    if (input) input.disabled = !!streaming;
 }
 
 function applyVerifierScratchpadLayout(modal, openOverride) {
@@ -94,7 +226,35 @@ function applyVerifierScratchpadLayout(modal, openOverride) {
     }
 
     toggleBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
-    toggleBtn.textContent = open ? 'Hide scratchpad' : 'Scratchpad';
+    toggleBtn.textContent = open ? 'Hide Verifier Output' : 'Verifier Output';
+}
+
+function syncVerifierAiUi(modal) {
+    if (!modal) return;
+    ensureVerifierBtnStyles();
+    const ai = hasVerifierAiKey();
+    const chatOpen = ai && readVerifierChatOpenPref();
+    const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
+    const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
+    const chatPane = modal.querySelector('#wf-ops-verifier-chat-pane');
+    const workspace = modal.querySelector('#wf-ops-verifier-workspace');
+
+    if (chatToggle) {
+        chatToggle.style.display = ai ? '' : 'none';
+        chatToggle.textContent = chatOpen ? 'Hide chat' : 'Chat';
+        chatToggle.setAttribute('aria-pressed', chatOpen ? 'true' : 'false');
+    }
+    if (decodeBtn) decodeBtn.style.display = ai ? '' : 'none';
+    if (chatPane) {
+        chatPane.style.display = chatOpen ? 'flex' : 'none';
+        chatPane.setAttribute('aria-hidden', chatOpen ? 'false' : 'true');
+    }
+    if (workspace) workspace.setAttribute('data-wf-ai-chat', chatOpen ? '1' : '0');
+    if (chatOpen) {
+        renderVerifierChatMessages(modal);
+        setVerifierChatStreamingUi(modal, !!(getVerifierChatState(modal).streaming));
+    }
+    Logger.debug('verifier-fetcher: syncAiUi ai=' + ai + ' chatOpen=' + chatOpen);
 }
 
 function attachVerifierScratchpadResize(modal) {
@@ -126,7 +286,7 @@ function attachVerifierScratchpadResize(modal) {
                 const finalWidth = clampVerifierScratchpadWidth(outputWrap, scratchpadPane.getBoundingClientRect().width);
                 writeVerifierScratchpadWidthPref(finalWidth);
                 applyVerifierScratchpadLayout(modal, true);
-                Logger.log('verifier-fetcher: scratchpad width set to ' + finalWidth + 'px');
+                Logger.log('verifier-fetcher: verifier output width set to ' + finalWidth + 'px');
             }
         });
     });
@@ -140,11 +300,13 @@ function restoreVerifierScratchpadState(modal) {
         textarea.dataset.wfScratchpadRestored = '1';
     }
     applyVerifierScratchpadLayout(modal);
+    syncVerifierAiUi(modal);
 }
 
 function syncVerifierOutputToolbar(modal) {
     if (!modal) return;
     applyVerifierScratchpadLayout(modal);
+    syncVerifierAiUi(modal);
 }
 
 function captureVerifierScratchpadTabState(modal) {
@@ -152,7 +314,8 @@ function captureVerifierScratchpadTabState(modal) {
     const textarea = modal.querySelector('#wf-ops-verifier-scratchpad');
     return {
         open: readVerifierScratchpadOpenPref(),
-        text: textarea ? textarea.value : readVerifierScratchpadTextPref()
+        text: textarea ? textarea.value : readVerifierScratchpadTextPref(),
+        chatOpen: readVerifierChatOpenPref()
     };
 }
 
@@ -162,6 +325,9 @@ function restoreVerifierScratchpadTabState(modal, state) {
     if (state && state.open != null) {
         writeVerifierScratchpadOpenPref(Boolean(state.open));
     }
+    if (state && state.chatOpen != null) {
+        writeVerifierChatOpenPref(Boolean(state.chatOpen));
+    }
     if (textarea) {
         const text = state && state.text != null ? String(state.text) : readVerifierScratchpadTextPref();
         textarea.value = text;
@@ -169,19 +335,223 @@ function restoreVerifierScratchpadTabState(modal, state) {
         writeVerifierScratchpadTextPref(text);
     }
     applyVerifierScratchpadLayout(modal);
+    syncVerifierAiUi(modal);
+}
+
+function stopVerifierChatStream(modal) {
+    const state = getVerifierChatState(modal);
+    state.streamGen += 1;
+    if (state.streamAbort && typeof state.streamAbort.abort === 'function') {
+        try { state.streamAbort.abort(); } catch (_e) { /* ignore */ }
+    }
+    state.streamAbort = null;
+    const last = state.messages[state.messages.length - 1];
+    if (last && last.role === 'assistant' && last.streaming) {
+        last.streaming = false;
+        if (!last.content) last.content = '(stopped)';
+    }
+    setVerifierChatStreamingUi(modal, false);
+    renderVerifierChatMessages(modal);
+    Logger.log('verifier-fetcher: chat stream stopped');
+}
+
+async function runVerifierChatStream(modal, apiMessages) {
+    const ai = Context.aiOpenRouter;
+    if (!ai || typeof ai.chatCompletionStream !== 'function') {
+        throw new Error('AI OpenRouter API is not available');
+    }
+    const state = getVerifierChatState(modal);
+    state.streamGen += 1;
+    const gen = state.streamGen;
+    setVerifierChatStreamingUi(modal, true);
+    let assembled = '';
+
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const settleOk = (text) => {
+            if (settled) return;
+            settled = true;
+            state.streamAbort = null;
+            if (gen === state.streamGen) setVerifierChatStreamingUi(modal, false);
+            resolve(text);
+        };
+        const settleErr = (err) => {
+            if (settled) return;
+            settled = true;
+            state.streamAbort = null;
+            if (gen === state.streamGen) setVerifierChatStreamingUi(modal, false);
+            reject(err);
+        };
+
+        Promise.resolve(ai.chatCompletionStream({
+            messages: apiMessages,
+            onDelta: (delta) => {
+                if (gen !== state.streamGen) return;
+                assembled += String(delta || '');
+                updateVerifierStreamingBubble(modal, assembled);
+            },
+            onDone: (result) => {
+                if (gen !== state.streamGen) {
+                    settleOk(assembled);
+                    return;
+                }
+                const full = result && result.fullText != null ? String(result.fullText) : assembled;
+                assembled = full;
+                updateVerifierStreamingBubble(modal, assembled);
+                settleOk(assembled);
+            },
+            onError: (err) => {
+                settleErr(err instanceof Error ? err : new Error(String(err || 'Stream failed')));
+            }
+        })).then((handle) => {
+            state.streamAbort = handle;
+        }).catch((err) => {
+            settleErr(err instanceof Error ? err : new Error(String(err || 'Stream failed')));
+        });
+    });
+}
+
+async function sendVerifierChatMessage(modal, userText) {
+    const text = String(userText || '').trim();
+    if (!text) return;
+    const state = getVerifierChatState(modal);
+    if (state.streaming) return;
+
+    writeVerifierChatOpenPref(true);
+    syncVerifierAiUi(modal);
+
+    state.messages.push({ role: 'user', content: text });
+    state.messages.push({ role: 'assistant', content: '', streaming: true });
+    renderVerifierChatMessages(modal);
+
+    const history = [];
+    for (let i = 0; i < state.messages.length; i++) {
+        const m = state.messages[i];
+        if (m.streaming) break;
+        if (m.role === 'user' || m.role === 'assistant') {
+            history.push({ role: m.role, content: m.content || '' });
+        }
+    }
+
+    try {
+        const full = await runVerifierChatStream(modal, history);
+        const last = state.messages[state.messages.length - 1];
+        if (last && last.role === 'assistant') {
+            last.content = full || '';
+            last.streaming = false;
+        }
+        renderVerifierChatMessages(modal);
+        Logger.log('verifier-fetcher: chat reply done (' + (full || '').length + ' chars)');
+    } catch (err) {
+        const last = state.messages[state.messages.length - 1];
+        if (last && last.role === 'assistant') {
+            last.content = 'Error: ' + ((err && err.message) || String(err));
+            last.streaming = false;
+        }
+        renderVerifierChatMessages(modal);
+        Logger.error('verifier-fetcher: chat failed: ' + ((err && err.message) || err));
+    }
+}
+
+async function decodeVerifierOutput(modal) {
+    const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
+    const codeEl = modal.querySelector('#wf-ops-verifier-output');
+    const ta = modal.querySelector('#wf-ops-verifier-scratchpad');
+    const codeText = codeEl ? String(codeEl.textContent || '').trim() : '';
+    const outputText = ta ? String(ta.value || '').trim() : '';
+
+    if (!codeText) {
+        Logger.warn('verifier-fetcher: Decode Output blocked — empty verifier code');
+        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+        return;
+    }
+    if (!outputText) {
+        Logger.warn('verifier-fetcher: Decode Output blocked — empty Verifier Output');
+        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+        return;
+    }
+
+    const state = getVerifierChatState(modal);
+    if (state.streaming) {
+        Logger.warn('verifier-fetcher: Decode Output blocked — stream in progress');
+        return;
+    }
+
+    writeVerifierChatOpenPref(true);
+    syncVerifierAiUi(modal);
+    if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
+
+    const userPayload =
+        '## Verifier source\n\n```python\n' + codeText + '\n```\n\n'
+        + '## Verifier Output\n\n```\n' + outputText + '\n```';
+
+    state.messages.push({
+        role: 'user',
+        content: userPayload,
+        displayContent: 'Decode Output'
+    });
+    state.messages.push({ role: 'assistant', content: '', streaming: true });
+    renderVerifierChatMessages(modal);
+    Logger.log('verifier-fetcher: Decode Output started');
+
+    const apiMessages = [
+        { role: 'system', content: DECODE_SYSTEM_PROMPT },
+        { role: 'user', content: userPayload }
+    ];
+
+    try {
+        const full = await runVerifierChatStream(modal, apiMessages);
+        const last = state.messages[state.messages.length - 1];
+        if (last && last.role === 'assistant') {
+            last.content = full || '';
+            last.streaming = false;
+        }
+        renderVerifierChatMessages(modal);
+        Logger.log('verifier-fetcher: Decode Output done (' + (full || '').length + ' chars)');
+    } catch (err) {
+        const last = state.messages[state.messages.length - 1];
+        if (last && last.role === 'assistant') {
+            last.content = 'Error: ' + ((err && err.message) || String(err));
+            last.streaming = false;
+        }
+        renderVerifierChatMessages(modal);
+        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+        Logger.error('verifier-fetcher: Decode Output failed: ' + ((err && err.message) || err));
+    }
+}
+
+function wireVerifierChatComposer(modal) {
+    const input = modal.querySelector('#wf-ops-verifier-chat-input');
+    const sendBtn = modal.querySelector('#wf-ops-verifier-chat-send');
+    const stopBtn = modal.querySelector('#wf-ops-verifier-chat-stop');
+    if (!input || input.dataset.wfChatWired === '1') return;
+    input.dataset.wfChatWired = '1';
+
+    if (sendBtn) {
+        sendBtn.addEventListener('click', () => {
+            const value = input.value;
+            input.value = '';
+            void sendVerifierChatMessage(modal, value);
+        });
+    }
+    if (stopBtn) {
+        stopBtn.addEventListener('click', () => stopVerifierChatStream(modal));
+        stopBtn.style.display = 'none';
+    }
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            const value = input.value;
+            input.value = '';
+            void sendVerifierChatMessage(modal, value);
+        }
+    });
 }
 
 function verifierFetcherPanelHtml() {
     const dash = Context.dashboard;
     const loader = dash && dash._loader;
-    const btnClass = (variant, size) => {
-        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            return Context.uiLib.btnClass(variant, size);
-        }
-        return dash && typeof dash.dashBtnClass === 'function'
-            ? dash.dashBtnClass(variant, size)
-            : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
-    };
+    const btnClass = (variant, size) => verifierBtnClass(variant, size);
     const inputStyle = loader && typeof loader._inputStyle === 'function'
         ? loader._inputStyle()
         : 'width: 100%; padding: 7px 10px; font-size: 12px; border: 1px solid var(--input, #cbd5e1); border-radius: 6px; background: var(--background, #fff); color: var(--foreground, #0f172a); box-sizing: border-box;';
@@ -196,6 +566,12 @@ function verifierFetcherPanelHtml() {
         : 'flex-shrink: 0; width: 32px; height: 32px; padding: 0; font-size: 17px; line-height: 1; font-weight: 600; border-radius: 6px; cursor: pointer; border: 1px solid var(--border, #e2e8f0); background: var(--background, #fff); color: var(--muted-foreground, #64748b);';
     const monoInputStyle = inputStyle + ' ' + VERIFIER_MONO_FONT;
     const compactInputStyle = inputStyle + ' padding: 6px 10px; ' + VERIFIER_MONO_FONT;
+    const mainMax = (Context.aiOpenRouter && Context.aiOpenRouter.contentMaxWidthPx)
+        ? Context.aiOpenRouter.contentMaxWidthPx * 2
+        : VERIFIER_MAIN_MAX_WIDTH_PX;
+    const chatMax = (Context.aiOpenRouter && Context.aiOpenRouter.contentMaxWidthPx)
+        ? Context.aiOpenRouter.contentMaxWidthPx
+        : VERIFIER_CHAT_MAX_WIDTH_PX;
 
     return `
             <div id="wf-ops-verifier-panel" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden;">
@@ -215,126 +591,194 @@ function verifierFetcherPanelHtml() {
                     </div>
                     <select id="wf-ops-verifier-version" aria-label="Verifier version" style="display: none; width: 100%; margin-top: 8px; ${monoInputStyle}"></select>
                 </div>
-                <div id="wf-ops-verifier-output-toolbar" style="
-                    display: none;
-                    width: 100%;
-                    margin-top: 8px;
-                    flex-shrink: 0;
-                    align-items: flex-start;
-                    justify-content: space-between;
-                    gap: 8px;
-                    flex-wrap: nowrap;
-                    box-sizing: border-box;
-                ">
-                    <div id="wf-ops-verifier-content-search-wrap" style="
-                        display: flex;
-                        flex-shrink: 0;
-                        align-self: flex-start;
-                        width: 30%;
-                        max-width: 30%;
-                        min-width: 12rem;
-                        gap: 6px;
-                        align-items: center;
-                        flex-wrap: wrap;
-                        flex-direction: row;
-                        justify-content: flex-start;
-                        box-sizing: border-box;
-                    ">
-                        <label for="wf-ops-verifier-content-search" style="${labelStyle} white-space: nowrap; flex-shrink: 0;">Search in code:</label>
-                        <span style="display: flex; flex: 1 1 8rem; min-width: 0; gap: 4px; align-items: center;">
-                            <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="${compactInputStyle} flex: 1; min-width: 0; width: 100%;">
-                            <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" class="${btnClass('basic', 'icon')}" style="${clearBtnStyle} display: none;">&times;</button>
-                        </span>
-                        <span id="wf-ops-verifier-content-match-count" style="${labelStyle} white-space: nowrap; flex-shrink: 0;"></span>
-                        <button type="button" id="wf-ops-verifier-content-prev" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Prev</button>
-                        <button type="button" id="wf-ops-verifier-content-next" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Next</button>
-                        <button type="button" id="wf-ops-copy-verifier" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Copy</button>
-                    </div>
-                    <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Scratchpad</button>
-                </div>
-                <div id="wf-ops-verifier-output-wrap" style="
-                    display: none;
+                <div id="wf-ops-verifier-workspace" data-wf-ai-chat="0" style="
+                    display: flex;
+                    justify-content: center;
+                    gap: 12px;
                     flex: 1;
                     min-height: 0;
                     width: 100%;
                     margin-top: 8px;
-                    flex-direction: row;
-                    overflow: hidden;
+                    align-items: stretch;
                     box-sizing: border-box;
                 ">
-                    <div id="wf-ops-verifier-code-pane" style="
-                        flex: 1;
-                        min-width: 0;
-                        min-height: 0;
+                    <div id="wf-ops-verifier-main" style="
                         display: flex;
                         flex-direction: column;
-                        overflow: hidden;
+                        flex: 1 1 auto;
+                        max-width: ${mainMax}px;
+                        width: 100%;
+                        min-width: 0;
+                        min-height: 0;
+                        box-sizing: border-box;
                     ">
-                        <pre style="
+                        <div id="wf-ops-verifier-output-toolbar" style="
+                            display: none;
+                            width: 100%;
+                            flex-shrink: 0;
+                            align-items: flex-start;
+                            justify-content: space-between;
+                            gap: 8px;
+                            flex-wrap: nowrap;
+                            box-sizing: border-box;
+                        ">
+                            <div id="wf-ops-verifier-content-search-wrap" style="
+                                display: flex;
+                                flex-shrink: 0;
+                                align-self: flex-start;
+                                width: 30%;
+                                max-width: 30%;
+                                min-width: 12rem;
+                                gap: 6px;
+                                align-items: center;
+                                flex-wrap: wrap;
+                                flex-direction: row;
+                                justify-content: flex-start;
+                                box-sizing: border-box;
+                            ">
+                                <label for="wf-ops-verifier-content-search" style="${labelStyle} white-space: nowrap; flex-shrink: 0;">Search in code:</label>
+                                <span style="display: flex; flex: 1 1 8rem; min-width: 0; gap: 4px; align-items: center;">
+                                    <input type="text" id="wf-ops-verifier-content-search" placeholder="Find in verifier…" autocomplete="off" style="${compactInputStyle} flex: 1; min-width: 0; width: 100%;">
+                                    <button type="button" id="wf-ops-verifier-content-search-clear" title="Clear search" aria-label="Clear search" class="${btnClass('basic', 'icon')}" style="${clearBtnStyle} display: none;">&times;</button>
+                                </span>
+                                <span id="wf-ops-verifier-content-match-count" style="${labelStyle} white-space: nowrap; flex-shrink: 0;"></span>
+                                <button type="button" id="wf-ops-verifier-content-prev" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Prev</button>
+                                <button type="button" id="wf-ops-verifier-content-next" class="${btnClass('basic', 'nav')}" style="flex-shrink: 0;">Next</button>
+                                <button type="button" id="wf-ops-copy-verifier" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Copy</button>
+                            </div>
+                            <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
+                                <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Verifier Output</button>
+                                <button type="button" id="wf-ops-verifier-chat-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="display: none; flex-shrink: 0;">Chat</button>
+                            </div>
+                        </div>
+                        <div id="wf-ops-verifier-output-wrap" style="
+                            display: none;
                             flex: 1;
                             min-height: 0;
                             width: 100%;
-                            margin: 0;
-                            padding: 8px 12px;
-                            font-size: 12px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: transparent;
-                            color: var(--foreground, #333);
+                            margin-top: 8px;
+                            flex-direction: row;
+                            overflow: hidden;
                             box-sizing: border-box;
-                            overflow: auto;
-                            overflow-x: auto;
-                            white-space: pre;
-                            word-break: normal;
-                            ${VERIFIER_MONO_FONT}
-                        "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
+                        ">
+                            <div id="wf-ops-verifier-code-pane" style="
+                                flex: 1;
+                                min-width: 0;
+                                min-height: 0;
+                                display: flex;
+                                flex-direction: column;
+                                overflow: hidden;
+                            ">
+                                <pre style="
+                                    flex: 1;
+                                    min-height: 0;
+                                    width: 100%;
+                                    margin: 0;
+                                    padding: 8px 12px;
+                                    font-size: 12px;
+                                    border: 1px solid var(--border, #e5e5e5);
+                                    border-radius: 6px;
+                                    background: transparent;
+                                    color: var(--foreground, #333);
+                                    box-sizing: border-box;
+                                    overflow: auto;
+                                    overflow-x: auto;
+                                    white-space: pre;
+                                    word-break: normal;
+                                    ${VERIFIER_MONO_FONT}
+                                "><code id="wf-ops-verifier-output" class="language-python"></code></pre>
+                            </div>
+                            <div id="wf-ops-verifier-scratchpad-split-handle" data-wf-dash-split-handle role="separator" aria-orientation="vertical" aria-label="Resize Verifier Output" tabindex="0" title="Drag to resize Verifier Output" style="
+                                display: none;
+                                flex-shrink: 0;
+                                width: 8px;
+                                margin: 0 4px;
+                                align-self: stretch;
+                                cursor: col-resize;
+                                border-radius: 4px;
+                                background: transparent;
+                                touch-action: none;
+                                box-sizing: border-box;
+                            "></div>
+                            <aside id="wf-ops-verifier-scratchpad-pane" style="
+                                display: none;
+                                flex-shrink: 0;
+                                min-height: 0;
+                                flex-direction: column;
+                                overflow: hidden;
+                                box-sizing: border-box;
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                background: transparent;
+                            ">
+                                <div style="
+                                    flex-shrink: 0;
+                                    padding: 6px 10px;
+                                    ${labelStyle}
+                                    border-bottom: 1px solid var(--border, #e5e5e5);
+                                ">Verifier Output</div>
+                                <textarea id="wf-ops-verifier-scratchpad" placeholder="Paste verifier output / notes…" autocomplete="off" spellcheck="true" style="
+                                    flex: 1;
+                                    min-height: 0;
+                                    width: 100%;
+                                    margin: 0;
+                                    padding: 8px 10px;
+                                    font-size: 12px;
+                                    border: none;
+                                    border-radius: 0;
+                                    background: transparent;
+                                    color: var(--foreground, #333);
+                                    resize: none;
+                                    box-sizing: border-box;
+                                    ${VERIFIER_MONO_FONT}
+                                    outline: none;
+                                "></textarea>
+                                <div style="
+                                    flex-shrink: 0;
+                                    display: flex;
+                                    justify-content: flex-end;
+                                    padding: 6px 8px;
+                                    border-top: 1px solid var(--border, #e5e5e5);
+                                ">
+                                    <button type="button" id="wf-ops-verifier-decode-btn" class="${btnClass('secondary', 'compact')}" style="display: none;">Decode Output</button>
+                                </div>
+                            </aside>
+                        </div>
                     </div>
-                    <div id="wf-ops-verifier-scratchpad-split-handle" data-wf-dash-split-handle role="separator" aria-orientation="vertical" aria-label="Resize scratchpad" tabindex="0" title="Drag to resize scratchpad" style="
+                    <div id="wf-ops-verifier-chat-pane" role="region" aria-label="AI chat" aria-hidden="true" style="
                         display: none;
-                        flex-shrink: 0;
-                        width: 8px;
-                        margin: 0 4px;
-                        align-self: stretch;
-                        cursor: col-resize;
-                        border-radius: 4px;
-                        background: transparent;
-                        touch-action: none;
-                        box-sizing: border-box;
-                    "></div>
-                    <aside id="wf-ops-verifier-scratchpad-pane" style="
-                        display: none;
-                        flex-shrink: 0;
+                        flex: 0 1 ${chatMax}px;
+                        max-width: ${chatMax}px;
+                        width: 100%;
+                        min-width: 0;
                         min-height: 0;
                         flex-direction: column;
-                        overflow: hidden;
-                        box-sizing: border-box;
+                        gap: 8px;
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
+                        padding: 8px;
+                        box-sizing: border-box;
                         background: transparent;
                     ">
-                        <div style="
-                            flex-shrink: 0;
-                            padding: 6px 10px;
-                            ${labelStyle}
-                            border-bottom: 1px solid var(--border, #e5e5e5);
-                        ">Scratchpad</div>
-                        <textarea id="wf-ops-verifier-scratchpad" placeholder="Notes…" autocomplete="off" spellcheck="true" style="
+                        <div style="flex-shrink: 0; ${labelStyle}">Chat</div>
+                        <div id="wf-ops-verifier-chat-messages" style="
                             flex: 1;
-                            min-height: 0;
-                            width: 100%;
-                            margin: 0;
-                            padding: 8px 10px;
-                            font-size: 12px;
-                            border: none;
-                            border-radius: 0 0 6px 6px;
-                            background: transparent;
-                            color: var(--foreground, #333);
-                            resize: none;
+                            min-height: 120px;
+                            overflow: auto;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 10px;
+                            padding: 4px;
                             box-sizing: border-box;
-                            ${VERIFIER_MONO_FONT}
-                            outline: none;
-                        "></textarea>
-                    </aside>
+                        "></div>
+                        <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 6px;">
+                            <textarea id="wf-ops-verifier-chat-input" rows="3" placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline)" style="${compactInputStyle} width: 100%; resize: vertical; min-height: 64px;"></textarea>
+                            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                                <button type="button" id="wf-ops-verifier-chat-stop" class="${btnClass('basic', 'compact')}" style="display: none;">Stop</button>
+                                <button type="button" id="wf-ops-verifier-chat-send" class="${btnClass('primary', 'compact')}">Send</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>`;
 }
@@ -350,6 +794,7 @@ function attachVerifierFetcherListeners(modal) {
     }
     modal.dataset.wfVerifierFetcherListenersAttached = '1';
     if (typeof ops.injectSpinnerStyle === 'function') ops.injectSpinnerStyle();
+    ensureVerifierBtnStyles();
 
     const verifierFetchBtn = modal.querySelector('#wf-ops-fetch-verifier');
     const verifierCopyBtn = modal.querySelector('#wf-ops-copy-verifier');
@@ -361,8 +806,11 @@ function attachVerifierFetcherListeners(modal) {
     const verifierContentNext = modal.querySelector('#wf-ops-verifier-content-next');
     const scratchpadToggle = modal.querySelector('#wf-ops-verifier-scratchpad-toggle');
     const scratchpadTextarea = modal.querySelector('#wf-ops-verifier-scratchpad');
+    const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
+    const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
 
     attachVerifierScratchpadResize(modal);
+    wireVerifierChatComposer(modal);
     restoreVerifierScratchpadState(modal);
 
     if (scratchpadToggle) {
@@ -370,9 +818,24 @@ function attachVerifierFetcherListeners(modal) {
             const nextOpen = !readVerifierScratchpadOpenPref();
             writeVerifierScratchpadOpenPref(nextOpen);
             applyVerifierScratchpadLayout(modal, nextOpen);
-            Logger.log('verifier-fetcher: scratchpad ' + (nextOpen ? 'shown' : 'hidden'));
+            Logger.log('verifier-fetcher: verifier output ' + (nextOpen ? 'shown' : 'hidden'));
             if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
         });
+    }
+
+    if (chatToggle) {
+        chatToggle.addEventListener('click', () => {
+            if (!hasVerifierAiKey()) return;
+            const nextOpen = !readVerifierChatOpenPref();
+            writeVerifierChatOpenPref(nextOpen);
+            syncVerifierAiUi(modal);
+            Logger.log('verifier-fetcher: chat ' + (nextOpen ? 'shown' : 'hidden'));
+            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+        });
+    }
+
+    if (decodeBtn) {
+        decodeBtn.addEventListener('click', () => { void decodeVerifierOutput(modal); });
     }
 
     if (scratchpadTextarea) {
@@ -435,13 +898,14 @@ function attachVerifierFetcherListeners(modal) {
         verifierCopyBtn.addEventListener('click', () => { void ops.copyVerifierCode(modal, verifierCopyBtn); });
     }
     if (typeof ops.restoreVerifierTabState === 'function') ops.restoreVerifierTabState(modal);
+    syncVerifierAiUi(modal);
 }
 
 const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
-    description: 'Verifier code fetch tab for the Ops dashboard',
-    _version: '3.0',
+    description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -454,6 +918,7 @@ const plugin = {
         }
         Context.verifierFetcherUi = {
             syncOutputToolbar: (modal) => syncVerifierOutputToolbar(modal),
+            syncAiUi: (modal) => syncVerifierAiUi(modal),
             captureScratchpadTabState: (modal) => captureVerifierScratchpadTabState(modal),
             restoreScratchpadTabState: (modal, state) => restoreVerifierScratchpadTabState(modal, state)
         };
@@ -462,6 +927,11 @@ const plugin = {
             label: 'Verifier Fetcher',
             panelHtml() { return verifierFetcherPanelHtml(); },
             attachListeners(modal) { attachVerifierFetcherListeners(modal); },
+            onActivate(modal) {
+                syncVerifierOutputToolbar(modal);
+                syncVerifierAiUi(modal);
+                Logger.debug('verifier-fetcher: tab activated');
+            },
             captureState(modal, dash) {
                 const ops = Context.opsTab;
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);

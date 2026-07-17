@@ -1,7 +1,7 @@
 {
-  "version": "12.3",
+  "version": "12.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.37",
+  "archetypesVersion": "14.38",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -200,20 +200,21 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "3.0",
-      "hash": "sha256-93776e7552754229070f8f26a5e6603fa6a1ad3057103e9b147acb2dc9c27144",
+      "version": "4.0",
+      "hash": "sha256-2e5e7966cbcdaa4b4751a03561bc65c9c9d8566aa801d0e98e64c4e9d3f0e3f6",
       "log": false
     },
     {
       "name": "dashboard-settings.js",
-      "version": "1.0",
-      "hash": "sha256-07588b673f1f083a033ef32b2b334bddec1dbc6ce224a4e03061c05df2a7ed47",
+      "version": "1.1",
+      "hash": "sha256-1676abe07bd302978c3741c0f9253afc0fbdf47a422d0314a65761d797184963",
       "log": false
     }
   ],
   "opsDashboardLibraries": [
     "dispute-resolution-messages.js",
-    "chart-js.js"
+    "chart-js.js",
+    "user-story-markdown.js"
   ],
   "devPlugins": [
     {

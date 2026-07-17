@@ -1,5 +1,9 @@
 // ============= dashboard-settings.js =============
 // Settings tab for the Ops dashboard (AI Integration / OpenRouter).
+//
+// AI gating rule: any AI-specific UI elsewhere in Fleet UX must stay hidden unless
+// an OpenRouter key record exists (enc + last4). Actual API calls still require
+// Ops unlock to decrypt the key via Context.aiOpenRouter.resolveApiKey().
 
 const DASH_SETTINGS_CONTENT_MAX_WIDTH_PX = 640;
 const AI_OPENROUTER_KEY_STORAGE_KEY = 'fleet-ux:ai-openrouter-key';
@@ -82,6 +86,24 @@ function maskKeyLast4(last4) {
     return '••••••••' + (safe || '????');
 }
 
+function hasStoredOpenRouterKey() {
+    return !!readOpenRouterKeyRecord();
+}
+
+async function resolveOpenRouterApiKey() {
+    const record = readOpenRouterKeyRecord();
+    if (!record) return null;
+    if (!Context.opsTab || typeof Context.opsTab.decryptWithOpsPassword !== 'function') {
+        throw new Error('Ops crypto is not available');
+    }
+    if (!hasOpsPassword()) {
+        throw new Error('Unlock Ops to use the OpenRouter API key');
+    }
+    const apiKey = await Context.opsTab.decryptWithOpsPassword(record.enc);
+    if (!apiKey) throw new Error('Decrypted OpenRouter key was empty');
+    return apiKey;
+}
+
 function openRouterChatCompletion(apiKey, messages) {
     return new Promise((resolve, reject) => {
         if (typeof GM_xmlhttpRequest !== 'function') {
@@ -112,6 +134,155 @@ function openRouterChatCompletion(apiKey, messages) {
             }
         });
     });
+}
+
+/**
+ * Stream an OpenRouter chat completion (SSE). Calls onDelta(textChunk) as content
+ * arrives, then onDone({ fullText, model }). Abort via returned { abort }.
+ */
+function openRouterChatCompletionStream(apiKey, messages, callbacks) {
+    const onDelta = callbacks && typeof callbacks.onDelta === 'function' ? callbacks.onDelta : null;
+    const onDone = callbacks && typeof callbacks.onDone === 'function' ? callbacks.onDone : null;
+    const onError = callbacks && typeof callbacks.onError === 'function' ? callbacks.onError : null;
+
+    if (typeof GM_xmlhttpRequest !== 'function') {
+        if (onError) onError(new Error('GM_xmlhttpRequest unavailable'));
+        return { abort() {} };
+    }
+
+    let aborted = false;
+    let processedLen = 0;
+    let lineBuf = '';
+    let fullText = '';
+    let model = '';
+    let finished = false;
+
+    const finishOk = () => {
+        if (finished || aborted) return;
+        finished = true;
+        if (onDone) onDone({ fullText, model });
+    };
+
+    const fail = (err) => {
+        if (finished || aborted) return;
+        finished = true;
+        if (onError) onError(err instanceof Error ? err : new Error(String(err || 'Request failed')));
+    };
+
+    const consumeSseBlock = (block) => {
+        const lines = String(block || '').split('\n');
+        for (const rawLine of lines) {
+            const line = rawLine.replace(/\r$/, '');
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload) continue;
+            if (payload === '[DONE]') {
+                finishOk();
+                return;
+            }
+            let parsed;
+            try {
+                parsed = JSON.parse(payload);
+            } catch (_e) {
+                continue;
+            }
+            if (parsed && parsed.model != null && !model) model = String(parsed.model);
+            const delta = parsed
+                && parsed.choices
+                && parsed.choices[0]
+                && parsed.choices[0].delta
+                && parsed.choices[0].delta.content != null
+                ? String(parsed.choices[0].delta.content)
+                : '';
+            if (delta) {
+                fullText += delta;
+                if (onDelta) onDelta(delta);
+            }
+            const finishReason = parsed
+                && parsed.choices
+                && parsed.choices[0]
+                && parsed.choices[0].finish_reason;
+            if (finishReason) finishOk();
+        }
+    };
+
+    const ingestChunk = (text) => {
+        if (aborted || finished) return;
+        const raw = String(text || '');
+        if (raw.length <= processedLen) return;
+        const added = raw.slice(processedLen);
+        processedLen = raw.length;
+        lineBuf += added;
+        const parts = lineBuf.split('\n\n');
+        lineBuf = parts.pop() || '';
+        for (const part of parts) consumeSseBlock(part);
+    };
+
+    const req = GM_xmlhttpRequest({
+        method: 'POST',
+        url: OPENROUTER_CHAT_COMPLETIONS_URL,
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + apiKey,
+            'HTTP-Referer': 'https://www.fleetai.com/',
+            'X-Title': 'Fleet UX Enhancer',
+            Accept: 'text/event-stream'
+        },
+        data: JSON.stringify({ messages, stream: true }),
+        onprogress: (response) => {
+            if (aborted) return;
+            if (response.status && (response.status < 200 || response.status >= 300)) {
+                // Wait for onload for full error body when possible.
+                return;
+            }
+            ingestChunk(response.responseText || '');
+        },
+        onload: (response) => {
+            if (aborted) return;
+            if (response.status === 401 || response.status === 403) {
+                fail(new Error('Key rejected by OpenRouter (HTTP ' + response.status + ')'));
+                return;
+            }
+            if (response.status < 200 || response.status >= 300) {
+                fail(new Error('OpenRouter error (HTTP ' + response.status + ')'));
+                return;
+            }
+            ingestChunk(response.responseText || '');
+            if (lineBuf.trim()) consumeSseBlock(lineBuf);
+            lineBuf = '';
+            finishOk();
+        },
+        onerror: () => fail(new Error('Network error contacting OpenRouter')),
+        ontimeout: () => fail(new Error('OpenRouter request timed out')),
+        onabort: () => {
+            aborted = true;
+            finished = true;
+        }
+    });
+
+    return {
+        abort() {
+            if (aborted || finished) return;
+            aborted = true;
+            finished = true;
+            try {
+                if (req && typeof req.abort === 'function') req.abort();
+            } catch (_e) { /* ignore */ }
+        }
+    };
+}
+
+function notifyAiKeyConsumers() {
+    const ui = Context.verifierFetcherUi;
+    if (!ui || typeof ui.syncAiUi !== 'function') return;
+    try {
+        const modal = document.getElementById('wf-dash-modal')
+            || document.querySelector('[data-fleet-dash-modal="1"]')
+            || document.body;
+        ui.syncAiUi(modal);
+    } catch (err) {
+        Logger.debug(PLUGIN_ID + ': syncAiUi notify failed', err);
+    }
 }
 
 function getAiSectionRoot(modal) {
@@ -280,6 +451,7 @@ async function saveOpenRouterKey(modal) {
         renderAiSection(modal);
         setAiStatus(modal, 'API key saved.', false);
         Logger.log(PLUGIN_ID + ': OpenRouter API key saved (encrypted)');
+        notifyAiKeyConsumers();
         const testBtn = modal.querySelector('#wf-dash-settings-ai-test-btn');
         if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashSuccess(testBtn);
     } catch (err) {
@@ -294,6 +466,7 @@ function removeOpenRouterKey(modal) {
     renderAiSection(modal);
     setAiStatus(modal, 'API key removed.', false);
     Logger.log(PLUGIN_ID + ': OpenRouter API key removed');
+    notifyAiKeyConsumers();
 }
 
 async function runOpenRouterTest(modal) {
@@ -413,7 +586,8 @@ function dashboardSettingsPanelHtml() {
         + '</h3>'
         + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
         + 'Connect your own OpenRouter API key. Requests go directly to OpenRouter via the userscript '
-        + '(not through the Fleet page). Model selection is managed in your OpenRouter account.'
+        + '(not through the Fleet page). Model selection is managed in your OpenRouter account. '
+        + 'AI features elsewhere in Fleet UX appear only after a key is saved.'
         + '</p>'
         + '<div id="wf-dash-settings-ai-section"></div>'
         + '</section>'
@@ -484,7 +658,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for the Ops dashboard (AI Integration / OpenRouter)',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -495,6 +669,35 @@ const plugin = {
             Logger.error(PLUGIN_ID + ': dashboard loader not registered');
             return;
         }
+        Context.aiOpenRouter = {
+            contentMaxWidthPx: DASH_SETTINGS_CONTENT_MAX_WIDTH_PX,
+            hasStoredKey: () => hasStoredOpenRouterKey(),
+            resolveApiKey: () => resolveOpenRouterApiKey(),
+            async chatCompletion(messages) {
+                const apiKey = await resolveOpenRouterApiKey();
+                if (!apiKey) throw new Error('OpenRouter API key is not available');
+                return openRouterChatCompletion(apiKey, messages);
+            },
+            async chatCompletionStream(opts) {
+                const messages = opts && opts.messages;
+                const onDelta = opts && opts.onDelta;
+                const onDone = opts && opts.onDone;
+                const onError = opts && opts.onError;
+                let apiKey;
+                try {
+                    apiKey = await resolveOpenRouterApiKey();
+                } catch (err) {
+                    if (typeof onError === 'function') onError(err);
+                    throw err;
+                }
+                if (!apiKey) {
+                    const err = new Error('OpenRouter API key is not available');
+                    if (typeof onError === 'function') onError(err);
+                    throw err;
+                }
+                return openRouterChatCompletionStream(apiKey, messages, { onDelta, onDone, onError });
+            }
+        };
         Context.dashboard.registerTab({
             id: 'dash-settings',
             label: 'Settings',
@@ -507,6 +710,6 @@ const plugin = {
                 Logger.debug(PLUGIN_ID + ': Settings tab activated');
             }
         });
-        Logger.log(PLUGIN_ID + ': tab registered');
+        Logger.log(PLUGIN_ID + ': tab registered (Context.aiOpenRouter)');
     }
 };
