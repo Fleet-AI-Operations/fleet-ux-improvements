@@ -5476,7 +5476,6 @@ const searchOutputStatsPaneMethods = {
         const title = o.title || '';
         const scoreDisplay = o.scoreDisplay;
         const weightOrMeta = o.weightOrMeta || '';
-        const meta = o.meta || '';
         const axes = o.axes || [];
         const tierId = o.tierId || null;
         const expanded = !!o.expanded;
@@ -5521,24 +5520,13 @@ const searchOutputStatsPaneMethods = {
             + (weightOrMeta ? ' · ' + dashEscHtml(String(weightOrMeta)) : '')
             + '</div>'
             + '</div>'
-            + (meta
-                ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;'
-                    + (canExpand ? ' padding-left: 14px;' : '') + '">'
-                    + dashEscHtml(meta) + '</div>')
-                : '')
             + axesHtml
             + '</div>';
     },
 
-    _ratingPriorSourceMeta(priorSource) {
-        if (!priorSource || !priorSource.source) return { short: '', detail: '' };
-        if (priorSource.source === 'subset') {
-            return { short: 'subset prior', detail: 'Shrunk toward this subset prior.' };
-        }
-        return {
-            short: 'global prior',
-            detail: 'Shrunk toward the global prior (no baseline shipped for this slice — below volume cutoffs).',
-        };
+    _ratingPriorSourceShort(priorSource) {
+        if (!priorSource || !priorSource.source) return '';
+        return priorSource.source === 'subset' ? 'subset prior' : 'global prior';
     },
 
     _ratingCohortBreakdownHtml(title, blend, workerId, scoreKind, opts) {
@@ -5580,13 +5568,12 @@ const searchOutputStatsPaneMethods = {
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
                     : '';
-                const priorMeta = this._ratingPriorSourceMeta(slice.priorSource);
-                const weightOrMeta = [vol, priorMeta.short].filter(Boolean).join(' · ');
+                const priorShort = this._ratingPriorSourceShort(slice.priorSource);
+                const weightOrMeta = [vol, priorShort].filter(Boolean).join(' · ');
                 sectionsHtml += this._ratingCohortSectionHtml({
                     title: key,
                     scoreDisplay,
                     weightOrMeta,
-                    meta: priorMeta.detail || '',
                     volume: slice.volume,
                     provisional: this._ratingVolumeIsProvisional(slice.volume, scoreKind),
                     tierId,
@@ -6026,7 +6013,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.19',
+    _version: '11.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
