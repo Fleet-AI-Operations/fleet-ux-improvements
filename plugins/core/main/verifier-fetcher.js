@@ -19,8 +19,15 @@ const VERIFIER_MAIN_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX * 2;
 const VERIFIER_CHAT_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX;
 
 const DECODE_SYSTEM_PROMPT =
-    'Trace the python code to determine how the Verifier Output was produced. '
-    + 'Keep the answer concise and efficient.';
+    'You are helping a reviewer understand a task verifier result. Given the verifier\'s '
+    + 'Python source and its captured output, explain in plain language what caused each '
+    + 'failure, citing the specific check or function in the code responsible. Allow for the '
+    + 'possibility that the verifier code itself is incorrect; if you determine that, say so '
+    + 'explicitly and diagnose the root cause in the verifier. If the output references values '
+    + 'a reviewer cannot know (transaction numbers, email IDs, internal keys), use the verifier '
+    + 'source to explain what it was looking for so the output becomes interpretable. Be concise: '
+    + 'one short paragraph or bullet per issue, no restating of code. If the output does not match '
+    + 'the code, simply state that there seems to be a mismatch.';
 
 function verifierBtnClass(variant, size) {
     if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
@@ -905,7 +912,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.2',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
