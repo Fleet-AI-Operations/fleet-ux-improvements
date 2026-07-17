@@ -585,9 +585,7 @@ function dashboardSettingsPanelHtml() {
         + 'AI Integration'
         + '</h3>'
         + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
-        + 'Connect your own OpenRouter API key. Requests go directly to OpenRouter via the userscript '
-        + '(not through the Fleet page). Model selection is managed in your OpenRouter account. '
-        + 'AI features elsewhere in Fleet UX appear only after a key is saved.'
+        + 'Connect your own OpenRouter API key. Requests go directly to OpenRouter.'
         + '</p>'
         + '<div id="wf-dash-settings-ai-section"></div>'
         + '</section>'
@@ -658,7 +656,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for the Ops dashboard (AI Integration / OpenRouter)',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
