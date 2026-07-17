@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.34",
+  "archetypesVersion": "14.35",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -146,8 +146,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "11.7",
-      "hash": "sha256-924fc95898f1cf0403501893ce7afdf730346523c4c53f468a200d8486bd8406",
+      "version": "11.8",
+      "hash": "sha256-8d31f788130b90c7832a0739fbcb06ebea02c34ba88cfa668ea53a4914f59778",
       "log": false
     },
     {
@@ -202,12 +202,6 @@
       "name": "verifier-fetcher.js",
       "version": "3.0",
       "hash": "sha256-93776e7552754229070f8f26a5e6603fa6a1ad3057103e9b147acb2dc9c27144",
-      "log": false
-    },
-    {
-      "name": "session-fetcher.js",
-      "version": "2.1",
-      "hash": "sha256-aaa686af251b83e49b1ff5c465eb750161ae4c2249fe660853324eabde8fd9e3",
       "log": false
     }
   ],
