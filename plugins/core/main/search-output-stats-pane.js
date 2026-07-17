@@ -5467,7 +5467,7 @@ const searchOutputStatsPaneMethods = {
         if (!Number.isFinite(n) || n < 0) return true;
         const kind = String(scoreKind || '').toLowerCase();
         if (kind.indexOf('qa') === 0) return n < 25;
-        // TWQS / combined / default: terminal-style threshold.
+        // TWQS / default: terminal-style threshold.
         return n < 10;
     },
 

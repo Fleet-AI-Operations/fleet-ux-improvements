@@ -1,7 +1,7 @@
 {
   "version": "12.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.53",
+  "archetypesVersion": "14.54",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -140,8 +140,8 @@
     },
     {
       "name": "rating-engine.js",
-      "version": "10.2",
-      "hash": "sha256-f9a56dbf3178ab9bc59fd24b4af7bbf797a8e384de81ecd5bf20f27d222982c5",
+      "version": "10.3",
+      "hash": "sha256-390a8ef725eb9fbde13ad79ca95af9a6ef8c2c240d3f8ba9329eced1d491b879",
       "log": false
     },
     {
@@ -183,7 +183,7 @@
     {
       "name": "search-output-stats-pane.js",
       "version": "11.20",
-      "hash": "sha256-df09e04a097e4d8581ee8d41ecd630dbaab242a59da6f96f03e3b4b3e606e241",
+      "hash": "sha256-186f425e9e667f180056b22045103520fb578d10bfb06e80a04a75b3bdc6b442",
       "log": false
     },
     {
