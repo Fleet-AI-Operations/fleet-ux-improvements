@@ -1,7 +1,7 @@
 {
   "version": "12.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.43",
+  "archetypesVersion": "14.45",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -200,8 +200,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "4.3",
-      "hash": "sha256-e48cd39853b074ea589ffb692cb7e97cfa3d67f97756dfed802f1450830913d7",
+      "version": "4.5",
+      "hash": "sha256-d70c2709778bd8f7e9ba0ae6ef0d40f437c4d69acbfa80dcf38042cd4b1a9f69",
       "log": false
     },
     {

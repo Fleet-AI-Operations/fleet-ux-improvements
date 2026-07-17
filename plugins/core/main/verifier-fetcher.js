@@ -26,8 +26,15 @@ const DECODE_SYSTEM_PROMPT =
     + 'explicitly and diagnose the root cause in the verifier. If the output references values '
     + 'a reviewer cannot know (transaction numbers, email IDs, internal keys), use the verifier '
     + 'source to explain what it was looking for so the output becomes interpretable. Be concise: '
-    + 'one short paragraph or bullet per issue, no restating of code. If the output does not match '
-    + 'the code, simply state that there seems to be a mismatch.';
+    + 'one short paragraph or bullet per issue, stated as efficiently as possible. Related issues '
+    + 'may be grouped into one bullet point for better synthesis. No restating of code. If the '
+    + 'output does not match the code, simply state that there seems to be a mismatch. Do not '
+    + 'acknowledge checks that passed. If there are no failures, state that there is nothing to analyze. '
+    + 'In this current scenario, the only thing that the reviewer can do to attempt to fix the errors '
+    + 'is to attempt the task while completing different actions. They cannot modify the verifier code. '
+    + 'Therefore, do not suggest modifications to the code ever; only changes in how the task is '
+    + 'attempted if it makes sense to do so. If the verifier is clearly incorrectly written, then '
+    + 'advise flagging the task as bugged.';
 
 function verifierBtnClass(variant, size) {
     if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
@@ -912,7 +919,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.3',
+    _version: '4.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
