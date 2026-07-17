@@ -5314,143 +5314,7 @@ const searchOutputStatsPaneMethods = {
         }
     },
 
-    _ratingFormatStatusCounts(statusCounts, maxItems) {
-        if (!statusCounts || typeof statusCounts !== 'object') return '';
-        const cap = maxItems == null ? 4 : maxItems;
-        const entries = Object.entries(statusCounts)
-            .filter(([, n]) => Number(n) > 0)
-            .sort((a, b) => b[1] - a[1]);
-        if (!entries.length) return '';
-        const shown = entries.slice(0, cap).map(([k, n]) => k + ' ' + n);
-        const rest = entries.length - cap;
-        return shown.join(', ') + (rest > 0 ? ', +' + rest + ' more' : '');
-    },
-
-    _ratingAxisBreakdownLines(axis) {
-        if (!axis) return [];
-        if (axis.defined === false || axis.score == null) {
-            const reason = this._ratingAxisOmitReason(axis);
-            return reason ? [reason] : ['Axis omitted'];
-        }
-        const raw = axis.raw || {};
-        const lines = [];
-        switch (axis.id) {
-            // TWQS (WPS) axes
-            case 'outcomeQuality': {
-                if (raw.nTerminal != null) lines.push(raw.nTerminal + ' terminal task(s)');
-                if (raw.sumQuality != null && raw.nTerminal != null && raw.nTerminal > 0) {
-                    const meanPct = this._ratingPctOneDecimal(raw.sumQuality / raw.nTerminal);
-                    if (meanPct != null) lines.push('Mean quality ' + meanPct + '%');
-                }
-                const statusSummary = this._ratingFormatStatusCounts(raw.statusCounts);
-                if (statusSummary) lines.push(statusSummary);
-                break;
-            }
-            case 'positiveFeedbackRate': {
-                if (raw.positive != null && raw.total != null && raw.total > 0) {
-                    const positivePct = this._ratingPctOneDecimal(raw.positive / raw.total);
-                    lines.push('Positive ' + (positivePct != null ? positivePct + '%' : '') + ' (' + Math.round(raw.positive * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'taskRatingQuality':
-            case 'nonBottomScoreRate': {
-                const points = raw.qualityPoints != null ? raw.qualityPoints
-                    : (raw.weightedQualityPoints != null ? raw.weightedQualityPoints : raw.nonBottom);
-                const total = raw.total != null ? raw.total
-                    : (raw.weightedScored != null ? raw.weightedScored : null);
-                if (points != null && total != null && total > 0) {
-                    const meanPct = this._ratingPctOneDecimal(points / total);
-                    lines.push('Mean rating quality ' + (meanPct != null ? meanPct + '%' : '')
-                        + ' (' + Math.round(points * 10) / 10 + ' pts / ' + Math.round(total * 10) / 10 + ' scored)');
-                }
-                const bottom = raw.weightedBottom;
-                const average = raw.weightedAverage;
-                const top = raw.weightedTop;
-                if (bottom != null || average != null || top != null) {
-                    lines.push('Labels · Bottom '
-                        + (Math.round((bottom || 0) * 10) / 10)
-                        + ' · Average ' + (Math.round((average || 0) * 10) / 10)
-                        + ' · Top ' + (Math.round((top || 0) * 10) / 10));
-                }
-                break;
-            }
-            case 'firstPassAcceptance': {
-                if (raw.firstPass != null && raw.total != null && raw.total > 0) {
-                    const fpPct = this._ratingPctOneDecimal(raw.firstPass / raw.total);
-                    lines.push('First-pass ' + (fpPct != null ? fpPct + '%' : '') + ' (' + Math.round(raw.firstPass * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'disputeWinRate': {
-                if (raw.approved != null && raw.resolved != null && raw.resolved > 0) {
-                    const winPct = this._ratingPctOneDecimal(raw.approved / raw.resolved);
-                    lines.push('Won ' + (winPct != null ? winPct + '%' : '') + ' (' + raw.approved + ' / ' + raw.resolved + ' resolved)');
-                } else if (raw.resolved != null) {
-                    lines.push(raw.resolved + ' resolved dispute(s)');
-                }
-                break;
-            }
-            // QAQS (QPS) axes
-            case 'returnEffectiveness': {
-                if (raw.effective != null && raw.total != null && raw.total > 0) {
-                    const effPct = this._ratingPctOneDecimal(raw.effective / raw.total);
-                    lines.push('Effective ' + (effPct != null ? effPct + '%' : '') + ' (' + Math.round(raw.effective * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'returnActionability': {
-                if (raw.actionable != null && raw.total != null && raw.total > 0) {
-                    const aPct = this._ratingPctOneDecimal(raw.actionable / raw.total);
-                    lines.push('Actionable ' + (aPct != null ? aPct + '%' : '') + ' (' + Math.round(raw.actionable * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'labelDiscrimination': {
-                if (raw.labelCorrelation != null) {
-                    const ldPct = this._ratingPctOneDecimal(raw.labelCorrelation);
-                    if (ldPct != null) lines.push('Label–outcome correlation ' + ldPct + '%');
-                }
-                if (raw.total != null) lines.push(raw.total + ' labeled feedback row(s)');
-                break;
-            }
-            case 'disputeDefense': {
-                if (raw.upheld != null && raw.resolved != null && raw.resolved > 0) {
-                    const defPct = this._ratingPctOneDecimal(raw.upheld / raw.resolved);
-                    lines.push('Upheld ' + (defPct != null ? defPct + '%' : '') + ' (' + raw.upheld + ' / ' + raw.resolved + ' as sole negative reviewer)');
-                }
-                break;
-            }
-            // Legacy axes (backwards compat)
-            case 'disputeOutcomes':
-            case 'reviewCallAccuracy': {
-                const good = raw.approvedWeight != null ? raw.approvedWeight : raw.upheldWeight;
-                const denom = raw.resolvedWeight;
-                if (good != null && denom != null && denom > 0) {
-                    const goodPct = this._ratingPctOneDecimal(good / denom);
-                    lines.push('Favorable ' + (goodPct != null ? goodPct + '%' : good) + ' of resolved weight');
-                } else if (denom != null) {
-                    lines.push('Resolved dispute weight ' + Math.round(denom * 10) / 10);
-                }
-                break;
-            }
-            case 'feedbackResolution': {
-                if (raw.returnEpisodeCount != null) lines.push(raw.returnEpisodeCount + ' return episode(s)');
-                break;
-            }
-            case 'consistency': {
-                if (raw.activeWeeks != null && raw.totalWeeks != null) {
-                    lines.push(raw.activeWeeks + ' active week(s) of ' + raw.totalWeeks);
-                }
-                break;
-            }
-            default:
-                break;
-        }
-        return lines;
-    },
-
-    _ratingAxisBarHtml(axis, showDetail) {
+    _ratingAxisBarHtml(axis) {
         if (!axis) return '';
         const omitted = axis.defined === false || axis.score == null;
         const label = axis.label || axis.id || '';
@@ -5476,15 +5340,8 @@ const searchOutputStatsPaneMethods = {
             + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
             + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
             + dashEscHtml(subPct != null ? (String(subPct) + '%') : '—') + '</span>'
+            + '</div>'
             + '</div>';
-        if (showDetail) {
-            const breakdownLines = this._ratingAxisBreakdownLines(axis);
-            html += breakdownLines.map((line) =>
-                '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px; padding-left: 2px;">'
-                + dashEscHtml(line) + '</div>'
-            ).join('');
-        }
-        html += '</div>';
         return html;
     },
 
@@ -5550,7 +5407,7 @@ const searchOutputStatsPaneMethods = {
                 ? cohortBlend.main.axes
                 : this._ratingSortedAxes(block);
             const mainAxesHtml = this._ratingSortedAxes({ axes: mainAxes })
-                .map((axis) => this._ratingAxisBarHtml(axis, true))
+                .map((axis) => this._ratingAxisBarHtml(axis))
                 .join('');
             const topBars = mainAxesHtml
                 ? ('<div style="margin-top: 8px;">' + mainAxesHtml + '</div>')
@@ -5573,7 +5430,7 @@ const searchOutputStatsPaneMethods = {
         } else if (!cohortBlend) {
             // Non-cohort: keep sub-axis bars visible even when collapsed.
             const axesHtml = this._ratingSortedAxes(block)
-                .map((axis) => this._ratingAxisBarHtml(axis, false))
+                .map((axis) => this._ratingAxisBarHtml(axis))
                 .join('');
             if (axesHtml) bodyHtml = '<div style="margin-top: 4px;">' + axesHtml + '</div>';
         }
@@ -5634,7 +5491,7 @@ const searchOutputStatsPaneMethods = {
         const axesList = [...axes].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
         const axesHtml = (expanded && axesList.length)
             ? ('<div style="margin-top: 6px; padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, transparent);">'
-                + axesList.map((axis) => this._ratingAxisBarHtml(axis, true)).join('')
+                + axesList.map((axis) => this._ratingAxisBarHtml(axis)).join('')
                 + '</div>')
             : '';
         const chevron = canExpand
@@ -5787,7 +5644,7 @@ const searchOutputStatsPaneMethods = {
                 + (basePct != null && effPct != null && Math.abs(effPct - basePct) >= 0.05
                     ? ' <span style="color: var(--muted-foreground, #64748b);">(base ' + basePct + '%)</span>'
                     : '');
-            const axisCellHtml = this._ratingAxisBarHtml(axis, true);
+            const axisCellHtml = this._ratingAxisBarHtml(axis);
             rowsHtml += '<tr>'
                 + '<td style="' + tdStyle + '">' + axisCellHtml + '</td>'
                 + '<td style="' + tdNum + '">' + dashEscHtml(String(subPct) + '%') + '</td>'
@@ -6169,7 +6026,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.18',
+    _version: '11.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
