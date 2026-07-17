@@ -1,12 +1,12 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
-// Engine v10.1: Task Rating Quality; subset priors gated at generation time (presence = eligible).
+// Engine v10.2: cards/slices display estimated percentile; blend percentile matches blended score.
 
-const RE_VERSION = '10.1';
+const RE_VERSION = '10.2';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
 const RE_DISCARDED_STALE_DAYS = 7;
-// Reserved percent points on each end of the estimated-percentile scale (exports only).
+// Reserved percent points on each end of the estimated-percentile scale (UI + exports).
 const RE_PERCENTILE_MARGIN_BOTTOM = 10;
 const RE_PERCENTILE_MARGIN_TOP = 20;
 
@@ -587,11 +587,12 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn, kind, weighting) {
     const rounded = Math.round(score * 10) / 10;
     const vol = reBlockVolumeForTier(mainBlock, kind);
     const tier = rePopulationTier(rounded, kind, weighting, vol);
+    const pctParams = (RE_PERCENTILE_PARAMS[kind] && RE_PERCENTILE_PARAMS[kind][weighting]) || {};
     return {
         score: rounded,
         band: tier.label,
         tierId: tier.id,
-        estimatedPercentile: mainBlock.estimatedPercentile,
+        estimatedPercentile: reEstimatePercentile(rounded, pctParams),
         confidence: mainBlock.confidence,
         main: {
             score: mainBlock.score,
@@ -780,6 +781,12 @@ const RatingEngine = {
 
     getBaselinePolicy() {
         return { ...RE_BASELINE_POLICY };
+    },
+
+    /** Estimated percentile (integer, margin-clamped) for a composite score. */
+    estimatePercentile(score, kind, weighting) {
+        const params = (RE_PERCENTILE_PARAMS[kind] && RE_PERCENTILE_PARAMS[kind][weighting]) || null;
+        return reEstimatePercentile(score, params);
     },
 
     compute(options) {
@@ -1515,7 +1522,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '10.1',
+    _version: '10.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

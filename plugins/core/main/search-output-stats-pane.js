@@ -4683,8 +4683,50 @@ const searchOutputStatsPaneMethods = {
             score: cohortEntry.score,
             band: cohortEntry.band || main.band,
             tierId: cohortEntry.tierId || main.tierId,
+            estimatedPercentile: cohortEntry.estimatedPercentile != null
+                ? cohortEntry.estimatedPercentile
+                : main.estimatedPercentile,
             cohortBlend: cohortEntry,
         });
+    },
+
+    /** Format estimated percentile for card/slice display (e.g. "~62nd"). */
+    _ratingFormatEstimatedPercentile(value) {
+        if (value == null || !Number.isFinite(Number(value))) return '';
+        const engine = Context.ratingEngine;
+        const formatted = (engine && typeof engine.formatPercentile === 'function')
+            ? engine.formatPercentile(value)
+            : this._ratingOrdinalPercentileFallback(value);
+        return formatted ? ('~' + formatted) : '';
+    },
+
+    _ratingOrdinalPercentileFallback(n) {
+        const v = Math.round(Number(n));
+        if (!Number.isFinite(v)) return '';
+        const mod100 = Math.abs(v) % 100;
+        let suffix = 'th';
+        if (mod100 < 11 || mod100 > 13) {
+            const mod10 = Math.abs(v) % 10;
+            if (mod10 === 1) suffix = 'st';
+            else if (mod10 === 2) suffix = 'nd';
+            else if (mod10 === 3) suffix = 'rd';
+        }
+        return String(v) + suffix;
+    },
+
+    /** Resolve estimated percentile for a composite score block or cohort slice. */
+    _ratingResolveEstimatedPercentile(score, existingPct, scoreKind, weighting) {
+        if (existingPct != null && Number.isFinite(Number(existingPct))) {
+            return Math.round(Number(existingPct));
+        }
+        const engine = Context.ratingEngine;
+        if (engine && typeof engine.estimatePercentile === 'function'
+            && score != null && Number.isFinite(Number(score))) {
+            const kind = String(scoreKind || '').toLowerCase().indexOf('qa') === 0 ? 'qaqs' : 'twqs';
+            const pct = engine.estimatePercentile(score, kind, weighting || 'recency');
+            return pct != null && Number.isFinite(Number(pct)) ? Math.round(Number(pct)) : null;
+        }
+        return null;
     },
 
     _ratingWorkerConfidenceSortValue(worker, scoreTypes) {
@@ -5123,13 +5165,13 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
-            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The same tier + percentile pattern appears on team / environment / month subset rows. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
             + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
             + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Tier first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain. The tier places that score relative to the scored population.</li>'
+            + '<li><strong>Tier first, estimated percentile second.</strong> The tier places the composite in the scored population; the muted percentile is a normal-model estimate of standing (margin-clamped). The underlying 0–100 score uses empirical Bayes shrinkage toward the cohort prior and stays available in exports. Low-volume scores are valid estimates, but less certain.</li>'
             + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where encrypted cohort baselines are available (Ops unlock), the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
             + '<li>Team / environment / month slice scores shrink toward a <strong>subset prior</strong> only when that baseline was shipped (TWQS: ≥ 500 tasks and ≥ 20 writers; QAQS: ≥ 500 feedback rows and ≥ 20 reviewers at generation time). Unshipped slices fall back to the global prior while still showing the breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
@@ -5476,17 +5518,28 @@ const searchOutputStatsPaneMethods = {
         const confStyle = conf.tier === 'provisional'
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
-        const scoreDisplay = Math.round(block.score);
+        const weighting = workerId
+            ? this._ratingWorkerWeighting(workerId)
+            : 'recency';
+        const estPct = this._ratingResolveEstimatedPercentile(
+            block.score, block.estimatedPercentile, scoreKind, weighting
+        );
+        const pctLabel = this._ratingFormatEstimatedPercentile(estPct);
+        const rawScoreDisplay = Math.round(block.score);
         const tierLabel = String(block.band || '').trim();
         const tierId = block.tierId || null;
         const hasTier = !!(tierLabel && tierLabel !== '—');
+        const secondaryText = pctLabel || (String(rawScoreDisplay) + ' / 100');
         const primaryHtml = hasTier
             ? dashEscHtml(tierLabel)
-            : dashEscHtml(String(scoreDisplay));
+            : dashEscHtml(pctLabel || String(rawScoreDisplay));
         const secondaryHtml = hasTier
             ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
-                + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
-            : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
+                + dashEscHtml(secondaryText) + '</span>')
+            : (pctLabel
+                ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
+                    + dashEscHtml(pctLabel) + '</span>')
+                : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>'));
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
         const cohortBlend = block.cohortBlend || null;
         const canExpand = !!(workerId && scoreKind && (cohortBlend || this._ratingSortedAxes(block).length));
@@ -5653,13 +5706,17 @@ const searchOutputStatsPaneMethods = {
                 const key = String(slice.key || '—');
                 const weighting = this._ratingWorkerWeighting(workerId);
                 const engine = Context.ratingEngine;
-                const rawScore = Math.round(slice.score);
-                let scoreDisplay = String(rawScore) + ' / 100';
+                const estPct = this._ratingResolveEstimatedPercentile(
+                    slice.score, slice.estimatedPercentile, scoreKind, weighting
+                );
+                const pctLabel = this._ratingFormatEstimatedPercentile(estPct);
+                const secondary = pctLabel || (Math.round(slice.score) + ' / 100');
+                let scoreDisplay = secondary;
                 let tierId = null;
                 if (engine && typeof engine.populationTier === 'function') {
                     const tier = engine.populationTier(slice.score, scoreKind, weighting, slice.volume);
                     if (tier && tier.label && tier.label !== '—') {
-                        scoreDisplay = tier.label + ' ' + rawScore + ' / 100';
+                        scoreDisplay = tier.label + ' · ' + secondary;
                     }
                     if (tier && tier.id) tierId = tier.id;
                 }
@@ -5756,14 +5813,19 @@ const searchOutputStatsPaneMethods = {
         if (display.tenureDays != null && Number.isFinite(display.tenureDays)) {
             contextLine = (contextLine ? contextLine + ' · ' : '') + 'Tenure ' + display.tenureDays + ' day(s)';
         }
-        const pct = block.estimatedPercentile;
-        // Prefer tier label context; keep muted raw score note when expanding.
+        const detailPct = this._ratingResolveEstimatedPercentile(
+            block.score,
+            block.estimatedPercentile,
+            scoreKind,
+            workerId ? this._ratingWorkerWeighting(workerId) : 'recency'
+        );
+        const detailPctLabel = this._ratingFormatEstimatedPercentile(detailPct);
         if (block.band && block.band !== '—') {
             contextLine = (contextLine ? contextLine + ' · ' : '')
-                + block.band + ' · ' + Math.round(block.score) + ' / 100';
-        } else if (pct != null) {
-            contextLine = (contextLine ? contextLine + ' · ' : '')
-                + 'raw ' + Math.round(block.score) + ' / 100';
+                + block.band
+                + (detailPctLabel ? (' · ' + detailPctLabel) : (' · ' + Math.round(block.score) + ' / 100'));
+        } else if (detailPctLabel) {
+            contextLine = (contextLine ? contextLine + ' · ' : '') + detailPctLabel;
         }
         return '<div style="margin-top: ' + (nestInScoreCard ? '8' : '12') + 'px;">'
             + (nestInScoreCard
@@ -6107,7 +6169,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.17',
+    _version: '11.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
