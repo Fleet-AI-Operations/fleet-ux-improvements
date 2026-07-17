@@ -6,6 +6,7 @@ const ORIGINAL_MARKER = 'data-fleet-user-story-original';
 const REPLICA_MARKER = 'data-fleet-user-story-replica';
 const PROSE_ATTR = 'data-fleet-user-story-prose';
 const LABEL_TEXT = 'User Story';
+const DIV_MARKDOWN_LABELS = new Set(['User Story', 'Annotator Instructions']);
 const TASK_INSTRUCTIONS_RE = /^\s*Task Instructions\s*$/i;
 const SCENARIO_INTRO_RE = /Write a problem inspired by the following scenario/i;
 
@@ -94,6 +95,11 @@ const UserStoryMarkdownApi = {
         return this.normalizeLabelText(el.textContent) === LABEL_TEXT;
     },
 
+    isDivMarkdownLabel(el) {
+        if (!el || el.tagName !== 'DIV') return false;
+        return DIV_MARKDOWN_LABELS.has(this.normalizeLabelText(el.textContent));
+    },
+
     isTaskInstructionsHeading(el) {
         if (!el) return false;
         return TASK_INSTRUCTIONS_RE.test(this.normalizeLabelText(el.textContent));
@@ -124,13 +130,22 @@ const UserStoryMarkdownApi = {
     },
 
     findLabeledBodies(seen) {
-        // label/span: native form fields; div.font-medium: dialog section labels (e.g. disputes Task Scenario modal)
-        const labels = document.querySelectorAll(
-            'label, span, div.text-sm.text-muted-foreground.font-medium, div.font-medium.text-sm.text-muted-foreground'
+        // label/span: native form fields (User Story only)
+        // div.font-medium: section labels — User Story + Annotator Instructions (disputes modal / detail)
+        const formLabels = document.querySelectorAll('label, span');
+        const divLabels = document.querySelectorAll(
+            'div.text-sm.text-muted-foreground.font-medium, div.font-medium.text-sm.text-muted-foreground'
         );
         const bodies = [];
-        for (const el of labels) {
+        for (const el of formLabels) {
             if (!this.isUserStoryLabel(el)) continue;
+            const body = this.findBodyForLabel(el);
+            if (!body || seen.has(body)) continue;
+            seen.add(body);
+            bodies.push(body);
+        }
+        for (const el of divLabels) {
+            if (!this.isDivMarkdownLabel(el)) continue;
             const body = this.findBodyForLabel(el);
             if (!body || seen.has(body)) continue;
             seen.add(body);
@@ -450,7 +465,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

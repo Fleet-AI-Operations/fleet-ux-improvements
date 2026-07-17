@@ -1,7 +1,7 @@
 {
   "version": "12.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.35",
+  "archetypesVersion": "14.36",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -114,8 +114,8 @@
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.4",
-      "hash": "sha256-9ded2c4014a36940653aad1da2e163147e58290dc55706ebc5e2ac654fd6be93",
+      "version": "1.5",
+      "hash": "sha256-def4c5ee04c5bd3c40e3f1155ddbb3e229179f482ab14e5bfc600210f85afda5",
       "log": false
     },
     {
@@ -737,7 +737,8 @@
         "dispute-screenshot-upload-improvement.js",
         "copy-verifier-output.js",
         "vnc-helper.js",
-        "embedded-urlbar-fit.js"
+        "embedded-urlbar-fit.js",
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
@@ -798,6 +799,12 @@
           "name": "dispute-resolution-snippets.js",
           "version": "1.1",
           "hash": "sha256-a337831b374f85a5e9c5cff155fcc44c614dbfafbb78c1952ea56349d0cc1403",
+          "log": false
+        },
+        {
+          "name": "user-story-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-238deae430bcf4bbb0ee030cef2858b020501475cb0fc57bac8098a2e59116d7",
           "log": false
         }
       ]

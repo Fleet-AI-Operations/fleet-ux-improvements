@@ -382,6 +382,13 @@
       "description": "Markdown-rendered User Story replica and full-story copy button in the Task Scenario modal"
     }
   ],
+  "archetypes/dispute-detail/main": [
+    {
+      "file": "user-story-markdown.js",
+      "name": "User Story Markdown",
+      "description": "Markdown-rendered Scenario / User Story collapsible and full-story copy control on dispute detail"
+    }
+  ],
   "archetypes/dashboard-data-task/main": [
     {
       "file": "verifier-code-block.js",
