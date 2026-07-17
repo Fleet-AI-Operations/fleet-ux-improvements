@@ -21,8 +21,8 @@ const VERIFIER_CHAT_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX;
 const DECODE_SYSTEM_PROMPT =
     'You are helping a reviewer understand a task verifier result. Given the verifier\'s '
     + 'Python source and its captured output, explain in plain language what caused each '
-    + 'failure, citing the specific check or function in the code responsible. Allow for the '
-    + 'possibility that the verifier code itself is incorrect; if you determine that, say so '
+    + 'failure, citing the specific check or function in the code responsible. Investigate the '
+    + 'possibility that the verifier code itself is incorrect; if you determine such, say so '
     + 'explicitly and diagnose the root cause in the verifier. If the output references values '
     + 'a reviewer cannot know (transaction numbers, email IDs, internal keys), use the verifier '
     + 'source to explain what it was looking for so the output becomes interpretable. Be concise: '
@@ -31,7 +31,7 @@ const DECODE_SYSTEM_PROMPT =
     + 'output does not match the code, simply state that there seems to be a mismatch. Do not '
     + 'acknowledge checks that passed. If there are no failures, state that there is nothing to analyze. '
     + 'In this current scenario, the only thing that the reviewer can do to attempt to fix the errors '
-    + 'is to attempt the task while completing different actions. They cannot modify the verifier code. '
+    + 'is to attempt the task while completing different actions. The reviewer cannot modify the verifier code. '
     + 'Therefore, do not suggest modifications to the code ever; only changes in how the task is '
     + 'attempted if it makes sense to do so. If the verifier is clearly incorrectly written, then '
     + 'advise flagging the task as bugged.';
@@ -919,7 +919,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.5',
+    _version: '4.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
