@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
-// Engine v10.2: cards/slices display estimated percentile; blend percentile matches blended score.
+// Engine v10.5: tierGate metadata, integer observed counts, card-aligned LLM payload.
 
-const RE_VERSION = '10.4';
+const RE_VERSION = '10.5';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -225,37 +225,59 @@ function reShrunkRate(k, n, C, prior) {
     return (k + C * prior) / (n + C);
 }
 
+function reTierGateMeta(status, qualified, displayed, volume, requiredVolume) {
+    if (!status) return null;
+    return {
+        status,
+        qualifiedTier: qualified.label,
+        qualifiedTierId: qualified.id,
+        displayedTier: displayed.label,
+        displayedTierId: displayed.id,
+        volume: Number.isFinite(Number(volume)) ? Number(volume) : null,
+        requiredVolume: requiredVolume != null ? Number(requiredVolume) : null,
+    };
+}
+
 /** Population tier from empirical cutoffs + absolute top peg (+ volume soft gate). */
 function rePopulationTier(score, kind, weighting, volume) {
     const n = Number(score);
-    if (!Number.isFinite(n)) return { id: null, label: '—' };
+    if (!Number.isFinite(n)) return { id: null, label: '—', tierGate: null };
     const params = (RE_TIER_THRESHOLDS[kind] && RE_TIER_THRESHOLDS[kind][weighting]) || null;
-    if (!params) return { id: null, label: '—' };
+    if (!params) return { id: null, label: '—', tierGate: null };
     let topMin = Number(params.topMin);
     const p10 = Number(params.p10);
     const p30 = Number(params.p30);
     const p70 = Number(params.p70);
     if (!(topMin > p70)) topMin = p70 + 0.01;
+    const vol = Number(volume);
     if (n >= topMin) {
         const minVol = RE_TIER_TOP_MIN_VOLUME[kind];
-        const vol = Number(volume);
         // Score clears the peg, but Top tier needs High-confidence sample size.
         if (minVol != null && (!Number.isFinite(vol) || vol < minVol)) {
-            return RE_TIER_DEFS[3]; // Above average
+            const displayed = RE_TIER_DEFS[3]; // Above average
+            return {
+                id: displayed.id,
+                label: displayed.label,
+                tierGate: reTierGateMeta('top_demoted', RE_TIER_DEFS[4], displayed, vol, minVol),
+            };
         }
-        return RE_TIER_DEFS[4];
+        return { id: RE_TIER_DEFS[4].id, label: RE_TIER_DEFS[4].label, tierGate: null };
     }
-    if (n >= p70) return RE_TIER_DEFS[3];
-    if (n >= p30) return RE_TIER_DEFS[2];
-    if (n >= p10) return RE_TIER_DEFS[1];
+    if (n >= p70) return { id: RE_TIER_DEFS[3].id, label: RE_TIER_DEFS[3].label, tierGate: null };
+    if (n >= p30) return { id: RE_TIER_DEFS[2].id, label: RE_TIER_DEFS[2].label, tierGate: null };
+    if (n >= p10) return { id: RE_TIER_DEFS[1].id, label: RE_TIER_DEFS[1].label, tierGate: null };
     {
         const minVol = RE_TIER_POOR_MIN_VOLUME[kind];
-        const vol = Number(volume);
         // Bottom-decile score, but Poor needs enough evidence; else Below average.
         if (minVol != null && (!Number.isFinite(vol) || vol < minVol)) {
-            return RE_TIER_DEFS[1];
+            const displayed = RE_TIER_DEFS[1];
+            return {
+                id: displayed.id,
+                label: displayed.label,
+                tierGate: reTierGateMeta('poor_demoted', RE_TIER_DEFS[0], displayed, vol, minVol),
+            };
         }
-        return RE_TIER_DEFS[0];
+        return { id: RE_TIER_DEFS[0].id, label: RE_TIER_DEFS[0].label, tierGate: null };
     }
 }
 
@@ -272,12 +294,14 @@ function reAnnotatePopulationTier(block, kind, weighting, volume) {
     if (block.score == null || !Number.isFinite(Number(block.score))) {
         block.band = '—';
         block.tierId = null;
+        block.tierGate = null;
         return block;
     }
     const vol = volume != null ? volume : reBlockVolumeForTier(block, kind);
     const tier = rePopulationTier(block.score, kind, weighting, vol);
     block.band = tier.label;
     block.tierId = tier.id;
+    block.tierGate = tier.tierGate || null;
     return block;
 }
 
@@ -343,7 +367,7 @@ function reWeightedMean(pairs) {
 function reCombineAxes(axisDefs) {
     const defined = axisDefs.filter((p) => p.defined !== false && p.score != null && Number.isFinite(p.score));
     if (defined.length === 0) {
-        return { score: null, band: '—', tierId: null, axes: axisDefs };
+        return { score: null, band: '—', tierId: null, tierGate: null, axes: axisDefs };
     }
     const baseSum = defined.reduce((s, p) => s + p.baseWeight, 0);
     let composite = 0;
@@ -356,7 +380,7 @@ function reCombineAxes(axisDefs) {
         composite += p.score * p.effectiveWeight;
     }
     const score = Math.round(composite * 1000) / 10;
-    return { score, band: '—', tierId: null, axes: axisDefs };
+    return { score, band: '—', tierId: null, tierGate: null, axes: axisDefs };
 }
 
 function reTaskRatingQualityValue(rawRating) {
@@ -567,16 +591,22 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn, kind, weighting) {
             slices: usable
                 .slice()
                 .sort((a, b) => (b.volume || 0) - (a.volume || 0) || String(a.key).localeCompare(String(b.key)))
-                .map((row) => ({
-                    key: row.key,
-                    score: row.block.score,
-                    volume: row.volume,
-                    estimatedPercentile: row.block.estimatedPercentile != null
-                        ? row.block.estimatedPercentile
-                        : null,
-                    priorSource: row.priorSource || (row.block && row.block.priorSource) || null,
-                    axes: (row.block.axes || []).map((axis) => ({ ...axis })),
-                })),
+                .map((row) => {
+                    const sliceTier = rePopulationTier(row.block.score, kind, weighting, row.volume);
+                    return {
+                        key: row.key,
+                        score: row.block.score,
+                        volume: row.volume,
+                        band: sliceTier.label,
+                        tierId: sliceTier.id,
+                        tierGate: sliceTier.tierGate || null,
+                        estimatedPercentile: row.block.estimatedPercentile != null
+                            ? row.block.estimatedPercentile
+                            : null,
+                        priorSource: row.priorSource || (row.block && row.block.priorSource) || null,
+                        axes: (row.block.axes || []).map((axis) => ({ ...axis })),
+                    };
+                }),
         };
     }
     const score = mainWeight * mainBlock.score
@@ -589,6 +619,7 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn, kind, weighting) {
         score: rounded,
         band: tier.label,
         tierId: tier.id,
+        tierGate: tier.tierGate || null,
         estimatedPercentile: reEstimatePercentile(rounded, pctParams),
         confidence: mainBlock.confidence,
         main: {
@@ -669,6 +700,7 @@ function reScoreBlockExport(block) {
         score: block.score,
         band: block.band,
         tierId: block.tierId != null ? block.tierId : null,
+        tierGate: block.tierGate || null,
         estimatedPercentile: block.estimatedPercentile != null ? block.estimatedPercentile : null,
         confidence: block.confidence || null,
         axes: reSortedAxesForExport(block.axes).map(reAxisExportRow)
@@ -738,10 +770,13 @@ function reAxisOmitReason(axis) {
     }
 }
 
-/** Curate axis.raw into a compact evidence object for LLM explain payloads. */
-function reAxisEvidenceForLlm(axis) {
+/** Integer in-window observation counts for LLM explain (never weighted mass). */
+function reAxisObservedCountsForLlm(axis) {
     if (!axis) return null;
     const raw = axis.raw || {};
+    if (raw.observedCounts && typeof raw.observedCounts === 'object') {
+        return { ...raw.observedCounts };
+    }
     switch (axis.id) {
         case 'outcomeQuality':
             return {
@@ -749,81 +784,134 @@ function reAxisEvidenceForLlm(axis) {
                 closureOutcomes: raw.closureN != null ? raw.closureN : null,
                 closureStatusCounts: raw.closureStatusCounts || null,
             };
-        case 'positiveFeedbackRate':
-            return {
-                positive: raw.weightedPositive != null ? raw.weightedPositive
-                    : (raw.positive != null ? raw.positive : null),
-                total: raw.weightedTotal != null ? raw.weightedTotal
-                    : (raw.total != null ? raw.total : null),
-            };
-        case 'taskRatingQuality':
-        case 'nonBottomScoreRate':
-            return {
-                qualityPoints: raw.qualityPoints != null ? raw.qualityPoints
-                    : (raw.weightedQualityPoints != null ? raw.weightedQualityPoints : null),
-                scored: raw.total != null ? raw.total
-                    : (raw.weightedScored != null ? raw.weightedScored : null),
-                labels: {
-                    bottom: raw.weightedBottom != null ? raw.weightedBottom : null,
-                    average: raw.weightedAverage != null ? raw.weightedAverage : null,
-                    top: raw.weightedTop != null ? raw.weightedTop : null,
-                },
-            };
-        case 'firstPassAcceptance':
-            return {
-                accepted: raw.weightedAccepted != null ? raw.weightedAccepted
-                    : (raw.firstPass != null ? raw.firstPass : null),
-                eligible: raw.weightedEligible != null ? raw.weightedEligible
-                    : (raw.total != null ? raw.total : null),
-                tasks: raw.taskCount != null ? raw.taskCount : null,
-            };
         case 'disputeLossAvoidance':
         case 'disputeWinRate':
-            return {
-                losses: raw.losses != null ? raw.losses : null,
-                wins: raw.wins != null ? raw.wins : (raw.approved != null ? raw.approved : null),
-                resolved: raw.resolved != null ? raw.resolved : null,
-            };
-        case 'returnEffectiveness':
-            return {
-                effective: raw.weightedResolved != null ? raw.weightedResolved
-                    : (raw.effective != null ? raw.effective : null),
-                negOnTerminal: raw.weightedNegTerminal != null ? raw.weightedNegTerminal
-                    : (raw.total != null ? raw.total : null),
-            };
-        case 'returnActionability':
-            return {
-                actionable: raw.weightedOneRound != null ? raw.weightedOneRound
-                    : (raw.actionable != null ? raw.actionable : null),
-                negOnProduction: raw.weightedNegProduction != null ? raw.weightedNegProduction
-                    : (raw.total != null ? raw.total : null),
-            };
         case 'disputeDefense':
             return {
                 losses: raw.losses != null ? raw.losses : null,
-                wins: raw.wins != null ? raw.wins : (raw.upheld != null ? raw.upheld : null),
+                wins: raw.wins != null ? raw.wins : null,
                 resolved: raw.resolved != null ? raw.resolved : null,
             };
-        case 'labelDiscrimination':
-            return {
-                nonAverageLabels: raw.weightedNonStd != null ? raw.weightedNonStd : null,
-                scoredLabels: raw.weightedScored != null ? raw.weightedScored : null,
-                sampleN: raw.sampleN != null ? raw.sampleN : null,
-                minSampleN: raw.minSampleN != null ? raw.minSampleN : null,
-            };
-        default: {
-            const keys = Object.keys(raw);
-            if (!keys.length) return null;
-            const out = {};
-            for (const k of keys.slice(0, 8)) out[k] = raw[k];
-            return out;
-        }
+        default:
+            return null;
     }
 }
 
-function reScoreBlockForLlm(block, kind) {
-    if (!block || block.score == null) return null;
-    const display = block.display || {};
+function reAxisIsNeutralNoEvidence(axis) {
+    if (!axis) return false;
+    const raw = axis.raw || {};
+    if (raw.neutralNoEvidence === true) return true;
+    if (axis.id === 'disputeLossAvoidance' || axis.id === 'disputeDefense' || axis.id === 'disputeWinRate') {
+        return Number(raw.resolved) === 0;
+    }
+    return false;
+}
+
+function reSampleStatusForVolume(kind, volume) {
+    const n = Number(volume) || 0;
+    if (kind === 'qaqs') return reQaqsConfidenceBadge(n).tier;
+    return reTwqsConfidenceBadge(n).tier;
+}
+
+function reAxisRowForLlm(axis) {
+    const defined = axis && axis.defined !== false && axis.score != null && Number.isFinite(axis.score);
+    const neutralNoEvidence = reAxisIsNeutralNoEvidence(axis);
+    const row = {
+        id: String((axis && axis.id) || ''),
+        label: String((axis && axis.label) || ''),
+        weightPct: rePctOneDecimal(axis && axis.baseWeight),
+        // Recency-weighted + prior-shrunk axis score (0–100). Not a raw observed ratio.
+        axisScorePct: defined ? rePctOneDecimal(axis.score) : null,
+        defined,
+        neutralNoEvidence,
+    };
+    if (!defined) {
+        row.omittedReason = reAxisOmitReason(axis);
+    } else {
+        const observedCounts = reAxisObservedCountsForLlm(axis);
+        if (observedCounts) row.observedCounts = observedCounts;
+    }
+    return row;
+}
+
+function reExtremeAxesForSlice(axes) {
+    const usable = reSortedAxesForExport(axes).filter((axis) => {
+        if (!axis || axis.defined === false || axis.score == null || !Number.isFinite(axis.score)) return false;
+        if (reAxisIsNeutralNoEvidence(axis)) return false;
+        return true;
+    });
+    if (!usable.length) return { strongestAxis: null, weakestAxis: null };
+    let strongest = usable[0];
+    let weakest = usable[0];
+    for (const axis of usable) {
+        if (axis.score > strongest.score) strongest = axis;
+        if (axis.score < weakest.score) weakest = axis;
+    }
+    const toRef = (axis) => ({
+        id: String(axis.id || ''),
+        axisScorePct: rePctOneDecimal(axis.score),
+    });
+    if (strongest === weakest) {
+        return { strongestAxis: toRef(strongest), weakestAxis: null };
+    }
+    return { strongestAxis: toRef(strongest), weakestAxis: toRef(weakest) };
+}
+
+function reCompactSliceForLlm(slice, kind, overallPercentile) {
+    if (!slice) return null;
+    const volume = slice.volume != null ? slice.volume : null;
+    const estPct = slice.estimatedPercentile != null ? slice.estimatedPercentile : null;
+    const overall = overallPercentile != null && Number.isFinite(Number(overallPercentile))
+        ? Number(overallPercentile)
+        : null;
+    const extremes = reExtremeAxesForSlice(slice.axes);
+    return {
+        key: String(slice.key || ''),
+        tier: slice.band || null,
+        tierId: slice.tierId != null ? slice.tierId : null,
+        tierGate: slice.tierGate || null,
+        estimatedPercentile: estPct,
+        volume,
+        sampleStatus: reSampleStatusForVolume(kind, volume),
+        priorSource: (slice.priorSource && slice.priorSource.source) || null,
+        percentileDeltaFromOverall: (estPct != null && overall != null)
+            ? Math.round((Number(estPct) - overall) * 10) / 10
+            : null,
+        strongestAxis: extremes.strongestAxis,
+        weakestAxis: extremes.weakestAxis,
+    };
+}
+
+function reCompactSlicesForLlm(cohortEntry, kind, overallPercentile) {
+    if (!cohortEntry || !cohortEntry.channels) return null;
+    const dimensions = {};
+    for (const dim of ['team', 'env', 'month']) {
+        const channel = cohortEntry.channels[dim];
+        const slices = (channel && Array.isArray(channel.slices)) ? channel.slices : [];
+        if (!slices.length) continue;
+        dimensions[dim] = slices
+            .map((slice) => reCompactSliceForLlm(slice, kind, overallPercentile))
+            .filter(Boolean)
+            .sort((a, b) => {
+                const volDiff = (Number(b.volume) || 0) - (Number(a.volume) || 0);
+                if (volDiff !== 0) return volDiff;
+                const deltaDiff = Math.abs(Number(b.percentileDeltaFromOverall) || 0)
+                    - Math.abs(Number(a.percentileDeltaFromOverall) || 0);
+                if (deltaDiff !== 0) return deltaDiff;
+                return String(a.key).localeCompare(String(b.key));
+            });
+    }
+    return Object.keys(dimensions).length ? dimensions : null;
+}
+
+/**
+ * Card-aligned score block for LLM explain.
+ * Headline fields match the cohort-blended card display when a blend exists;
+ * axes come from the main (pre-blend) block used for driver explanation.
+ */
+function reScoreBlockForLlm(mainBlock, kind, cohortEntry) {
+    if (!mainBlock || mainBlock.score == null) return null;
+    const display = mainBlock.display || {};
     const volume = kind === 'qaqs'
         ? {
             feedbackRows: display.inScopeFeedbackCount != null
@@ -835,84 +923,31 @@ function reScoreBlockForLlm(block, kind) {
             terminalTasks: display.terminalTaskCount != null ? display.terminalTaskCount : null,
             tenureDays: display.tenureDays != null ? display.tenureDays : null,
         };
-    const axes = reSortedAxesForExport(block.axes).map((axis) => {
-        const defined = axis && axis.defined !== false && axis.score != null && Number.isFinite(axis.score);
-        const row = {
-            id: String((axis && axis.id) || ''),
-            label: String((axis && axis.label) || ''),
-            weightPct: rePctOneDecimal(axis && axis.baseWeight),
-            subScorePct: defined ? rePctOneDecimal(axis.score) : null,
-            defined,
-        };
-        if (!defined) {
-            row.omittedReason = reAxisOmitReason(axis);
-        } else {
-            const evidence = reAxisEvidenceForLlm(axis);
-            if (evidence) row.evidence = evidence;
-        }
-        return row;
-    });
-    return {
-        score: block.score,
-        tier: block.band || null,
-        tierId: block.tierId != null ? block.tierId : null,
-        estimatedPercentile: block.estimatedPercentile != null ? block.estimatedPercentile : null,
-        confidence: (block.confidence && block.confidence.label) || null,
+    const headline = (cohortEntry && cohortEntry.score != null) ? cohortEntry : mainBlock;
+    const overallPct = headline.estimatedPercentile != null
+        ? headline.estimatedPercentile
+        : mainBlock.estimatedPercentile;
+    const axes = reSortedAxesForExport(mainBlock.axes).map(reAxisRowForLlm);
+    const out = {
+        score: headline.score,
+        tier: headline.band || null,
+        tierId: headline.tierId != null ? headline.tierId : null,
+        tierGate: headline.tierGate || null,
+        estimatedPercentile: overallPct != null ? overallPct : null,
+        confidence: (mainBlock.confidence && mainBlock.confidence.label) || null,
         volume,
+        // axisScorePct values are recency-weighted (when weighting=recency) and prior-shrunk.
+        axisScoreNote: 'axisScorePct is recency-weighted (when weighting is recency) and prior-shrunk; cite observedCounts for event totals, not axisScorePct as a raw ratio.',
         axes,
     };
-}
-
-function reCohortForLlm(cohortEntry, kind, weighting) {
-    if (!cohortEntry || cohortEntry.score == null) return null;
-    const dimensions = {};
-    for (const dim of ['team', 'env', 'month']) {
-        const channel = cohortEntry.channels && cohortEntry.channels[dim];
-        const slices = (channel && Array.isArray(channel.slices)) ? channel.slices : [];
-        if (!slices.length) continue;
-        dimensions[dim] = slices.map((slice) => {
-            const tier = (kind && weighting)
-                ? rePopulationTier(slice.score, kind, weighting, slice.volume)
-                : { id: null, label: null };
-            return {
-                key: String(slice.key || ''),
-                score: slice.score,
-                tier: tier.label || null,
-                estimatedPercentile: slice.estimatedPercentile != null ? slice.estimatedPercentile : null,
-                volume: slice.volume != null ? slice.volume : null,
-                priorSource: (slice.priorSource && slice.priorSource.source) || null,
-                axes: reSortedAxesForExport(slice.axes).map((axis) => {
-                    const defined = axis && axis.defined !== false && axis.score != null && Number.isFinite(axis.score);
-                    const row = {
-                        id: String((axis && axis.id) || ''),
-                        label: String((axis && axis.label) || ''),
-                        weightPct: rePctOneDecimal(axis && axis.baseWeight),
-                        subScorePct: defined ? rePctOneDecimal(axis.score) : null,
-                        defined,
-                    };
-                    if (!defined) row.omittedReason = reAxisOmitReason(axis);
-                    else {
-                        const evidence = reAxisEvidenceForLlm(axis);
-                        if (evidence) row.evidence = evidence;
-                    }
-                    return row;
-                }),
-            };
-        });
-    }
-    return {
-        score: cohortEntry.score,
-        tier: cohortEntry.band || null,
-        estimatedPercentile: cohortEntry.estimatedPercentile != null
-            ? cohortEntry.estimatedPercentile
-            : null,
-        dimensions,
-    };
+    const slices = reCompactSlicesForLlm(cohortEntry, kind, overallPct);
+    if (slices) out.slices = slices;
+    return out;
 }
 
 /**
  * Token-lean per-worker payload for LLM explain / "LLM Data" export.
- * Prefer evidence counts over raw event dumps.
+ * Headline matches the card; slices are compact; counts are integers.
  */
 function reBuildLlmExplainData(worker, report, weighting) {
     const src = worker || {};
@@ -937,20 +972,10 @@ function reBuildLlmExplainData(worker, report, weighting) {
         weighting: weight,
         scores: {},
     };
-    const twqs = reScoreBlockForLlm(twqsBlock, 'twqs');
-    const qaqs = reScoreBlockForLlm(qaqsBlock, 'qaqs');
-    if (twqs) {
-        out.scores.twqs = twqs;
-        if (cohortEntry && cohortEntry.twqs) {
-            out.scores.twqs.cohort = reCohortForLlm(cohortEntry.twqs, 'twqs', weight);
-        }
-    }
-    if (qaqs) {
-        out.scores.qaqs = qaqs;
-        if (cohortEntry && cohortEntry.qaqs) {
-            out.scores.qaqs.cohort = reCohortForLlm(cohortEntry.qaqs, 'qaqs', weight);
-        }
-    }
+    const twqs = reScoreBlockForLlm(twqsBlock, 'twqs', cohortEntry && cohortEntry.twqs);
+    const qaqs = reScoreBlockForLlm(qaqsBlock, 'qaqs', cohortEntry && cohortEntry.qaqs);
+    if (twqs) out.scores.twqs = twqs;
+    if (qaqs) out.scores.qaqs = qaqs;
     return out;
 }
 
@@ -1164,11 +1189,14 @@ const RatingEngine = {
         let oqKsumB = 0, oqNsumB = 0;
         // Positive Feedback Rate: all human feedback, recency-weighted
         let pfKsum = 0, pfNsum = 0;
+        let pfPositiveCount = 0, pfTotalCount = 0;
         // Task Rating Quality: explicitly scored feedback only (qualityRatingRaw), ordinal 0/0.5/1
         let trqKsum = 0, trqNsum = 0;
         let trqBottomW = 0, trqAverageW = 0, trqTopW = 0;
+        let trqBottomCount = 0, trqAverageCount = 0, trqTopCount = 0, trqScoredCount = 0;
         // First-Pass Acceptance: one per task (earliest in-scope feedback), recency-weighted
         let fpKsum = 0, fpNsum = 0;
+        let fpAcceptedCount = 0, fpEligibleCount = 0;
         const fpSeenTasks = new Set();
         // Closure outcome: flat-only production/discarded/dismissed path.
         let oqClosureKsum = 0, oqClosureN = 0;
@@ -1223,7 +1251,11 @@ const RatingEngine = {
 
                 // Positive Feedback Rate
                 pfNsum += fw;
-                if (entry.isPositive) pfKsum += fw;
+                pfTotalCount += 1;
+                if (entry.isPositive) {
+                    pfKsum += fw;
+                    pfPositiveCount += 1;
+                }
 
                 // Task Rating Quality (explicit score labels only via qualityRatingRaw)
                 const rawRating = entry.display && entry.display.qualityRatingRaw;
@@ -1231,16 +1263,28 @@ const RatingEngine = {
                 if (ratingValue != null) {
                     trqNsum += fw;
                     trqKsum += ratingValue * fw;
-                    if (rawRating === 'Bottom 10%') trqBottomW += fw;
-                    else if (rawRating === 'Average') trqAverageW += fw;
-                    else if (rawRating === 'Top 10%') trqTopW += fw;
+                    trqScoredCount += 1;
+                    if (rawRating === 'Bottom 10%') {
+                        trqBottomW += fw;
+                        trqBottomCount += 1;
+                    } else if (rawRating === 'Average') {
+                        trqAverageW += fw;
+                        trqAverageCount += 1;
+                    } else if (rawRating === 'Top 10%') {
+                        trqTopW += fw;
+                        trqTopCount += 1;
+                    }
                 }
 
                 // First-Pass Acceptance: first in-scope feedback per task
                 if (taskId && !fpSeenTasks.has(taskId)) {
                     fpSeenTasks.add(taskId);
                     fpNsum += fw;
-                    if (entry.isPositive) fpKsum += fw;
+                    fpEligibleCount += 1;
+                    if (entry.isPositive) {
+                        fpKsum += fw;
+                        fpAcceptedCount += 1;
+                    }
                 }
             }
 
@@ -1294,14 +1338,23 @@ const RatingEngine = {
                         closureStatusCounts: oqClosureStatuses,
                         blend: oqClosureScore != null
                             ? '0.5*currentOutcome + 0.5*closureOutcome'
-                            : 'currentOutcome (no closure outcomes)'
+                            : 'currentOutcome (no closure outcomes)',
+                        observedCounts: {
+                            terminalTasks: oqTerminalCount,
+                            closureOutcomes: oqClosureN,
+                            closureStatusCounts: oqClosureStatuses,
+                        },
                     };
                     break;
                 case 'positiveFeedbackRate':
                     score = pfScore;
                     raw = {
                         weightedPositive: Math.round(pfKsum * 1000) / 1000,
-                        weightedTotal: Math.round(pfNsum * 1000) / 1000
+                        weightedTotal: Math.round(pfNsum * 1000) / 1000,
+                        observedCounts: {
+                            positive: pfPositiveCount,
+                            total: pfTotalCount,
+                        },
                     };
                     break;
                 case 'taskRatingQuality':
@@ -1314,7 +1367,13 @@ const RatingEngine = {
                         weightedTop: Math.round(trqTopW * 1000) / 1000,
                         // Aliases used by the stats-pane breakdown helper.
                         qualityPoints: Math.round(trqKsum * 1000) / 1000,
-                        total: Math.round(trqNsum * 1000) / 1000
+                        total: Math.round(trqNsum * 1000) / 1000,
+                        observedCounts: {
+                            bottom: trqBottomCount,
+                            average: trqAverageCount,
+                            top: trqTopCount,
+                            scored: trqScoredCount,
+                        },
                     };
                     break;
                 case 'firstPassAcceptance':
@@ -1322,12 +1381,27 @@ const RatingEngine = {
                     raw = {
                         weightedAccepted: Math.round(fpKsum * 1000) / 1000,
                         weightedEligible: Math.round(fpNsum * 1000) / 1000,
-                        taskCount: fpSeenTasks.size
+                        taskCount: fpSeenTasks.size,
+                        observedCounts: {
+                            accepted: fpAcceptedCount,
+                            eligible: fpEligibleCount,
+                            tasks: fpSeenTasks.size,
+                        },
                     };
                     break;
                 case 'disputeLossAvoidance':
                     score = dwScore;
-                    raw = { losses: dwLosses, wins: dwWins, resolved: dwResolved };
+                    raw = {
+                        losses: dwLosses,
+                        wins: dwWins,
+                        resolved: dwResolved,
+                        observedCounts: {
+                            losses: dwLosses,
+                            wins: dwWins,
+                            resolved: dwResolved,
+                        },
+                        neutralNoEvidence: dwResolved === 0,
+                    };
                     break;
                 default:
                     break;
@@ -1374,10 +1448,13 @@ const RatingEngine = {
 
         // Return Effectiveness: neg feedback on terminal tasks → production
         let reKsum = 0, reNsum = 0;
+        let reEffectiveCount = 0, reEligibleCount = 0;
         // Return Actionability: neg on production → next human row positive?
         let raKsum = 0, raNsum = 0;
+        let raActionableCount = 0, raEligibleCount = 0;
         // Label Discrimination: explicit score labels (qualityRatingRaw)
         let ldKsum = 0, ldNsum = 0;
+        let ldNonAvgCount = 0, ldScoredCount = 0;
         // Dispute Loss Avoidance: sole-neg attribution, unweighted.
         let ddLosses = 0, ddDenom = 0, ddWins = 0;
 
@@ -1401,17 +1478,23 @@ const RatingEngine = {
                 const termQ = reTaskTerminalQuality(task, nowMs);
                 if (termQ !== null) {
                     reNsum += fw;
-                    if (taskStatus === 'production') reKsum += fw;
+                    reEligibleCount += 1;
+                    if (taskStatus === 'production') {
+                        reKsum += fw;
+                        reEffectiveCount += 1;
+                    }
                 }
             }
 
             // Return Actionability: neg on production → next human row positive?
             if (!entry.isPositive && taskStatus === 'production') {
                 raNsum += fw;
+                raEligibleCount += 1;
                 const allHuman = reHumanFeedbackChronological(task);
                 const idx = allHuman.findIndex((e) => reIdsEqual(e.id, entry.id));
                 if (idx >= 0 && idx + 1 < allHuman.length && allHuman[idx + 1].isPositive) {
                     raKsum += fw;
+                    raActionableCount += 1;
                 }
             }
 
@@ -1419,7 +1502,11 @@ const RatingEngine = {
             const rawRating = entry.display && entry.display.qualityRatingRaw;
             if (rawRating === 'Average' || rawRating === 'Top 10%' || rawRating === 'Bottom 10%') {
                 ldNsum += fw;
-                if (rawRating !== 'Average') ldKsum += fw;
+                ldScoredCount += 1;
+                if (rawRating !== 'Average') {
+                    ldKsum += fw;
+                    ldNonAvgCount += 1;
+                }
             }
         }
 
@@ -1476,7 +1563,11 @@ const RatingEngine = {
                     score = reScore;
                     raw = {
                         weightedResolved: Math.round(reKsum * 1000) / 1000,
-                        weightedNegTerminal: Math.round(reNsum * 1000) / 1000
+                        weightedNegTerminal: Math.round(reNsum * 1000) / 1000,
+                        observedCounts: {
+                            effective: reEffectiveCount,
+                            eligible: reEligibleCount,
+                        },
                     };
                     break;
                 case 'returnActionability':
@@ -1484,12 +1575,26 @@ const RatingEngine = {
                     score = raScore;
                     raw = {
                         weightedOneRound: Math.round(raKsum * 1000) / 1000,
-                        weightedNegProduction: Math.round(raNsum * 1000) / 1000
+                        weightedNegProduction: Math.round(raNsum * 1000) / 1000,
+                        observedCounts: {
+                            actionable: raActionableCount,
+                            eligible: raEligibleCount,
+                        },
                     };
                     break;
                 case 'disputeDefense':
                     score = ddScore;
-                    raw = { losses: ddLosses, wins: ddWins, resolved: ddDenom };
+                    raw = {
+                        losses: ddLosses,
+                        wins: ddWins,
+                        resolved: ddDenom,
+                        observedCounts: {
+                            losses: ddLosses,
+                            wins: ddWins,
+                            resolved: ddDenom,
+                        },
+                        neutralNoEvidence: ddDenom === 0,
+                    };
                     break;
                 case 'labelDiscrimination':
                     defined = ldDefined;
@@ -1498,7 +1603,12 @@ const RatingEngine = {
                         weightedNonStd: Math.round(ldKsum * 1000) / 1000,
                         weightedScored: Math.round(ldNsum * 1000) / 1000,
                         sampleN: inScopeFeedbackCount,
-                        minSampleN: RE_QAQS_LABEL_DISC_MIN_N
+                        minSampleN: RE_QAQS_LABEL_DISC_MIN_N,
+                        observedCounts: {
+                            nonAverageLabels: ldNonAvgCount,
+                            scoredLabels: ldScoredCount,
+                            sampleN: inScopeFeedbackCount,
+                        },
                     };
                     break;
                 default:
@@ -1762,7 +1872,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '10.4',
+    _version: '10.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
