@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.7',
+    _version: '10.8',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -2573,18 +2573,28 @@ const plugin = {
         const storageKey = 'last-auto-opened-update-version';
         if (Storage.get(storageKey, null) === latestVersion) return;
 
-        try {
-            if (typeof Context.openInTab !== 'function') {
-                Logger.warn(`${this.id}: could not automatically open update because the tab opener is unavailable`);
-                return;
-            }
-            Context.openInTab(this._getUpdateUrl(), { active: true, insert: true, setParent: true });
-            Storage.set(storageKey, latestVersion);
-            this._updateTabOpenedAutomatically = true;
-            Logger.log(`${this.id}: automatically opened update ${latestVersion} in a new tab`);
-        } catch (error) {
-            Logger.error(`${this.id}: failed to automatically open update ${latestVersion}`, error);
+        if (typeof Context.openInTab !== 'function') {
+            Logger.warn(`${this.id}: could not automatically open update because the tab opener is unavailable`);
+            return;
         }
+
+        this._updateTabOpenedAutomatically = true;
+        this.openModal({ forceSettings: true });
+        if (!this._modalOpen) {
+            this._updateTabOpenedAutomatically = false;
+            Logger.warn(`${this.id}: could not automatically open update because the Settings modal failed to open`);
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            try {
+                Context.openInTab(this._getUpdateUrl(), { active: true, insert: true, setParent: true });
+                Storage.set(storageKey, latestVersion);
+                Logger.log(`${this.id}: opened Settings and automatically opened update ${latestVersion} in a new tab`);
+            } catch (error) {
+                Logger.error(`${this.id}: failed to automatically open update ${latestVersion}`, error);
+            }
+        });
     },
 
     _createUpdateNotificationHTML() {
