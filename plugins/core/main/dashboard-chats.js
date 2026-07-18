@@ -441,7 +441,7 @@ function chatsSyncArchivedRatingCard(panel, state) {
     host.setAttribute('aria-label', 'Archived rating card');
     host.style.cssText = 'display: block; width: min(100%, 640px); max-width: 100%;'
         + ' min-width: 0; margin: 0 auto; flex: 0 0 auto; box-sizing: border-box;'
-        + ' color: var(--foreground, #0f172a); overflow: auto; max-height: 45%;';
+        + ' color: var(--foreground, #0f172a); overflow: auto; max-height: 100%;';
     host.innerHTML = html;
 }
 
@@ -562,9 +562,16 @@ function chatsPanelHtml() {
         + '<button type="button" data-wf-dash-chats-export class="' + btn + '">Export</button>'
         + '</div>'
         + '<div data-wf-dash-chats-status style="display: none; font-size: 11px;"></div>'
+        + '<div data-wf-dash-chats-content style="flex: 1 1 auto; min-width: 0; min-height: 0;'
+        + ' width: 100%; max-width: 1564px; margin: 0 auto; display: grid;'
+        + ' grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));'
+        + ' gap: 12px; align-items: stretch;">'
         + '<div data-wf-dash-chats-archived-rating style="display: none;"></div>'
-        + '<div data-wf-dash-chats-mount style="flex: 1 1 auto; min-height: 280px; display: flex;'
-        + ' flex-direction: column;"></div>'
+        + '<div data-wf-dash-chats-chat-column style="width: 100%; max-width: 900px; min-width: 0;'
+        + ' min-height: 280px; margin: 0 auto; display: flex; flex-direction: column;">'
+        + '<div data-wf-dash-chats-mount style="flex: 1 1 auto; width: 100%; max-width: 100%;'
+        + ' min-width: 0; min-height: 280px; display: flex; flex-direction: column;"></div>'
+        + '</div></div>'
         + '</section></div></div></div>';
 }
 
@@ -877,7 +884,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -904,7 +911,7 @@ const plugin = {
             },
         });
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v3.1');
+            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v3.2');
             state.registered = true;
         }
     },
