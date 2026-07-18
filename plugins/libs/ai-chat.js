@@ -7,8 +7,16 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.2';
+const AI_CHAT_VERSION = '2.3';
 const PLUGIN_ID = 'ai-chat';
+const AI_CHAT_MAX_WIDTH_PX = 900;
+
+function aiChatCopyIconSvg() {
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+        + ' aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>'
+        + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+}
 
 function aiChatHasKey() {
     return !!(Context.aiOpenRouter
@@ -74,21 +82,40 @@ function aiChatApplyTheme(el) {
     if (!el) return;
     el.chatStyle = {
         width: '100%',
+        maxWidth: AI_CHAT_MAX_WIDTH_PX + 'px',
+        margin: '0 auto',
         height: '100%',
         border: 'none',
         backgroundColor: 'transparent',
         fontSize: '13px',
+        boxSizing: 'border-box',
     };
     el.auxiliaryStyle = ''
         + '.deep-chat-temporary-message { display: none; }'
-        + '.name { color: #94a3b8 !important; font-size: 11px !important; font-weight: 600 !important; }';
+        + '.name { color: #94a3b8 !important; font-size: 11px !important; font-weight: 600 !important; }'
+        + '.outer-message-container { position: relative; }'
+        + '.wf-chat-copy {'
+        + '  display: inline-flex; align-items: center; justify-content: center;'
+        + '  width: 28px; height: 28px; padding: 0; margin: 2px 12px 0;'
+        + '  border: none; border-radius: 8px; cursor: pointer;'
+        + '  background: transparent; color: #94a3b8;'
+        + '  opacity: 0; transition: opacity 120ms ease, color 120ms ease, background 120ms ease;'
+        + '}'
+        + '.outer-message-container:hover .wf-chat-copy,'
+        + '.outer-message-container:focus-within .wf-chat-copy,'
+        + '.wf-chat-copy:focus-visible { opacity: 1; }'
+        + '.wf-chat-copy:hover { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #e2e8f0; }'
+        + '.wf-chat-copy--ok { opacity: 1 !important; color: #16a34a !important; }'
+        + '.wf-chat-copy--fail { opacity: 1 !important; color: #dc2626 !important; }'
+        + '.outer-message-container:has(.user-message-text) .wf-chat-copy {'
+        + '  margin-inline-start: auto; margin-inline-end: 12px;'
+        + '}'
     el.messageStyles = {
         default: {
             shared: {
                 bubble: {
-                    maxWidth: '100%',
-                    borderRadius: '8px',
-                    padding: '8px 10px',
+                    borderRadius: '16px',
+                    padding: '10px 14px',
                     fontSize: '13px',
                     lineHeight: '1.45',
                     border: '1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent)',
@@ -96,15 +123,17 @@ function aiChatApplyTheme(el) {
             },
             user: {
                 bubble: {
+                    maxWidth: '75%',
                     backgroundColor: 'color-mix(in srgb, var(--primary, #2563eb) 12%, transparent)',
                     color: 'var(--foreground, #0f172a)',
                 }
             },
             ai: {
                 bubble: {
+                    maxWidth: '100%',
+                    width: '100%',
                     backgroundColor: 'color-mix(in srgb, var(--muted, #f1f5f9) 55%, transparent)',
                     color: 'var(--foreground, #0f172a)',
-                    width: '100%',
                 }
             }
         }
@@ -117,7 +146,7 @@ function aiChatApplyTheme(el) {
         placeholder: { text: 'Message…' },
         styles: {
             container: {
-                borderRadius: '6px',
+                borderRadius: '14px',
                 border: '1px solid var(--input, #cbd5e1)',
                 backgroundColor: 'var(--background, #fff)',
                 color: 'var(--foreground, #0f172a)',
@@ -143,7 +172,7 @@ function aiChatApplyTheme(el) {
             container: {
                 default: {
                     backgroundColor: 'var(--primary, #2563eb)',
-                    borderRadius: '6px',
+                    borderRadius: '12px',
                 }
             }
         },
@@ -151,11 +180,107 @@ function aiChatApplyTheme(el) {
             container: {
                 default: {
                     backgroundColor: 'var(--muted, #f1f5f9)',
-                    borderRadius: '6px',
+                    borderRadius: '12px',
                 }
             }
         }
     };
+}
+
+function aiChatFlashCopyButton(btn, ok) {
+    if (!btn) return;
+    btn.classList.remove('wf-chat-copy--ok', 'wf-chat-copy--fail');
+    btn.classList.add(ok ? 'wf-chat-copy--ok' : 'wf-chat-copy--fail');
+    const prev = btn._wfCopyFlashTimer;
+    if (prev) clearTimeout(prev);
+    btn._wfCopyFlashTimer = setTimeout(() => {
+        btn.classList.remove('wf-chat-copy--ok', 'wf-chat-copy--fail');
+        btn._wfCopyFlashTimer = null;
+    }, 600);
+}
+
+function aiChatMessageRows(shadowRoot) {
+    if (!shadowRoot) return [];
+    return Array.from(shadowRoot.querySelectorAll('.outer-message-container')).filter((row) => {
+        return !!(row.querySelector && row.querySelector('.message-bubble'));
+    });
+}
+
+function aiChatInjectCopyButton(el, row, opts) {
+    const o = aiChatResolveOpts(opts);
+    if (!row || row.querySelector('[data-wf-chat-copy="1"]')) return;
+    const bubble = row.querySelector('.message-bubble');
+    if (!bubble) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('data-wf-chat-copy', '1');
+    btn.className = 'wf-chat-copy';
+    btn.title = 'Copy message as Markdown';
+    btn.setAttribute('aria-label', 'Copy message as Markdown');
+    btn.innerHTML = aiChatCopyIconSvg();
+    btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rows = aiChatMessageRows(el.shadowRoot);
+        const index = rows.indexOf(row);
+        let markdown = '';
+        try {
+            const messages = typeof el.getMessages === 'function' ? el.getMessages() : [];
+            if (index >= 0 && messages && messages[index] && messages[index].text != null) {
+                markdown = String(messages[index].text);
+            } else {
+                markdown = String((bubble.textContent || '')).trim();
+            }
+            if (!markdown) throw new Error('Message is empty');
+            await navigator.clipboard.writeText(markdown);
+            aiChatFlashCopyButton(btn, true);
+            Logger.log(o.logTag + ': copied chat message (' + markdown.length + ' chars)');
+        } catch (err) {
+            aiChatFlashCopyButton(btn, false);
+            Logger.error(o.logTag + ': failed to copy chat message', err);
+        }
+    });
+    row.appendChild(btn);
+}
+
+function aiChatSetupCopyButtons(el, opts) {
+    if (!el || el._wfCopyButtonsWired === '1') return;
+    const attach = () => {
+        const shadow = el.shadowRoot;
+        if (!shadow) return false;
+        if (el._wfCopyObserver) {
+            try { el._wfCopyObserver.disconnect(); } catch (_e) { /* ignore */ }
+            el._wfCopyObserver = null;
+        }
+        const sync = () => {
+            const rows = aiChatMessageRows(shadow);
+            for (let i = 0; i < rows.length; i++) {
+                aiChatInjectCopyButton(el, rows[i], opts);
+            }
+        };
+        const observer = new MutationObserver(() => { sync(); });
+        observer.observe(shadow, { childList: true, subtree: true });
+        el._wfCopyObserver = observer;
+        el._wfCopyButtonsWired = '1';
+        sync();
+        return true;
+    };
+    if (attach()) return;
+    const prev = el.onComponentRender;
+    el.onComponentRender = (ref) => {
+        if (typeof prev === 'function') {
+            try { prev(ref); } catch (_e) { /* ignore */ }
+        }
+        attach();
+    };
+    // Shadow root can appear shortly after mount even without the render callback.
+    let tries = 0;
+    const poll = () => {
+        if (attach() || tries >= 20) return;
+        tries += 1;
+        setTimeout(poll, 50);
+    };
+    setTimeout(poll, 0);
 }
 
 function aiChatSyncHistory(el, state) {
@@ -463,6 +588,7 @@ function aiChatBindElement(el, root, state, opts) {
             return aiChatHandleConnect(activeRoot, activeState, body, signals);
         }
     };
+    aiChatSetupCopyButtons(el, o);
 }
 
 async function aiChatEnsureMounted(root, state, opts) {
@@ -491,11 +617,12 @@ async function aiChatEnsureMounted(root, state, opts) {
     }
     if (!el) {
         el = document.createElement('deep-chat');
-        el.style.cssText = 'display:block;width:100%;height:100%;border:none;background:transparent;';
         mount.innerHTML = '';
         mount.appendChild(el);
         Logger.log(o.logTag + ': deep-chat mounted');
     }
+    el.style.cssText = 'display:block;width:100%;max-width:' + AI_CHAT_MAX_WIDTH_PX
+        + 'px;margin:0 auto;height:100%;border:none;background:transparent;box-sizing:border-box;';
     state._deepChat = el;
     mount.style.minHeight = mount.style.minHeight || '180px';
     if (!mount.style.flex && !mount.style.height) {
@@ -819,7 +946,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
