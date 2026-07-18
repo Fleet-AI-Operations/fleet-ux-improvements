@@ -2729,7 +2729,6 @@ const searchOutputCoreMethods = {
             })) {
                 this._resetAllPrefetchesForRetry();
             }
-            this._startPrefetchesOnce();
         } catch (err) {
             if (this._handleDashSessionRefreshError(err)) {
                 this._state.bootstrapError = null;
@@ -5873,7 +5872,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.16',
+    _version: '9.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -5954,6 +5953,9 @@ const plugin = {
                 }
             },
             onActivate(modal, dash) {
+                void dash._doBootstrap().then(() => {
+                    dash._startPrefetchesOnce();
+                });
                 requestAnimationFrame(() => {
                     dash._applyAllSidePanelWidths();
                     if (typeof dash._applyStatsPanelLayoutOnOpen === 'function') {

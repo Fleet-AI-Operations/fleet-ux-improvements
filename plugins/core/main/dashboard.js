@@ -15,6 +15,7 @@ const DASH_RESULTS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-
 const DASH_STATS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-hidden';
 const DASH_STATS_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-width';
 const DASH_TAB_ORDER_STORAGE_KEY = 'fleet-ux:dashboard-tab-order';
+const DASH_DEFAULT_TAB_STORAGE_KEY = 'fleet-ux:dashboard-default-tab';
 const DASH_DEFAULT_TAB_ORDER = [
     'search-output',
     'diff-viewer',
@@ -109,7 +110,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.9',
+    _version: '11.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -166,6 +167,8 @@ const plugin = {
             getTabs: () => self._orderedTabs().map((tab) => ({ id: tab.id, label: tab.label || tab.id })),
             moveTab: (tabId, delta) => self._moveTab(tabId, delta),
             resetTabOrder: () => self._resetTabOrder(),
+            getDefaultTabId: () => self._readDefaultTabId(),
+            setDefaultTab: (tabId) => self._setDefaultTab(tabId),
             copyChipHtml: (text) => self._copyChipHtml(text),
             personChipsHtml: (name, email, id, linkTitle) => self._personChipsHtml(name, email, id, linkTitle),
             panelBoxStyle: () => self._panelBoxStyle(),
@@ -332,6 +335,28 @@ const plugin = {
         return true;
     },
 
+    _readDefaultTabId() {
+        try {
+            return String(Storage.getData(DASH_DEFAULT_TAB_STORAGE_KEY, 'search-output') || 'search-output').trim();
+        } catch (err) {
+            Logger.warn('dashboard: failed to read default tab', err);
+            return 'search-output';
+        }
+    },
+
+    _setDefaultTab(tabId) {
+        const id = String(tabId || '').trim();
+        if (!id || !this._tabsById || !this._tabsById[id]) return false;
+        try {
+            Storage.setData(DASH_DEFAULT_TAB_STORAGE_KEY, id);
+            Logger.log('dashboard: default tab set — ' + (this._tabsById[id].label || id));
+            return true;
+        } catch (err) {
+            Logger.error('dashboard: failed to save default tab', err);
+            return false;
+        }
+    },
+
     _createInitialState() {
         return {
             catalog: null,
@@ -352,7 +377,7 @@ const plugin = {
             timeFilterUserPicked: false,
             resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
             resultsPage: 0,
-            activeTab: 'search-output',
+            activeTab: this._readDefaultTabId(),
             leftTab: 'search',
             statsTab: 'stats',
             statsUseFiltered: true,
@@ -464,7 +489,8 @@ const plugin = {
             return preferredId;
         }
         if (this._tabs && this._tabs.length > 0) {
-            const firstId = this._tabs[0].id;
+            const ordered = this._orderedTabs();
+            const firstId = ordered.length > 0 ? ordered[0].id : this._tabs[0].id;
             if (preferredId && preferredId !== firstId) {
                 this._logActiveTabFallbackIfNeeded(preferredId, firstId);
             }
@@ -524,6 +550,7 @@ const plugin = {
                 } catch (e) {
                     Logger.debug('dashboard: could not close settings modal', e);
                 }
+                this._state.activeTab = this._readDefaultTabId();
                 this._setActiveTab(this._resolveActiveTabId(this._state.activeTab));
                 this._syncIncompleteTabsBanner();
                 for (const tab of this._tabs) {

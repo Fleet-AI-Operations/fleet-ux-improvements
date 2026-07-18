@@ -784,6 +784,9 @@ function dashboardSettingsPanelHtml() {
 function dashboardTabOrderHtml() {
     const dashboard = Context.dashboard;
     const tabs = dashboard && typeof dashboard.getTabs === 'function' ? dashboard.getTabs() : [];
+    const defaultTabId = dashboard && typeof dashboard.getDefaultTabId === 'function'
+        ? dashboard.getDefaultTabId()
+        : 'search-output';
     const moveBtnClass = dashSettingsBtnClass('basic', 'nav');
     const rows = tabs.map((tab, index) => {
         const id = dashSettingsEscHtml(tab.id);
@@ -799,6 +802,12 @@ function dashboardTabOrderHtml() {
             + (index < tabs.length - 1 ? '' : ' disabled') + '>↓</button>'
             + '</span>'
             + '<span style="font-size: 12px; color: var(--foreground, #0f172a);">' + label + '</span>'
+            + '<label style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto; '
+            + 'font-size: 11px; color: var(--muted-foreground, #64748b); cursor: pointer;">'
+            + '<input type="checkbox" data-wf-dash-default-tab="' + id + '"'
+            + (tab.id === defaultTabId ? ' checked' : '') + '>'
+            + '<span>Default</span>'
+            + '</label>'
             + '</div>';
     }).join('');
     return ''
@@ -830,6 +839,17 @@ function attachDashboardSettingsListeners(modal) {
         const panel = modal.querySelector('[data-wf-dash-panel="dash-settings"]');
         if (!panel || !panel.contains(e.target)) return;
 
+        const defaultTabCheckbox = e.target.closest('[data-wf-dash-default-tab]');
+        if (defaultTabCheckbox) {
+            const tabId = defaultTabCheckbox.getAttribute('data-wf-dash-default-tab');
+            if (defaultTabCheckbox.checked
+                && Context.dashboard
+                && typeof Context.dashboard.setDefaultTab === 'function') {
+                Context.dashboard.setDefaultTab(tabId);
+            }
+            renderDashboardTabOrder(modal);
+            return;
+        }
         const moveUpBtn = e.target.closest('[data-wf-dash-tab-move-up]');
         const moveDownBtn = e.target.closest('[data-wf-dash-tab-move-down]');
         if (moveUpBtn || moveDownBtn) {
@@ -899,7 +919,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order and AI Integration / OpenRouter',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
