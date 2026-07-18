@@ -126,6 +126,8 @@ const RATING_EXPLAIN_SYSTEM_PROMPT = [
     '',
     'Evidence rules: cite integer observedCounts (e.g. “7 of 26 positive feedback events”). Never call weighted event equivalents task/feedback counts, and never imply the observed ratio must equal axisScorePct. When tierGate is present, explicitly say the score-qualified extreme tier was volume-gated to the displayed tier and cite current/required volume; when tierGate is null/absent, do not mention gating.',
     '',
+    'When a user reports that visible result cards or manually counted events differ from the engine payload, first verify that their comparison is scoped to this contributor and the relevant rating role. TWQS counts work authored by the contributor; QAQS counts reviews performed by the contributor. Search results may include cards authored or reviewed by other people, and some axes count feedback rows rather than distinct cards. Explain these scope and unit differences before suggesting that data is missing.',
+    '',
     'Do not enumerate every axis, restate methodology, or explain formulas/shrinkage/priors/calibration unless asked. Ground every claim in the payload; if something is missing, say so. Keep answers compact and plain-spoken.',
 ].join('\n');
 
