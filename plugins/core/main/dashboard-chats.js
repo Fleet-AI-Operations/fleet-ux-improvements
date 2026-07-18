@@ -26,6 +26,7 @@ const chatsUi = {
     hydrating: false,
     listeners: new Set(),
 };
+let chatsRatingRendererMissingLogged = false;
 
 function chatsEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -288,6 +289,194 @@ function chatsMessagesFromGenerationContent(data) {
     return out;
 }
 
+function chatsParseRatingPayload(message) {
+    if (!message || message.role !== 'user') return null;
+    const content = String(message.content || '');
+    if (!content.includes('Here is the ratings data for this contributor.')) return null;
+    const fenced = content.match(/```json\s*([\s\S]*?)```/i);
+    if (!fenced || !fenced[1]) return null;
+    try {
+        const payload = JSON.parse(fenced[1]);
+        if (!payload || !payload.worker || !payload.scores
+            || (!payload.scores.twqs && !payload.scores.qaqs)) {
+            return null;
+        }
+        return payload;
+    } catch (err) {
+        Logger.warn(PLUGIN_ID + ': archived rating payload could not be parsed', err);
+        return null;
+    }
+}
+
+function chatsPrepareArchivedRatingCard(conv, state) {
+    if (!state) return;
+    state._archivedRatingPayload = null;
+    if (!conv || conv.source !== 'explain-ratings') return;
+    const messages = Array.isArray(state.messages) ? state.messages : [];
+    for (const message of messages) {
+        const payload = chatsParseRatingPayload(message);
+        if (!payload) continue;
+        message.hideInUi = true;
+        state._archivedRatingPayload = payload;
+        Logger.log(PLUGIN_ID + ': reconstructed archived rating payload — '
+            + String((payload.worker && payload.worker.name) || 'unknown contributor'));
+        return;
+    }
+}
+
+function chatsRatingConfidenceTier(label) {
+    const value = String(label || '').trim().toLowerCase();
+    if (value === 'provisional') return 'provisional';
+    if (value === 'high') return 'high';
+    return 'standard';
+}
+
+function chatsRatingBlockFromPayload(score, scoreKind) {
+    if (!score || score.score == null) return null;
+    const volume = score.volume || {};
+    const display = scoreKind === 'qaqs'
+        ? {
+            inScopeFeedbackCount: volume.feedbackRows,
+            tenureDays: volume.tenureDays,
+        }
+        : {
+            terminalTaskCount: volume.terminalTasks,
+            tenureDays: volume.tenureDays,
+        };
+    return {
+        score: Number(score.score),
+        band: score.tier || null,
+        tierId: score.tierId || null,
+        estimatedPercentile: score.estimatedPercentile,
+        confidence: {
+            label: score.confidence || '',
+            tier: chatsRatingConfidenceTier(score.confidence),
+        },
+        display,
+        axes: (Array.isArray(score.axes) ? score.axes : []).map((axis) => ({
+            id: axis.id,
+            label: axis.label,
+            baseWeight: axis.weightPct != null && Number.isFinite(Number(axis.weightPct))
+                ? Number(axis.weightPct) / 100
+                : 0,
+            score: axis.axisScorePct != null && Number.isFinite(Number(axis.axisScorePct))
+                ? Number(axis.axisScorePct) / 100
+                : null,
+            defined: axis.defined !== false,
+        })),
+    };
+}
+
+function chatsArchivedRatingCardHtml(payload) {
+    const loader = Context.dashboard && Context.dashboard._loader;
+    if (!loader || typeof loader._ratingScoreBlockCompactHtml !== 'function') {
+        if (!chatsRatingRendererMissingLogged) {
+            Logger.warn(PLUGIN_ID + ': rating card renderer unavailable for archived conversation');
+            chatsRatingRendererMissingLogged = true;
+        }
+        return '';
+    }
+    chatsRatingRendererMissingLogged = false;
+    const scores = payload.scores || {};
+    const twqs = chatsRatingBlockFromPayload(scores.twqs, 'twqs');
+    const qaqs = chatsRatingBlockFromPayload(scores.qaqs, 'qaqs');
+    const scoreHtml = (twqs
+        ? loader._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqs, 'tasks', {})
+        : '')
+        + (qaqs
+            ? loader._ratingScoreBlockCompactHtml('QA Quality Score', qaqs, 'feedbacks', {})
+            : '');
+    if (!scoreHtml) return '';
+    const box = typeof loader._panelBoxStyle === 'function' ? loader._panelBoxStyle() : '';
+    const name = String((payload.worker && payload.worker.name) || 'Contributor');
+    const weighting = String(payload.weighting || 'recency');
+    const weightingLabel = weighting.charAt(0).toUpperCase() + weighting.slice(1);
+    return '<div class="wf-dash-rating-summary" style="' + box + ' padding: 12px; width: 100%;'
+        + ' min-width: 0; box-sizing: border-box;">'
+        + '<div style="display: flex; justify-content: space-between; align-items: flex-start;'
+        + ' gap: 8px; margin-bottom: 6px;">'
+        + '<div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);'
+        + ' min-width: 0; overflow-wrap: anywhere;">' + chatsEscHtml(name) + '</div>'
+        + '<div style="flex-shrink: 0; font-size: 10px; color: var(--muted-foreground, #64748b);">'
+        + chatsEscHtml(weightingLabel) + ' weighting</div>'
+        + '</div>'
+        + scoreHtml
+        + '</div>';
+}
+
+function chatsInjectArchivedRatingCard(el) {
+    if (!el || !el.shadowRoot) return;
+    const messages = el.shadowRoot.querySelector('#messages');
+    if (!messages) return;
+    const existing = messages.querySelector('[data-wf-chats-archived-rating-card]');
+    const payload = el._wfChatsArchivedRatingPayload;
+    if (!payload) {
+        if (existing) existing.remove();
+        return;
+    }
+    const fingerprint = [
+        payload.engineVersion || '',
+        payload.computedAt || '',
+        payload.worker && payload.worker.name || '',
+        payload.weighting || '',
+    ].join('|');
+    if (existing && existing.getAttribute('data-wf-chats-rating-fingerprint') === fingerprint) return;
+    const html = chatsArchivedRatingCardHtml(payload);
+    if (!html) return;
+    if (existing) existing.remove();
+    const card = document.createElement('section');
+    card.setAttribute('data-wf-chats-archived-rating-card', '1');
+    card.setAttribute('data-wf-chats-rating-fingerprint', fingerprint);
+    card.setAttribute('aria-label', 'Archived rating card');
+    card.style.cssText = 'display: block; width: min(100%, 640px); max-width: 100%;'
+        + ' min-width: 0; margin: 8px auto 14px; box-sizing: border-box;'
+        + ' color: var(--foreground, #0f172a);';
+    card.innerHTML = html;
+    messages.prepend(card);
+}
+
+function chatsSyncArchivedRatingCard(panel, state) {
+    const mount = panel && panel.querySelector('[data-wf-dash-chats-mount]');
+    if (!mount) return;
+    mount._wfChatsArchivedRatingPayload = state && state._archivedRatingPayload
+        ? state._archivedRatingPayload
+        : null;
+    const attach = () => {
+        const el = mount.querySelector('deep-chat');
+        if (!el) return;
+        el._wfChatsArchivedRatingPayload = mount._wfChatsArchivedRatingPayload;
+        if (el.shadowRoot) {
+            const messages = el.shadowRoot.querySelector('#messages');
+            const target = messages || el.shadowRoot;
+            if (!el._wfChatsArchivedRatingObserver) {
+                el._wfChatsArchivedRatingObserver = new MutationObserver(() => attach());
+            }
+            if (el._wfChatsArchivedRatingObserverTarget !== target) {
+                el._wfChatsArchivedRatingObserver.disconnect();
+                el._wfChatsArchivedRatingObserver.observe(
+                    target,
+                    messages ? { childList: true } : { childList: true, subtree: true }
+                );
+                el._wfChatsArchivedRatingObserverTarget = target;
+            }
+        }
+        chatsInjectArchivedRatingCard(el);
+    };
+    attach();
+    if (!mount._wfChatsArchivedRatingMountObserver) {
+        const observer = new MutationObserver(attach);
+        observer.observe(mount, { childList: true });
+        mount._wfChatsArchivedRatingMountObserver = observer;
+    }
+}
+
+function chatsRenderMessages(panel, state) {
+    const chat = Context.aiChat;
+    if (!chat || !state) return;
+    chat.renderMessages(panel, state, chatsChatOpts());
+    chatsSyncArchivedRatingCard(panel, state);
+}
+
 async function chatsFetchMessagesForConversation(conv) {
     const ai = Context.aiOpenRouter;
     if (!ai || typeof ai.generationContent !== 'function') {
@@ -468,7 +657,7 @@ function chatsStartNewChat(panel) {
     chatsUpdateTitle(panel);
     chatsRenderSidebar(panel);
     chat.wireComposer(panel, chatsUi.chatState, Object.assign({}, chatsChatOpts(), chatsComposerHandlers(panel)));
-    chat.renderMessages(panel, chatsUi.chatState, chatsChatOpts());
+    chatsRenderMessages(panel, chatsUi.chatState);
     Logger.log(PLUGIN_ID + ': new chat started');
 }
 
@@ -481,7 +670,7 @@ function chatsComposerHandlers(panel) {
             if (!state || !chat) return;
             chat.stopStream(state, chatsChatOpts());
             chat.setStreamingUi(panel, state, false, chatsChatOpts());
-            chat.renderMessages(panel, state, chatsChatOpts());
+            chatsRenderMessages(panel, state);
         },
         onExport: () => {
             const state = chatsUi.chatState;
@@ -523,12 +712,13 @@ async function chatsOpenConversation(panel, conversationId) {
     });
     chatsUi.chatState = state;
     chat.wireComposer(panel, state, Object.assign({}, chatsChatOpts(), chatsComposerHandlers(panel)));
-    chat.renderMessages(panel, state, chatsChatOpts());
+    chatsRenderMessages(panel, state);
     try {
         const hydrated = await chatsFetchMessagesForConversation(conv);
         state.messages = hydrated.messages;
         state.lastGenerationId = hydrated.generationId;
-        chat.renderMessages(panel, state, chatsChatOpts());
+        chatsPrepareArchivedRatingCard(conv, state);
+        chatsRenderMessages(panel, state);
         chatsSetStatus(panel, '', false);
         Logger.log(PLUGIN_ID + ': opened conversation — ' + conv.id);
     } catch (err) {
@@ -693,7 +883,7 @@ function chatsSyncPanel(panel) {
         chatsUpdateTitle(panel);
         const chat = Context.aiChat;
         if (chat && chatsUi.chatState) {
-            chat.renderMessages(panel, chatsUi.chatState, chatsChatOpts());
+            chatsRenderMessages(panel, chatsUi.chatState);
         }
     }
 }
@@ -711,7 +901,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '2.2',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -738,7 +928,7 @@ const plugin = {
             },
         });
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v2.0');
+            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v3.0');
             state.registered = true;
         }
     },
