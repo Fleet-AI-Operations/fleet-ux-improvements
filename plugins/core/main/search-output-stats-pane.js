@@ -6025,14 +6025,16 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output: rating export skipped — worker not found ' + workerId);
             return;
         }
-        const exportDate = new Date().toISOString().slice(0, 10);
+        const exportedAt = new Date().toISOString();
+        const exportDate = exportedAt.slice(0, 10);
         // Always export both weighting variants (plan §5); score-type visibility
         // flags are all-true now, so we pass the worker as-is.
         const workerExport = {
             ...worker,
             computedAt: report.computedAt,
             engineVersion: report.version,
-            exportDate
+            exportDate,
+            exportedAt
         };
         // Derive a scoreType label for the filename from what is present.
         const hasTwqs = worker.twqs && (worker.twqs.flat || worker.twqs.recency || worker.twqs.score != null);
@@ -6074,7 +6076,7 @@ const searchOutputStatsPaneMethods = {
             const weighting = this._ratingWorkerWeighting(workerId);
             const llmPayload = engine.buildLlmExplainData(worker, report, weighting);
             const json = JSON.stringify(llmPayload, null, 2);
-            const filename = engine.buildExportFilename(worker, 'llm', 'json');
+            const filename = engine.buildExportFilename(workerExport, 'llm-data', 'json');
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
             Logger.log('search-output: rating LLM Data exported — ' + filename);
             return;
@@ -6098,7 +6100,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.2',
+    _version: '12.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

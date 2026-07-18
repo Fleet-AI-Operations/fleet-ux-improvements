@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
-// Engine v10.5: tierGate metadata, integer observed counts, card-aligned LLM payload.
+// Engine v10.6: typed, identifiable, millisecond-precision export filenames.
 
-const RE_VERSION = '10.5';
+const RE_VERSION = '10.6';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -388,6 +388,19 @@ function reTaskRatingQualityValue(rawRating) {
     return Object.prototype.hasOwnProperty.call(RE_TASK_RATING_QUALITY_VALUE, key)
         ? RE_TASK_RATING_QUALITY_VALUE[key]
         : null;
+}
+
+function reExportTimestampSlug(value) {
+    const parsed = value ? new Date(value) : new Date();
+    const date = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    return date.toISOString().replace(/[:.]/g, '-');
+}
+
+function reWorkerExportIdentity(workerReport) {
+    const name = reSlugify(workerReport.name || '');
+    const workerId = reSlugify(workerReport.workerId || '');
+    if (name && workerId && name !== workerId) return name + '-' + workerId;
+    return name || workerId || 'worker';
 }
 
 function reValidateRolePriors(kind, priors) {
@@ -1787,13 +1800,16 @@ const RatingEngine = {
     buildExportFilename(workerReport, scoreType, ext) {
         const name = reSlugify(workerReport.name || workerReport.workerId);
         const date = (workerReport.exportDate || new Date().toISOString().slice(0, 10));
+        if (scoreType === 'llm-data') {
+            return 'llm-data-' + reWorkerExportIdentity(workerReport) + '-'
+                + reExportTimestampSlug(workerReport.exportedAt) + '.' + ext;
+        }
         return 'rating-' + name + '-' + scoreType + '-' + date + '.' + ext;
     },
 
     buildDiagnosticsFilename(workerReport) {
-        const name = reSlugify(workerReport.name || workerReport.workerId);
-        const date = (workerReport.exportDate || new Date().toISOString().slice(0, 10));
-        return 'rating-' + name + '-diagnostics-' + date + '.json';
+        return 'diagnostic-' + reWorkerExportIdentity(workerReport) + '-'
+            + reExportTimestampSlug(workerReport.exportedAt) + '.json';
     },
 
     serializeJson(report) {
@@ -1872,7 +1888,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '10.5',
+    _version: '10.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -243,6 +243,27 @@ function buildExplainPayloadJson(workerId) {
     return JSON.stringify(payload, null, 2);
 }
 
+function ratingExplainExportIdentity(workerId) {
+    const dash = Context.dashboard && Context.dashboard._loader;
+    const report = dash && dash._state && dash._state.ratingsReport;
+    const worker = ((report && report.workers) || [])
+        .find((entry) => String(entry.workerId) === String(workerId));
+    const name = String((worker && worker.name) || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48);
+    const id = String(workerId || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return [name, id].filter((part, index, parts) => part && parts.indexOf(part) === index).join('-') || 'worker';
+}
+
+function ratingExplainExportTimestampSlug(iso) {
+    return String(iso || new Date().toISOString()).replace(/[:.]/g, '-');
+}
+
 async function startRatingExplainOverview(panel, workerId, state) {
     const chat = ratingExplainChat();
     if (!chat || typeof chat.sendTurn !== 'function') {
@@ -308,14 +329,10 @@ function wireRatingExplainPanel(panel, workerId, state) {
             chat.renderMessages(panel, state, ratingExplainChatOpts());
         },
         onExport: () => {
-            const safeWorker = String(workerId || 'worker')
-                .toLowerCase()
-                .replace(/[^a-z0-9]+/g, '-')
-                .replace(/^-+|-+$/g, '')
-                .slice(0, 48) || 'worker';
+            const exportedAt = new Date().toISOString();
             chat.exportConversation(state, Object.assign({}, ratingExplainChatOpts(), {
-                exportFilename: 'rating-' + safeWorker + '-conversation-'
-                    + new Date().toISOString().slice(0, 10) + '.json',
+                exportFilename: 'conversation-' + ratingExplainExportIdentity(workerId) + '-'
+                    + ratingExplainExportTimestampSlug(exportedAt) + '.json',
                 exportMetadata: { feature: 'explain-ratings', workerId: String(workerId || '') },
             }));
         },
@@ -422,7 +439,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
