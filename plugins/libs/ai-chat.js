@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.9';
+const AI_CHAT_VERSION = '2.11';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 
@@ -52,7 +52,7 @@ function aiChatResolveOpts(opts) {
         onExport: typeof o.onExport === 'function' ? o.onExport : null,
         onTurnDone: typeof o.onTurnDone === 'function' ? o.onTurnDone : null,
         getTurnOpts: typeof o.getTurnOpts === 'function' ? o.getTurnOpts : null,
-        transparentInput: !!o.transparentInput,
+        floatingInput: !!o.floatingInput,
     };
 }
 
@@ -79,8 +79,9 @@ function aiChatVisibleHistory(state) {
     return out;
 }
 
-function aiChatApplyTheme(el) {
+function aiChatApplyTheme(el, opts) {
     if (!el) return;
+    const o = opts || {};
     el.chatStyle = {
         width: '100%',
         maxWidth: 'min(100%, ' + AI_CHAT_MAX_WIDTH_PX + 'px)',
@@ -144,6 +145,14 @@ function aiChatApplyTheme(el) {
         + '.wf-chat-copy:hover { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #e2e8f0; }'
         + '.wf-chat-copy--ok { opacity: 1 !important; color: #16a34a !important; }'
         + '.wf-chat-copy--fail { opacity: 1 !important; color: #dc2626 !important; }'
+        + (o.floatingInput
+            ? '#chat-view { position: relative !important; }'
+                + '#messages { height: 100% !important; padding-bottom: 76px !important;'
+                + ' box-sizing: border-box !important; }'
+                + '#input { position: absolute !important; inset-inline: 0 !important; bottom: 6px !important;'
+                + ' z-index: 5 !important; margin: 0 auto !important; border: none !important;'
+                + ' background: transparent !important; box-shadow: none !important; }'
+            : '');
     el.messageStyles = {
         default: {
             shared: {
@@ -615,19 +624,11 @@ function aiChatBindElement(el, root, state, opts) {
     const o = aiChatResolveOpts(opts);
     el._wfAiChatRoot = root;
     el._wfAiChatState = state;
-    aiChatApplyTheme(el);
+    aiChatApplyTheme(el, o);
     if (o.placeholder) {
         el.textInput = Object.assign({}, el.textInput || {}, {
             placeholder: { text: o.placeholder },
         });
-    }
-    if (o.transparentInput) {
-        const textInput = Object.assign({}, el.textInput || {});
-        textInput.styles = Object.assign({}, textInput.styles || {});
-        textInput.styles.container = Object.assign({}, textInput.styles.container || {}, {
-            backgroundColor: 'transparent',
-        });
-        el.textInput = textInput;
     }
     el.connect = {
         stream: true,
@@ -1001,7 +1002,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.9',
+    _version: '2.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

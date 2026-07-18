@@ -149,7 +149,7 @@ function ratingExplainChatOpts() {
         wiredAttr: 'data-wf-explain-wired',
         logTag: PLUGIN_ID,
         placeholder: 'Ask a follow-up…',
-        transparentInput: true,
+        floatingInput: true,
     };
 }
 
@@ -390,7 +390,7 @@ function ratingExplainPanelHtml(workerId) {
         + ' width: 100%; max-width: var(--wf-rating-column-max, 640px); min-width: 0;'
         + ' justify-self: center; box-sizing: border-box; padding: 10px; border-radius: 8px;'
         + ' border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
-        + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 6%, var(--card, #fff));">'
+        + ' background: transparent;">'
         + '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">'
         + '<div style="font-size: 11px; font-weight: 600;">Explain Ratings</div>'
         + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-export="1">Export</button>'
@@ -496,7 +496,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '2.4',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
