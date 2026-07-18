@@ -120,6 +120,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
+- **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Useful Link Buttons**: Add useful link buttons to the page
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
@@ -131,6 +132,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
+- **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Dispute Detail Page
