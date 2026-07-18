@@ -149,6 +149,7 @@ function ratingExplainChatOpts() {
         wiredAttr: 'data-wf-explain-wired',
         logTag: PLUGIN_ID,
         placeholder: 'Ask a follow-up…',
+        transparentInput: true,
     };
 }
 
@@ -395,8 +396,36 @@ function ratingExplainPanelHtml(workerId) {
         + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-export="1">Export</button>'
         + '</div>'
         + '<div data-wf-dash-rating-explain-mount="1" style="display: flex; flex-direction: column;'
-        + ' min-height: 280px; height: 320px;"></div>'
+        + ' min-height: 200px; height: 320px; max-height: 75vh; resize: vertical; overflow: auto;"></div>'
         + '</div>';
+}
+
+function applyRatingExplainMountHeight(panel, workerId, state) {
+    const mount = panel.querySelector('[data-wf-dash-rating-explain-mount]');
+    if (!mount) return;
+    if (state.mountHeightPx > 0) mount.style.height = state.mountHeightPx + 'px';
+    if (mount._wfExplainResizeObserved || typeof ResizeObserver !== 'function') return;
+    mount._wfExplainResizeObserved = true;
+    const observer = new ResizeObserver(() => {
+        const height = Math.round(mount.getBoundingClientRect().height);
+        if (!(height > 0) || height === state.mountHeightPx) return;
+        // Log once per committed drag, not per observer tick.
+        if (mount._wfExplainResizeLogTimer) {
+            clearTimeout(mount._wfExplainResizeLogTimer);
+        } else {
+            mount._wfExplainResizeFrom = state.mountHeightPx || 0;
+        }
+        state.mountHeightPx = height;
+        mount._wfExplainResizeLogTimer = setTimeout(() => {
+            mount._wfExplainResizeLogTimer = null;
+            const from = mount._wfExplainResizeFrom;
+            if (from && from !== state.mountHeightPx) {
+                Logger.log(PLUGIN_ID + ': chat resized — ' + workerId + ' · '
+                    + from + 'px→' + state.mountHeightPx + 'px');
+            }
+        }, 400);
+    });
+    observer.observe(mount);
 }
 
 function mountRatingExplainPanel(root, workerId) {
@@ -408,6 +437,7 @@ function mountRatingExplainPanel(root, workerId) {
     ensureRatingExplainBtnStyles();
     panel.style.display = state.open ? 'flex' : 'none';
     panel.setAttribute('aria-hidden', state.open ? 'false' : 'true');
+    applyRatingExplainMountHeight(panel, workerId, state);
     wireRatingExplainPanel(panel, workerId, state);
     if (chat) {
         chat.renderMessages(panel, state, ratingExplainChatOpts());
@@ -466,7 +496,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

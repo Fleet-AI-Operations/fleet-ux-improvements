@@ -1,7 +1,7 @@
 {
   "version": "12.4.5",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.85",
+  "archetypesVersion": "14.86",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "2.8",
-      "hash": "sha256-bfb954c4e0466498a8b3fe98341ebaee74093fa5b02c0f63185f579a2a3f76d0",
+      "version": "2.9",
+      "hash": "sha256-7a2fd39b125783cbe787c40ba809811d465b3d2c97c4c88f85b2e2541545bc84",
       "log": false
     },
     {
@@ -158,8 +158,8 @@
     },
     {
       "name": "rating-explain.js",
-      "version": "2.3",
-      "hash": "sha256-122dda437464cea1ce989100ba9fe77f0f07dc59add63a261a11556e56689823",
+      "version": "2.4",
+      "hash": "sha256-46391390ec8d30a690d045075599713f7750269373b16962a80c93fa8b03ac4c",
       "log": false
     },
     {
