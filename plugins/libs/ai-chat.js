@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.7';
+const AI_CHAT_VERSION = '2.8';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 
@@ -82,7 +82,8 @@ function aiChatApplyTheme(el) {
     if (!el) return;
     el.chatStyle = {
         width: '100%',
-        maxWidth: AI_CHAT_MAX_WIDTH_PX + 'px',
+        maxWidth: 'min(100%, ' + AI_CHAT_MAX_WIDTH_PX + 'px)',
+        minWidth: '0',
         margin: '0 auto',
         height: '100%',
         // Deep Chat defaults each border side separately; shorthand does not clear them.
@@ -99,10 +100,14 @@ function aiChatApplyTheme(el) {
         // Kill every default frame Deep Chat draws: host border/background and
         // the internal container/chat-view/messages chrome.
         + ':host {'
+        + '  width: 100% !important; max-width: 100% !important; min-width: 0 !important;'
+        + '  box-sizing: border-box !important; overflow-x: hidden !important;'
         + '  border: none !important; outline: none !important;'
         + '  background: transparent !important; box-shadow: none !important;'
         + '}'
         + '#container, #chat-view, #messages {'
+        + '  width: 100% !important; max-width: 100% !important; min-width: 0 !important;'
+        + '  box-sizing: border-box !important; overflow-x: hidden !important;'
         + '  border: none !important; background: transparent !important;'
         + '  box-shadow: none !important;'
         + '}'
@@ -115,6 +120,9 @@ function aiChatApplyTheme(el) {
         + '  background: color-mix(in srgb, #94a3b8 40%, transparent); border-radius: 8px;'
         + '}'
         + '.deep-chat-temporary-message { display: none; }'
+        + '.outer-message-container, .inner-message-container, .message-bubble {'
+        + '  max-width: 100% !important; min-width: 0 !important; box-sizing: border-box !important;'
+        + '}'
         + '.inner-message-container { flex-direction: column; align-items: flex-start; }'
         + '.inner-message-container:has(.user-message-text) { align-items: flex-end; }'
         + '.name {'
@@ -653,10 +661,15 @@ async function aiChatEnsureMounted(root, state, opts) {
         mount.appendChild(el);
         Logger.log(o.logTag + ': deep-chat mounted');
     }
-    el.style.cssText = 'display:block;width:100%;max-width:' + AI_CHAT_MAX_WIDTH_PX
-        + 'px;margin:0 auto;height:100%;border:none !important;outline:none !important;'
+    el.style.cssText = 'display:block;width:100%;max-width:min(100%,' + AI_CHAT_MAX_WIDTH_PX
+        + 'px);min-width:0;margin:0 auto;height:100%;border:none !important;outline:none !important;'
         + 'background:transparent !important;box-shadow:none !important;box-sizing:border-box;';
     state._deepChat = el;
+    mount.style.width = '100%';
+    mount.style.maxWidth = '100%';
+    mount.style.minWidth = '0';
+    mount.style.boxSizing = 'border-box';
+    mount.style.overflowX = 'hidden';
     mount.style.minHeight = mount.style.minHeight || '180px';
     if (!mount.style.flex && !mount.style.height) {
         mount.style.flex = '1 1 auto';
@@ -979,7 +992,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.7',
+    _version: '2.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
