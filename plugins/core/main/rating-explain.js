@@ -5,13 +5,13 @@
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
 //
+// Chat UI/streaming comes from Context.aiChat (plugins/libs/ai-chat.js).
 // Keep RATING_EXPLAIN_ABOUT in sync with _ratingsAboutSectionHtml /
 // local/tw-qa-ratings/about-section.md when the About copy changes.
 
 const PLUGIN_ID = 'rating-explain';
 const RATING_EXPLAIN_SCOPE = '[data-wf-dash-rating-explain-panel]';
 
-// Compact methodology summary sent as system context (not the full About HTML).
 const RATING_EXPLAIN_ABOUT = [
     '# Ratings methodology (compact)',
     '',
@@ -61,8 +61,23 @@ const RATING_EXPLAIN_INITIAL_USER_PREFIX = [
 
 const RATING_EXPLAIN_INITIAL_USER_SUFFIX = '\n```';
 
-/** @type {Map<string, { open: boolean, messages: Array, streaming: boolean, streamAbort: any, streamGen: number, overviewStarted: boolean }>} */
+/** @type {Map<string, object>} */
 const ratingExplainByWorker = new Map();
+
+function ratingExplainChat() {
+    return Context.aiChat || null;
+}
+
+function ratingExplainChatOpts() {
+    return {
+        messagesSelector: '[data-wf-dash-rating-explain-messages]',
+        sendSelector: '[data-wf-dash-rating-explain-send]',
+        stopSelector: '[data-wf-dash-rating-explain-stop]',
+        inputSelector: '[data-wf-dash-rating-explain-input]',
+        wiredAttr: 'data-wf-explain-wired',
+        logTag: PLUGIN_ID,
+    };
+}
 
 function ratingExplainBtnClass(variant, size) {
     if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
@@ -79,6 +94,8 @@ function ensureRatingExplainBtnStyles() {
 }
 
 function hasRatingExplainAiKey() {
+    const chat = ratingExplainChat();
+    if (chat && typeof chat.hasAiKey === 'function') return chat.hasAiKey();
     return !!(Context.aiOpenRouter
         && typeof Context.aiOpenRouter.hasStoredKey === 'function'
         && Context.aiOpenRouter.hasStoredKey());
@@ -88,14 +105,18 @@ function getRatingExplainState(workerId) {
     const id = String(workerId || '').trim();
     if (!id) return null;
     if (!ratingExplainByWorker.has(id)) {
-        ratingExplainByWorker.set(id, {
-            open: false,
-            messages: [],
-            streaming: false,
-            streamAbort: null,
-            streamGen: 0,
-            overviewStarted: false,
-        });
+        const chat = ratingExplainChat();
+        const base = chat && typeof chat.createState === 'function'
+            ? chat.createState({ open: false, overviewStarted: false })
+            : {
+                open: false,
+                overviewStarted: false,
+                messages: [],
+                streaming: false,
+                streamAbort: null,
+                streamGen: 0,
+            };
+        ratingExplainByWorker.set(id, base);
     }
     return ratingExplainByWorker.get(id);
 }
@@ -128,159 +149,6 @@ function findExplainPanel(card) {
     return card ? card.querySelector('[data-wf-dash-rating-explain-panel]') : null;
 }
 
-function renderRatingExplainMessages(panel, state) {
-    const list = panel && panel.querySelector('[data-wf-dash-rating-explain-messages]');
-    if (!list || !state) return;
-    const md = Context.userStoryMarkdown;
-    if (md && typeof md.ensureProseStyles === 'function') md.ensureProseStyles();
-    list.innerHTML = '';
-    (state.messages || []).forEach((msg, idx) => {
-        // Hide the synthetic initial user payload from the visible transcript.
-        if (msg.hideInUi) return;
-        const row = document.createElement('div');
-        row.setAttribute('data-wf-chat-role', msg.role);
-        row.style.cssText = 'display:flex;flex-direction:column;gap:4px;'
-            + (msg.role === 'user' ? 'align-items:flex-end;' : 'align-items:flex-start;');
-        const label = document.createElement('div');
-        label.textContent = msg.role === 'user' ? 'You' : 'Assistant';
-        label.style.cssText = 'font-size:11px;font-weight:600;opacity:0.65;';
-        const bubble = document.createElement('div');
-        bubble.setAttribute('data-wf-chat-bubble', String(idx));
-        bubble.style.cssText = 'max-width:100%;padding:8px 10px;border-radius:8px;font-size:13px;'
-            + 'line-height:1.45;border:1px solid color-mix(in srgb,var(--border,#e2e8f0) 80%,transparent);'
-            + (msg.role === 'user'
-                ? 'background:color-mix(in srgb,var(--primary,#2563eb) 12%,transparent);white-space:pre-wrap;word-break:break-word;'
-                : 'background:color-mix(in srgb,var(--muted,#f1f5f9) 55%,transparent);width:100%;');
-        if (msg.role === 'assistant' && md && typeof md.markdownToHtml === 'function') {
-            bubble.innerHTML = md.markdownToHtml(msg.content || '');
-            if (md.PROSE_ATTR) bubble.setAttribute(md.PROSE_ATTR, '');
-        } else {
-            bubble.textContent = msg.displayContent != null ? String(msg.displayContent) : (msg.content || '');
-        }
-        if (msg.streaming) bubble.setAttribute('data-wf-streaming', '1');
-        row.appendChild(label);
-        row.appendChild(bubble);
-        list.appendChild(row);
-    });
-    list.scrollTop = list.scrollHeight;
-}
-
-function updateRatingExplainStreamingBubble(panel, state, content) {
-    const idx = state.messages.length - 1;
-    const msg = state.messages[idx];
-    if (!msg || msg.role !== 'assistant') return;
-    msg.content = content;
-    const bubble = panel.querySelector('[data-wf-chat-bubble="' + idx + '"]');
-    if (!bubble) {
-        renderRatingExplainMessages(panel, state);
-        return;
-    }
-    const md = Context.userStoryMarkdown;
-    if (md && typeof md.markdownToHtml === 'function') {
-        bubble.innerHTML = md.markdownToHtml(content || '');
-        if (md.PROSE_ATTR) bubble.setAttribute(md.PROSE_ATTR, '');
-    } else {
-        bubble.textContent = content || '';
-    }
-    const list = panel.querySelector('[data-wf-dash-rating-explain-messages]');
-    if (list) list.scrollTop = list.scrollHeight;
-}
-
-function setRatingExplainStreamingUi(panel, state, streaming) {
-    state.streaming = !!streaming;
-    const sendBtn = panel.querySelector('[data-wf-dash-rating-explain-send]');
-    const stopBtn = panel.querySelector('[data-wf-dash-rating-explain-stop]');
-    const input = panel.querySelector('[data-wf-dash-rating-explain-input]');
-    if (sendBtn) sendBtn.disabled = !!streaming;
-    if (stopBtn) stopBtn.style.display = streaming ? '' : 'none';
-    if (input) input.disabled = !!streaming;
-}
-
-function stopRatingExplainStream(workerId) {
-    const state = getRatingExplainState(workerId);
-    if (!state) return;
-    if (state.streamAbort && typeof state.streamAbort.abort === 'function') {
-        try { state.streamAbort.abort(); } catch (_e) { /* ignore */ }
-    }
-    state.streamAbort = null;
-    state.streamGen += 1;
-    const last = state.messages[state.messages.length - 1];
-    if (last && last.role === 'assistant' && last.streaming) {
-        last.streaming = false;
-        if (!last.content) last.content = '(stopped)';
-    }
-    Logger.log(PLUGIN_ID + ': chat stream stopped — ' + workerId);
-}
-
-async function runRatingExplainStream(panel, state, apiMessages) {
-    const ai = Context.aiOpenRouter;
-    if (!ai || typeof ai.chatCompletionStream !== 'function') {
-        throw new Error('AI OpenRouter API is not available');
-    }
-    state.streamGen += 1;
-    const gen = state.streamGen;
-    setRatingExplainStreamingUi(panel, state, true);
-    let assembled = '';
-
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const settleOk = (text) => {
-            if (settled) return;
-            settled = true;
-            state.streamAbort = null;
-            if (gen === state.streamGen) setRatingExplainStreamingUi(panel, state, false);
-            resolve(text);
-        };
-        const settleErr = (err) => {
-            if (settled) return;
-            settled = true;
-            state.streamAbort = null;
-            if (gen === state.streamGen) setRatingExplainStreamingUi(panel, state, false);
-            reject(err);
-        };
-
-        Promise.resolve(ai.chatCompletionStream({
-            messages: apiMessages,
-            onDelta: (delta) => {
-                if (gen !== state.streamGen) return;
-                assembled += String(delta || '');
-                updateRatingExplainStreamingBubble(panel, state, assembled);
-            },
-            onDone: (result) => {
-                if (gen !== state.streamGen) {
-                    settleOk(assembled);
-                    return;
-                }
-                const full = result && result.fullText != null ? String(result.fullText) : assembled;
-                assembled = full;
-                updateRatingExplainStreamingBubble(panel, state, assembled);
-                settleOk(assembled);
-            },
-            onError: (err) => {
-                settleErr(err instanceof Error ? err : new Error(String(err || 'Stream failed')));
-            }
-        })).then((handle) => {
-            state.streamAbort = handle;
-        }).catch((err) => {
-            settleErr(err instanceof Error ? err : new Error(String(err || 'Stream failed')));
-        });
-    });
-}
-
-function buildRatingExplainApiMessages(state) {
-    const api = [
-        { role: 'system', content: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT },
-    ];
-    for (let i = 0; i < state.messages.length; i++) {
-        const m = state.messages[i];
-        if (m.streaming) break;
-        if (m.role === 'user' || m.role === 'assistant') {
-            api.push({ role: m.role, content: m.content || '' });
-        }
-    }
-    return api;
-}
-
 function buildExplainPayloadJson(workerId) {
     const dash = Context.dashboard && Context.dashboard._loader;
     const engine = Context.ratingEngine;
@@ -299,8 +167,14 @@ function buildExplainPayloadJson(workerId) {
 }
 
 async function startRatingExplainOverview(panel, workerId, state) {
+    const chat = ratingExplainChat();
+    if (!chat || typeof chat.sendTurn !== 'function') {
+        Logger.error(PLUGIN_ID + ': Context.aiChat unavailable');
+        return;
+    }
     if (state.overviewStarted || state.streaming) return;
     state.overviewStarted = true;
+
     let json;
     try {
         json = buildExplainPayloadJson(workerId);
@@ -310,103 +184,53 @@ async function startRatingExplainOverview(panel, workerId, state) {
             role: 'assistant',
             content: 'Could not build ratings data: ' + (err && err.message ? err.message : String(err)),
         });
-        renderRatingExplainMessages(panel, state);
+        chat.renderMessages(panel, state, ratingExplainChatOpts());
         Logger.error(PLUGIN_ID + ': overview payload failed — ' + workerId, err);
         return;
     }
 
     const userContent = RATING_EXPLAIN_INITIAL_USER_PREFIX + json + RATING_EXPLAIN_INITIAL_USER_SUFFIX;
-    state.messages.push({
-        role: 'user',
-        content: userContent,
-        hideInUi: true,
-        displayContent: 'Generate overview from this card\'s ratings data.',
-    });
-    state.messages.push({ role: 'assistant', content: '', streaming: true });
-    renderRatingExplainMessages(panel, state);
     Logger.log(PLUGIN_ID + ': overview request — ' + workerId + ' · ' + userContent.length + ' chars');
-
     try {
-        const full = await runRatingExplainStream(panel, state, buildRatingExplainApiMessages(state));
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = full || '';
-            last.streaming = false;
-        }
-        renderRatingExplainMessages(panel, state);
-        Logger.log(PLUGIN_ID + ': overview done — ' + workerId + ' · ' + (full || '').length + ' chars');
+        await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
+            userContent,
+            hideInUi: true,
+            displayContent: 'Generate overview from this card\'s ratings data.',
+            systemContent: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT,
+        }));
+        Logger.log(PLUGIN_ID + ': overview done — ' + workerId);
     } catch (err) {
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = 'Error: ' + (err && err.message ? err.message : String(err));
-            last.streaming = false;
-        }
-        renderRatingExplainMessages(panel, state);
-        setRatingExplainStreamingUi(panel, state, false);
         Logger.error(PLUGIN_ID + ': overview stream failed — ' + workerId, err);
     }
 }
 
 async function sendRatingExplainFollowUp(panel, workerId, state, userText) {
+    const chat = ratingExplainChat();
+    if (!chat || typeof chat.sendTurn !== 'function') return;
     const text = String(userText || '').trim();
     if (!text || state.streaming) return;
-    state.messages.push({ role: 'user', content: text });
-    state.messages.push({ role: 'assistant', content: '', streaming: true });
-    renderRatingExplainMessages(panel, state);
     Logger.log(PLUGIN_ID + ': follow-up — ' + workerId + ' · ' + text.length + ' chars');
-
     try {
-        const full = await runRatingExplainStream(panel, state, buildRatingExplainApiMessages(state));
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = full || '';
-            last.streaming = false;
-        }
-        renderRatingExplainMessages(panel, state);
-        Logger.log(PLUGIN_ID + ': follow-up done — ' + workerId + ' · ' + (full || '').length + ' chars');
+        await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
+            userText: text,
+            systemContent: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT,
+        }));
     } catch (err) {
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = 'Error: ' + (err && err.message ? err.message : String(err));
-            last.streaming = false;
-        }
-        renderRatingExplainMessages(panel, state);
-        setRatingExplainStreamingUi(panel, state, false);
         Logger.error(PLUGIN_ID + ': follow-up stream failed — ' + workerId, err);
     }
 }
 
 function wireRatingExplainPanel(panel, workerId, state) {
-    if (!panel || panel.getAttribute('data-wf-explain-wired') === '1') return;
-    panel.setAttribute('data-wf-explain-wired', '1');
-    const sendBtn = panel.querySelector('[data-wf-dash-rating-explain-send]');
-    const stopBtn = panel.querySelector('[data-wf-dash-rating-explain-stop]');
-    const input = panel.querySelector('[data-wf-dash-rating-explain-input]');
-
-    if (sendBtn) {
-        sendBtn.addEventListener('click', () => {
-            const text = input ? input.value : '';
-            if (input) input.value = '';
-            sendRatingExplainFollowUp(panel, workerId, state, text);
-        });
-    }
-    if (stopBtn) {
-        stopBtn.addEventListener('click', () => {
-            stopRatingExplainStream(workerId);
-            setRatingExplainStreamingUi(panel, state, false);
-            renderRatingExplainMessages(panel, state);
-        });
-    }
-    if (input) {
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                const text = input.value;
-                input.value = '';
-                sendRatingExplainFollowUp(panel, workerId, state, text);
-            }
-        });
-    }
+    const chat = ratingExplainChat();
+    if (!chat || typeof chat.wireComposer !== 'function') return;
+    chat.wireComposer(panel, Object.assign({}, ratingExplainChatOpts(), {
+        onSend: (text) => sendRatingExplainFollowUp(panel, workerId, state, text),
+        onStop: () => {
+            chat.stopStream(state, ratingExplainChatOpts());
+            chat.setStreamingUi(panel, state, false, ratingExplainChatOpts());
+            chat.renderMessages(panel, state, ratingExplainChatOpts());
+        },
+    }));
 }
 
 function ratingExplainEscHtml(value) {
@@ -442,6 +266,7 @@ function ratingExplainPanelHtml(workerId) {
 }
 
 function mountRatingExplainPanel(root, workerId) {
+    const chat = ratingExplainChat();
     const state = getRatingExplainState(workerId);
     const card = findRatingCard(root, workerId);
     const panel = findExplainPanel(card);
@@ -450,8 +275,10 @@ function mountRatingExplainPanel(root, workerId) {
     panel.style.display = state.open ? 'flex' : 'none';
     panel.setAttribute('aria-hidden', state.open ? 'false' : 'true');
     wireRatingExplainPanel(panel, workerId, state);
-    renderRatingExplainMessages(panel, state);
-    setRatingExplainStreamingUi(panel, state, !!state.streaming);
+    if (chat) {
+        chat.renderMessages(panel, state, ratingExplainChatOpts());
+        chat.setStreamingUi(panel, state, !!state.streaming, ratingExplainChatOpts());
+    }
     if (state.open && !state.overviewStarted) {
         startRatingExplainOverview(panel, workerId, state);
     }
@@ -505,7 +332,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -517,6 +344,6 @@ const plugin = {
         }
         Context.ratingExplain = RatingExplain;
         if (state) state.registered = true;
-        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v1.0');
+        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v1.1');
     }
 };

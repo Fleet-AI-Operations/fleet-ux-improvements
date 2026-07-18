@@ -1,7 +1,7 @@
 {
   "version": "12.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.55",
+  "archetypesVersion": "14.56",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -56,6 +56,12 @@
       "name": "action-counter.js",
       "version": "2.0",
       "hash": "sha256-d4a350ba60137188f7f50cd70f98e9147e22184bf431577595801e293f4f2f06",
+      "log": false
+    },
+    {
+      "name": "ai-chat.js",
+      "version": "1.0",
+      "hash": "sha256-556299e6c5100b54c7bc19ebc11bf207db3939a5e8368b44955c3fe17b3e477d",
       "log": false
     },
     {
@@ -146,8 +152,8 @@
     },
     {
       "name": "rating-explain.js",
-      "version": "1.0",
-      "hash": "sha256-2dddb9767ef65ef270315cc400e67571f1b85839ff441ade9cca01f89907453f",
+      "version": "1.1",
+      "hash": "sha256-d6eb008ad9e6815a6e589aee0761b6cc850894169b567e6d98b311151c48fcaa",
       "log": false
     },
     {
@@ -212,8 +218,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "4.6",
-      "hash": "sha256-17668c010cea642d8c754e0a92d3df84da66fef6a2f8ed9ce206fb6cf04abf19",
+      "version": "4.7",
+      "hash": "sha256-35b5dec7344f8f8b784698dce813f3ec030198b21deb71b3fd54b2cf3bab396f",
       "log": false
     },
     {
@@ -226,7 +232,8 @@
   "opsDashboardLibraries": [
     "dispute-resolution-messages.js",
     "chart-js.js",
-    "user-story-markdown.js"
+    "user-story-markdown.js",
+    "ai-chat.js"
   ],
   "devPlugins": [
     {
