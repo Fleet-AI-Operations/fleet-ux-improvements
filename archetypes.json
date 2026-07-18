@@ -1,7 +1,7 @@
 {
   "version": "12.4.5",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.83",
+  "archetypesVersion": "14.84",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -158,8 +158,8 @@
     },
     {
       "name": "rating-explain.js",
-      "version": "2.1",
-      "hash": "sha256-234d7d224ab5a32d92d472862217fe2d3cde5ddb738cb21efcad98b0264bd627",
+      "version": "2.2",
+      "hash": "sha256-ee39d45c6400acd56d5a5fccdd5cf635b7cfef81f90af646c424eb9fd1e18dd9",
       "log": false
     },
     {
@@ -176,8 +176,8 @@
     },
     {
       "name": "dashboard-chats.js",
-      "version": "2.0",
-      "hash": "sha256-b7d5351728bb1b8d12c7f8d5ffe9ed06f578b48829208f0632efc6fd2b3ce4e2",
+      "version": "2.1",
+      "hash": "sha256-e090741283012a46eccc1c45bcb45877bc66dc15b0b32056c7c133afd5b1f88f",
       "log": false
     },
     {

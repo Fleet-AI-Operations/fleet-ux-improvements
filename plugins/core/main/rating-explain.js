@@ -177,11 +177,20 @@ function getRatingExplainState(workerId) {
     if (!id) return null;
     if (!ratingExplainByWorker.has(id)) {
         const chat = ratingExplainChat();
+        const conversationStartedAt = new Date().toISOString();
+        const conversationKey = id + ':' + conversationStartedAt;
         const base = chat && typeof chat.createState === 'function'
-            ? chat.createState({ open: false, overviewStarted: false })
+            ? chat.createState({
+                open: false,
+                overviewStarted: false,
+                conversationKey,
+                conversationStartedAt,
+            })
             : {
                 open: false,
                 overviewStarted: false,
+                conversationKey,
+                conversationStartedAt,
                 messages: [],
                 streaming: false,
                 streamAbort: null,
@@ -268,7 +277,7 @@ function ratingExplainWorkerTitleHint(workerId) {
     return short ? ('Explain: ' + short) : 'Explain Ratings';
 }
 
-function ratingExplainRecordTurn(workerId, turn) {
+function ratingExplainRecordTurn(workerId, state, turn) {
     const api = Context.dashboardChats;
     if (!api || typeof api.recordTurn !== 'function') {
         Logger.warn(PLUGIN_ID + ': dashboardChats unavailable — turn not indexed');
@@ -277,7 +286,7 @@ function ratingExplainRecordTurn(workerId, turn) {
     const t = turn || {};
     api.recordTurn({
         source: 'explain-ratings',
-        conversationKey: String(workerId || ''),
+        conversationKey: String((state && state.conversationKey) || workerId || ''),
         titleHint: ratingExplainWorkerTitleHint(workerId),
         generationId: t.generationId,
         model: t.model,
@@ -315,7 +324,7 @@ async function startRatingExplainOverview(panel, workerId, state) {
             hideInUi: true,
             displayContent: 'Generate overview from this card\'s ratings data.',
             systemContent: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT,
-            onTurnDone: (turn) => ratingExplainRecordTurn(workerId, turn),
+            onTurnDone: (turn) => ratingExplainRecordTurn(workerId, state, turn),
         }));
         Logger.log(PLUGIN_ID + ': overview done — ' + workerId);
     } catch (err) {
@@ -333,7 +342,7 @@ async function sendRatingExplainFollowUp(panel, workerId, state, userText) {
         await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
             userText: text,
             systemContent: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT,
-            onTurnDone: (turn) => ratingExplainRecordTurn(workerId, turn),
+            onTurnDone: (turn) => ratingExplainRecordTurn(workerId, state, turn),
         }));
     } catch (err) {
         Logger.error(PLUGIN_ID + ': follow-up stream failed — ' + workerId, err);
@@ -455,7 +464,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

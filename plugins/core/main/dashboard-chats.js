@@ -66,6 +66,22 @@ function chatsTitleFromHint(hint, fallback) {
     return raw.length > 48 ? (raw.slice(0, 47) + '…') : raw;
 }
 
+function chatsDisplayTitle(conv) {
+    const title = String((conv && conv.title) || 'Untitled');
+    const iso = conv && (conv.createdAt || conv.updatedAt);
+    if (!iso) return title;
+    const date = new Date(iso);
+    if (!Number.isFinite(date.getTime())) return title;
+    const stamp = date.toLocaleString([], {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    });
+    return title + ' · ' + stamp;
+}
+
 function chatsReadIndex() {
     try {
         const raw = Storage.getData(CHATS_INDEX_KEY, null);
@@ -359,7 +375,7 @@ function chatsRenderSidebar(panel) {
                     + ' justify-content: flex-start; text-align: left;'
                     + (active ? ' outline: 1px solid var(--primary, #2563eb);' : '') + '">'
                     + '<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;'
-                    + ' display: block;">' + chatsEscHtml(conv.title || 'Untitled') + '</span>'
+                    + ' display: block;">' + chatsEscHtml(chatsDisplayTitle(conv)) + '</span>'
                     + '</button>'
                     + '<button type="button" data-wf-dash-chats-rename="' + chatsEscHtml(conv.id) + '"'
                     + ' class="' + chatsBtnClass('basic', 'icon') + '" title="Rename" aria-label="Rename">✎</button>'
@@ -382,7 +398,7 @@ function chatsUpdateTitle(panel) {
         return;
     }
     const src = CHATS_SOURCES.find((s) => s.id === conv.source);
-    el.textContent = (src ? src.label + ' · ' : '') + (conv.title || 'Untitled');
+    el.textContent = (src ? src.label + ' · ' : '') + chatsDisplayTitle(conv);
 }
 
 function chatsStartNewChat(panel) {
@@ -603,7 +619,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
