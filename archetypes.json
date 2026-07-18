@@ -1,7 +1,7 @@
 {
   "version": "12.4.5",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.82",
+  "archetypesVersion": "14.83",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -158,8 +158,8 @@
     },
     {
       "name": "rating-explain.js",
-      "version": "2.0",
-      "hash": "sha256-928e757e17c23c8299b83dc3c43521d6f1202927312b6902f42328527d03809a",
+      "version": "2.1",
+      "hash": "sha256-234d7d224ab5a32d92d472862217fe2d3cde5ddb738cb21efcad98b0264bd627",
       "log": false
     },
     {
@@ -206,8 +206,8 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "12.4",
-      "hash": "sha256-5051e95027d0bbcc3d1b4066be1467f0ab1e56830c4303601ac1e8b11c70ce08",
+      "version": "12.5",
+      "hash": "sha256-413fa300bba4c41ef822429cb3d4b1ea5e7f7d169cd2d4d339451d165e2a4f55",
       "log": false
     },
     {

@@ -10,8 +10,9 @@ const STATS_CIRCULAR_CHART_TYPES = new Set(['pie', 'polarArea', 'radar']);
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 const STATS_LINE_BORDER_WIDTH = 2.25;
 const STATS_LINE_TENSION = 0.2;
-/** Max content width for Ratings tab (cards stay readable when the pane is wide). */
-const RATINGS_CONTENT_MAX_WIDTH_PX = 640;
+/** Ratings can use two readable columns when an explanation chat is open. */
+const RATINGS_CONTENT_MAX_WIDTH_PX = 1200;
+const RATINGS_COLUMN_MAX_WIDTH_PX = 640;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -45,9 +46,12 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
             + '<div id="wf-dash-ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: ' + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
+            + '<div style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: '
+            + RATINGS_COLUMN_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
             + this._ratingsToolbarHtml()
+            + '</div>'
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
             + '</div>'
@@ -5770,7 +5774,12 @@ const searchOutputStatsPaneMethods = {
                 + '</div>')
             : '';
 
-        return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
+        return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="'
+            + '--wf-rating-column-max: ' + RATINGS_COLUMN_MAX_WIDTH_PX + 'px;'
+            + ' display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));'
+            + ' gap: 12px; align-items: start; width: 100%; min-width: 0; box-sizing: border-box;">'
+            + '<div class="wf-dash-rating-summary" style="' + box + ' padding: 12px; width: 100%;'
+            + ' max-width: var(--wf-rating-column-max); min-width: 0; justify-self: center; box-sizing: border-box;">'
             + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
             + '<div style="min-width: 0;">'
             + '<div>' + nameHtml + '</div>'
@@ -5786,6 +5795,7 @@ const searchOutputStatsPaneMethods = {
             + diagnosticsBtnHtml
             + llmDataBtnHtml
             + explainBtnHtml
+            + '</div>'
             + '</div>'
             + explainPanelHtml
             + '</div>';
@@ -6062,7 +6072,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.4',
+    _version: '12.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

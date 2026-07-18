@@ -375,7 +375,8 @@ function ratingExplainPanelHtml(workerId) {
     const safeId = ratingExplainEscHtml(workerId);
     return '<div data-wf-dash-rating-explain-panel="1" data-wf-dash-rating-worker="' + safeId + '"'
         + ' role="region" aria-label="Explain ratings chat" style="display: none; flex-direction: column; gap: 8px;'
-        + ' margin-top: 12px; padding: 10px; border-radius: 8px;'
+        + ' width: 100%; max-width: var(--wf-rating-column-max, 640px); min-width: 0;'
+        + ' justify-self: center; box-sizing: border-box; padding: 10px; border-radius: 8px;'
         + ' border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
         + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 6%, var(--card, #fff));">'
         + '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">'
@@ -454,7 +455,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
