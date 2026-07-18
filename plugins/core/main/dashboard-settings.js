@@ -756,6 +756,15 @@ function dashboardSettingsPanelHtml() {
         + '<div id="wf-dash-settings-panel" style="' + panelScroll + '" data-fleet-dash-settings="1">'
         + '<div id="wf-dash-settings-content" style="display: flex; flex-direction: column; gap: 16px; '
         + 'width: 100%; max-width: ' + DASH_SETTINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
+        + '<section aria-labelledby="wf-dash-settings-tabs-heading" style="display: flex; flex-direction: column; gap: 10px;">'
+        + '<h3 id="wf-dash-settings-tabs-heading" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--foreground, #0f172a);">'
+        + 'Dashboard Tabs'
+        + '</h3>'
+        + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
+        + 'Choose the order of tabs in the dashboard header.'
+        + '</p>'
+        + '<div id="wf-dash-settings-tab-order"></div>'
+        + '</section>'
         + '<section aria-labelledby="wf-dash-settings-ai-heading" style="display: flex; flex-direction: column; gap: 10px;">'
         + '<h3 id="wf-dash-settings-ai-heading" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--foreground, #0f172a);">'
         + 'AI Integration'
@@ -767,6 +776,40 @@ function dashboardSettingsPanelHtml() {
         + '</section>'
         + '</div>'
         + '</div>';
+}
+
+function dashboardTabOrderHtml() {
+    const dashboard = Context.dashboard;
+    const tabs = dashboard && typeof dashboard.getTabs === 'function' ? dashboard.getTabs() : [];
+    const moveBtnClass = dashSettingsBtnClass('basic', 'nav');
+    const rows = tabs.map((tab, index) => {
+        const id = dashSettingsEscHtml(tab.id);
+        const label = dashSettingsEscHtml(tab.label || tab.id);
+        return ''
+            + '<div style="display: flex; align-items: center; gap: 8px; padding: 5px 0;">'
+            + '<span role="group" aria-label="Reorder ' + label + '" style="display: inline-flex; gap: 4px;">'
+            + '<button type="button" data-wf-dash-tab-move-up="' + id + '" class="' + moveBtnClass
+            + '" title="Move up" aria-label="Move ' + label + ' up"'
+            + (index > 0 ? '' : ' disabled') + '>↑</button>'
+            + '<button type="button" data-wf-dash-tab-move-down="' + id + '" class="' + moveBtnClass
+            + '" title="Move down" aria-label="Move ' + label + ' down"'
+            + (index < tabs.length - 1 ? '' : ' disabled') + '>↓</button>'
+            + '</span>'
+            + '<span style="font-size: 12px; color: var(--foreground, #0f172a);">' + label + '</span>'
+            + '</div>';
+    }).join('');
+    return ''
+        + '<div style="display: flex; flex-direction: column;">' + rows + '</div>'
+        + '<div style="margin-top: 8px;">'
+        + '<button type="button" data-wf-dash-tab-order-reset class="' + dashSettingsBtnClass('basic', 'compact') + '">'
+        + 'Reset tab order'
+        + '</button>'
+        + '</div>';
+}
+
+function renderDashboardTabOrder(modal) {
+    const root = modal && modal.querySelector('#wf-dash-settings-tab-order');
+    if (root) root.innerHTML = dashboardTabOrderHtml();
 }
 
 function attachDashboardSettingsListeners(modal) {
@@ -784,6 +827,27 @@ function attachDashboardSettingsListeners(modal) {
         const panel = modal.querySelector('[data-wf-dash-panel="dash-settings"]');
         if (!panel || !panel.contains(e.target)) return;
 
+        const moveUpBtn = e.target.closest('[data-wf-dash-tab-move-up]');
+        const moveDownBtn = e.target.closest('[data-wf-dash-tab-move-down]');
+        if (moveUpBtn || moveDownBtn) {
+            e.preventDefault();
+            const btn = moveUpBtn || moveDownBtn;
+            const tabId = btn.getAttribute(moveUpBtn ? 'data-wf-dash-tab-move-up' : 'data-wf-dash-tab-move-down');
+            const moved = Context.dashboard && typeof Context.dashboard.moveTab === 'function'
+                ? Context.dashboard.moveTab(tabId, moveUpBtn ? -1 : 1)
+                : false;
+            if (moved) renderDashboardTabOrder(modal);
+            return;
+        }
+        const resetOrderBtn = e.target.closest('[data-wf-dash-tab-order-reset]');
+        if (resetOrderBtn) {
+            e.preventDefault();
+            if (Context.dashboard && typeof Context.dashboard.resetTabOrder === 'function') {
+                Context.dashboard.resetTabOrder();
+                renderDashboardTabOrder(modal);
+            }
+            return;
+        }
         const saveBtn = e.target.closest('#wf-dash-settings-ai-key-save');
         if (saveBtn) {
             e.preventDefault();
@@ -831,8 +895,8 @@ function attachDashboardSettingsListeners(modal) {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
-    description: 'Settings tab for the Ops dashboard (AI Integration / OpenRouter)',
-    _version: '1.5',
+    description: 'Settings tab for dashboard tab order and AI Integration / OpenRouter',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -883,6 +947,7 @@ const plugin = {
             panelHtml() { return dashboardSettingsPanelHtml(); },
             attachListeners(modal) { attachDashboardSettingsListeners(modal); },
             onActivate(modal) {
+                renderDashboardTabOrder(modal);
                 renderAiSection(modal);
                 setAiStatus(modal, '', false);
                 setTestResult(modal, null);

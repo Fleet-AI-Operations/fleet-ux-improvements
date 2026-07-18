@@ -14,6 +14,15 @@ const DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-results-pan
 const DASH_RESULTS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-results-panel-hidden';
 const DASH_STATS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-hidden';
 const DASH_STATS_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-width';
+const DASH_TAB_ORDER_STORAGE_KEY = 'fleet-ux:dashboard-tab-order';
+const DASH_DEFAULT_TAB_ORDER = [
+    'search-output',
+    'diff-viewer',
+    'team-members',
+    'verifier-fetcher',
+    'dash-chats',
+    'dash-settings',
+];
 const DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX = 8;
 const DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY = 'fleet-ux:diff-viewer-side-panel-width';
 const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
@@ -100,7 +109,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.8',
+    _version: '11.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -154,6 +163,9 @@ const plugin = {
             toggle: () => self.toggle(),
             isOpen: () => self._isOpen(),
             isReady: () => self._isDashboardReady(),
+            getTabs: () => self._orderedTabs().map((tab) => ({ id: tab.id, label: tab.label || tab.id })),
+            moveTab: (tabId, delta) => self._moveTab(tabId, delta),
+            resetTabOrder: () => self._resetTabOrder(),
             copyChipHtml: (text) => self._copyChipHtml(text),
             personChipsHtml: (name, email, id, linkTitle) => self._personChipsHtml(name, email, id, linkTitle),
             panelBoxStyle: () => self._panelBoxStyle(),
@@ -238,6 +250,86 @@ const plugin = {
         };
         if (state) state.loaderRegistered = true;
         Logger.log('dashboard: loader registered (Context.dashboard)');
+    },
+
+    _readTabOrder() {
+        try {
+            const raw = Storage.getData(DASH_TAB_ORDER_STORAGE_KEY, null);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.map(String) : null;
+        } catch (err) {
+            Logger.warn('dashboard: failed to read saved tab order', err);
+            return null;
+        }
+    },
+
+    _orderedTabs() {
+        const tabs = Array.isArray(this._tabs) ? this._tabs : [];
+        const byId = new Map(tabs.map((tab) => [tab.id, tab]));
+        const saved = this._readTabOrder();
+        const preferred = saved && saved.length ? saved : DASH_DEFAULT_TAB_ORDER;
+        const seen = new Set();
+        const ordered = [];
+        for (const id of preferred) {
+            if (seen.has(id) || !byId.has(id)) continue;
+            seen.add(id);
+            ordered.push(byId.get(id));
+        }
+        for (const tab of tabs) {
+            if (seen.has(tab.id)) continue;
+            seen.add(tab.id);
+            ordered.push(tab);
+        }
+        return ordered;
+    },
+
+    _writeTabOrder(tabs) {
+        try {
+            Storage.setData(DASH_TAB_ORDER_STORAGE_KEY, JSON.stringify(tabs.map((tab) => tab.id)));
+        } catch (err) {
+            Logger.error('dashboard: failed to save tab order', err);
+        }
+    },
+
+    _applyTabOrderToDom() {
+        if (!this._modal) return;
+        const ordered = this._orderedTabs();
+        const nav = this._modal.querySelector('#wf-dash-header-tabs nav');
+        const body = this._modal.querySelector('#wf-dash-body');
+        for (const tab of ordered) {
+            const button = nav && nav.querySelector('[data-wf-dash-tab="' + tab.id + '"]');
+            const panel = body && body.querySelector('[data-wf-dash-panel="' + tab.id + '"]');
+            if (button) nav.appendChild(button);
+            if (panel) body.appendChild(panel);
+        }
+    },
+
+    _moveTab(tabId, delta) {
+        const step = delta === -1 || delta === 1 ? delta : 0;
+        if (!tabId || !step) return false;
+        const ordered = this._orderedTabs();
+        const from = ordered.findIndex((tab) => tab.id === tabId);
+        const to = from + step;
+        if (from < 0 || to < 0 || to >= ordered.length) return false;
+        const [moved] = ordered.splice(from, 1);
+        ordered.splice(to, 0, moved);
+        this._writeTabOrder(ordered);
+        this._applyTabOrderToDom();
+        Logger.log('dashboard: tab moved ' + (step < 0 ? 'up' : 'down') + ' — ' + (moved.label || moved.id));
+        return true;
+    },
+
+    _resetTabOrder() {
+        try {
+            Storage.deleteData(DASH_TAB_ORDER_STORAGE_KEY);
+        } catch (err) {
+            Logger.error('dashboard: failed to reset tab order', err);
+            return false;
+        }
+        this._applyTabOrderToDom();
+        Logger.log('dashboard: tab order reset to default');
+        return true;
     },
 
     _createInitialState() {
@@ -979,12 +1071,14 @@ const plugin = {
     _modalHtml() {
         const ops = Context.opsTab;
         const tabs = this._tabs.length > 0
-            ? this._tabs.map((t) => ({ id: t.id, label: t.label || t.id }))
+            ? this._orderedTabs().map((t) => ({ id: t.id, label: t.label || t.id }))
             : [
                 { id: 'search-output', label: 'Search Output' },
                 { id: 'diff-viewer', label: 'Diff Viewer' },
                 { id: 'team-members', label: 'Team Members' },
-                { id: 'verifier-fetcher', label: 'Verifier Fetcher' }
+                { id: 'verifier-fetcher', label: 'Verifier Fetcher' },
+                { id: 'dash-chats', label: 'Chats' },
+                { id: 'dash-settings', label: 'Settings' }
             ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="
