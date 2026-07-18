@@ -773,7 +773,15 @@ function dashboardSettingsPanelHtml() {
         + 'AI Integration'
         + '</h3>'
         + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
-        + 'Connect your own OpenRouter API key. Requests go directly to OpenRouter.'
+        + 'Connect your own OpenRouter API key. Requests go directly to OpenRouter. '
+        + '<a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer" '
+        + 'data-wf-dash-openrouter-link style="color: var(--primary, #2563eb);">Visit OpenRouter</a>.'
+        + '</p>'
+        + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
+        + 'To retrieve and show previous chats in the Chats pane, prompt logging must be enabled '
+        + 'in your OpenRouter account. You can toggle it in '
+        + '<a href="https://openrouter.ai/workspaces/default/observability" target="_blank" rel="noopener noreferrer" '
+        + 'data-wf-dash-openrouter-link style="color: var(--primary, #2563eb);">OpenRouter observability settings</a>.'
         + '</p>'
         + '<div id="wf-dash-settings-ai-section"></div>'
         + '</section>'
@@ -839,6 +847,11 @@ function attachDashboardSettingsListeners(modal) {
         const panel = modal.querySelector('[data-wf-dash-panel="dash-settings"]');
         if (!panel || !panel.contains(e.target)) return;
 
+        const openRouterLink = e.target.closest('[data-wf-dash-openrouter-link]');
+        if (openRouterLink) {
+            Logger.log(PLUGIN_ID + ': OpenRouter website opened');
+            return;
+        }
         const defaultTabCheckbox = e.target.closest('[data-wf-dash-default-tab]');
         if (defaultTabCheckbox) {
             const tabId = defaultTabCheckbox.getAttribute('data-wf-dash-default-tab');
@@ -919,7 +932,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order and AI Integration / OpenRouter',
-    _version: '1.9',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
