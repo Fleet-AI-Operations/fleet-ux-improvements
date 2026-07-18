@@ -575,7 +575,7 @@ function renderAiSection(modal, options) {
     }
 
     body += ''
-        + '<div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border, #e2e8f0); '
+        + '<div style="margin-top: 16px; padding-top: 14px; '
         + 'display: flex; flex-direction: column; gap: 8px;">'
         + '<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">'
         + '<button type="button" id="wf-dash-settings-ai-test-btn" class="'
@@ -899,7 +899,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order and AI Integration / OpenRouter',
-    _version: '1.7',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
