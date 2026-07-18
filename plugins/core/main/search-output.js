@@ -5307,6 +5307,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (workerId && format) dash._handleRatingExport(workerId, format);
                 return;
             }
+            const explainBtn = e.target.closest('[data-wf-dash-rating-explain]');
+            if (explainBtn && modal.contains(explainBtn)) {
+                const workerId = String(explainBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
+                if (workerId && Context.ratingExplain && typeof Context.ratingExplain.toggle === 'function') {
+                    Context.ratingExplain.toggle(modal, workerId);
+                }
+                return;
+            }
             const ratingCohortSliceBtn = e.target.closest('[data-wf-dash-rating-cohort-slice]');
             if (ratingCohortSliceBtn && modal.contains(ratingCohortSliceBtn)) {
                 const workerId = String(ratingCohortSliceBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
@@ -5865,7 +5873,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.15',
+    _version: '9.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

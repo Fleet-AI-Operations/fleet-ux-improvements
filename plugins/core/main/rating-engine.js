@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 // Engine v10.2: cards/slices display estimated percentile; blend percentile matches blended score.
 
-const RE_VERSION = '10.3';
+const RE_VERSION = '10.4';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -706,14 +706,252 @@ function reWorkerJsonExport(workerReport) {
 function reAxisOmitReason(axis) {
     if (!axis || axis.defined !== false) return null;
     switch (axis.id) {
-        case 'disputeDefense':
+        case 'outcomeQuality':
+            return 'No terminal tasks in scope';
+        case 'positiveFeedbackRate':
+            return 'No human feedback on authored tasks in scope';
+        case 'taskRatingQuality':
+        case 'nonBottomScoreRate':
+            return 'No explicitly scored feedback in scope';
+        case 'firstPassAcceptance':
+            return 'No authored tasks with human feedback in scope';
+        case 'disputeWinRate':
         case 'disputeLossAvoidance':
-            return 'Always defined; only dispute losses reduce this score';
+            return 'No resolved disputes in scope';
+        case 'returnEffectiveness':
+            return 'No terminal tasks returned by this reviewer in scope';
         case 'returnActionability':
-            return 'No negative feedback on production tasks in scope';
+            return 'No return feedback episodes in scope';
+        case 'labelDiscrimination':
+            return 'Fewer than 10 feedback rows in scope';
+        case 'disputeDefense':
+            return 'No resolved sole-negative-reviewer disputes in scope';
+        case 'feedbackResolution':
+            return 'No return episodes by this QA in scope';
+        case 'reviewCallAccuracy':
+        case 'disputeOutcomes':
+            return 'No resolved disputes in scope';
+        case 'consistency':
+            return 'Fewer than 2 active calendar weeks of activity in scope';
         default:
-            return 'Axis undefined';
+            return 'Axis omitted';
     }
+}
+
+/** Curate axis.raw into a compact evidence object for LLM explain payloads. */
+function reAxisEvidenceForLlm(axis) {
+    if (!axis) return null;
+    const raw = axis.raw || {};
+    switch (axis.id) {
+        case 'outcomeQuality':
+            return {
+                terminalTasks: raw.terminalTaskCount != null ? raw.terminalTaskCount : null,
+                closureOutcomes: raw.closureN != null ? raw.closureN : null,
+                closureStatusCounts: raw.closureStatusCounts || null,
+            };
+        case 'positiveFeedbackRate':
+            return {
+                positive: raw.weightedPositive != null ? raw.weightedPositive
+                    : (raw.positive != null ? raw.positive : null),
+                total: raw.weightedTotal != null ? raw.weightedTotal
+                    : (raw.total != null ? raw.total : null),
+            };
+        case 'taskRatingQuality':
+        case 'nonBottomScoreRate':
+            return {
+                qualityPoints: raw.qualityPoints != null ? raw.qualityPoints
+                    : (raw.weightedQualityPoints != null ? raw.weightedQualityPoints : null),
+                scored: raw.total != null ? raw.total
+                    : (raw.weightedScored != null ? raw.weightedScored : null),
+                labels: {
+                    bottom: raw.weightedBottom != null ? raw.weightedBottom : null,
+                    average: raw.weightedAverage != null ? raw.weightedAverage : null,
+                    top: raw.weightedTop != null ? raw.weightedTop : null,
+                },
+            };
+        case 'firstPassAcceptance':
+            return {
+                accepted: raw.weightedAccepted != null ? raw.weightedAccepted
+                    : (raw.firstPass != null ? raw.firstPass : null),
+                eligible: raw.weightedEligible != null ? raw.weightedEligible
+                    : (raw.total != null ? raw.total : null),
+                tasks: raw.taskCount != null ? raw.taskCount : null,
+            };
+        case 'disputeLossAvoidance':
+        case 'disputeWinRate':
+            return {
+                losses: raw.losses != null ? raw.losses : null,
+                wins: raw.wins != null ? raw.wins : (raw.approved != null ? raw.approved : null),
+                resolved: raw.resolved != null ? raw.resolved : null,
+            };
+        case 'returnEffectiveness':
+            return {
+                effective: raw.weightedResolved != null ? raw.weightedResolved
+                    : (raw.effective != null ? raw.effective : null),
+                negOnTerminal: raw.weightedNegTerminal != null ? raw.weightedNegTerminal
+                    : (raw.total != null ? raw.total : null),
+            };
+        case 'returnActionability':
+            return {
+                actionable: raw.weightedOneRound != null ? raw.weightedOneRound
+                    : (raw.actionable != null ? raw.actionable : null),
+                negOnProduction: raw.weightedNegProduction != null ? raw.weightedNegProduction
+                    : (raw.total != null ? raw.total : null),
+            };
+        case 'disputeDefense':
+            return {
+                losses: raw.losses != null ? raw.losses : null,
+                wins: raw.wins != null ? raw.wins : (raw.upheld != null ? raw.upheld : null),
+                resolved: raw.resolved != null ? raw.resolved : null,
+            };
+        case 'labelDiscrimination':
+            return {
+                nonAverageLabels: raw.weightedNonStd != null ? raw.weightedNonStd : null,
+                scoredLabels: raw.weightedScored != null ? raw.weightedScored : null,
+                sampleN: raw.sampleN != null ? raw.sampleN : null,
+                minSampleN: raw.minSampleN != null ? raw.minSampleN : null,
+            };
+        default: {
+            const keys = Object.keys(raw);
+            if (!keys.length) return null;
+            const out = {};
+            for (const k of keys.slice(0, 8)) out[k] = raw[k];
+            return out;
+        }
+    }
+}
+
+function reScoreBlockForLlm(block, kind) {
+    if (!block || block.score == null) return null;
+    const display = block.display || {};
+    const volume = kind === 'qaqs'
+        ? {
+            feedbackRows: display.inScopeFeedbackCount != null
+                ? display.inScopeFeedbackCount
+                : display.feedbackRowCount,
+            tenureDays: display.tenureDays != null ? display.tenureDays : null,
+        }
+        : {
+            terminalTasks: display.terminalTaskCount != null ? display.terminalTaskCount : null,
+            tenureDays: display.tenureDays != null ? display.tenureDays : null,
+        };
+    const axes = reSortedAxesForExport(block.axes).map((axis) => {
+        const defined = axis && axis.defined !== false && axis.score != null && Number.isFinite(axis.score);
+        const row = {
+            id: String((axis && axis.id) || ''),
+            label: String((axis && axis.label) || ''),
+            weightPct: rePctOneDecimal(axis && axis.baseWeight),
+            subScorePct: defined ? rePctOneDecimal(axis.score) : null,
+            defined,
+        };
+        if (!defined) {
+            row.omittedReason = reAxisOmitReason(axis);
+        } else {
+            const evidence = reAxisEvidenceForLlm(axis);
+            if (evidence) row.evidence = evidence;
+        }
+        return row;
+    });
+    return {
+        score: block.score,
+        tier: block.band || null,
+        tierId: block.tierId != null ? block.tierId : null,
+        estimatedPercentile: block.estimatedPercentile != null ? block.estimatedPercentile : null,
+        confidence: (block.confidence && block.confidence.label) || null,
+        volume,
+        axes,
+    };
+}
+
+function reCohortForLlm(cohortEntry, kind, weighting) {
+    if (!cohortEntry || cohortEntry.score == null) return null;
+    const dimensions = {};
+    for (const dim of ['team', 'env', 'month']) {
+        const channel = cohortEntry.channels && cohortEntry.channels[dim];
+        const slices = (channel && Array.isArray(channel.slices)) ? channel.slices : [];
+        if (!slices.length) continue;
+        dimensions[dim] = slices.map((slice) => {
+            const tier = (kind && weighting)
+                ? rePopulationTier(slice.score, kind, weighting, slice.volume)
+                : { id: null, label: null };
+            return {
+                key: String(slice.key || ''),
+                score: slice.score,
+                tier: tier.label || null,
+                estimatedPercentile: slice.estimatedPercentile != null ? slice.estimatedPercentile : null,
+                volume: slice.volume != null ? slice.volume : null,
+                priorSource: (slice.priorSource && slice.priorSource.source) || null,
+                axes: reSortedAxesForExport(slice.axes).map((axis) => {
+                    const defined = axis && axis.defined !== false && axis.score != null && Number.isFinite(axis.score);
+                    const row = {
+                        id: String((axis && axis.id) || ''),
+                        label: String((axis && axis.label) || ''),
+                        weightPct: rePctOneDecimal(axis && axis.baseWeight),
+                        subScorePct: defined ? rePctOneDecimal(axis.score) : null,
+                        defined,
+                    };
+                    if (!defined) row.omittedReason = reAxisOmitReason(axis);
+                    else {
+                        const evidence = reAxisEvidenceForLlm(axis);
+                        if (evidence) row.evidence = evidence;
+                    }
+                    return row;
+                }),
+            };
+        });
+    }
+    return {
+        score: cohortEntry.score,
+        tier: cohortEntry.band || null,
+        estimatedPercentile: cohortEntry.estimatedPercentile != null
+            ? cohortEntry.estimatedPercentile
+            : null,
+        dimensions,
+    };
+}
+
+/**
+ * Token-lean per-worker payload for LLM explain / "LLM Data" export.
+ * Prefer evidence counts over raw event dumps.
+ */
+function reBuildLlmExplainData(worker, report, weighting) {
+    const src = worker || {};
+    const weight = (weighting === 'flat' || weighting === 'recency') ? weighting : 'recency';
+    const pickBlock = (entry) => {
+        if (!entry) return null;
+        if (entry[weight]) return entry[weight];
+        if (entry.score != null) return entry;
+        return null;
+    };
+    const twqsBlock = pickBlock(src.twqs);
+    const qaqsBlock = pickBlock(src.qaqs);
+    const cohortEntry = src.cohort && src.cohort[weight] ? src.cohort[weight] : null;
+    const out = {
+        engineVersion: (report && report.version) || src.engineVersion || RE_VERSION,
+        computedAt: (report && report.computedAt) || src.computedAt || null,
+        window: (report && report.window) || src.window || {},
+        worker: {
+            name: src.name || src.workerId || '',
+            // workerId intentionally omitted from LLM payload (token lean / privacy)
+        },
+        weighting: weight,
+        scores: {},
+    };
+    const twqs = reScoreBlockForLlm(twqsBlock, 'twqs');
+    const qaqs = reScoreBlockForLlm(qaqsBlock, 'qaqs');
+    if (twqs) {
+        out.scores.twqs = twqs;
+        if (cohortEntry && cohortEntry.twqs) {
+            out.scores.twqs.cohort = reCohortForLlm(cohortEntry.twqs, 'twqs', weight);
+        }
+    }
+    if (qaqs) {
+        out.scores.qaqs = qaqs;
+        if (cohortEntry && cohortEntry.qaqs) {
+            out.scores.qaqs.cohort = reCohortForLlm(cohortEntry.qaqs, 'qaqs', weight);
+        }
+    }
+    return out;
 }
 
 function reFieldAuditRow(entry, task, workerId) {
@@ -784,6 +1022,11 @@ const RatingEngine = {
     estimatePercentile(score, kind, weighting) {
         const params = (RE_PERCENTILE_PARAMS[kind] && RE_PERCENTILE_PARAMS[kind][weighting]) || null;
         return reEstimatePercentile(score, params);
+    },
+
+    /** Token-lean explain payload for cards / LLM Data export. */
+    buildLlmExplainData(worker, report, weighting) {
+        return reBuildLlmExplainData(worker, report, weighting);
     },
 
     compute(options) {
@@ -1519,7 +1762,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '10.3',
+    _version: '10.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

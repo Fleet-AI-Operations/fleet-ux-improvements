@@ -5736,6 +5736,23 @@ const searchOutputStatsPaneMethods = {
         const diagnosticsBtnHtml = Context.isDevBranch
             ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
+        const llmDataBtnHtml = Context.isDevBranch
+            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
+            : '';
+        const explainAi = !!(Context.ratingExplain
+            && typeof Context.ratingExplain.hasAiKey === 'function'
+            && Context.ratingExplain.hasAiKey());
+        const explainOpen = !!(explainAi && Context.ratingExplain
+            && typeof Context.ratingExplain.isOpen === 'function'
+            && Context.ratingExplain.isOpen(workerId));
+        const explainBtnHtml = explainAi
+            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-explain="1" data-wf-dash-rating-worker="'
+                + dashEscHtml(workerId) + '" aria-pressed="' + (explainOpen ? 'true' : 'false') + '">'
+                + (explainOpen ? 'Hide Explanation' : 'Explain Ratings') + '</button>')
+            : '';
+        const explainPanelHtml = (explainAi && Context.ratingExplain && typeof Context.ratingExplain.panelHtml === 'function')
+            ? Context.ratingExplain.panelHtml(workerId)
+            : '';
         const box = this._panelBoxStyle();
 
         const toggleHtml = '<div class="dv-seg-group" style="flex-shrink: 0;">'
@@ -5764,7 +5781,10 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
             + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
             + diagnosticsBtnHtml
+            + llmDataBtnHtml
+            + explainBtnHtml
             + '</div>'
+            + explainPanelHtml
             + '</div>';
     },
 
@@ -5818,6 +5838,9 @@ const searchOutputStatsPaneMethods = {
         this._ensureRatingsSortKey(committed);
 
         if (recompute || !this._state.ratingsReport) {
+            if (Context.ratingExplain && typeof Context.ratingExplain.clearTranscripts === 'function') {
+                Context.ratingExplain.clearTranscripts();
+            }
             const scopeItems = this._getRatingsScopeItems();
             const report = this._computeRatingsReport(scopeItems, committed);
             this._state.ratingsReport = report;
@@ -5859,6 +5882,9 @@ const searchOutputStatsPaneMethods = {
         }
 
         cardsEl.innerHTML = visibleWorkers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join('');
+        if (Context.ratingExplain && typeof Context.ratingExplain.remountOpen === 'function') {
+            Context.ratingExplain.remountOpen(cardsEl);
+        }
         Logger.log('search-output: ratings view — showing ' + visibleWorkers.length + ' of ' + allWorkers.length);
     },
 
@@ -5995,6 +6021,24 @@ const searchOutputStatsPaneMethods = {
             return;
         }
 
+        if (format === 'llm') {
+            if (!Context.isDevBranch) {
+                Logger.warn('search-output: LLM Data export skipped — not a dev branch');
+                return;
+            }
+            if (typeof engine.buildLlmExplainData !== 'function') {
+                Logger.warn('search-output: LLM Data export skipped — engine method missing');
+                return;
+            }
+            const weighting = this._ratingWorkerWeighting(workerId);
+            const llmPayload = engine.buildLlmExplainData(worker, report, weighting);
+            const json = JSON.stringify(llmPayload, null, 2);
+            const filename = engine.buildExportFilename(worker, 'llm', 'json');
+            this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+            Logger.log('search-output: rating LLM Data exported — ' + filename);
+            return;
+        }
+
         if (format === 'json') {
             const json = engine.serializeJson(workerExport);
             const filename = engine.buildExportFilename(worker, scoreType, 'json');
@@ -6013,7 +6057,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.20',
+    _version: '12.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
