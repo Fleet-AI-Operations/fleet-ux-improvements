@@ -4678,43 +4678,16 @@ const searchOutputStatsPaneMethods = {
             && worker.cohort[weighting]
             && worker.cohort[weighting][scoreKey];
         if (!main) return null;
-        if (!cohortEntry || cohortEntry.score == null) {
-            return Object.assign({}, main, {
-                tierGate: main.tierGate || null,
-            });
-        }
+        if (!cohortEntry || cohortEntry.score == null) return Object.assign({}, main);
         return Object.assign({}, main, {
             score: cohortEntry.score,
             band: cohortEntry.band || main.band,
             tierId: cohortEntry.tierId || main.tierId,
-            // Displayed (blended) gate — null when the blend itself is not volume-gated.
-            tierGate: cohortEntry.tierGate != null ? cohortEntry.tierGate : null,
             estimatedPercentile: cohortEntry.estimatedPercentile != null
                 ? cohortEntry.estimatedPercentile
                 : main.estimatedPercentile,
             cohortBlend: cohortEntry,
         });
-    },
-
-    /** Tooltip + label for volume soft-gate when an extreme tier was demoted. */
-    _ratingTierGateBadge(tierGate, scoreKind) {
-        if (!tierGate || !tierGate.status) return null;
-        const qualified = String(tierGate.qualifiedTier || '').trim() || 'extreme tier';
-        const displayed = String(tierGate.displayedTier || '').trim() || 'adjacent tier';
-        const vol = Number(tierGate.volume);
-        const req = Number(tierGate.requiredVolume);
-        const kind = String(scoreKind || '').toLowerCase();
-        const unit = kind.indexOf('qa') === 0 ? 'feedback rows' : 'terminal tasks';
-        let untilLabel = '.';
-        if (Number.isFinite(req)) {
-            untilLabel = ' until ' + req + ' ' + unit;
-            if (Number.isFinite(vol)) untilLabel += ' (currently ' + vol + ')';
-            untilLabel += '.';
-        }
-        return {
-            label: 'Volume-gated tier',
-            title: 'Score qualified for ' + qualified + '; shown as ' + displayed + untilLabel,
-        };
     },
 
     /** Format estimated percentile for card/slice display (e.g. "~62nd"). */
@@ -5192,7 +5165,7 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
-            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The same tier + percentile pattern appears on team / environment / month subset rows. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The same tier + percentile pattern appears on team / environment / month subset rows. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
             + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
             + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
@@ -5202,7 +5175,6 @@ const searchOutputStatsPaneMethods = {
             + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where encrypted cohort baselines are available (Ops unlock), the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
             + '<li>Team / environment / month slice scores shrink toward a <strong>subset prior</strong> only when that baseline was shipped (TWQS: ≥ 500 tasks and ≥ 20 writers; QAQS: ≥ 500 feedback rows and ≥ 20 reviewers at generation time). Unshipped slices fall back to the global prior while still showing the breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
-            + '<li>When an extreme population tier is soft-gated for volume, a second badge appears: <strong>Volume-gated tier</strong>. Hover it for the score-qualified tier, the displayed tier, and current vs required volume (Poor needs TWQS ≥ 25 / QAQS ≥ 50; Top tier needs TWQS ≥ 50 / QAQS ≥ 100). The estimated percentile is never changed by this gate.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
             + '<thead><tr>'
@@ -5481,16 +5453,6 @@ const searchOutputStatsPaneMethods = {
             + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
             + '<div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end;">'
             + '<div style="font-size: 10px; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
-            + (function () {
-                const gateBadge = this._ratingTierGateBadge(block.tierGate, scoreKind);
-                if (!gateBadge) return '';
-                return '<div title="' + dashEscHtml(gateBadge.title) + '"'
-                    + ' style="font-size: 10px; padding: 2px 6px; border-radius: 4px;'
-                    + ' border: 1px dashed var(--muted-foreground, #64748b);'
-                    + ' color: var(--muted-foreground, #64748b); cursor: help;">'
-                    + dashEscHtml(gateBadge.label)
-                    + '</div>';
-            }.call(this))
             + '</div>'
             + '</div>'
             + (basisLine
@@ -6100,7 +6062,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.3',
+    _version: '12.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
