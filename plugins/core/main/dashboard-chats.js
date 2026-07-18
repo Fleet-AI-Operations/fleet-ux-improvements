@@ -331,6 +331,19 @@ function chatsRatingConfidenceTier(label) {
     return 'standard';
 }
 
+function chatsRatingTierId(tier, existingId) {
+    if (existingId) return String(existingId);
+    const value = String(tier || '').trim().toLowerCase();
+    const ids = {
+        'poor': 'poor',
+        'below average': 'below_average',
+        'typical': 'typical',
+        'above average': 'above_average',
+        'top tier': 'top_tier',
+    };
+    return ids[value] || null;
+}
+
 function chatsRatingBlockFromPayload(score, scoreKind) {
     if (!score || score.score == null) return null;
     const volume = score.volume || {};
@@ -346,7 +359,7 @@ function chatsRatingBlockFromPayload(score, scoreKind) {
     return {
         score: Number(score.score),
         band: score.tier || null,
-        tierId: score.tierId || null,
+        tierId: chatsRatingTierId(score.tier, score.tierId),
         estimatedPercentile: score.estimatedPercentile,
         confidence: {
             label: score.confidence || '',
@@ -367,6 +380,89 @@ function chatsRatingBlockFromPayload(score, scoreKind) {
     };
 }
 
+function chatsArchivedRatingSlicesHtml(score, scoreKind, label, loader) {
+    if (!score || !score.slices || !loader
+        || typeof loader._ratingCohortSectionHtml !== 'function') {
+        return '';
+    }
+    const axesById = new Map((Array.isArray(score.axes) ? score.axes : []).map((axis) => [
+        String(axis.id || ''),
+        axis,
+    ]));
+    const dimensions = [
+        { id: 'team', label: 'Team' },
+        { id: 'env', label: 'Environment' },
+        { id: 'month', label: 'Month' },
+    ];
+    let sectionsHtml = '';
+    let sliceCount = 0;
+    for (const dimension of dimensions) {
+        const slices = Array.isArray(score.slices[dimension.id])
+            ? score.slices[dimension.id]
+            : [];
+        if (!slices.length) continue;
+        sectionsHtml += '<div style="margin-top: 12px; font-size: 10px; font-weight: 700;'
+            + ' letter-spacing: 0.02em; color: var(--muted-foreground, #64748b);'
+            + ' text-transform: uppercase;">' + chatsEscHtml(dimension.label) + '</div>';
+        for (const slice of slices) {
+            if (!slice) continue;
+            sliceCount += 1;
+            const percentile = typeof loader._ratingFormatEstimatedPercentile === 'function'
+                ? loader._ratingFormatEstimatedPercentile(slice.estimatedPercentile)
+                : '';
+            const scoreDisplay = [slice.tier || '', percentile].filter(Boolean).join(' · ') || '—';
+            const volume = slice.volume != null ? String(slice.volume) + ' vol' : '';
+            const sample = slice.sampleStatus ? String(slice.sampleStatus) + ' sample' : '';
+            const prior = slice.priorSource ? String(slice.priorSource) + ' prior' : '';
+            const hasDelta = slice.percentileDeltaFromOverall != null;
+            const deltaValue = hasDelta ? Number(slice.percentileDeltaFromOverall) : null;
+            const delta = hasDelta && Number.isFinite(deltaValue)
+                ? 'Δ ' + (deltaValue > 0 ? '+' : '') + deltaValue + ' pct'
+                : '';
+            const seenAxes = new Set();
+            const axes = [slice.strongestAxis, slice.weakestAxis]
+                .filter((axis) => {
+                    const id = String((axis && axis.id) || '');
+                    if (!id || seenAxes.has(id)) return false;
+                    seenAxes.add(id);
+                    return true;
+                })
+                .map((axis) => {
+                    const overall = axesById.get(String(axis.id || '')) || {};
+                    return {
+                        id: axis.id,
+                        label: overall.label || axis.id,
+                        baseWeight: overall.weightPct != null
+                            ? Number(overall.weightPct) / 100
+                            : 0,
+                        score: axis.axisScorePct != null
+                            ? Number(axis.axisScorePct) / 100
+                            : null,
+                        defined: axis.axisScorePct != null,
+                    };
+                });
+            sectionsHtml += loader._ratingCohortSectionHtml({
+                title: String(slice.key || '—'),
+                scoreDisplay,
+                weightOrMeta: [volume, sample, prior, delta].filter(Boolean).join(' · '),
+                volume: slice.volume,
+                provisional: slice.sampleStatus === 'provisional',
+                tierId: chatsRatingTierId(slice.tier, slice.tierId),
+                axes,
+                expanded: true,
+                scoreKind,
+            });
+        }
+    }
+    if (!sectionsHtml) return '';
+    return '<details style="margin-top: 10px;">'
+        + '<summary style="cursor: pointer; font-size: 11px; font-weight: 600;'
+        + ' color: var(--foreground, #0f172a);">'
+        + chatsEscHtml(label) + ' slice breakdown (' + sliceCount + ')</summary>'
+        + '<div style="padding: 0 2px 4px;">' + sectionsHtml + '</div>'
+        + '</details>';
+}
+
 function chatsArchivedRatingCardHtml(payload) {
     const loader = Context.dashboard && Context.dashboard._loader;
     if (!loader || typeof loader._ratingScoreBlockCompactHtml !== 'function') {
@@ -382,9 +478,11 @@ function chatsArchivedRatingCardHtml(payload) {
     const qaqs = chatsRatingBlockFromPayload(scores.qaqs, 'qaqs');
     const scoreHtml = (twqs
         ? loader._ratingScoreBlockCompactHtml('Task Writer Quality Score', twqs, 'tasks', {})
+            + chatsArchivedRatingSlicesHtml(scores.twqs, 'twqs', 'TWQS', loader)
         : '')
         + (qaqs
             ? loader._ratingScoreBlockCompactHtml('QA Quality Score', qaqs, 'feedbacks', {})
+                + chatsArchivedRatingSlicesHtml(scores.qaqs, 'qaqs', 'QAQS', loader)
             : '');
     if (!scoreHtml) return '';
     const box = typeof loader._panelBoxStyle === 'function' ? loader._panelBoxStyle() : '';
@@ -884,7 +982,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -911,7 +1009,7 @@ const plugin = {
             },
         });
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v3.2');
+            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v3.3');
             state.registered = true;
         }
     },

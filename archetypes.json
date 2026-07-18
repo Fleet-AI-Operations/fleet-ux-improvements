@@ -1,7 +1,7 @@
 {
   "version": "12.4.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.92",
+  "archetypesVersion": "14.93",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -176,8 +176,8 @@
     },
     {
       "name": "dashboard-chats.js",
-      "version": "3.2",
-      "hash": "sha256-b642a6a3b6e164944aa2223d1e94a50c16ff55e62ddd69d1889c60c47f21803d",
+      "version": "3.3",
+      "hash": "sha256-1a3d5a312df9af5618aea4db5db5c6d5ccc5858dfc3a06e2394617608ede8578",
       "log": false
     },
     {
