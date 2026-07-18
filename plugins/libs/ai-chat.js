@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.3';
+const AI_CHAT_VERSION = '2.4';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 
@@ -92,7 +92,12 @@ function aiChatApplyTheme(el) {
     };
     el.auxiliaryStyle = ''
         + '.deep-chat-temporary-message { display: none; }'
-        + '.name { color: #94a3b8 !important; font-size: 11px !important; font-weight: 600 !important; }'
+        + '.inner-message-container { flex-direction: column; align-items: flex-start; }'
+        + '.inner-message-container:has(.user-message-text) { align-items: flex-end; }'
+        + '.name {'
+        + '  color: #94a3b8 !important; font-size: 11px !important; font-weight: 600 !important;'
+        + '  margin: 0 10px 4px !important;'
+        + '}'
         + '.outer-message-container { position: relative; }'
         + '.wf-chat-copy {'
         + '  display: inline-flex; align-items: center; justify-content: center;'
@@ -163,9 +168,9 @@ function aiChatApplyTheme(el) {
         fontWeight: '600',
     };
     el.names = {
-        default: { style: nameStyle },
-        user: { text: 'You', style: nameStyle },
-        ai: { text: 'Assistant', style: nameStyle },
+        default: { style: nameStyle, position: 'start' },
+        user: { text: 'You', style: nameStyle, position: 'start' },
+        ai: { text: 'Assistant', style: nameStyle, position: 'start' },
     };
     el.submitButtonStyles = {
         submit: {
@@ -946,7 +951,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
