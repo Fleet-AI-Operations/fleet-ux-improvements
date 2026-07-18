@@ -4,7 +4,7 @@
 // AI gating: Diagnose Issues, Chat toggle, and the chat pane stay hidden unless
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
-// Chat transcript UI / streaming uses Context.aiChat (plugins/libs/ai-chat.js).
+// Chat transcript UI / streaming uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
 
 const VERIFIER_SCRATCHPAD_WIDTH_KEY = 'fleet-ux:verifier-fetcher-scratchpad-width';
 const VERIFIER_SCRATCHPAD_OPEN_KEY = 'fleet-ux:verifier-fetcher-scratchpad-open';
@@ -144,13 +144,11 @@ function clampVerifierScratchpadWidth(root, widthPx) {
 
 function verifierChatOpts() {
     return {
-        messagesSelector: '#wf-ops-verifier-chat-messages',
-        sendSelector: '#wf-ops-verifier-chat-send',
-        stopSelector: '#wf-ops-verifier-chat-stop',
+        mountSelector: '#wf-ops-verifier-chat-mount',
         exportSelector: '#wf-ops-verifier-chat-export',
-        inputSelector: '#wf-ops-verifier-chat-input',
         wiredAttr: 'data-wf-chat-wired',
         logTag: 'verifier-fetcher',
+        placeholder: 'Ask a follow-up…',
     };
 }
 
@@ -300,7 +298,7 @@ async function decodeVerifierOutput(modal) {
 function wireVerifierChatComposer(modal) {
     const chat = verifierChatApi();
     if (!chat || typeof chat.wireComposer !== 'function') return;
-    chat.wireComposer(modal, Object.assign({}, verifierChatOpts(), {
+    chat.wireComposer(modal, getVerifierChatState(modal), Object.assign({}, verifierChatOpts(), {
         onSend: (value) => sendVerifierChatMessage(modal, value),
         onStop: () => stopVerifierChatStream(modal),
         onExport: () => chat.exportConversation(
@@ -657,25 +655,17 @@ function verifierFetcherPanelHtml() {
                         box-sizing: border-box;
                         background: transparent;
                     ">
-                        <div style="flex-shrink: 0; ${labelStyle}">Chat</div>
-                        <div id="wf-ops-verifier-chat-messages" style="
+                        <div style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                            <div style="${labelStyle}">Chat</div>
+                            <button type="button" id="wf-ops-verifier-chat-export" class="${btnClass('basic', 'compact')}">Export</button>
+                        </div>
+                        <div id="wf-ops-verifier-chat-mount" style="
                             flex: 1;
                             min-height: 120px;
-                            overflow: auto;
                             display: flex;
                             flex-direction: column;
-                            gap: 10px;
-                            padding: 4px;
                             box-sizing: border-box;
                         "></div>
-                        <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 6px;">
-                            <textarea id="wf-ops-verifier-chat-input" rows="3" placeholder="Ask a follow-up…" style="${compactInputStyle} width: 100%; resize: vertical; min-height: 64px;"></textarea>
-                            <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                                <button type="button" id="wf-ops-verifier-chat-stop" class="${btnClass('basic', 'compact')}" style="display: none;">Stop</button>
-                                <button type="button" id="wf-ops-verifier-chat-export" class="${btnClass('basic', 'compact')}">Export Conversation</button>
-                                <button type="button" id="wf-ops-verifier-chat-send" class="${btnClass('primary', 'compact')}">Send</button>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>`;
@@ -803,7 +793,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.9',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -835,6 +825,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered');
+        Logger.log('verifier-fetcher: tab registered v5.0');
     }
 };

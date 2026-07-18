@@ -262,13 +262,11 @@ async function chatsFetchMessagesForConversation(conv) {
 
 function chatsChatOpts() {
     return {
-        messagesSelector: '[data-wf-dash-chats-messages]',
-        sendSelector: '[data-wf-dash-chats-send]',
-        stopSelector: '[data-wf-dash-chats-stop]',
+        mountSelector: '[data-wf-dash-chats-mount]',
         exportSelector: '[data-wf-dash-chats-export]',
-        inputSelector: '[data-wf-dash-chats-input]',
         wiredAttr: 'data-wf-dash-chats-wired',
         logTag: PLUGIN_ID,
+        placeholder: 'Message…',
     };
 }
 
@@ -303,9 +301,6 @@ function chatsSetStatus(panel, message, isError) {
 function chatsPanelHtml() {
     const btn = chatsBtnClass('basic', 'compact');
     const btnPrimary = chatsBtnClass('primary', 'compact');
-    const inputStyle = 'width: 100%; padding: 7px 10px; font-size: 12px; border: 1px solid var(--input, #cbd5e1);'
-        + ' border-radius: 6px; background: var(--background, #fff); color: var(--foreground, #0f172a);'
-        + ' box-sizing: border-box; resize: vertical; min-height: 56px;';
     return '<div data-wf-dash-chats-panel="1" style="display: flex; flex-direction: column; gap: 10px;'
         + ' height: 100%; min-height: 420px; box-sizing: border-box;">'
         + '<div data-wf-dash-chats-no-key style="display: none; font-size: 12px; line-height: 1.45;'
@@ -327,17 +322,14 @@ function chatsPanelHtml() {
         + '<section style="flex: 1 1 auto; min-width: 0; min-height: 0; display: flex;'
         + ' flex-direction: column; gap: 8px; border: 1px solid var(--border, #e2e8f0);'
         + ' border-radius: 8px; padding: 10px;">'
+        + '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">'
         + '<div data-wf-dash-chats-title style="font-size: 13px; font-weight: 600;">New chat</div>'
-        + '<div data-wf-dash-chats-status style="display: none; font-size: 11px;"></div>'
-        + '<div data-wf-dash-chats-messages style="flex: 1 1 auto; min-height: 180px; overflow: auto;'
-        + ' display: flex; flex-direction: column; gap: 10px; padding: 4px 2px;"></div>'
-        + '<div style="display: flex; flex-direction: column; gap: 6px;">'
-        + '<textarea data-wf-dash-chats-input rows="2" placeholder="Message…" style="' + inputStyle + '"></textarea>'
-        + '<div style="display: flex; gap: 6px; justify-content: flex-end;">'
         + '<button type="button" data-wf-dash-chats-export class="' + btn + '">Export</button>'
-        + '<button type="button" data-wf-dash-chats-stop class="' + btn + '" style="display: none;">Stop</button>'
-        + '<button type="button" data-wf-dash-chats-send class="' + btnPrimary + '">Send</button>'
-        + '</div></div></section></div></div></div>';
+        + '</div>'
+        + '<div data-wf-dash-chats-status style="display: none; font-size: 11px;"></div>'
+        + '<div data-wf-dash-chats-mount style="flex: 1 1 auto; min-height: 280px; display: flex;'
+        + ' flex-direction: column;"></div>'
+        + '</section></div></div></div>';
 }
 
 function chatsRenderSidebar(panel) {
@@ -404,10 +396,42 @@ function chatsStartNewChat(panel) {
     chatsSetStatus(panel, '', false);
     chatsUpdateTitle(panel);
     chatsRenderSidebar(panel);
+    chat.wireComposer(panel, chatsUi.chatState, Object.assign({}, chatsChatOpts(), chatsComposerHandlers(panel)));
     chat.renderMessages(panel, chatsUi.chatState, chatsChatOpts());
-    const input = panel.querySelector('[data-wf-dash-chats-input]');
-    if (input) input.focus();
     Logger.log(PLUGIN_ID + ': new chat started');
+}
+
+function chatsComposerHandlers(panel) {
+    const chat = Context.aiChat;
+    return {
+        onSend: (value) => void chatsSendMessage(panel, value),
+        onStop: () => {
+            const state = chatsUi.chatState;
+            if (!state || !chat) return;
+            chat.stopStream(state, chatsChatOpts());
+            chat.setStreamingUi(panel, state, false, chatsChatOpts());
+            chat.renderMessages(panel, state, chatsChatOpts());
+        },
+        onExport: () => {
+            const state = chatsUi.chatState;
+            if (!state || !chat) return;
+            const conv = chatsActiveConversation();
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const slug = String((conv && conv.title) || 'chat')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 48) || 'chat';
+            chat.exportConversation(state, Object.assign({}, chatsChatOpts(), {
+                exportFilename: 'conversation-' + slug + '-' + stamp + '.json',
+                exportMetadata: {
+                    feature: 'dashboard-chats',
+                    conversationId: conv && conv.id,
+                    source: conv && conv.source,
+                },
+            }));
+        },
+    };
 }
 
 async function chatsOpenConversation(panel, conversationId) {
@@ -427,6 +451,7 @@ async function chatsOpenConversation(panel, conversationId) {
         conversationKey: conv.conversationKey,
     });
     chatsUi.chatState = state;
+    chat.wireComposer(panel, state, Object.assign({}, chatsChatOpts(), chatsComposerHandlers(panel)));
     chat.renderMessages(panel, state, chatsChatOpts());
     try {
         const hydrated = await chatsFetchMessagesForConversation(conv);
@@ -527,35 +552,11 @@ function chatsWirePanel(panel) {
 
     const chat = Context.aiChat;
     if (chat && typeof chat.wireComposer === 'function') {
-        chat.wireComposer(panel, Object.assign({}, chatsChatOpts(), {
-            onSend: (value) => void chatsSendMessage(panel, value),
-            onStop: () => {
-                const state = chatsUi.chatState;
-                if (!state) return;
-                chat.stopStream(state, chatsChatOpts());
-                chat.setStreamingUi(panel, state, false, chatsChatOpts());
-                chat.renderMessages(panel, state, chatsChatOpts());
-            },
-            onExport: () => {
-                const state = chatsUi.chatState;
-                if (!state) return;
-                const conv = chatsActiveConversation();
-                const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-                const slug = String((conv && conv.title) || 'chat')
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/^-+|-+$/g, '')
-                    .slice(0, 48) || 'chat';
-                chat.exportConversation(state, Object.assign({}, chatsChatOpts(), {
-                    exportFilename: 'conversation-' + slug + '-' + stamp + '.json',
-                    exportMetadata: {
-                        feature: 'dashboard-chats',
-                        conversationId: conv && conv.id,
-                        source: conv && conv.source,
-                    },
-                }));
-            },
-        }));
+        chat.wireComposer(
+            panel,
+            chatsEnsureChatState(),
+            Object.assign({}, chatsChatOpts(), chatsComposerHandlers(panel))
+        );
     }
 
     chatsOnIndexChange(() => {
@@ -602,7 +603,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '1.1',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -629,7 +630,7 @@ const plugin = {
             },
         });
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v1.1');
+            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v2.0');
             state.registered = true;
         }
     },

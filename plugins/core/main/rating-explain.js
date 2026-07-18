@@ -5,7 +5,7 @@
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
 //
-// Chat UI/streaming comes from Context.aiChat (plugins/libs/ai-chat.js).
+// Chat UI/streaming comes from Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
 // Keep RATING_EXPLAIN_ABOUT in sync with _ratingsAboutSectionHtml /
 // local/tw-qa-ratings/about-section.md when the About copy changes.
 
@@ -142,13 +142,11 @@ function ratingExplainChat() {
 
 function ratingExplainChatOpts() {
     return {
-        messagesSelector: '[data-wf-dash-rating-explain-messages]',
-        sendSelector: '[data-wf-dash-rating-explain-send]',
-        stopSelector: '[data-wf-dash-rating-explain-stop]',
+        mountSelector: '[data-wf-dash-rating-explain-mount]',
         exportSelector: '[data-wf-dash-rating-explain-export]',
-        inputSelector: '[data-wf-dash-rating-explain-input]',
         wiredAttr: 'data-wf-explain-wired',
         logTag: PLUGIN_ID,
+        placeholder: 'Ask a follow-up…',
     };
 }
 
@@ -345,7 +343,7 @@ async function sendRatingExplainFollowUp(panel, workerId, state, userText) {
 function wireRatingExplainPanel(panel, workerId, state) {
     const chat = ratingExplainChat();
     if (!chat || typeof chat.wireComposer !== 'function') return;
-    chat.wireComposer(panel, Object.assign({}, ratingExplainChatOpts(), {
+    chat.wireComposer(panel, state, Object.assign({}, ratingExplainChatOpts(), {
         onSend: (text) => sendRatingExplainFollowUp(panel, workerId, state, text),
         onStop: () => {
             chat.stopStream(state, ratingExplainChatOpts());
@@ -373,27 +371,20 @@ function ratingExplainEscHtml(value) {
 }
 
 function ratingExplainPanelHtml(workerId) {
-    const btnSend = ratingExplainBtnClass('primary', 'compact');
     const btnStop = ratingExplainBtnClass('basic', 'compact');
     const safeId = ratingExplainEscHtml(workerId);
-    const inputStyle = 'width: 100%; padding: 7px 10px; font-size: 12px; border: 1px solid var(--input, #cbd5e1);'
-        + ' border-radius: 6px; background: var(--background, #fff); color: var(--foreground, #0f172a);'
-        + ' box-sizing: border-box; resize: vertical; min-height: 56px;';
     return '<div data-wf-dash-rating-explain-panel="1" data-wf-dash-rating-worker="' + safeId + '"'
         + ' role="region" aria-label="Explain ratings chat" style="display: none; flex-direction: column; gap: 8px;'
         + ' margin-top: 12px; padding: 10px; border-radius: 8px;'
         + ' border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
         + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 6%, var(--card, #fff));">'
+        + '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">'
         + '<div style="font-size: 11px; font-weight: 600;">Explain Ratings</div>'
-        + '<div data-wf-dash-rating-explain-messages="1" style="display: flex; flex-direction: column; gap: 10px;'
-        + ' max-height: 320px; overflow: auto; padding: 4px 2px;"></div>'
-        + '<div style="display: flex; flex-direction: column; gap: 6px;">'
-        + '<textarea data-wf-dash-rating-explain-input="1" rows="2" placeholder="Ask a follow-up…" style="' + inputStyle + '"></textarea>'
-        + '<div style="display: flex; justify-content: flex-end; gap: 6px;">'
-        + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-stop="1" style="display: none;">Stop</button>'
-        + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-export="1">Export Conversation</button>'
-        + '<button type="button" class="' + btnSend + '" data-wf-dash-rating-explain-send="1">Send</button>'
-        + '</div></div></div>';
+        + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-export="1">Export</button>'
+        + '</div>'
+        + '<div data-wf-dash-rating-explain-mount="1" style="display: flex; flex-direction: column;'
+        + ' min-height: 280px; height: 320px;"></div>'
+        + '</div>';
 }
 
 function mountRatingExplainPanel(root, workerId) {
@@ -463,7 +454,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '1.7',
+    _version: '2.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -475,6 +466,6 @@ const plugin = {
         }
         Context.ratingExplain = RatingExplain;
         if (state) state.registered = true;
-        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v1.7');
+        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v2.0');
     }
 };
