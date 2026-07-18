@@ -147,6 +147,7 @@ function verifierChatOpts() {
         messagesSelector: '#wf-ops-verifier-chat-messages',
         sendSelector: '#wf-ops-verifier-chat-send',
         stopSelector: '#wf-ops-verifier-chat-stop',
+        exportSelector: '#wf-ops-verifier-chat-export',
         inputSelector: '#wf-ops-verifier-chat-input',
         wiredAttr: 'data-wf-chat-wired',
         logTag: 'verifier-fetcher',
@@ -269,6 +270,13 @@ function wireVerifierChatComposer(modal) {
     chat.wireComposer(modal, Object.assign({}, verifierChatOpts(), {
         onSend: (value) => sendVerifierChatMessage(modal, value),
         onStop: () => stopVerifierChatStream(modal),
+        onExport: () => chat.exportConversation(
+            getVerifierChatState(modal),
+            Object.assign({}, verifierChatOpts(), {
+                exportFilename: 'verifier-chat-' + new Date().toISOString().slice(0, 10) + '.json',
+                exportMetadata: { feature: 'verifier-fetcher' },
+            })
+        ),
     }));
 }
 
@@ -628,9 +636,10 @@ function verifierFetcherPanelHtml() {
                             box-sizing: border-box;
                         "></div>
                         <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 6px;">
-                            <textarea id="wf-ops-verifier-chat-input" rows="3" placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline)" style="${compactInputStyle} width: 100%; resize: vertical; min-height: 64px;"></textarea>
+                            <textarea id="wf-ops-verifier-chat-input" rows="3" placeholder="Ask a follow-up…" style="${compactInputStyle} width: 100%; resize: vertical; min-height: 64px;"></textarea>
                             <div style="display: flex; gap: 8px; justify-content: flex-end;">
                                 <button type="button" id="wf-ops-verifier-chat-stop" class="${btnClass('basic', 'compact')}" style="display: none;">Stop</button>
+                                <button type="button" id="wf-ops-verifier-chat-export" class="${btnClass('basic', 'compact')}">Export Conversation</button>
                                 <button type="button" id="wf-ops-verifier-chat-send" class="${btnClass('primary', 'compact')}">Send</button>
                             </div>
                         </div>
@@ -761,7 +770,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.7',
+    _version: '4.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -6,7 +6,7 @@
 // initial payloads. This module owns message rendering, composer wiring,
 // and chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '1.0';
+const AI_CHAT_VERSION = '1.1';
 const PLUGIN_ID = 'ai-chat';
 
 function aiChatHasKey() {
@@ -30,9 +30,15 @@ function aiChatResolveOpts(opts) {
         messagesSelector: o.messagesSelector || '[data-wf-ai-chat-messages]',
         sendSelector: o.sendSelector || '[data-wf-ai-chat-send]',
         stopSelector: o.stopSelector || '[data-wf-ai-chat-stop]',
+        exportSelector: o.exportSelector || '[data-wf-ai-chat-export]',
         inputSelector: o.inputSelector || '[data-wf-ai-chat-input]',
         wiredAttr: o.wiredAttr || 'data-wf-ai-chat-wired',
         logTag: o.logTag || PLUGIN_ID,
+        exportFilename: o.exportFilename || 'ai-chat-conversation.json',
+        exportMetadata: o.exportMetadata || null,
+        onSend: o.onSend,
+        onStop: o.onStop,
+        onExport: o.onExport,
     };
 }
 
@@ -50,6 +56,8 @@ function aiChatRenderMessages(root, state, opts) {
     list.innerHTML = '';
     (state.messages || []).forEach((msg, idx) => {
         if (msg && msg.hideInUi) return;
+        // Do not show an empty assistant bubble while waiting for first token.
+        if (msg.role === 'assistant' && !(msg.content || '').trim()) return;
         const row = document.createElement('div');
         row.setAttribute('data-wf-chat-role', msg.role);
         row.style.cssText = 'display:flex;flex-direction:column;gap:4px;'
@@ -73,6 +81,26 @@ function aiChatRenderMessages(root, state, opts) {
         if (msg.streaming) bubble.setAttribute('data-wf-streaming', '1');
         row.appendChild(label);
         row.appendChild(bubble);
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.textContent = 'Copy';
+        copyBtn.setAttribute('aria-label', 'Copy message as Markdown');
+        copyBtn.className = Context.uiLib && typeof Context.uiLib.btnClass === 'function'
+            ? Context.uiLib.btnClass('basic', 'compact')
+            : 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--compact';
+        copyBtn.addEventListener('click', async () => {
+            const markdown = String(msg.content || '');
+            try {
+                if (!markdown) throw new Error('Message is empty');
+                await navigator.clipboard.writeText(markdown);
+                if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(copyBtn);
+                Logger.log(o.logTag + ': copied chat message (' + markdown.length + ' chars)');
+            } catch (err) {
+                if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(copyBtn);
+                Logger.error(o.logTag + ': failed to copy chat message', err);
+            }
+        });
+        row.appendChild(copyBtn);
         list.appendChild(row);
     });
     list.scrollTop = list.scrollHeight;
@@ -224,8 +252,10 @@ function aiChatWireComposer(root, opts) {
 
     const sendBtn = aiChatQuery(root, o.sendSelector);
     const stopBtn = aiChatQuery(root, o.stopSelector);
+    const exportBtn = aiChatQuery(root, o.exportSelector);
     const onSend = typeof o.onSend === 'function' ? o.onSend : null;
     const onStop = typeof o.onStop === 'function' ? o.onStop : null;
+    const onExport = typeof o.onExport === 'function' ? o.onExport : null;
 
     if (sendBtn && onSend) {
         sendBtn.addEventListener('click', () => {
@@ -238,6 +268,12 @@ function aiChatWireComposer(root, opts) {
         stopBtn.addEventListener('click', () => onStop());
         stopBtn.style.display = 'none';
     }
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            if (onExport) onExport();
+            else Logger.warn(o.logTag + ': conversation export handler missing');
+        });
+    }
     if (onSend) {
         input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -247,6 +283,42 @@ function aiChatWireComposer(root, opts) {
                 void onSend(value);
             }
         });
+    }
+}
+
+function aiChatExportConversation(state, opts) {
+    const o = aiChatResolveOpts(opts);
+    if (!state) {
+        Logger.warn(o.logTag + ': conversation export skipped — state missing');
+        return;
+    }
+    const payload = {
+        exportedAt: new Date().toISOString(),
+        metadata: o.exportMetadata || undefined,
+        messages: (state.messages || [])
+            .filter((msg) => msg && !msg.streaming && (msg.role === 'user' || msg.role === 'assistant'))
+            .map((msg) => ({
+                role: msg.role,
+                content: String(msg.content || ''),
+                hiddenInUi: msg.hideInUi ? true : undefined,
+            })),
+    };
+    try {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {
+            type: 'application/json;charset=utf-8',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = o.exportFilename;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        Logger.log(o.logTag + ': conversation exported — ' + o.exportFilename);
+    } catch (err) {
+        Logger.error(o.logTag + ': conversation export failed', err);
     }
 }
 
@@ -311,6 +383,7 @@ const AiChatApi = {
     runStream: aiChatRunStream,
     buildApiMessages: aiChatBuildApiMessages,
     wireComposer: aiChatWireComposer,
+    exportConversation: aiChatExportConversation,
     sendTurn: aiChatSendTurn,
 };
 
@@ -318,7 +391,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI and streaming controller',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -73,6 +73,7 @@ function ratingExplainChatOpts() {
         messagesSelector: '[data-wf-dash-rating-explain-messages]',
         sendSelector: '[data-wf-dash-rating-explain-send]',
         stopSelector: '[data-wf-dash-rating-explain-stop]',
+        exportSelector: '[data-wf-dash-rating-explain-export]',
         inputSelector: '[data-wf-dash-rating-explain-input]',
         wiredAttr: 'data-wf-explain-wired',
         logTag: PLUGIN_ID,
@@ -230,6 +231,18 @@ function wireRatingExplainPanel(panel, workerId, state) {
             chat.setStreamingUi(panel, state, false, ratingExplainChatOpts());
             chat.renderMessages(panel, state, ratingExplainChatOpts());
         },
+        onExport: () => {
+            const safeWorker = String(workerId || 'worker')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-+|-+$/g, '')
+                .slice(0, 48) || 'worker';
+            chat.exportConversation(state, Object.assign({}, ratingExplainChatOpts(), {
+                exportFilename: 'rating-' + safeWorker + '-conversation-'
+                    + new Date().toISOString().slice(0, 10) + '.json',
+                exportMetadata: { feature: 'explain-ratings', workerId: String(workerId || '') },
+            }));
+        },
     }));
 }
 
@@ -258,9 +271,10 @@ function ratingExplainPanelHtml(workerId) {
         + '<div data-wf-dash-rating-explain-messages="1" style="display: flex; flex-direction: column; gap: 10px;'
         + ' max-height: 320px; overflow: auto; padding: 4px 2px;"></div>'
         + '<div style="display: flex; flex-direction: column; gap: 6px;">'
-        + '<textarea data-wf-dash-rating-explain-input="1" rows="2" placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline)" style="' + inputStyle + '"></textarea>'
+        + '<textarea data-wf-dash-rating-explain-input="1" rows="2" placeholder="Ask a follow-up…" style="' + inputStyle + '"></textarea>'
         + '<div style="display: flex; justify-content: flex-end; gap: 6px;">'
         + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-stop="1" style="display: none;">Stop</button>'
+        + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-export="1">Export Conversation</button>'
         + '<button type="button" class="' + btnSend + '" data-wf-dash-rating-explain-send="1">Send</button>'
         + '</div></div></div>';
 }
@@ -332,7 +346,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -344,6 +358,6 @@ const plugin = {
         }
         Context.ratingExplain = RatingExplain;
         if (state) state.registered = true;
-        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v1.1');
+        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v1.2');
     }
 };
