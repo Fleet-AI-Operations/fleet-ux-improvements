@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.1';
+const AI_CHAT_VERSION = '2.2';
 const PLUGIN_ID = 'ai-chat';
 
 function aiChatHasKey() {
@@ -80,7 +80,8 @@ function aiChatApplyTheme(el) {
         fontSize: '13px',
     };
     el.auxiliaryStyle = ''
-        + '.deep-chat-temporary-message { display: none; }';
+        + '.deep-chat-temporary-message { display: none; }'
+        + '.name { color: #94a3b8 !important; font-size: 11px !important; font-weight: 600 !important; }';
     el.messageStyles = {
         default: {
             shared: {
@@ -128,7 +129,7 @@ function aiChatApplyTheme(el) {
         }
     };
     const nameStyle = {
-        color: 'var(--muted-foreground, #64748b)',
+        color: '#94a3b8',
         fontSize: '11px',
         fontWeight: '600',
     };
@@ -232,9 +233,10 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
     const gen = state.streamGen;
     state.streaming = true;
     let assembled = '';
-    let started = false;
     let doneMeta = { generationId: null, model: null };
     let settled = false;
+    // Serialize Deep Chat onResponse promises so rapid SSE deltas cannot race.
+    let responseChain = Promise.resolve();
 
     try { signals.onOpen(); } catch (_e) { /* ignore */ }
 
@@ -243,8 +245,18 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
         try { signals.onClose(); } catch (_e) { /* ignore */ }
     };
 
+    const enqueueResponse = (payload) => {
+        responseChain = responseChain.then(async () => {
+            if (gen !== state.streamGen || settled) return;
+            try {
+                await Promise.resolve(signals.onResponse(payload));
+            } catch (_e) { /* ignore */ }
+        });
+        return responseChain;
+    };
+
     const settleOk = (text) => {
-        if (settled) return;
+        if (settled) return text;
         settled = true;
         state.streamAbort = null;
         state.streaming = false;
@@ -267,45 +279,59 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
             messages: apiMessages,
             onDelta: (delta) => {
                 if (gen !== state.streamGen) return;
-                assembled += String(delta || '');
+                const chunk = String(delta || '');
+                if (!chunk) return;
+                assembled += chunk;
                 aiChatUpdateStreamingBubble(null, state, assembled, o);
-                try {
-                    if (!started) {
-                        started = true;
-                        signals.onResponse({ text: assembled });
-                    } else {
-                        signals.onResponse({ text: assembled, overwrite: true });
-                    }
-                } catch (_e) { /* ignore */ }
+                // Stream mode appends each text chunk; do not overwrite full text.
+                void enqueueResponse({ text: chunk });
             },
             onDone: (result) => {
                 if (result && result.generationId) doneMeta.generationId = String(result.generationId);
                 if (result && result.model) doneMeta.model = String(result.model);
-                const full = result && result.fullText != null ? String(result.fullText) : assembled;
+                const streamed = assembled;
+                const full = result && result.fullText != null ? String(result.fullText) : streamed;
                 assembled = full;
                 aiChatUpdateStreamingBubble(null, state, assembled, o);
-                if (gen === state.streamGen && assembled) {
-                    try {
-                        if (!started) signals.onResponse({ text: assembled });
-                        else signals.onResponse({ text: assembled, overwrite: true });
-                    } catch (_e) { /* ignore */ }
-                }
-                try {
-                    resolve({
-                        text: settleOk(assembled) || '',
-                        generationId: doneMeta.generationId,
-                        model: doneMeta.model,
+                void responseChain.then(() => {
+                    if (gen !== state.streamGen) {
+                        resolve({
+                            text: assembled || '',
+                            generationId: doneMeta.generationId,
+                            model: doneMeta.model,
+                        });
+                        return;
+                    }
+                    const syncFinal = (full && full !== streamed)
+                        ? enqueueResponse({ text: full, overwrite: true })
+                        : Promise.resolve();
+                    return syncFinal.then(() => {
+                        try {
+                            resolve({
+                                text: settleOk(assembled) || '',
+                                generationId: doneMeta.generationId,
+                                model: doneMeta.model,
+                            });
+                        } catch (err) {
+                            reject(err);
+                        }
                     });
-                } catch (err) {
-                    reject(err);
-                }
+                }).catch((err) => {
+                    try {
+                        settleErr(err);
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
             },
             onError: (err) => {
-                try {
-                    settleErr(err);
-                } catch (e) {
-                    reject(e);
-                }
+                void responseChain.finally(() => {
+                    try {
+                        settleErr(err);
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
             }
         })).then((handle) => {
             state.streamAbort = handle;
@@ -430,6 +456,7 @@ function aiChatBindElement(el, root, state, opts) {
         });
     }
     el.connect = {
+        stream: true,
         handler: (body, signals) => {
             const activeState = el._wfAiChatState || state;
             const activeRoot = el._wfAiChatRoot || root;
@@ -660,6 +687,7 @@ async function aiChatSendTurn(root, state, opts) {
         const apiMessages = apiMessagesOverride
             || aiChatBuildApiMessages(state, { systemContent });
         let assembled = '';
+        let uiText = '';
         let aiIndex = -1;
         const signals = {
             onOpen() {
@@ -675,15 +703,14 @@ async function aiChatSendTurn(root, state, opts) {
                     return;
                 }
                 const text = response.text != null ? String(response.text) : '';
+                uiText = response.overwrite ? text : (uiText + text);
                 try {
                     if (aiIndex < 0) {
-                        el.addMessage({ role: 'ai', text });
+                        el.addMessage({ role: 'ai', text: uiText });
                         const all = typeof el.getMessages === 'function' ? el.getMessages() : [];
                         aiIndex = Array.isArray(all) ? all.length - 1 : 0;
-                    } else if (response.overwrite) {
-                        el.updateMessage({ role: 'ai', text }, aiIndex);
                     } else {
-                        el.updateMessage({ role: 'ai', text }, aiIndex);
+                        el.updateMessage({ role: 'ai', text: uiText }, aiIndex);
                     }
                 } catch (_e) { /* ignore */ }
             },
@@ -792,7 +819,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
