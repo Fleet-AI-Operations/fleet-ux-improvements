@@ -7,6 +7,10 @@
 
 const PLUGIN_ID = 'dashboard-chats';
 const CHATS_INDEX_KEY = 'fleet-ux:ai-chats-index';
+const CHATS_SIDEBAR_WIDTH_KEY = 'fleet-ux:dashboard-chats-sidebar-width';
+const CHATS_SIDEBAR_DEFAULT_WIDTH = 260;
+const CHATS_SIDEBAR_MIN_WIDTH = 180;
+const CHATS_MAIN_MIN_WIDTH = 320;
 const CHATS_SCOPE = '[data-wf-dash-chats-panel]';
 const CHATS_SOURCES = [
     { id: 'chats', label: 'Chats' },
@@ -51,6 +55,46 @@ function chatsHasAiKey() {
     return !!(Context.aiOpenRouter
         && typeof Context.aiOpenRouter.hasStoredKey === 'function'
         && Context.aiOpenRouter.hasStoredKey());
+}
+
+function chatsReadSidebarWidth() {
+    try {
+        const width = parseInt(Storage.getData(CHATS_SIDEBAR_WIDTH_KEY, null), 10);
+        return Number.isFinite(width) && width >= CHATS_SIDEBAR_MIN_WIDTH
+            ? width
+            : CHATS_SIDEBAR_DEFAULT_WIDTH;
+    } catch (_e) {
+        return CHATS_SIDEBAR_DEFAULT_WIDTH;
+    }
+}
+
+function chatsClampSidebarWidth(body, width) {
+    const available = body ? body.getBoundingClientRect().width : 0;
+    const max = available > 0
+        ? Math.max(CHATS_SIDEBAR_MIN_WIDTH, available - CHATS_MAIN_MIN_WIDTH - 18)
+        : CHATS_SIDEBAR_DEFAULT_WIDTH;
+    return Math.round(Math.max(CHATS_SIDEBAR_MIN_WIDTH, Math.min(max, width)));
+}
+
+function chatsWriteSidebarWidth(width) {
+    try {
+        Storage.setData(CHATS_SIDEBAR_WIDTH_KEY, String(Math.round(width)));
+    } catch (err) {
+        Logger.warn(PLUGIN_ID + ': failed to save sidebar width', err);
+    }
+}
+
+function chatsApplySidebarWidth(panel, widthOverride) {
+    const body = panel && panel.querySelector('[data-wf-dash-chats-body-row]');
+    const sidebar = panel && panel.querySelector('[data-wf-dash-chats-sidebar]');
+    const handle = panel && panel.querySelector('[data-wf-dash-chats-resize-handle]');
+    if (!body || !sidebar) return 0;
+    const width = chatsClampSidebarWidth(body, widthOverride || chatsReadSidebarWidth());
+    sidebar.style.width = width + 'px';
+    sidebar.style.flexBasis = width + 'px';
+    sidebar.style.maxWidth = width + 'px';
+    if (handle) handle.setAttribute('aria-valuenow', String(width));
+    return width;
 }
 
 function chatsUuid() {
@@ -317,6 +361,13 @@ function chatsSetStatus(panel, message, isError) {
 function chatsPanelHtml() {
     const btn = chatsBtnClass('basic', 'compact');
     const btnPrimary = chatsBtnClass('primary', 'compact');
+    const loader = Context.dashboard && Context.dashboard._loader;
+    const handleStyle = loader && typeof loader._splitPanelHandleStyle === 'function'
+        ? loader._splitPanelHandleStyle()
+        : 'flex-shrink: 0; width: 10px; margin: 0 4px; align-self: stretch; cursor: col-resize;';
+    const handleGrip = loader && typeof loader._splitPanelHandleGripHtml === 'function'
+        ? loader._splitPanelHandleGripHtml()
+        : '';
     return '<div data-wf-dash-chats-panel="1" style="display: flex; flex-direction: column; gap: 10px;'
         + ' height: 100%; min-height: 420px; box-sizing: border-box;">'
         + '<div data-wf-dash-chats-no-key style="display: none; font-size: 12px; line-height: 1.45;'
@@ -326,7 +377,7 @@ function chatsPanelHtml() {
         + ' Conversations require Input &amp; Output Logging enabled in your OpenRouter Observability settings'
         + ' so transcripts can be fetched by generation id.</div>'
         + '<div data-wf-dash-chats-body style="display: none; flex: 1 1 auto; min-height: 0;">'
-        + '<div style="display: flex; gap: 10px; height: 100%; min-height: 0;">'
+        + '<div data-wf-dash-chats-body-row style="display: flex; gap: 0; height: 100%; min-height: 0; min-width: 0;">'
         + '<aside data-wf-dash-chats-sidebar style="width: 260px; flex-shrink: 0; display: flex;'
         + ' flex-direction: column; gap: 8px; min-height: 0; border: 1px solid var(--border, #e2e8f0);'
         + ' border-radius: 8px; padding: 8px; background: color-mix(in srgb, var(--muted, #f1f5f9) 40%, transparent);'
@@ -335,6 +386,10 @@ function chatsPanelHtml() {
         + '<div data-wf-dash-chats-list style="flex: 1 1 auto; overflow: auto; display: flex;'
         + ' flex-direction: column; gap: 10px;"></div>'
         + '</aside>'
+        + '<div data-wf-dash-chats-resize-handle role="separator" aria-orientation="vertical"'
+        + ' aria-label="Resize chats sidebar" aria-valuemin="' + CHATS_SIDEBAR_MIN_WIDTH + '"'
+        + ' tabindex="0" title="Drag to resize chats sidebar" style="' + handleStyle + '">'
+        + handleGrip + '</div>'
         + '<section style="flex: 1 1 auto; min-width: 0; min-height: 0; display: flex;'
         + ' flex-direction: column; gap: 8px; border: 1px solid var(--border, #e2e8f0);'
         + ' border-radius: 8px; padding: 10px;">'
@@ -526,10 +581,46 @@ async function chatsSendMessage(panel, userText) {
     }
 }
 
+function chatsAttachSidebarResize(panel) {
+    if (!panel || panel.dataset.wfChatsResizeAttached === '1') return;
+    panel.dataset.wfChatsResizeAttached = '1';
+
+    panel.addEventListener('mousedown', (e) => {
+        const handle = e.target.closest('[data-wf-dash-chats-resize-handle]');
+        if (!handle || !panel.contains(handle)) return;
+        const sidebar = panel.querySelector('[data-wf-dash-chats-sidebar]');
+        const loader = Context.dashboard && Context.dashboard._loader;
+        if (!sidebar || !loader || typeof loader._beginColResizeDrag !== 'function') return;
+        const startX = e.clientX;
+        const startWidth = sidebar.getBoundingClientRect().width;
+        loader._beginColResizeDrag(e, {
+            onMove: (ev) => {
+                chatsApplySidebarWidth(panel, startWidth + (ev.clientX - startX));
+            },
+            onUp: () => {
+                const finalWidth = chatsApplySidebarWidth(panel, sidebar.getBoundingClientRect().width);
+                chatsWriteSidebarWidth(finalWidth);
+                Logger.log(PLUGIN_ID + ': sidebar resized — ' + Math.round(startWidth) + 'px→' + finalWidth + 'px');
+            },
+        });
+    });
+
+    panel.addEventListener('keydown', (e) => {
+        const handle = e.target.closest('[data-wf-dash-chats-resize-handle]');
+        if (!handle || !panel.contains(handle) || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+        e.preventDefault();
+        const previous = chatsApplySidebarWidth(panel);
+        const next = chatsApplySidebarWidth(panel, previous + (e.key === 'ArrowLeft' ? -20 : 20));
+        chatsWriteSidebarWidth(next);
+        Logger.log(PLUGIN_ID + ': sidebar resized — ' + previous + 'px→' + next + 'px');
+    });
+}
+
 function chatsWirePanel(panel) {
     if (!panel || panel.getAttribute('data-wf-dash-chats-bound') === '1') return;
     panel.setAttribute('data-wf-dash-chats-bound', '1');
     chatsEnsureBtnStyles();
+    chatsAttachSidebarResize(panel);
 
     panel.addEventListener('click', (e) => {
         const newBtn = e.target.closest('[data-wf-dash-chats-new]');
@@ -594,6 +685,7 @@ function chatsSyncPanel(panel) {
         body.style.flexDirection = 'column';
     }
     if (!hasKey) return;
+    chatsApplySidebarWidth(panel);
     chatsWirePanel(panel);
     if (!chatsUi.chatState) chatsStartNewChat(panel);
     else {
@@ -619,7 +711,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
