@@ -147,6 +147,10 @@ function chatsRecordTurn(opts) {
     chatsWriteIndex(index);
     Logger.log(PLUGIN_ID + ': recorded turn — ' + source + ' · ' + conv.id
         + (generationId ? ' · gen ' + generationId : ''));
+    if (generationId && generationId.indexOf('gen-') !== 0) {
+        Logger.warn(PLUGIN_ID + ': generation id does not look like an OpenRouter gen- id — '
+            + generationId + ' (hydrate may 404; prefer X-Generation-Id)');
+    }
     return conv;
 }
 
@@ -236,6 +240,7 @@ async function chatsFetchMessagesForConversation(conv) {
     for (let i = ids.length - 1; i >= 0; i--) {
         const genId = ids[i];
         try {
+            Logger.debug(PLUGIN_ID + ': hydrating via generation id — ' + genId);
             const data = await ai.generationContent(genId);
             const messages = chatsMessagesFromGenerationContent(data);
             if (!messages.length) {
@@ -251,7 +256,8 @@ async function chatsFetchMessagesForConversation(conv) {
                 + lastErr.message);
         }
     }
-    throw lastErr || new Error('Could not hydrate conversation');
+    const tried = ids.slice().reverse().join(', ');
+    throw lastErr || new Error('Could not hydrate conversation (tried: ' + tried + ')');
 }
 
 function chatsChatOpts() {
@@ -596,7 +602,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -623,7 +629,7 @@ const plugin = {
             },
         });
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v1.0');
+            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v1.1');
             state.registered = true;
         }
     },

@@ -138,6 +138,36 @@ function openRouterChatCompletion(apiKey, messages) {
 }
 
 /**
+ * Parse a header value from GM_xmlhttpRequest responseHeaders (CRLF-separated).
+ */
+function openRouterHeaderValue(responseHeaders, name) {
+    const raw = String(responseHeaders || '');
+    if (!raw || !name) return '';
+    const want = String(name).toLowerCase();
+    const lines = raw.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const idx = line.indexOf(':');
+        if (idx < 0) continue;
+        if (line.slice(0, idx).trim().toLowerCase() !== want) continue;
+        return line.slice(idx + 1).trim();
+    }
+    return '';
+}
+
+/**
+ * Prefer OpenRouter generation ids (`gen-…`) over chat-completion-style ids.
+ */
+function openRouterPreferGenerationId(candidate, current) {
+    const next = String(candidate || '').trim();
+    if (!next) return current || '';
+    const cur = String(current || '').trim();
+    if (next.indexOf('gen-') === 0) return next;
+    if (cur.indexOf('gen-') === 0) return cur;
+    return cur || next;
+}
+
+/**
  * Fetch stored prompt + completion for a generation (requires Input & Output Logging).
  * Returns { input, output } from the OpenRouter generation content payload.
  */
@@ -160,16 +190,36 @@ function openRouterGenerationContent(apiKey, generationId) {
             onload: (response) => {
                 const status = response.status;
                 const text = response.responseText || '';
+                let apiMessage = '';
+                try {
+                    const parsedErr = JSON.parse(text);
+                    apiMessage = parsedErr && parsedErr.error && parsedErr.error.message
+                        ? String(parsedErr.error.message)
+                        : '';
+                } catch (_e) { /* ignore */ }
                 if (status === 404) {
-                    reject(new Error('Generation content not found (Input & Output Logging may be off, or this generation was not stored)'));
+                    reject(new Error(
+                        'Generation content not found for id ' + id
+                        + (apiMessage ? ' — ' + apiMessage : '')
+                        + '. Enable Input & Output Logging in OpenRouter Observability, then start a new chat'
+                        + ' (ids captured before this fix, or before logging was on, cannot be hydrated).'
+                    ));
                     return;
                 }
                 if (status === 401 || status === 403) {
-                    reject(new Error('Key rejected by OpenRouter (HTTP ' + status + ')'));
+                    reject(new Error(
+                        'Key rejected by OpenRouter (HTTP ' + status + ')'
+                        + (apiMessage ? ' — ' + apiMessage : '')
+                        + ' for generation ' + id
+                    ));
                     return;
                 }
                 if (status < 200 || status >= 300) {
-                    reject(new Error('OpenRouter generation content error (HTTP ' + status + ')'));
+                    reject(new Error(
+                        'OpenRouter generation content error (HTTP ' + status + ')'
+                        + (apiMessage ? ' — ' + apiMessage : '')
+                        + ' for generation ' + id
+                    ));
                     return;
                 }
                 let parsed;
@@ -249,7 +299,9 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
             } catch (_e) {
                 continue;
             }
-            if (parsed && parsed.id != null && !generationId) generationId = String(parsed.id);
+            if (parsed && parsed.id != null) {
+                generationId = openRouterPreferGenerationId(parsed.id, generationId);
+            }
             if (parsed && parsed.model != null && !model) model = String(parsed.model);
             const delta = parsed
                 && parsed.choices
@@ -324,6 +376,8 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
         data: JSON.stringify({ messages, stream: true }),
         onloadstart: (response) => {
             if (aborted || finished) return;
+            const headerGen = openRouterHeaderValue(response && response.responseHeaders, 'X-Generation-Id');
+            if (headerGen) generationId = openRouterPreferGenerationId(headerGen, generationId);
             const body = response && response.response;
             if (!body || typeof body.getReader !== 'function') return;
             usingReader = true;
@@ -347,6 +401,8 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
         },
         onprogress: (response) => {
             if (aborted || usingReader) return;
+            const headerGen = openRouterHeaderValue(response && response.responseHeaders, 'X-Generation-Id');
+            if (headerGen) generationId = openRouterPreferGenerationId(headerGen, generationId);
             if (response.status && (response.status < 200 || response.status >= 300)) {
                 // Wait for onload for full error body when possible.
                 return;
@@ -355,6 +411,8 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
         },
         onload: (response) => {
             if (aborted) return;
+            const headerGen = openRouterHeaderValue(response && response.responseHeaders, 'X-Generation-Id');
+            if (headerGen) generationId = openRouterPreferGenerationId(headerGen, generationId);
             if (response.status === 401 || response.status === 403) {
                 fail(new Error('Key rejected by OpenRouter (HTTP ' + response.status + ')'));
                 return;
@@ -363,7 +421,10 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
                 fail(new Error('OpenRouter error (HTTP ' + response.status + ')'));
                 return;
             }
-            if (usingReader) return; // reader path finishes via flushAndFinish
+            if (usingReader) {
+                // Reader path finishes via flushAndFinish; still keep header id.
+                return;
+            }
             ingestChunk(response.responseText || '');
             flushAndFinish();
         },
@@ -771,7 +832,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for the Ops dashboard (AI Integration / OpenRouter)',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
