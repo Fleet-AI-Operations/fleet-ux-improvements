@@ -158,6 +158,35 @@ function verifierChatApi() {
     return Context.aiChat || null;
 }
 
+function getVerifierChatSessionId(modal) {
+    if (!modal) return '';
+    if (!modal._wfVerifierChatSessionId) {
+        modal._wfVerifierChatSessionId = (typeof crypto !== 'undefined'
+            && typeof crypto.randomUUID === 'function')
+            ? crypto.randomUUID()
+            : ('verifier-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+    }
+    return modal._wfVerifierChatSessionId;
+}
+
+function verifierRecordTurn(modal, turn) {
+    const api = Context.dashboardChats;
+    if (!api || typeof api.recordTurn !== 'function') {
+        Logger.warn('verifier-fetcher: dashboardChats unavailable — turn not indexed');
+        return;
+    }
+    const t = turn || {};
+    const titleHint = (t.userPreview && String(t.userPreview).trim())
+        || 'Verifier chat';
+    api.recordTurn({
+        source: 'verifier',
+        conversationKey: getVerifierChatSessionId(modal),
+        titleHint,
+        generationId: t.generationId,
+        model: t.model,
+    });
+}
+
 function getVerifierChatState(modal) {
     if (!modal) return null;
     if (!modal._wfVerifierChatState) {
@@ -204,6 +233,7 @@ async function sendVerifierChatMessage(modal, userText) {
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
             userText: text,
+            onTurnDone: (turn) => verifierRecordTurn(modal, turn),
         }));
     } catch (_err) {
         // sendTurn already logged and finalized the error bubble
@@ -256,6 +286,9 @@ async function decodeVerifierOutput(modal) {
                 { role: 'system', content: DECODE_SYSTEM_PROMPT },
                 { role: 'user', content: userPayload },
             ],
+            onTurnDone: (turn) => verifierRecordTurn(modal, Object.assign({}, turn, {
+                userPreview: 'Diagnose Issues',
+            })),
         }));
         Logger.log('verifier-fetcher: Diagnose Issues done');
     } catch (err) {
@@ -770,7 +803,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.8',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

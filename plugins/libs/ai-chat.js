@@ -6,7 +6,7 @@
 // initial payloads. This module owns message rendering, composer wiring,
 // and chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '1.2';
+const AI_CHAT_VERSION = '1.3';
 const PLUGIN_ID = 'ai-chat';
 
 function aiChatCopyIconSvg() {
@@ -46,6 +46,7 @@ function aiChatResolveOpts(opts) {
         onSend: o.onSend,
         onStop: o.onStop,
         onExport: o.onExport,
+        onTurnDone: typeof o.onTurnDone === 'function' ? o.onTurnDone : null,
     };
 }
 
@@ -63,6 +64,7 @@ function aiChatRenderMessages(root, state, opts) {
     list.innerHTML = '';
     (state.messages || []).forEach((msg, idx) => {
         if (msg && msg.hideInUi) return;
+        if (msg && msg.role === 'system') return;
         // Do not show an empty assistant bubble while waiting for first token.
         if (msg.role === 'assistant' && !(msg.content || '').trim()) return;
         const row = document.createElement('div');
@@ -180,6 +182,7 @@ function aiChatRunStream(root, state, apiMessages, opts) {
     const gen = state.streamGen;
     aiChatSetStreamingUi(root, state, true, o);
     let assembled = '';
+    let doneMeta = { generationId: null, model: null };
 
     return new Promise((resolve, reject) => {
         let settled = false;
@@ -188,7 +191,7 @@ function aiChatRunStream(root, state, apiMessages, opts) {
             settled = true;
             state.streamAbort = null;
             if (gen === state.streamGen) aiChatSetStreamingUi(root, state, false, o);
-            resolve(text);
+            resolve({ text, generationId: doneMeta.generationId, model: doneMeta.model });
         };
         const settleErr = (err) => {
             if (settled) return;
@@ -206,6 +209,8 @@ function aiChatRunStream(root, state, apiMessages, opts) {
                 aiChatUpdateStreamingBubble(root, state, assembled, o);
             },
             onDone: (result) => {
+                if (result && result.generationId) doneMeta.generationId = String(result.generationId);
+                if (result && result.model) doneMeta.model = String(result.model);
                 if (gen !== state.streamGen) {
                     settleOk(assembled);
                     return;
@@ -241,7 +246,9 @@ function aiChatBuildApiMessages(state, opts) {
     for (let i = 0; i < messages.length; i++) {
         const m = messages[i];
         if (m.streaming) break;
-        if (m.role === 'user' || m.role === 'assistant') {
+        if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
+            // Prefer explicit systemContent when provided; skip stored system rows then.
+            if (m.role === 'system' && o.systemContent) continue;
             api.push({ role: m.role, content: m.content || '' });
         }
     }
@@ -359,14 +366,35 @@ async function aiChatSendTurn(root, state, opts) {
         || aiChatBuildApiMessages(state, { systemContent });
 
     try {
-        const full = await aiChatRunStream(root, state, apiMessages, o);
+        const result = await aiChatRunStream(root, state, apiMessages, o);
+        const full = result && typeof result === 'object' ? (result.text || '') : String(result || '');
+        const generationId = result && typeof result === 'object' ? (result.generationId || null) : null;
+        const model = result && typeof result === 'object' ? (result.model || null) : null;
+        state.lastGenerationId = generationId;
+        state.lastModel = model;
         const last = state.messages[state.messages.length - 1];
         if (last && last.role === 'assistant') {
             last.content = full || '';
             last.streaming = false;
         }
         aiChatRenderMessages(root, state, o);
-        Logger.log(o.logTag + ': chat reply done (' + (full || '').length + ' chars)');
+        Logger.log(o.logTag + ': chat reply done (' + (full || '').length + ' chars'
+            + (generationId ? ' · gen ' + generationId : '') + ')');
+        if (o.onTurnDone) {
+            let userPreview = '';
+            for (let i = state.messages.length - 1; i >= 0; i--) {
+                const m = state.messages[i];
+                if (m && m.role === 'user') {
+                    userPreview = String(m.displayContent != null ? m.displayContent : (m.content || '')).trim();
+                    break;
+                }
+            }
+            try {
+                o.onTurnDone({ generationId, model, userPreview, fullText: full || '' });
+            } catch (cbErr) {
+                Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
+            }
+        }
         return full || '';
     } catch (err) {
         const last = state.messages[state.messages.length - 1];
@@ -399,7 +427,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI and streaming controller',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

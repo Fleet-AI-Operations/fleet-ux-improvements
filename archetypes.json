@@ -1,7 +1,7 @@
 {
-  "version": "12.4",
+  "version": "12.4.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.62",
+  "archetypesVersion": "14.63",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "1.2",
-      "hash": "sha256-b110e44466375f7b8c00f7dbc82b67e6b1137d9c5d977ed3d02803afc566e6ec",
+      "version": "1.3",
+      "hash": "sha256-6a3552379520ba64f1b44a8e61d6c74370743be2ed3633d730ec8aa361a2c0d8",
       "log": false
     },
     {
@@ -152,8 +152,8 @@
     },
     {
       "name": "rating-explain.js",
-      "version": "1.6",
-      "hash": "sha256-1546249e2a770bc8d8f86c38791b3f10f05cd17142d993372ba310c32b5e4fc3",
+      "version": "1.7",
+      "hash": "sha256-42e3009385f5ccff86b399f17209b37c85211d7931eea00593b53a6c15f7f804",
       "log": false
     },
     {
@@ -166,6 +166,12 @@
       "name": "dashboard.js",
       "version": "11.8",
       "hash": "sha256-8d31f788130b90c7832a0739fbcb06ebea02c34ba88cfa668ea53a4914f59778",
+      "log": false
+    },
+    {
+      "name": "dashboard-chats.js",
+      "version": "1.0",
+      "hash": "sha256-0b752b3503301914bb1adcd900cefe5f670791864b9cf053ffaaef1d1cc111f2",
       "log": false
     },
     {
@@ -218,14 +224,14 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "4.8",
-      "hash": "sha256-02b2ad58803eed22fee2f7d4515aa0c4b6a45c8904d3f2db0cbc15c83d7052dd",
+      "version": "4.9",
+      "hash": "sha256-91cb777d328145a2343526269fd431d9096aee7700ca4c520c941f39a926bfaa",
       "log": false
     },
     {
       "name": "dashboard-settings.js",
-      "version": "1.3",
-      "hash": "sha256-e78f4318f1555ec9c95db2f2ac165006c970938efc66c3c20c2792069ad3a77d",
+      "version": "1.4",
+      "hash": "sha256-2e07a0466efe5e01fe3dcefec4f086045d11e9142fa5cdff9031ac96afb67579",
       "log": false
     }
   ],

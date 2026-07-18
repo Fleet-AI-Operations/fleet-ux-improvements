@@ -8,6 +8,7 @@
 const DASH_SETTINGS_CONTENT_MAX_WIDTH_PX = 640;
 const AI_OPENROUTER_KEY_STORAGE_KEY = 'fleet-ux:ai-openrouter-key';
 const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_GENERATION_CONTENT_URL = 'https://openrouter.ai/api/v1/generation/content';
 const OPENROUTER_TEST_PROMPT = 'What model are you? Reply with just the model name.';
 const OPENROUTER_KEY_PREFIX = 'sk-or-';
 const PLUGIN_ID = 'dashboard-settings';
@@ -137,8 +138,67 @@ function openRouterChatCompletion(apiKey, messages) {
 }
 
 /**
+ * Fetch stored prompt + completion for a generation (requires Input & Output Logging).
+ * Returns { input, output } from the OpenRouter generation content payload.
+ */
+function openRouterGenerationContent(apiKey, generationId) {
+    const id = String(generationId || '').trim();
+    if (!id) return Promise.reject(new Error('Generation id is required'));
+    return new Promise((resolve, reject) => {
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            reject(new Error('GM_xmlhttpRequest unavailable'));
+            return;
+        }
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: OPENROUTER_GENERATION_CONTENT_URL + '?id=' + encodeURIComponent(id),
+            headers: {
+                Authorization: 'Bearer ' + apiKey,
+                'HTTP-Referer': 'https://www.fleetai.com/',
+                'X-Title': 'Fleet UX Enhancer'
+            },
+            onload: (response) => {
+                const status = response.status;
+                const text = response.responseText || '';
+                if (status === 404) {
+                    reject(new Error('Generation content not found (Input & Output Logging may be off, or this generation was not stored)'));
+                    return;
+                }
+                if (status === 401 || status === 403) {
+                    reject(new Error('Key rejected by OpenRouter (HTTP ' + status + ')'));
+                    return;
+                }
+                if (status < 200 || status >= 300) {
+                    reject(new Error('OpenRouter generation content error (HTTP ' + status + ')'));
+                    return;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(text);
+                } catch (err) {
+                    reject(new Error('OpenRouter generation content was not valid JSON'));
+                    return;
+                }
+                const data = parsed && parsed.data != null ? parsed.data : parsed;
+                if (!data || typeof data !== 'object') {
+                    reject(new Error('OpenRouter generation content payload was empty'));
+                    return;
+                }
+                resolve({
+                    input: data.input != null ? data.input : null,
+                    output: data.output != null ? data.output : null,
+                    raw: data,
+                });
+            },
+            onerror: () => reject(new Error('Network error contacting OpenRouter')),
+            ontimeout: () => reject(new Error('OpenRouter request timed out')),
+        });
+    });
+}
+
+/**
  * Stream an OpenRouter chat completion (SSE). Calls onDelta(textChunk) as content
- * arrives, then onDone({ fullText, model }). Abort via returned { abort }.
+ * arrives, then onDone({ fullText, model, generationId }). Abort via returned { abort }.
  */
 function openRouterChatCompletionStream(apiKey, messages, callbacks) {
     const onDelta = callbacks && typeof callbacks.onDelta === 'function' ? callbacks.onDelta : null;
@@ -156,13 +216,14 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
     let rawAll = '';
     let fullText = '';
     let model = '';
+    let generationId = '';
     let finished = false;
     let usingReader = false;
 
     const finishOk = () => {
         if (finished || aborted) return;
         finished = true;
-        if (onDone) onDone({ fullText, model });
+        if (onDone) onDone({ fullText, model, generationId: generationId || null });
     };
 
     const fail = (err) => {
@@ -188,6 +249,7 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
             } catch (_e) {
                 continue;
             }
+            if (parsed && parsed.id != null && !generationId) generationId = String(parsed.id);
             if (parsed && parsed.model != null && !model) model = String(parsed.model);
             const delta = parsed
                 && parsed.choices
@@ -709,7 +771,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for the Ops dashboard (AI Integration / OpenRouter)',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -747,7 +809,12 @@ const plugin = {
                     throw err;
                 }
                 return openRouterChatCompletionStream(apiKey, messages, { onDelta, onDone, onError });
-            }
+            },
+            async generationContent(generationId) {
+                const apiKey = await resolveOpenRouterApiKey();
+                if (!apiKey) throw new Error('OpenRouter API key is not available');
+                return openRouterGenerationContent(apiKey, generationId);
+            },
         };
         Context.dashboard.registerTab({
             id: 'dash-settings',
