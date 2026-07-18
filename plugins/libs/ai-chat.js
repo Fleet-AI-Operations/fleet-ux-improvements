@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.0';
+const AI_CHAT_VERSION = '2.1';
 const PLUGIN_ID = 'ai-chat';
 
 function aiChatHasKey() {
@@ -127,9 +127,15 @@ function aiChatApplyTheme(el) {
             }
         }
     };
+    const nameStyle = {
+        color: 'var(--muted-foreground, #64748b)',
+        fontSize: '11px',
+        fontWeight: '600',
+    };
     el.names = {
-        user: { text: 'You' },
-        ai: { text: 'Assistant' },
+        default: { style: nameStyle },
+        user: { text: 'You', style: nameStyle },
+        ai: { text: 'Assistant', style: nameStyle },
     };
     el.submitButtonStyles = {
         submit: {
@@ -786,7 +792,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
