@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.5';
+const AI_CHAT_VERSION = '2.6';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 
@@ -106,7 +106,7 @@ function aiChatApplyTheme(el) {
         + '.outer-message-container { position: relative; }'
         + '.wf-chat-copy {'
         + '  display: inline-flex; align-items: center; justify-content: center;'
-        + '  width: 28px; height: 28px; padding: 0; margin: 2px 12px 0;'
+        + '  width: 28px; height: 28px; padding: 0; margin: 2px 10px 0;'
         + '  border: none; border-radius: 8px; cursor: pointer;'
         + '  background: transparent; color: #94a3b8;'
         + '  opacity: 0; transition: opacity 120ms ease, color 120ms ease, background 120ms ease;'
@@ -117,9 +117,6 @@ function aiChatApplyTheme(el) {
         + '.wf-chat-copy:hover { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #e2e8f0; }'
         + '.wf-chat-copy--ok { opacity: 1 !important; color: #16a34a !important; }'
         + '.wf-chat-copy--fail { opacity: 1 !important; color: #dc2626 !important; }'
-        + '.outer-message-container:has(.user-message-text) .wf-chat-copy {'
-        + '  margin-inline-start: auto; margin-inline-end: 12px;'
-        + '}'
     el.messageStyles = {
         default: {
             shared: {
@@ -250,7 +247,14 @@ function aiChatInjectCopyButton(el, row, opts) {
             Logger.error(o.logTag + ': failed to copy chat message', err);
         }
     });
-    row.appendChild(btn);
+    // Place inside the column container holding name + bubble so the button
+    // sits directly under the bubble and inherits its left/right alignment.
+    const inner = bubble.closest('.inner-message-container');
+    if (inner) {
+        inner.appendChild(btn);
+    } else {
+        row.appendChild(btn);
+    }
 }
 
 function aiChatSetupCopyButtons(el, opts) {
@@ -956,7 +960,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.5',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
