@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.4';
+const AI_CHAT_VERSION = '2.5';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 
@@ -85,7 +85,12 @@ function aiChatApplyTheme(el) {
         maxWidth: AI_CHAT_MAX_WIDTH_PX + 'px',
         margin: '0 auto',
         height: '100%',
+        // Deep Chat defaults each border side separately; shorthand does not clear them.
         border: 'none',
+        borderTop: 'none',
+        borderRight: 'none',
+        borderBottom: 'none',
+        borderLeft: 'none',
         backgroundColor: 'transparent',
         fontSize: '13px',
         boxSizing: 'border-box',
@@ -951,7 +956,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
