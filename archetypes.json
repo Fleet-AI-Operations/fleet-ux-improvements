@@ -1,7 +1,7 @@
 {
   "version": "12.4.5",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.84",
+  "archetypesVersion": "14.85",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -158,8 +158,8 @@
     },
     {
       "name": "rating-explain.js",
-      "version": "2.2",
-      "hash": "sha256-ee39d45c6400acd56d5a5fccdd5cf635b7cfef81f90af646c424eb9fd1e18dd9",
+      "version": "2.3",
+      "hash": "sha256-122dda437464cea1ce989100ba9fe77f0f07dc59add63a261a11556e56689823",
       "log": false
     },
     {

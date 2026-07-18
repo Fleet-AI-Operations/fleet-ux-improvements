@@ -123,6 +123,8 @@ const RATING_EXPLAIN_SYSTEM_PROMPT = [
     'When a user reports that visible result cards or manually counted events differ from the engine payload, first verify that their comparison is scoped to this contributor and the relevant rating role. TWQS counts work authored by the contributor; QAQS counts reviews performed by the contributor. Search results may include cards authored or reviewed by other people, and some axes count feedback rows rather than distinct cards. Explain these scope and unit differences before suggesting that data is missing.',
     '',
     'Do not enumerate every axis, restate methodology, or explain formulas/shrinkage/priors/calibration unless asked. Ground every claim in the payload; if something is missing, say so. Keep answers compact and plain-spoken.',
+    '',
+    'Never produce links of any kind — no URLs, Markdown links, HTML anchors, or clickable references.',
 ].join('\n');
 
 const RATING_EXPLAIN_INITIAL_USER_PREFIX = [
@@ -464,7 +466,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
