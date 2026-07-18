@@ -8,6 +8,7 @@
 const DASH_SETTINGS_CONTENT_MAX_WIDTH_PX = 640;
 const AI_OPENROUTER_KEY_STORAGE_KEY = 'fleet-ux:ai-openrouter-key';
 const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_GENERATION_CONTENT_URL = 'https://openrouter.ai/api/v1/generation/content';
 const OPENROUTER_TEST_PROMPT = 'What model are you? Reply with just the model name.';
 const OPENROUTER_KEY_PREFIX = 'sk-or-';
 const PLUGIN_ID = 'dashboard-settings';
@@ -137,8 +138,117 @@ function openRouterChatCompletion(apiKey, messages) {
 }
 
 /**
+ * Parse a header value from GM_xmlhttpRequest responseHeaders (CRLF-separated).
+ */
+function openRouterHeaderValue(responseHeaders, name) {
+    const raw = String(responseHeaders || '');
+    if (!raw || !name) return '';
+    const want = String(name).toLowerCase();
+    const lines = raw.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const idx = line.indexOf(':');
+        if (idx < 0) continue;
+        if (line.slice(0, idx).trim().toLowerCase() !== want) continue;
+        return line.slice(idx + 1).trim();
+    }
+    return '';
+}
+
+/**
+ * Prefer OpenRouter generation ids (`gen-…`) over chat-completion-style ids.
+ */
+function openRouterPreferGenerationId(candidate, current) {
+    const next = String(candidate || '').trim();
+    if (!next) return current || '';
+    const cur = String(current || '').trim();
+    if (next.indexOf('gen-') === 0) return next;
+    if (cur.indexOf('gen-') === 0) return cur;
+    return cur || next;
+}
+
+/**
+ * Fetch stored prompt + completion for a generation (requires Input & Output Logging).
+ * Returns { input, output } from the OpenRouter generation content payload.
+ */
+function openRouterGenerationContent(apiKey, generationId) {
+    const id = String(generationId || '').trim();
+    if (!id) return Promise.reject(new Error('Generation id is required'));
+    return new Promise((resolve, reject) => {
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            reject(new Error('GM_xmlhttpRequest unavailable'));
+            return;
+        }
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: OPENROUTER_GENERATION_CONTENT_URL + '?id=' + encodeURIComponent(id),
+            headers: {
+                Authorization: 'Bearer ' + apiKey,
+                'HTTP-Referer': 'https://www.fleetai.com/',
+                'X-Title': 'Fleet UX Enhancer'
+            },
+            onload: (response) => {
+                const status = response.status;
+                const text = response.responseText || '';
+                let apiMessage = '';
+                try {
+                    const parsedErr = JSON.parse(text);
+                    apiMessage = parsedErr && parsedErr.error && parsedErr.error.message
+                        ? String(parsedErr.error.message)
+                        : '';
+                } catch (_e) { /* ignore */ }
+                if (status === 404) {
+                    reject(new Error(
+                        'Generation content not found for id ' + id
+                        + (apiMessage ? ' — ' + apiMessage : '')
+                        + '. Enable Input & Output Logging in OpenRouter Observability, then start a new chat'
+                        + ' (ids captured before this fix, or before logging was on, cannot be hydrated).'
+                    ));
+                    return;
+                }
+                if (status === 401 || status === 403) {
+                    reject(new Error(
+                        'Key rejected by OpenRouter (HTTP ' + status + ')'
+                        + (apiMessage ? ' — ' + apiMessage : '')
+                        + ' for generation ' + id
+                    ));
+                    return;
+                }
+                if (status < 200 || status >= 300) {
+                    reject(new Error(
+                        'OpenRouter generation content error (HTTP ' + status + ')'
+                        + (apiMessage ? ' — ' + apiMessage : '')
+                        + ' for generation ' + id
+                    ));
+                    return;
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(text);
+                } catch (err) {
+                    reject(new Error('OpenRouter generation content was not valid JSON'));
+                    return;
+                }
+                const data = parsed && parsed.data != null ? parsed.data : parsed;
+                if (!data || typeof data !== 'object') {
+                    reject(new Error('OpenRouter generation content payload was empty'));
+                    return;
+                }
+                resolve({
+                    input: data.input != null ? data.input : null,
+                    output: data.output != null ? data.output : null,
+                    raw: data,
+                });
+            },
+            onerror: () => reject(new Error('Network error contacting OpenRouter')),
+            ontimeout: () => reject(new Error('OpenRouter request timed out')),
+        });
+    });
+}
+
+/**
  * Stream an OpenRouter chat completion (SSE). Calls onDelta(textChunk) as content
- * arrives, then onDone({ fullText, model }). Abort via returned { abort }.
+ * arrives, then onDone({ fullText, model, generationId }). Abort via returned { abort }.
  */
 function openRouterChatCompletionStream(apiKey, messages, callbacks) {
     const onDelta = callbacks && typeof callbacks.onDelta === 'function' ? callbacks.onDelta : null;
@@ -156,13 +266,14 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
     let rawAll = '';
     let fullText = '';
     let model = '';
+    let generationId = '';
     let finished = false;
     let usingReader = false;
 
     const finishOk = () => {
         if (finished || aborted) return;
         finished = true;
-        if (onDone) onDone({ fullText, model });
+        if (onDone) onDone({ fullText, model, generationId: generationId || null });
     };
 
     const fail = (err) => {
@@ -187,6 +298,9 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
                 parsed = JSON.parse(payload);
             } catch (_e) {
                 continue;
+            }
+            if (parsed && parsed.id != null) {
+                generationId = openRouterPreferGenerationId(parsed.id, generationId);
             }
             if (parsed && parsed.model != null && !model) model = String(parsed.model);
             const delta = parsed
@@ -262,6 +376,8 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
         data: JSON.stringify({ messages, stream: true }),
         onloadstart: (response) => {
             if (aborted || finished) return;
+            const headerGen = openRouterHeaderValue(response && response.responseHeaders, 'X-Generation-Id');
+            if (headerGen) generationId = openRouterPreferGenerationId(headerGen, generationId);
             const body = response && response.response;
             if (!body || typeof body.getReader !== 'function') return;
             usingReader = true;
@@ -285,6 +401,8 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
         },
         onprogress: (response) => {
             if (aborted || usingReader) return;
+            const headerGen = openRouterHeaderValue(response && response.responseHeaders, 'X-Generation-Id');
+            if (headerGen) generationId = openRouterPreferGenerationId(headerGen, generationId);
             if (response.status && (response.status < 200 || response.status >= 300)) {
                 // Wait for onload for full error body when possible.
                 return;
@@ -293,6 +411,8 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
         },
         onload: (response) => {
             if (aborted) return;
+            const headerGen = openRouterHeaderValue(response && response.responseHeaders, 'X-Generation-Id');
+            if (headerGen) generationId = openRouterPreferGenerationId(headerGen, generationId);
             if (response.status === 401 || response.status === 403) {
                 fail(new Error('Key rejected by OpenRouter (HTTP ' + response.status + ')'));
                 return;
@@ -301,7 +421,10 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
                 fail(new Error('OpenRouter error (HTTP ' + response.status + ')'));
                 return;
             }
-            if (usingReader) return; // reader path finishes via flushAndFinish
+            if (usingReader) {
+                // Reader path finishes via flushAndFinish; still keep header id.
+                return;
+            }
             ingestChunk(response.responseText || '');
             flushAndFinish();
         },
@@ -452,7 +575,7 @@ function renderAiSection(modal, options) {
     }
 
     body += ''
-        + '<div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border, #e2e8f0); '
+        + '<div style="margin-top: 16px; padding-top: 14px; '
         + 'display: flex; flex-direction: column; gap: 8px;">'
         + '<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">'
         + '<button type="button" id="wf-dash-settings-ai-test-btn" class="'
@@ -629,21 +752,84 @@ function dashboardSettingsPanelHtml() {
     const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; '
         + 'display: flex; flex-direction: column; gap: 12px;';
     const hintStyle = dashSettingsHintStyle();
+    const dividerHtml = '<hr style="width: 100%; margin: 0; border: none; '
+        + 'border-top: 1px solid var(--border, #e2e8f0);">';
     return ''
         + '<div id="wf-dash-settings-panel" style="' + panelScroll + '" data-fleet-dash-settings="1">'
         + '<div id="wf-dash-settings-content" style="display: flex; flex-direction: column; gap: 16px; '
         + 'width: 100%; max-width: ' + DASH_SETTINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
+        + '<section aria-labelledby="wf-dash-settings-tabs-heading" style="display: flex; flex-direction: column; gap: 10px;">'
+        + '<h3 id="wf-dash-settings-tabs-heading" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--foreground, #0f172a);">'
+        + 'Dashboard Tabs'
+        + '</h3>'
+        + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
+        + 'Choose the order of tabs in the dashboard header.'
+        + '</p>'
+        + '<div id="wf-dash-settings-tab-order"></div>'
+        + '</section>'
+        + dividerHtml
         + '<section aria-labelledby="wf-dash-settings-ai-heading" style="display: flex; flex-direction: column; gap: 10px;">'
         + '<h3 id="wf-dash-settings-ai-heading" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--foreground, #0f172a);">'
         + 'AI Integration'
         + '</h3>'
         + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
-        + 'Connect your own OpenRouter API key. Requests go directly to OpenRouter.'
+        + 'Connect your own OpenRouter API key. Requests go directly to OpenRouter. '
+        + '<a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer" '
+        + 'data-wf-dash-openrouter-link style="color: var(--primary, #2563eb);">Visit OpenRouter</a>.'
+        + '</p>'
+        + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
+        + 'To retrieve and show previous chats in the Chats pane, prompt logging must be enabled '
+        + 'in your OpenRouter account. You can toggle it in '
+        + '<a href="https://openrouter.ai/workspaces/default/observability" target="_blank" rel="noopener noreferrer" '
+        + 'data-wf-dash-openrouter-link style="color: var(--primary, #2563eb);">OpenRouter observability settings</a>.'
         + '</p>'
         + '<div id="wf-dash-settings-ai-section"></div>'
         + '</section>'
         + '</div>'
         + '</div>';
+}
+
+function dashboardTabOrderHtml() {
+    const dashboard = Context.dashboard;
+    const tabs = dashboard && typeof dashboard.getTabs === 'function' ? dashboard.getTabs() : [];
+    const defaultTabId = dashboard && typeof dashboard.getDefaultTabId === 'function'
+        ? dashboard.getDefaultTabId()
+        : 'search-output';
+    const moveBtnClass = dashSettingsBtnClass('basic', 'nav');
+    const rows = tabs.map((tab, index) => {
+        const id = dashSettingsEscHtml(tab.id);
+        const label = dashSettingsEscHtml(tab.label || tab.id);
+        return ''
+            + '<div style="display: flex; align-items: center; gap: 8px; padding: 5px 0;">'
+            + '<span role="group" aria-label="Reorder ' + label + '" style="display: inline-flex; gap: 4px;">'
+            + '<button type="button" data-wf-dash-tab-move-up="' + id + '" class="' + moveBtnClass
+            + '" title="Move up" aria-label="Move ' + label + ' up"'
+            + (index > 0 ? '' : ' disabled') + '>↑</button>'
+            + '<button type="button" data-wf-dash-tab-move-down="' + id + '" class="' + moveBtnClass
+            + '" title="Move down" aria-label="Move ' + label + ' down"'
+            + (index < tabs.length - 1 ? '' : ' disabled') + '>↓</button>'
+            + '</span>'
+            + '<span style="font-size: 12px; color: var(--foreground, #0f172a);">' + label + '</span>'
+            + '<label style="display: inline-flex; align-items: center; gap: 6px; margin-left: auto; '
+            + 'font-size: 11px; color: var(--muted-foreground, #64748b); cursor: pointer;">'
+            + '<input type="checkbox" data-wf-dash-default-tab="' + id + '"'
+            + (tab.id === defaultTabId ? ' checked' : '') + '>'
+            + '<span>Default</span>'
+            + '</label>'
+            + '</div>';
+    }).join('');
+    return ''
+        + '<div style="display: flex; flex-direction: column;">' + rows + '</div>'
+        + '<div style="margin-top: 8px;">'
+        + '<button type="button" data-wf-dash-tab-order-reset class="' + dashSettingsBtnClass('basic', 'compact') + '">'
+        + 'Reset tab order'
+        + '</button>'
+        + '</div>';
+}
+
+function renderDashboardTabOrder(modal) {
+    const root = modal && modal.querySelector('#wf-dash-settings-tab-order');
+    if (root) root.innerHTML = dashboardTabOrderHtml();
 }
 
 function attachDashboardSettingsListeners(modal) {
@@ -661,6 +847,43 @@ function attachDashboardSettingsListeners(modal) {
         const panel = modal.querySelector('[data-wf-dash-panel="dash-settings"]');
         if (!panel || !panel.contains(e.target)) return;
 
+        const openRouterLink = e.target.closest('[data-wf-dash-openrouter-link]');
+        if (openRouterLink) {
+            Logger.log(PLUGIN_ID + ': OpenRouter website opened');
+            return;
+        }
+        const defaultTabCheckbox = e.target.closest('[data-wf-dash-default-tab]');
+        if (defaultTabCheckbox) {
+            const tabId = defaultTabCheckbox.getAttribute('data-wf-dash-default-tab');
+            if (defaultTabCheckbox.checked
+                && Context.dashboard
+                && typeof Context.dashboard.setDefaultTab === 'function') {
+                Context.dashboard.setDefaultTab(tabId);
+            }
+            renderDashboardTabOrder(modal);
+            return;
+        }
+        const moveUpBtn = e.target.closest('[data-wf-dash-tab-move-up]');
+        const moveDownBtn = e.target.closest('[data-wf-dash-tab-move-down]');
+        if (moveUpBtn || moveDownBtn) {
+            e.preventDefault();
+            const btn = moveUpBtn || moveDownBtn;
+            const tabId = btn.getAttribute(moveUpBtn ? 'data-wf-dash-tab-move-up' : 'data-wf-dash-tab-move-down');
+            const moved = Context.dashboard && typeof Context.dashboard.moveTab === 'function'
+                ? Context.dashboard.moveTab(tabId, moveUpBtn ? -1 : 1)
+                : false;
+            if (moved) renderDashboardTabOrder(modal);
+            return;
+        }
+        const resetOrderBtn = e.target.closest('[data-wf-dash-tab-order-reset]');
+        if (resetOrderBtn) {
+            e.preventDefault();
+            if (Context.dashboard && typeof Context.dashboard.resetTabOrder === 'function') {
+                Context.dashboard.resetTabOrder();
+                renderDashboardTabOrder(modal);
+            }
+            return;
+        }
         const saveBtn = e.target.closest('#wf-dash-settings-ai-key-save');
         if (saveBtn) {
             e.preventDefault();
@@ -708,8 +931,8 @@ function attachDashboardSettingsListeners(modal) {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
-    description: 'Settings tab for the Ops dashboard (AI Integration / OpenRouter)',
-    _version: '1.3',
+    description: 'Settings tab for dashboard tab order and AI Integration / OpenRouter',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -747,7 +970,12 @@ const plugin = {
                     throw err;
                 }
                 return openRouterChatCompletionStream(apiKey, messages, { onDelta, onDone, onError });
-            }
+            },
+            async generationContent(generationId) {
+                const apiKey = await resolveOpenRouterApiKey();
+                if (!apiKey) throw new Error('OpenRouter API key is not available');
+                return openRouterGenerationContent(apiKey, generationId);
+            },
         };
         Context.dashboard.registerTab({
             id: 'dash-settings',
@@ -755,6 +983,7 @@ const plugin = {
             panelHtml() { return dashboardSettingsPanelHtml(); },
             attachListeners(modal) { attachDashboardSettingsListeners(modal); },
             onActivate(modal) {
+                renderDashboardTabOrder(modal);
                 renderAiSection(modal);
                 setAiStatus(modal, '', false);
                 setTestResult(modal, null);

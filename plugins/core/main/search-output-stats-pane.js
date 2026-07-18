@@ -10,8 +10,9 @@ const STATS_CIRCULAR_CHART_TYPES = new Set(['pie', 'polarArea', 'radar']);
 const STATS_CHART_CARD_STYLE_ID = 'wf-dash-stats-chart-card-styles';
 const STATS_LINE_BORDER_WIDTH = 2.25;
 const STATS_LINE_TENSION = 0.2;
-/** Max content width for Ratings tab (cards stay readable when the pane is wide). */
-const RATINGS_CONTENT_MAX_WIDTH_PX = 640;
+/** Ratings can use two readable columns when an explanation chat is open. */
+const RATINGS_CONTENT_MAX_WIDTH_PX = 1200;
+const RATINGS_COLUMN_MAX_WIDTH_PX = 640;
 
 function dashEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -45,9 +46,12 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
             + '<div id="wf-dash-ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: ' + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
+            + '<div style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: '
+            + RATINGS_COLUMN_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
             + this._ratingsAboutSectionHtml()
             + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
             + this._ratingsToolbarHtml()
+            + '</div>'
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
             + '</div>'
@@ -4678,13 +4682,55 @@ const searchOutputStatsPaneMethods = {
             && worker.cohort[weighting]
             && worker.cohort[weighting][scoreKey];
         if (!main) return null;
-        if (!cohortEntry || cohortEntry.score == null) return main;
+        if (!cohortEntry || cohortEntry.score == null) return Object.assign({}, main);
         return Object.assign({}, main, {
             score: cohortEntry.score,
             band: cohortEntry.band || main.band,
             tierId: cohortEntry.tierId || main.tierId,
+            estimatedPercentile: cohortEntry.estimatedPercentile != null
+                ? cohortEntry.estimatedPercentile
+                : main.estimatedPercentile,
             cohortBlend: cohortEntry,
         });
+    },
+
+    /** Format estimated percentile for card/slice display (e.g. "~62nd"). */
+    _ratingFormatEstimatedPercentile(value) {
+        if (value == null || !Number.isFinite(Number(value))) return '';
+        const engine = Context.ratingEngine;
+        const formatted = (engine && typeof engine.formatPercentile === 'function')
+            ? engine.formatPercentile(value)
+            : this._ratingOrdinalPercentileFallback(value);
+        return formatted ? ('~' + formatted) : '';
+    },
+
+    _ratingOrdinalPercentileFallback(n) {
+        const v = Math.round(Number(n));
+        if (!Number.isFinite(v)) return '';
+        const mod100 = Math.abs(v) % 100;
+        let suffix = 'th';
+        if (mod100 < 11 || mod100 > 13) {
+            const mod10 = Math.abs(v) % 10;
+            if (mod10 === 1) suffix = 'st';
+            else if (mod10 === 2) suffix = 'nd';
+            else if (mod10 === 3) suffix = 'rd';
+        }
+        return String(v) + suffix;
+    },
+
+    /** Resolve estimated percentile for a composite score block or cohort slice. */
+    _ratingResolveEstimatedPercentile(score, existingPct, scoreKind, weighting) {
+        if (existingPct != null && Number.isFinite(Number(existingPct))) {
+            return Math.round(Number(existingPct));
+        }
+        const engine = Context.ratingEngine;
+        if (engine && typeof engine.estimatePercentile === 'function'
+            && score != null && Number.isFinite(Number(score))) {
+            const kind = String(scoreKind || '').toLowerCase().indexOf('qa') === 0 ? 'qaqs' : 'twqs';
+            const pct = engine.estimatePercentile(score, kind, weighting || 'recency');
+            return pct != null && Number.isFinite(Number(pct)) ? Math.round(Number(pct)) : null;
+        }
+        return null;
     },
 
     _ratingWorkerConfidenceSortValue(worker, scoreTypes) {
@@ -5091,7 +5137,7 @@ const searchOutputStatsPaneMethods = {
         const twqsRows = [
             { label: 'Outcome Quality',        weight: '40%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
             { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory).' },
-            { label: 'Non-Bottom Score Rate',  weight: '15%', measures: 'Share of explicitly scored feedback that was not the lowest possible rating.' },
+            { label: 'Task Rating Quality',    weight: '15%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
             { label: 'First-Pass Acceptance',  weight: '15%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score.' },
         ];
@@ -5123,14 +5169,15 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
-            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with the raw 0–100 score shown muted beside it. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Extreme labels are soft-gated on volume — <strong>Top tier</strong> needs TWQS ≥ 50 terminals / QAQS ≥ 100 feedback rows (else Above average); <strong>Poor</strong> needs TWQS ≥ 25 / QAQS ≥ 50 (else Below average). Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). Estimated percentiles remain available in exports only — they are not shown on cards.</p>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The same tier + percentile pattern appears on team / environment / month subset rows. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
             + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
             + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Tier first, raw second.</strong> Raw scores use a 0–100 scale with empirical Bayes shrinkage to pull low-volume contributors toward the cohort prior. Low-volume scores are valid estimates, but less certain. The tier places that score relative to the scored population.</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where cohort baselines are supplied, the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
+            + '<li><strong>Tier first, estimated percentile second.</strong> The tier places the composite in the scored population; the muted percentile is a normal-model estimate of standing (margin-clamped). The underlying 0–100 score uses empirical Bayes shrinkage toward the cohort prior and stays available in exports. Low-volume scores are valid estimates, but less certain.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where encrypted cohort baselines are available (Ops unlock), the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
+            + '<li>Team / environment / month slice scores shrink toward a <strong>subset prior</strong> only when that baseline was shipped (TWQS: ≥ 500 tasks and ≥ 20 writers; QAQS: ≥ 500 feedback rows and ≥ 20 reviewers at generation time). Unshipped slices fall back to the global prior while still showing the breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
             + '<table style="width: 100%; border-collapse: collapse; font-size: 10px; line-height: 1.35; margin-bottom: 10px;">'
@@ -5241,11 +5288,13 @@ const searchOutputStatsPaneMethods = {
                 return 'No terminal tasks in scope';
             case 'positiveFeedbackRate':
                 return 'No human feedback on authored tasks in scope';
+            case 'taskRatingQuality':
             case 'nonBottomScoreRate':
                 return 'No explicitly scored feedback in scope';
             case 'firstPassAcceptance':
                 return 'No authored tasks with human feedback in scope';
             case 'disputeWinRate':
+            case 'disputeLossAvoidance':
                 return 'No resolved disputes in scope';
             // QAQS (QPS) axes
             case 'returnEffectiveness':
@@ -5269,128 +5318,7 @@ const searchOutputStatsPaneMethods = {
         }
     },
 
-    _ratingFormatStatusCounts(statusCounts, maxItems) {
-        if (!statusCounts || typeof statusCounts !== 'object') return '';
-        const cap = maxItems == null ? 4 : maxItems;
-        const entries = Object.entries(statusCounts)
-            .filter(([, n]) => Number(n) > 0)
-            .sort((a, b) => b[1] - a[1]);
-        if (!entries.length) return '';
-        const shown = entries.slice(0, cap).map(([k, n]) => k + ' ' + n);
-        const rest = entries.length - cap;
-        return shown.join(', ') + (rest > 0 ? ', +' + rest + ' more' : '');
-    },
-
-    _ratingAxisBreakdownLines(axis) {
-        if (!axis) return [];
-        if (axis.defined === false || axis.score == null) {
-            const reason = this._ratingAxisOmitReason(axis);
-            return reason ? [reason] : ['Axis omitted'];
-        }
-        const raw = axis.raw || {};
-        const lines = [];
-        switch (axis.id) {
-            // TWQS (WPS) axes
-            case 'outcomeQuality': {
-                if (raw.nTerminal != null) lines.push(raw.nTerminal + ' terminal task(s)');
-                if (raw.sumQuality != null && raw.nTerminal != null && raw.nTerminal > 0) {
-                    const meanPct = this._ratingPctOneDecimal(raw.sumQuality / raw.nTerminal);
-                    if (meanPct != null) lines.push('Mean quality ' + meanPct + '%');
-                }
-                const statusSummary = this._ratingFormatStatusCounts(raw.statusCounts);
-                if (statusSummary) lines.push(statusSummary);
-                break;
-            }
-            case 'positiveFeedbackRate': {
-                if (raw.positive != null && raw.total != null && raw.total > 0) {
-                    const positivePct = this._ratingPctOneDecimal(raw.positive / raw.total);
-                    lines.push('Positive ' + (positivePct != null ? positivePct + '%' : '') + ' (' + Math.round(raw.positive * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'nonBottomScoreRate': {
-                if (raw.nonBottom != null && raw.total != null && raw.total > 0) {
-                    const nbPct = this._ratingPctOneDecimal(raw.nonBottom / raw.total);
-                    lines.push('Non-bottom ' + (nbPct != null ? nbPct + '%' : '') + ' (' + Math.round(raw.nonBottom * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'firstPassAcceptance': {
-                if (raw.firstPass != null && raw.total != null && raw.total > 0) {
-                    const fpPct = this._ratingPctOneDecimal(raw.firstPass / raw.total);
-                    lines.push('First-pass ' + (fpPct != null ? fpPct + '%' : '') + ' (' + Math.round(raw.firstPass * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'disputeWinRate': {
-                if (raw.approved != null && raw.resolved != null && raw.resolved > 0) {
-                    const winPct = this._ratingPctOneDecimal(raw.approved / raw.resolved);
-                    lines.push('Won ' + (winPct != null ? winPct + '%' : '') + ' (' + raw.approved + ' / ' + raw.resolved + ' resolved)');
-                } else if (raw.resolved != null) {
-                    lines.push(raw.resolved + ' resolved dispute(s)');
-                }
-                break;
-            }
-            // QAQS (QPS) axes
-            case 'returnEffectiveness': {
-                if (raw.effective != null && raw.total != null && raw.total > 0) {
-                    const effPct = this._ratingPctOneDecimal(raw.effective / raw.total);
-                    lines.push('Effective ' + (effPct != null ? effPct + '%' : '') + ' (' + Math.round(raw.effective * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'returnActionability': {
-                if (raw.actionable != null && raw.total != null && raw.total > 0) {
-                    const aPct = this._ratingPctOneDecimal(raw.actionable / raw.total);
-                    lines.push('Actionable ' + (aPct != null ? aPct + '%' : '') + ' (' + Math.round(raw.actionable * 10) / 10 + ' / ' + Math.round(raw.total * 10) / 10 + ')');
-                }
-                break;
-            }
-            case 'labelDiscrimination': {
-                if (raw.labelCorrelation != null) {
-                    const ldPct = this._ratingPctOneDecimal(raw.labelCorrelation);
-                    if (ldPct != null) lines.push('Label–outcome correlation ' + ldPct + '%');
-                }
-                if (raw.total != null) lines.push(raw.total + ' labeled feedback row(s)');
-                break;
-            }
-            case 'disputeDefense': {
-                if (raw.upheld != null && raw.resolved != null && raw.resolved > 0) {
-                    const defPct = this._ratingPctOneDecimal(raw.upheld / raw.resolved);
-                    lines.push('Upheld ' + (defPct != null ? defPct + '%' : '') + ' (' + raw.upheld + ' / ' + raw.resolved + ' as sole negative reviewer)');
-                }
-                break;
-            }
-            // Legacy axes (backwards compat)
-            case 'disputeOutcomes':
-            case 'reviewCallAccuracy': {
-                const good = raw.approvedWeight != null ? raw.approvedWeight : raw.upheldWeight;
-                const denom = raw.resolvedWeight;
-                if (good != null && denom != null && denom > 0) {
-                    const goodPct = this._ratingPctOneDecimal(good / denom);
-                    lines.push('Favorable ' + (goodPct != null ? goodPct + '%' : good) + ' of resolved weight');
-                } else if (denom != null) {
-                    lines.push('Resolved dispute weight ' + Math.round(denom * 10) / 10);
-                }
-                break;
-            }
-            case 'feedbackResolution': {
-                if (raw.returnEpisodeCount != null) lines.push(raw.returnEpisodeCount + ' return episode(s)');
-                break;
-            }
-            case 'consistency': {
-                if (raw.activeWeeks != null && raw.totalWeeks != null) {
-                    lines.push(raw.activeWeeks + ' active week(s) of ' + raw.totalWeeks);
-                }
-                break;
-            }
-            default:
-                break;
-        }
-        return lines;
-    },
-
-    _ratingAxisBarHtml(axis, showDetail) {
+    _ratingAxisBarHtml(axis) {
         if (!axis) return '';
         const omitted = axis.defined === false || axis.score == null;
         const label = axis.label || axis.id || '';
@@ -5416,15 +5344,8 @@ const searchOutputStatsPaneMethods = {
             + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
             + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
             + dashEscHtml(subPct != null ? (String(subPct) + '%') : '—') + '</span>'
+            + '</div>'
             + '</div>';
-        if (showDetail) {
-            const breakdownLines = this._ratingAxisBreakdownLines(axis);
-            html += breakdownLines.map((line) =>
-                '<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 2px; padding-left: 2px;">'
-                + dashEscHtml(line) + '</div>'
-            ).join('');
-        }
-        html += '</div>';
         return html;
     },
 
@@ -5458,17 +5379,28 @@ const searchOutputStatsPaneMethods = {
         const confStyle = conf.tier === 'provisional'
             ? 'border: 1px dashed var(--muted-foreground, #64748b);'
             : (conf.tier === 'high' ? 'font-weight: 700;' : '');
-        const scoreDisplay = Math.round(block.score);
+        const weighting = workerId
+            ? this._ratingWorkerWeighting(workerId)
+            : 'recency';
+        const estPct = this._ratingResolveEstimatedPercentile(
+            block.score, block.estimatedPercentile, scoreKind, weighting
+        );
+        const pctLabel = this._ratingFormatEstimatedPercentile(estPct);
+        const rawScoreDisplay = Math.round(block.score);
         const tierLabel = String(block.band || '').trim();
         const tierId = block.tierId || null;
         const hasTier = !!(tierLabel && tierLabel !== '—');
+        const secondaryText = pctLabel || (String(rawScoreDisplay) + ' / 100');
         const primaryHtml = hasTier
             ? dashEscHtml(tierLabel)
-            : dashEscHtml(String(scoreDisplay));
+            : dashEscHtml(pctLabel || String(rawScoreDisplay));
         const secondaryHtml = hasTier
             ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
-                + dashEscHtml(String(scoreDisplay)) + ' / 100</span>')
-            : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>');
+                + dashEscHtml(secondaryText) + '</span>')
+            : (pctLabel
+                ? (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">'
+                    + dashEscHtml(pctLabel) + '</span>')
+                : (' <span style="font-size: 12px; font-weight: 500; color: var(--muted-foreground, #64748b);">/ 100</span>'));
         const basisLine = this._ratingScoreBasisLine(block, basisKind);
         const cohortBlend = block.cohortBlend || null;
         const canExpand = !!(workerId && scoreKind && (cohortBlend || this._ratingSortedAxes(block).length));
@@ -5479,7 +5411,7 @@ const searchOutputStatsPaneMethods = {
                 ? cohortBlend.main.axes
                 : this._ratingSortedAxes(block);
             const mainAxesHtml = this._ratingSortedAxes({ axes: mainAxes })
-                .map((axis) => this._ratingAxisBarHtml(axis, true))
+                .map((axis) => this._ratingAxisBarHtml(axis))
                 .join('');
             const topBars = mainAxesHtml
                 ? ('<div style="margin-top: 8px;">' + mainAxesHtml + '</div>')
@@ -5502,7 +5434,7 @@ const searchOutputStatsPaneMethods = {
         } else if (!cohortBlend) {
             // Non-cohort: keep sub-axis bars visible even when collapsed.
             const axesHtml = this._ratingSortedAxes(block)
-                .map((axis) => this._ratingAxisBarHtml(axis, false))
+                .map((axis) => this._ratingAxisBarHtml(axis))
                 .join('');
             if (axesHtml) bodyHtml = '<div style="margin-top: 4px;">' + axesHtml + '</div>';
         }
@@ -5523,7 +5455,9 @@ const searchOutputStatsPaneMethods = {
             + chevron + dashEscHtml(title) + '</div>'
             + '<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">'
             + '<div style="font-size: 20px; font-weight: 700; line-height: 1.2;">' + primaryHtml + secondaryHtml + '</div>'
-            + '<div style="font-size: 10px; flex-shrink: 0; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
+            + '<div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end;">'
+            + '<div style="font-size: 10px; padding: 2px 6px; border-radius: 4px; ' + confStyle + '">' + dashEscHtml(conf.label || '') + '</div>'
+            + '</div>'
             + '</div>'
             + (basisLine
                 ? ('<div style="font-size: 10px; color: var(--muted-foreground, #64748b); margin-top: 6px;">' + dashEscHtml(basisLine) + '</div>')
@@ -5539,7 +5473,7 @@ const searchOutputStatsPaneMethods = {
         if (!Number.isFinite(n) || n < 0) return true;
         const kind = String(scoreKind || '').toLowerCase();
         if (kind.indexOf('qa') === 0) return n < 25;
-        // TWQS / combined / default: terminal-style threshold.
+        // TWQS / default: terminal-style threshold.
         return n < 10;
     },
 
@@ -5548,7 +5482,6 @@ const searchOutputStatsPaneMethods = {
         const title = o.title || '';
         const scoreDisplay = o.scoreDisplay;
         const weightOrMeta = o.weightOrMeta || '';
-        const meta = o.meta || '';
         const axes = o.axes || [];
         const tierId = o.tierId || null;
         const expanded = !!o.expanded;
@@ -5563,7 +5496,7 @@ const searchOutputStatsPaneMethods = {
         const axesList = [...axes].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
         const axesHtml = (expanded && axesList.length)
             ? ('<div style="margin-top: 6px; padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, transparent);">'
-                + axesList.map((axis) => this._ratingAxisBarHtml(axis, true)).join('')
+                + axesList.map((axis) => this._ratingAxisBarHtml(axis)).join('')
                 + '</div>')
             : '';
         const chevron = canExpand
@@ -5593,13 +5526,13 @@ const searchOutputStatsPaneMethods = {
             + (weightOrMeta ? ' · ' + dashEscHtml(String(weightOrMeta)) : '')
             + '</div>'
             + '</div>'
-            + (meta
-                ? ('<div style="font-size: 9px; color: var(--muted-foreground, #64748b); margin-top: 2px;'
-                    + (canExpand ? ' padding-left: 14px;' : '') + '">'
-                    + dashEscHtml(meta) + '</div>')
-                : '')
             + axesHtml
             + '</div>';
+    },
+
+    _ratingPriorSourceShort(priorSource) {
+        if (!priorSource || !priorSource.source) return '';
+        return priorSource.source === 'subset' ? 'subset prior' : 'global prior';
     },
 
     _ratingCohortBreakdownHtml(title, blend, workerId, scoreKind, opts) {
@@ -5624,23 +5557,29 @@ const searchOutputStatsPaneMethods = {
                 const key = String(slice.key || '—');
                 const weighting = this._ratingWorkerWeighting(workerId);
                 const engine = Context.ratingEngine;
-                const rawScore = Math.round(slice.score);
-                let scoreDisplay = String(rawScore) + ' / 100';
+                const estPct = this._ratingResolveEstimatedPercentile(
+                    slice.score, slice.estimatedPercentile, scoreKind, weighting
+                );
+                const pctLabel = this._ratingFormatEstimatedPercentile(estPct);
+                const secondary = pctLabel || (Math.round(slice.score) + ' / 100');
+                let scoreDisplay = secondary;
                 let tierId = null;
                 if (engine && typeof engine.populationTier === 'function') {
                     const tier = engine.populationTier(slice.score, scoreKind, weighting, slice.volume);
                     if (tier && tier.label && tier.label !== '—') {
-                        scoreDisplay = tier.label + ' ' + rawScore + ' / 100';
+                        scoreDisplay = tier.label + ' · ' + secondary;
                     }
                     if (tier && tier.id) tierId = tier.id;
                 }
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
                     : '';
+                const priorShort = this._ratingPriorSourceShort(slice.priorSource);
+                const weightOrMeta = [vol, priorShort].filter(Boolean).join(' · ');
                 sectionsHtml += this._ratingCohortSectionHtml({
                     title: key,
                     scoreDisplay,
-                    weightOrMeta: vol,
+                    weightOrMeta,
                     volume: slice.volume,
                     provisional: this._ratingVolumeIsProvisional(slice.volume, scoreKind),
                     tierId,
@@ -5698,7 +5637,7 @@ const searchOutputStatsPaneMethods = {
                 + (basePct != null && effPct != null && Math.abs(effPct - basePct) >= 0.05
                     ? ' <span style="color: var(--muted-foreground, #64748b);">(base ' + basePct + '%)</span>'
                     : '');
-            const axisCellHtml = this._ratingAxisBarHtml(axis, true);
+            const axisCellHtml = this._ratingAxisBarHtml(axis);
             rowsHtml += '<tr>'
                 + '<td style="' + tdStyle + '">' + axisCellHtml + '</td>'
                 + '<td style="' + tdNum + '">' + dashEscHtml(String(subPct) + '%') + '</td>'
@@ -5724,14 +5663,19 @@ const searchOutputStatsPaneMethods = {
         if (display.tenureDays != null && Number.isFinite(display.tenureDays)) {
             contextLine = (contextLine ? contextLine + ' · ' : '') + 'Tenure ' + display.tenureDays + ' day(s)';
         }
-        const pct = block.estimatedPercentile;
-        // Prefer tier label context; keep muted raw score note when expanding.
+        const detailPct = this._ratingResolveEstimatedPercentile(
+            block.score,
+            block.estimatedPercentile,
+            scoreKind,
+            workerId ? this._ratingWorkerWeighting(workerId) : 'recency'
+        );
+        const detailPctLabel = this._ratingFormatEstimatedPercentile(detailPct);
         if (block.band && block.band !== '—') {
             contextLine = (contextLine ? contextLine + ' · ' : '')
-                + block.band + ' · ' + Math.round(block.score) + ' / 100';
-        } else if (pct != null) {
-            contextLine = (contextLine ? contextLine + ' · ' : '')
-                + 'raw ' + Math.round(block.score) + ' / 100';
+                + block.band
+                + (detailPctLabel ? (' · ' + detailPctLabel) : (' · ' + Math.round(block.score) + ' / 100'));
+        } else if (detailPctLabel) {
+            contextLine = (contextLine ? contextLine + ' · ' : '') + detailPctLabel;
         }
         return '<div style="margin-top: ' + (nestInScoreCard ? '8' : '12') + 'px;">'
             + (nestInScoreCard
@@ -5795,8 +5739,26 @@ const searchOutputStatsPaneMethods = {
             : '';
 
         const btnCls = this._dashBtnClass('basic', 'nav');
+        const explainBtnCls = this._dashBtnClass('secondary', 'nav');
         const diagnosticsBtnHtml = Context.isDevBranch
             ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
+            : '';
+        const llmDataBtnHtml = Context.isDevBranch
+            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
+            : '';
+        const explainAi = !!(Context.ratingExplain
+            && typeof Context.ratingExplain.hasAiKey === 'function'
+            && Context.ratingExplain.hasAiKey());
+        const explainOpen = !!(explainAi && Context.ratingExplain
+            && typeof Context.ratingExplain.isOpen === 'function'
+            && Context.ratingExplain.isOpen(workerId));
+        const explainBtnHtml = explainAi
+            ? ('<button type="button" class="' + explainBtnCls + '" data-wf-dash-rating-explain="1" data-wf-dash-rating-worker="'
+                + dashEscHtml(workerId) + '" aria-pressed="' + (explainOpen ? 'true' : 'false') + '">'
+                + (explainOpen ? 'Hide Explanation' : 'Explain Ratings') + '</button>')
+            : '';
+        const explainPanelHtml = (explainAi && Context.ratingExplain && typeof Context.ratingExplain.panelHtml === 'function')
+            ? Context.ratingExplain.panelHtml(workerId)
             : '';
         const box = this._panelBoxStyle();
 
@@ -5812,7 +5774,12 @@ const searchOutputStatsPaneMethods = {
                 + '</div>')
             : '';
 
-        return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="' + box + ' padding: 12px;">'
+        return '<div class="wf-dash-rating-card" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" style="'
+            + '--wf-rating-column-max: ' + RATINGS_COLUMN_MAX_WIDTH_PX + 'px;'
+            + ' display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));'
+            + ' gap: 12px; align-items: start; width: 100%; min-width: 0; box-sizing: border-box;">'
+            + '<div class="wf-dash-rating-summary" style="' + box + ' padding: 12px; width: 100%;'
+            + ' max-width: var(--wf-rating-column-max); min-width: 0; justify-self: center; box-sizing: border-box;">'
             + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
             + '<div style="min-width: 0;">'
             + '<div>' + nameHtml + '</div>'
@@ -5826,7 +5793,11 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="json" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export JSON</button>'
             + '<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="md" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export MD</button>'
             + diagnosticsBtnHtml
+            + llmDataBtnHtml
+            + explainBtnHtml
             + '</div>'
+            + '</div>'
+            + explainPanelHtml
             + '</div>';
     },
 
@@ -5880,17 +5851,32 @@ const searchOutputStatsPaneMethods = {
         this._ensureRatingsSortKey(committed);
 
         if (recompute || !this._state.ratingsReport) {
+            if (Context.ratingExplain && typeof Context.ratingExplain.clearTranscripts === 'function') {
+                Context.ratingExplain.clearTranscripts();
+            }
             const scopeItems = this._getRatingsScopeItems();
             const report = this._computeRatingsReport(scopeItems, committed);
             this._state.ratingsReport = report;
             const scopeLabel = this._ratingsScopeLabel();
             const workerCount = (report.workers || []).length;
-            Logger.log('search-output: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
-                + (committed.ratingsEveryone ? ' (@everyone)' : '')
-                + (this._state.ratingsFromResults && !committed.ratingsEveryone ? ' (from results)' : ''));
+            if (report && report.error && report.error.code === 'baselinesUnavailable') {
+                Logger.warn('search-output: ratings blocked — baselines unavailable');
+            } else {
+                Logger.log('search-output: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
+                    + (committed.ratingsEveryone ? ' (@everyone)' : '')
+                    + (this._state.ratingsFromResults && !committed.ratingsEveryone ? ' (from results)' : ''));
+            }
         }
 
         const report = this._state.ratingsReport;
+        if (report && report.error && report.error.code === 'baselinesUnavailable') {
+            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">'
+                + dashEscHtml(report.error.message
+                    || 'Rating baselines are unavailable. Unlock the Ops dashboard so encrypted priors can load, then retry.')
+                + '</p>';
+            this._syncRatingsToolbarUi(0, 0);
+            return;
+        }
         const allWorkers = (report && report.workers) || [];
 
         if (allWorkers.length === 0) {
@@ -5909,6 +5895,9 @@ const searchOutputStatsPaneMethods = {
         }
 
         cardsEl.innerHTML = visibleWorkers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join('');
+        if (Context.ratingExplain && typeof Context.ratingExplain.remountOpen === 'function') {
+            Context.ratingExplain.remountOpen(cardsEl);
+        }
         Logger.log('search-output: ratings view — showing ' + visibleWorkers.length + ' of ' + allWorkers.length);
     },
 
@@ -6008,14 +5997,16 @@ const searchOutputStatsPaneMethods = {
             Logger.warn('search-output: rating export skipped — worker not found ' + workerId);
             return;
         }
-        const exportDate = new Date().toISOString().slice(0, 10);
+        const exportedAt = new Date().toISOString();
+        const exportDate = exportedAt.slice(0, 10);
         // Always export both weighting variants (plan §5); score-type visibility
         // flags are all-true now, so we pass the worker as-is.
         const workerExport = {
             ...worker,
             computedAt: report.computedAt,
             engineVersion: report.version,
-            exportDate
+            exportDate,
+            exportedAt
         };
         // Derive a scoreType label for the filename from what is present.
         const hasTwqs = worker.twqs && (worker.twqs.flat || worker.twqs.recency || worker.twqs.score != null);
@@ -6045,6 +6036,24 @@ const searchOutputStatsPaneMethods = {
             return;
         }
 
+        if (format === 'llm') {
+            if (!Context.isDevBranch) {
+                Logger.warn('search-output: LLM Data export skipped — not a dev branch');
+                return;
+            }
+            if (typeof engine.buildLlmExplainData !== 'function') {
+                Logger.warn('search-output: LLM Data export skipped — engine method missing');
+                return;
+            }
+            const weighting = this._ratingWorkerWeighting(workerId);
+            const llmPayload = engine.buildLlmExplainData(worker, report, weighting);
+            const json = JSON.stringify(llmPayload, null, 2);
+            const filename = engine.buildExportFilename(workerExport, 'llm-data', 'json');
+            this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+            Logger.log('search-output: rating LLM Data exported — ' + filename);
+            return;
+        }
+
         if (format === 'json') {
             const json = engine.serializeJson(workerExport);
             const filename = engine.buildExportFilename(worker, scoreType, 'json');
@@ -6063,7 +6072,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '11.15',
+    _version: '12.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1,7 +1,7 @@
 {
-  "version": "12.4",
+  "version": "12.4.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.45",
+  "archetypesVersion": "14.94",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,14 +28,14 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.3",
-      "hash": "sha256-9855d49ad54b21eba069a1d5f9f07deaacb72769e0f96753ed5680016dfab32e",
+      "version": "9.4",
+      "hash": "sha256-829337e8722cfa23a8111090270019d983dc6a4ad6174cd073edcee1a50547ea",
       "log": false
     },
     {
       "name": "settings-ui.js",
-      "version": "10.6",
-      "hash": "sha256-461461ddf257a82e7b577c8569c731a8ea26b0d9bed8ab83850819b1ac444bbc",
+      "version": "10.8",
+      "hash": "sha256-3c55c8c341efdc2fcdbbce98eb19bd51786572b7511819aaa819df3d86f892fb",
       "log": false
     },
     {
@@ -59,6 +59,12 @@
       "log": false
     },
     {
+      "name": "ai-chat.js",
+      "version": "2.11",
+      "hash": "sha256-060400193482ba550a1dec7ffb59eef97aa0ec44cf5820e91d621973dfc666c0",
+      "log": false
+    },
+    {
       "name": "chart-js.js",
       "version": "2.0",
       "hash": "sha256-77c529645b4a00b1401a9cf0c3bdf7bf3c2f367bb0f352b4d062e443c33b121f",
@@ -68,6 +74,12 @@
       "name": "copy-verifier-output.js",
       "version": "5.1",
       "hash": "sha256-2100444ea3d747b509fa6bf5f9ed7cec35d273468e5585b2c8f27a1832585aa9",
+      "log": false
+    },
+    {
+      "name": "deep-chat-lib.js",
+      "version": "1.0",
+      "hash": "sha256-192fe7e1b8609cbcaf42b7ecd1e5c57607716e1269b3b1b3b12d42379a371003",
       "log": false
     },
     {
@@ -107,6 +119,12 @@
       "log": false
     },
     {
+      "name": "request-revisions-task-only.js",
+      "version": "1.1",
+      "hash": "sha256-8216a34a390a65cf7958f33c5262d00fb18cfdb18f4f25fd3e0ce10ce2f9f256",
+      "log": false
+    },
+    {
       "name": "top-nav-horizontal-scroll.js",
       "version": "2.0",
       "hash": "sha256-cf245176446dd7877960b41be0ac65b9ffeae62ded936cb8c7af5662cbbb7e58",
@@ -134,8 +152,14 @@
     },
     {
       "name": "rating-engine.js",
-      "version": "9.3",
-      "hash": "sha256-9c7910b606b6c852773de945b17a24802868e4ef2bcd7a158dfdac4fcce759ab",
+      "version": "11.0",
+      "hash": "sha256-13e00e3f032804e6364eb7d1c2f984731fd0ae38fb57a694843bde7a2e0f7625",
+      "log": false
+    },
+    {
+      "name": "rating-explain.js",
+      "version": "2.6",
+      "hash": "sha256-2421899f6f92cb85c4a77e21cf6e9dd32a759d078f5e1019b5d90368deb71d15",
       "log": false
     },
     {
@@ -146,8 +170,14 @@
     },
     {
       "name": "dashboard.js",
-      "version": "11.8",
-      "hash": "sha256-8d31f788130b90c7832a0739fbcb06ebea02c34ba88cfa668ea53a4914f59778",
+      "version": "11.10",
+      "hash": "sha256-32218236257940c601f7add8d78442f31862fe7bcd49531b35e55fe49061bfb6",
+      "log": false
+    },
+    {
+      "name": "dashboard-chats.js",
+      "version": "3.3",
+      "hash": "sha256-1a3d5a312df9af5618aea4db5db5c6d5ccc5858dfc3a06e2394617608ede8578",
       "log": false
     },
     {
@@ -164,8 +194,8 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "5.9",
-      "hash": "sha256-4e116a6a592ebba4ada8638818164ce09dc6793c3bc06d9b068a8e351c962585",
+      "version": "5.10",
+      "hash": "sha256-d8701644a108203f1680282ffb277a45f24056d5f683140d7586603759b435d3",
       "log": false
     },
     {
@@ -176,14 +206,14 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "11.15",
-      "hash": "sha256-90632567ae28d257e0f866f3529b02e0b8c38e06a1838c3c60b580da32b60517",
+      "version": "12.5",
+      "hash": "sha256-413fa300bba4c41ef822429cb3d4b1ea5e7f7d169cd2d4d339451d165e2a4f55",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "9.15",
-      "hash": "sha256-720c0d79c49e79edfb9ffe6f3b3c77f9ae85f6e43206a39a49bb351cb851f653",
+      "version": "9.17",
+      "hash": "sha256-e9753173ada3a3c1dc9b1279b858985fd018a6bb441b6fe6f614310bf40fd926",
       "log": false
     },
     {
@@ -200,21 +230,23 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "4.5",
-      "hash": "sha256-d70c2709778bd8f7e9ba0ae6ef0d40f437c4d69acbfa80dcf38042cd4b1a9f69",
+      "version": "5.0",
+      "hash": "sha256-f5a73d3905a78abfce0b42e0ef035bf782de95ccbf2ecff60efcfd2822e774b6",
       "log": false
     },
     {
       "name": "dashboard-settings.js",
-      "version": "1.3",
-      "hash": "sha256-e78f4318f1555ec9c95db2f2ac165006c970938efc66c3c20c2792069ad3a77d",
+      "version": "1.11",
+      "hash": "sha256-0305f3ef3e903625e9003b8be59318c215cdc249c5d4b6343ba5fa884f3152f2",
       "log": false
     }
   ],
   "opsDashboardLibraries": [
     "dispute-resolution-messages.js",
     "chart-js.js",
-    "user-story-markdown.js"
+    "user-story-markdown.js",
+    "deep-chat-lib.js",
+    "ai-chat.js"
   ],
   "devPlugins": [
     {
@@ -231,7 +263,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.32"
+      "version": "1.33"
     }
   ],
   "archetypes": [
@@ -503,6 +535,7 @@
       "libraries": [
         "accept-task-modal-improvements.js",
         "request-revisions-screenshot-upload-improvement.js",
+        "request-revisions-task-only.js",
         "copy-verifier-output.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js"
@@ -530,6 +563,12 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.2",
           "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
+          "log": false
+        },
+        {
+          "name": "request-revisions-task-only.js",
+          "version": "1.1",
+          "hash": "sha256-adb2f7c84f6078d4117d1b6eea1405ab494d55cc2a7d4690e02452257038f926",
           "log": false
         },
         {
@@ -597,6 +636,7 @@
       "libraries": [
         "accept-task-modal-improvements.js",
         "request-revisions-screenshot-upload-improvement.js",
+        "request-revisions-task-only.js",
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
         "top-nav-horizontal-scroll.js",
@@ -661,6 +701,12 @@
           "name": "request-revisions-screenshot-upload-improvement.js",
           "version": "1.2",
           "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
+          "log": false
+        },
+        {
+          "name": "request-revisions-task-only.js",
+          "version": "1.1",
+          "hash": "sha256-adb2f7c84f6078d4117d1b6eea1405ab494d55cc2a7d4690e02452257038f926",
           "log": false
         },
         {

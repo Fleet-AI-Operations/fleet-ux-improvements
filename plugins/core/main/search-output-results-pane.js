@@ -1263,10 +1263,22 @@ const searchOutputResultsPaneMethods = {
         this._syncVersionModeDropdownUi();
     },
 
-    _dashExportDateSlug() {
+    _dashExportTimestampSlug(iso) {
+        return String(iso || new Date().toISOString()).replace(/[:.]/g, '-');
+    },
+
+    _taskCardsExportIdentity(payload) {
+        const labels = payload && payload.search && Array.isArray(payload.search.authorLabels)
+            ? payload.search.authorLabels.filter(Boolean)
+            : [];
+        const raw = labels.length === 1
+            ? labels[0]
+            : (labels.length > 1 ? labels.length + '-authors' : (payload.view.filteredCount + '-cards'));
         const engine = Context.statsEngine;
-        if (engine && typeof engine.exportDateSlug === 'function') return engine.exportDateSlug();
-        return new Date().toISOString().slice(0, 10);
+        if (engine && typeof engine.sanitizeExportSlug === 'function') {
+            return engine.sanitizeExportSlug(raw);
+        }
+        return String(raw || 'cards').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cards';
     },
 
     _cloneJsonSafe(value) {
@@ -1346,7 +1358,8 @@ const searchOutputResultsPaneMethods = {
             return;
         }
         const payload = this._buildTaskCardsExportPayload(items);
-        const filename = 'fleet-task-cards-' + this._dashExportDateSlug() + '.json';
+        const filename = 'raw-cards-' + this._taskCardsExportIdentity(payload) + '-'
+            + this._dashExportTimestampSlug(payload.exportedAt) + '.json';
         const json = JSON.stringify(payload, null, 2);
         if (typeof this._downloadTextFile === 'function') {
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
@@ -6367,7 +6380,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.9',
+    _version: '5.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

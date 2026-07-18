@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4
+// @version      12.4.6
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -14,6 +14,7 @@
 // @grant        GM_deleteValue
 // @grant        GM_listValues
 // @grant        GM_xmlhttpRequest
+// @grant        GM_openInTab
 // @connect      raw.githubusercontent.com
 // @connect      cdn.jsdelivr.net
 // @connect      openrouter.ai
@@ -39,7 +40,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4';
+    const VERSION = '12.4.6';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -60,6 +61,9 @@
         'fleet-ux:dashboard-search-depth',
         'fleet-ux:dashboard-results-mode',
         'fleet-ux:dashboard-results-page-size',
+        'fleet-ux:dashboard-default-tab',
+        'fleet-ux:dashboard-tab-order',
+        'fleet-ux:dashboard-chats-sidebar-width',
         'fleet-ux:dashboard-side-panel-width',
         'fleet-ux:dashboard-results-panel-max-width',
         'fleet-ux:diff-viewer-side-panel-width',
@@ -69,6 +73,7 @@
         'fleet-ux:verifier-fetcher-scratchpad-text',
         'fleet-ux:verifier-fetcher-chat-open',
         'fleet-ux:ai-openrouter-key',
+        'fleet-ux:ai-chats-index',
         'fleet-ux:diff-viewer-stash',
         'fleet-ux:diff-viewer-granularity',
         'fleet-ux:diff-viewer-comp-mode',
@@ -136,6 +141,7 @@
         githubRepo: GITHUB_CONFIG.repo,
         logPrefix: LOG_PREFIX,
         getPageWindow: () => typeof unsafeWindow !== 'undefined' ? unsafeWindow : window,
+        openInTab: (url, options) => GM_openInTab(url, options),
         storageKeys: SHARED_STORAGE_KEYS,
         settingsModalDocs: {},
         /** From archetypes.json `logs` + per-plugin `log`; defaults until fetch completes. */

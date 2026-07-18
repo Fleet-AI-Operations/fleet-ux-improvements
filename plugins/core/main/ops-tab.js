@@ -241,7 +241,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.3',
+    _version: '9.4',
     phase: 'core',
     enabledByDefault: true,
 
@@ -363,6 +363,7 @@ const plugin = {
             parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
             getSecrets: () => this._getOpsSecretsJson(),
             getOpsBundle: () => this._getOpsBundle(),
+            getRatingBaselines: () => this._getOpsRatingBaselines(),
             reloadSecrets: (force) => this._loadOpsSecrets(force !== false),
             resolveTable: (tableKey) => this._resolveOpsTable(tableKey),
             buildPostgrestParams: (queryKey, overrides) => this._buildOpsPostgrestParams(queryKey, overrides),
@@ -617,6 +618,38 @@ const plugin = {
         throw err;
     },
 
+    /**
+     * Validated rating prior pack from decrypted Ops secrets (synchronous).
+     * Returns null when secrets are locked/missing or the payload is incomplete.
+     * Does not expose the full secrets object.
+     */
+    _getOpsRatingBaselines() {
+        const json = this._getOpsSecretsJson();
+        if (!json || typeof json !== 'object') return null;
+        const raw = json.ratingBaselines;
+        if (!raw || typeof raw !== 'object') return null;
+        const global = raw.global;
+        const tw = global && global.priors && global.priors.twqs;
+        const qa = global && global.priors && global.priors.qaqs;
+        if (!tw || typeof tw !== 'object' || !qa || typeof qa !== 'object') return null;
+        const twRequired = [
+            'outcomeQuality', 'positiveFeedbackRate', 'taskRatingQuality',
+            'firstPassAcceptance', 'disputeLossAvoidance'
+        ];
+        const qaRequired = [
+            'returnEffectiveness', 'returnActionability',
+            'disputeDefense', 'labelDiscrimination'
+        ];
+        for (const id of twRequired) {
+            if (!Number.isFinite(Number(tw[id]))) return null;
+        }
+        for (const id of qaRequired) {
+            if (!Number.isFinite(Number(qa[id]))) return null;
+        }
+        // Accept both schemaVersion 1 (legacy) and 2+ (eligibility metadata).
+        return raw;
+    },
+
     _getOpsBundle() {
         const json = this._getOpsSecretsJson();
         if (!json || typeof json !== 'object' || !json.postgrest) {
@@ -735,6 +768,17 @@ const plugin = {
                 self._opsBundleNotLoadedLogged = false;
                 const keyCount = parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0;
                 Logger.log('ops-tab: secrets decrypted (' + keyCount + ' top-level keys)');
+                try {
+                    const baselines = self._getOpsRatingBaselines();
+                    if (baselines && Context.ratingEngine && typeof Context.ratingEngine.setCohortBaselines === 'function') {
+                        Context.ratingEngine.setCohortBaselines(baselines);
+                        Logger.log('ops-tab: ratingBaselines applied to Context.ratingEngine');
+                    } else if (!baselines) {
+                        Logger.debug('ops-tab: ratingBaselines missing or incomplete in secrets');
+                    }
+                } catch (baselineErr) {
+                    Logger.warn('ops-tab: failed to apply ratingBaselines', baselineErr);
+                }
             } catch (e) {
                 self._opsSecretsCache.json = null;
                 self._opsSecretsCache.loadError = e;

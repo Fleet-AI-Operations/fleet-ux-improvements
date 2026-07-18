@@ -4,6 +4,7 @@
 // AI gating: Diagnose Issues, Chat toggle, and the chat pane stay hidden unless
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
+// Chat transcript UI / streaming uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
 
 const VERIFIER_SCRATCHPAD_WIDTH_KEY = 'fleet-ux:verifier-fetcher-scratchpad-width';
 const VERIFIER_SCRATCHPAD_OPEN_KEY = 'fleet-ux:verifier-fetcher-scratchpad-open';
@@ -21,8 +22,8 @@ const VERIFIER_CHAT_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX;
 const DECODE_SYSTEM_PROMPT =
     'You are helping a reviewer understand a task verifier result. Given the verifier\'s '
     + 'Python source and its captured output, explain in plain language what caused each '
-    + 'failure, citing the specific check or function in the code responsible. Allow for the '
-    + 'possibility that the verifier code itself is incorrect; if you determine that, say so '
+    + 'failure, citing the specific check or function in the code responsible. Investigate the '
+    + 'possibility that the verifier code itself is incorrect; if you determine such, say so '
     + 'explicitly and diagnose the root cause in the verifier. If the output references values '
     + 'a reviewer cannot know (transaction numbers, email IDs, internal keys), use the verifier '
     + 'source to explain what it was looking for so the output becomes interpretable. Be concise: '
@@ -31,7 +32,7 @@ const DECODE_SYSTEM_PROMPT =
     + 'output does not match the code, simply state that there seems to be a mismatch. Do not '
     + 'acknowledge checks that passed. If there are no failures, state that there is nothing to analyze. '
     + 'In this current scenario, the only thing that the reviewer can do to attempt to fix the errors '
-    + 'is to attempt the task while completing different actions. They cannot modify the verifier code. '
+    + 'is to attempt the task while completing different actions. The reviewer cannot modify the verifier code. '
     + 'Therefore, do not suggest modifications to the code ever; only changes in how the task is '
     + 'attempted if it makes sense to do so. If the verifier is clearly incorrectly written, then '
     + 'advise flagging the task as bugged.';
@@ -53,6 +54,9 @@ function ensureVerifierBtnStyles() {
 }
 
 function hasVerifierAiKey() {
+    if (Context.aiChat && typeof Context.aiChat.hasAiKey === 'function') {
+        return Context.aiChat.hasAiKey();
+    }
     return !!(Context.aiOpenRouter
         && typeof Context.aiOpenRouter.hasStoredKey === 'function'
         && Context.aiOpenRouter.hasStoredKey());
@@ -138,86 +142,173 @@ function clampVerifierScratchpadWidth(root, widthPx) {
     return Math.round(Math.max(VERIFIER_SCRATCHPAD_MIN_WIDTH, Math.min(max, widthPx)));
 }
 
+function verifierChatOpts() {
+    return {
+        mountSelector: '#wf-ops-verifier-chat-mount',
+        exportSelector: '#wf-ops-verifier-chat-export',
+        wiredAttr: 'data-wf-chat-wired',
+        logTag: 'verifier-fetcher',
+        placeholder: 'Ask a follow-up…',
+    };
+}
+
+function verifierChatApi() {
+    return Context.aiChat || null;
+}
+
+function getVerifierChatSessionId(modal) {
+    if (!modal) return '';
+    if (!modal._wfVerifierChatSessionId) {
+        modal._wfVerifierChatSessionId = (typeof crypto !== 'undefined'
+            && typeof crypto.randomUUID === 'function')
+            ? crypto.randomUUID()
+            : ('verifier-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+    }
+    return modal._wfVerifierChatSessionId;
+}
+
+function verifierRecordTurn(modal, turn) {
+    const api = Context.dashboardChats;
+    if (!api || typeof api.recordTurn !== 'function') {
+        Logger.warn('verifier-fetcher: dashboardChats unavailable — turn not indexed');
+        return;
+    }
+    const t = turn || {};
+    const titleHint = (t.userPreview && String(t.userPreview).trim())
+        || 'Verifier chat';
+    api.recordTurn({
+        source: 'verifier',
+        conversationKey: getVerifierChatSessionId(modal),
+        titleHint,
+        generationId: t.generationId,
+        model: t.model,
+    });
+}
+
 function getVerifierChatState(modal) {
     if (!modal) return null;
     if (!modal._wfVerifierChatState) {
-        modal._wfVerifierChatState = {
-            messages: [],
-            streaming: false,
-            streamAbort: null,
-            streamGen: 0
-        };
+        const chat = verifierChatApi();
+        modal._wfVerifierChatState = chat && typeof chat.createState === 'function'
+            ? chat.createState()
+            : { messages: [], streaming: false, streamAbort: null, streamGen: 0 };
     }
     return modal._wfVerifierChatState;
 }
 
 function renderVerifierChatMessages(modal) {
-    const list = modal && modal.querySelector('#wf-ops-verifier-chat-messages');
-    if (!list) return;
+    const chat = verifierChatApi();
     const state = getVerifierChatState(modal);
-    const md = Context.userStoryMarkdown;
-    if (md && typeof md.ensureProseStyles === 'function') md.ensureProseStyles();
-    list.innerHTML = '';
-    (state.messages || []).forEach((msg, idx) => {
-        const row = document.createElement('div');
-        row.setAttribute('data-wf-chat-role', msg.role);
-        row.style.cssText = 'display:flex;flex-direction:column;gap:4px;'
-            + (msg.role === 'user' ? 'align-items:flex-end;' : 'align-items:flex-start;');
-        const label = document.createElement('div');
-        label.textContent = msg.role === 'user' ? 'You' : 'Assistant';
-        label.style.cssText = 'font-size:11px;font-weight:600;opacity:0.65;';
-        const bubble = document.createElement('div');
-        bubble.setAttribute('data-wf-chat-bubble', String(idx));
-        bubble.style.cssText = 'max-width:100%;padding:8px 10px;border-radius:8px;font-size:13px;'
-            + 'line-height:1.45;border:1px solid color-mix(in srgb,var(--border,#e2e8f0) 80%,transparent);'
-            + (msg.role === 'user'
-                ? 'background:color-mix(in srgb,var(--primary,#2563eb) 12%,transparent);white-space:pre-wrap;word-break:break-word;'
-                : 'background:color-mix(in srgb,var(--muted,#f1f5f9) 55%,transparent);width:100%;');
-        if (msg.role === 'assistant' && md && typeof md.markdownToHtml === 'function') {
-            bubble.innerHTML = md.markdownToHtml(msg.content || '');
-            if (md.PROSE_ATTR) bubble.setAttribute(md.PROSE_ATTR, '');
-        } else {
-            bubble.textContent = msg.displayContent != null ? String(msg.displayContent) : (msg.content || '');
-        }
-        if (msg.streaming) bubble.setAttribute('data-wf-streaming', '1');
-        row.appendChild(label);
-        row.appendChild(bubble);
-        list.appendChild(row);
-    });
-    list.scrollTop = list.scrollHeight;
-}
-
-function updateVerifierStreamingBubble(modal, content) {
-    const state = getVerifierChatState(modal);
-    const idx = state.messages.length - 1;
-    const msg = state.messages[idx];
-    if (!msg || msg.role !== 'assistant') return;
-    msg.content = content;
-    const bubble = modal.querySelector('[data-wf-chat-bubble="' + idx + '"]');
-    if (!bubble) {
-        renderVerifierChatMessages(modal);
-        return;
-    }
-    const md = Context.userStoryMarkdown;
-    if (md && typeof md.markdownToHtml === 'function') {
-        bubble.innerHTML = md.markdownToHtml(content || '');
-        if (md.PROSE_ATTR) bubble.setAttribute(md.PROSE_ATTR, '');
-    } else {
-        bubble.textContent = content || '';
-    }
-    const list = modal.querySelector('#wf-ops-verifier-chat-messages');
-    if (list) list.scrollTop = list.scrollHeight;
+    if (!chat || !state) return;
+    chat.renderMessages(modal, state, verifierChatOpts());
 }
 
 function setVerifierChatStreamingUi(modal, streaming) {
+    const chat = verifierChatApi();
     const state = getVerifierChatState(modal);
-    state.streaming = !!streaming;
-    const sendBtn = modal.querySelector('#wf-ops-verifier-chat-send');
-    const stopBtn = modal.querySelector('#wf-ops-verifier-chat-stop');
-    const input = modal.querySelector('#wf-ops-verifier-chat-input');
-    if (sendBtn) sendBtn.disabled = !!streaming;
-    if (stopBtn) stopBtn.style.display = streaming ? '' : 'none';
-    if (input) input.disabled = !!streaming;
+    if (!chat || !state) return;
+    chat.setStreamingUi(modal, state, streaming, verifierChatOpts());
+}
+
+function stopVerifierChatStream(modal) {
+    const chat = verifierChatApi();
+    const state = getVerifierChatState(modal);
+    if (!chat || !state) return;
+    chat.stopStream(state, verifierChatOpts());
+    chat.setStreamingUi(modal, state, false, verifierChatOpts());
+    chat.renderMessages(modal, state, verifierChatOpts());
+}
+
+async function sendVerifierChatMessage(modal, userText) {
+    const chat = verifierChatApi();
+    const state = getVerifierChatState(modal);
+    const text = String(userText || '').trim();
+    if (!chat || !state || !text || state.streaming) return;
+
+    writeVerifierChatOpenPref(true);
+    syncVerifierAiUi(modal);
+
+    try {
+        await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
+            userText: text,
+            onTurnDone: (turn) => verifierRecordTurn(modal, turn),
+        }));
+    } catch (_err) {
+        // sendTurn already logged and finalized the error bubble
+    }
+}
+
+async function decodeVerifierOutput(modal) {
+    const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
+    const codeEl = modal.querySelector('#wf-ops-verifier-output');
+    const ta = modal.querySelector('#wf-ops-verifier-scratchpad');
+    const codeText = codeEl ? String(codeEl.textContent || '').trim() : '';
+    const outputText = ta ? String(ta.value || '').trim() : '';
+
+    if (!codeText) {
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty verifier code');
+        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+        return;
+    }
+    if (!outputText) {
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty Verifier Output');
+        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+        return;
+    }
+
+    const chat = verifierChatApi();
+    const state = getVerifierChatState(modal);
+    if (!chat || !state) {
+        Logger.error('verifier-fetcher: Diagnose Issues blocked — Context.aiChat unavailable');
+        return;
+    }
+    if (state.streaming) {
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — stream in progress');
+        return;
+    }
+
+    writeVerifierChatOpenPref(true);
+    syncVerifierAiUi(modal);
+    if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
+
+    const userPayload =
+        '## Verifier source\n\n```python\n' + codeText + '\n```\n\n'
+        + '## Verifier Output\n\n```\n' + outputText + '\n```';
+
+    Logger.log('verifier-fetcher: Diagnose Issues started');
+    try {
+        await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
+            userContent: userPayload,
+            displayContent: 'Diagnose Issues',
+            apiMessages: [
+                { role: 'system', content: DECODE_SYSTEM_PROMPT },
+                { role: 'user', content: userPayload },
+            ],
+            onTurnDone: (turn) => verifierRecordTurn(modal, Object.assign({}, turn, {
+                userPreview: 'Diagnose Issues',
+            })),
+        }));
+        Logger.log('verifier-fetcher: Diagnose Issues done');
+    } catch (err) {
+        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+        Logger.error('verifier-fetcher: Diagnose Issues failed: ' + ((err && err.message) || err));
+    }
+}
+
+function wireVerifierChatComposer(modal) {
+    const chat = verifierChatApi();
+    if (!chat || typeof chat.wireComposer !== 'function') return;
+    chat.wireComposer(modal, getVerifierChatState(modal), Object.assign({}, verifierChatOpts(), {
+        onSend: (value) => sendVerifierChatMessage(modal, value),
+        onStop: () => stopVerifierChatStream(modal),
+        onExport: () => chat.exportConversation(
+            getVerifierChatState(modal),
+            Object.assign({}, verifierChatOpts(), {
+                exportFilename: 'verifier-chat-' + new Date().toISOString().slice(0, 10) + '.json',
+                exportMetadata: { feature: 'verifier-fetcher' },
+            })
+        ),
+    }));
 }
 
 function applyVerifierScratchpadLayout(modal, openOverride) {
@@ -350,216 +441,6 @@ function restoreVerifierScratchpadTabState(modal, state) {
     }
     applyVerifierScratchpadLayout(modal);
     syncVerifierAiUi(modal);
-}
-
-function stopVerifierChatStream(modal) {
-    const state = getVerifierChatState(modal);
-    state.streamGen += 1;
-    if (state.streamAbort && typeof state.streamAbort.abort === 'function') {
-        try { state.streamAbort.abort(); } catch (_e) { /* ignore */ }
-    }
-    state.streamAbort = null;
-    const last = state.messages[state.messages.length - 1];
-    if (last && last.role === 'assistant' && last.streaming) {
-        last.streaming = false;
-        if (!last.content) last.content = '(stopped)';
-    }
-    setVerifierChatStreamingUi(modal, false);
-    renderVerifierChatMessages(modal);
-    Logger.log('verifier-fetcher: chat stream stopped');
-}
-
-async function runVerifierChatStream(modal, apiMessages) {
-    const ai = Context.aiOpenRouter;
-    if (!ai || typeof ai.chatCompletionStream !== 'function') {
-        throw new Error('AI OpenRouter API is not available');
-    }
-    const state = getVerifierChatState(modal);
-    state.streamGen += 1;
-    const gen = state.streamGen;
-    setVerifierChatStreamingUi(modal, true);
-    let assembled = '';
-
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const settleOk = (text) => {
-            if (settled) return;
-            settled = true;
-            state.streamAbort = null;
-            if (gen === state.streamGen) setVerifierChatStreamingUi(modal, false);
-            resolve(text);
-        };
-        const settleErr = (err) => {
-            if (settled) return;
-            settled = true;
-            state.streamAbort = null;
-            if (gen === state.streamGen) setVerifierChatStreamingUi(modal, false);
-            reject(err);
-        };
-
-        Promise.resolve(ai.chatCompletionStream({
-            messages: apiMessages,
-            onDelta: (delta) => {
-                if (gen !== state.streamGen) return;
-                assembled += String(delta || '');
-                updateVerifierStreamingBubble(modal, assembled);
-            },
-            onDone: (result) => {
-                if (gen !== state.streamGen) {
-                    settleOk(assembled);
-                    return;
-                }
-                const full = result && result.fullText != null ? String(result.fullText) : assembled;
-                assembled = full;
-                updateVerifierStreamingBubble(modal, assembled);
-                settleOk(assembled);
-            },
-            onError: (err) => {
-                settleErr(err instanceof Error ? err : new Error(String(err || 'Stream failed')));
-            }
-        })).then((handle) => {
-            state.streamAbort = handle;
-        }).catch((err) => {
-            settleErr(err instanceof Error ? err : new Error(String(err || 'Stream failed')));
-        });
-    });
-}
-
-async function sendVerifierChatMessage(modal, userText) {
-    const text = String(userText || '').trim();
-    if (!text) return;
-    const state = getVerifierChatState(modal);
-    if (state.streaming) return;
-
-    writeVerifierChatOpenPref(true);
-    syncVerifierAiUi(modal);
-
-    state.messages.push({ role: 'user', content: text });
-    state.messages.push({ role: 'assistant', content: '', streaming: true });
-    renderVerifierChatMessages(modal);
-
-    const history = [];
-    for (let i = 0; i < state.messages.length; i++) {
-        const m = state.messages[i];
-        if (m.streaming) break;
-        if (m.role === 'user' || m.role === 'assistant') {
-            history.push({ role: m.role, content: m.content || '' });
-        }
-    }
-
-    try {
-        const full = await runVerifierChatStream(modal, history);
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = full || '';
-            last.streaming = false;
-        }
-        renderVerifierChatMessages(modal);
-        Logger.log('verifier-fetcher: chat reply done (' + (full || '').length + ' chars)');
-    } catch (err) {
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = 'Error: ' + ((err && err.message) || String(err));
-            last.streaming = false;
-        }
-        renderVerifierChatMessages(modal);
-        Logger.error('verifier-fetcher: chat failed: ' + ((err && err.message) || err));
-    }
-}
-
-async function decodeVerifierOutput(modal) {
-    const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
-    const codeEl = modal.querySelector('#wf-ops-verifier-output');
-    const ta = modal.querySelector('#wf-ops-verifier-scratchpad');
-    const codeText = codeEl ? String(codeEl.textContent || '').trim() : '';
-    const outputText = ta ? String(ta.value || '').trim() : '';
-
-    if (!codeText) {
-        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty verifier code');
-        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
-        return;
-    }
-    if (!outputText) {
-        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty Verifier Output');
-        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
-        return;
-    }
-
-    const state = getVerifierChatState(modal);
-    if (state.streaming) {
-        Logger.warn('verifier-fetcher: Diagnose Issues blocked — stream in progress');
-        return;
-    }
-
-    writeVerifierChatOpenPref(true);
-    syncVerifierAiUi(modal);
-    if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
-
-    const userPayload =
-        '## Verifier source\n\n```python\n' + codeText + '\n```\n\n'
-        + '## Verifier Output\n\n```\n' + outputText + '\n```';
-
-    state.messages.push({
-        role: 'user',
-        content: userPayload,
-        displayContent: 'Diagnose Issues'
-    });
-    state.messages.push({ role: 'assistant', content: '', streaming: true });
-    renderVerifierChatMessages(modal);
-    Logger.log('verifier-fetcher: Diagnose Issues started');
-
-    const apiMessages = [
-        { role: 'system', content: DECODE_SYSTEM_PROMPT },
-        { role: 'user', content: userPayload }
-    ];
-
-    try {
-        const full = await runVerifierChatStream(modal, apiMessages);
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = full || '';
-            last.streaming = false;
-        }
-        renderVerifierChatMessages(modal);
-        Logger.log('verifier-fetcher: Diagnose Issues done (' + (full || '').length + ' chars)');
-    } catch (err) {
-        const last = state.messages[state.messages.length - 1];
-        if (last && last.role === 'assistant') {
-            last.content = 'Error: ' + ((err && err.message) || String(err));
-            last.streaming = false;
-        }
-        renderVerifierChatMessages(modal);
-        if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
-        Logger.error('verifier-fetcher: Diagnose Issues failed: ' + ((err && err.message) || err));
-    }
-}
-
-function wireVerifierChatComposer(modal) {
-    const input = modal.querySelector('#wf-ops-verifier-chat-input');
-    const sendBtn = modal.querySelector('#wf-ops-verifier-chat-send');
-    const stopBtn = modal.querySelector('#wf-ops-verifier-chat-stop');
-    if (!input || input.dataset.wfChatWired === '1') return;
-    input.dataset.wfChatWired = '1';
-
-    if (sendBtn) {
-        sendBtn.addEventListener('click', () => {
-            const value = input.value;
-            input.value = '';
-            void sendVerifierChatMessage(modal, value);
-        });
-    }
-    if (stopBtn) {
-        stopBtn.addEventListener('click', () => stopVerifierChatStream(modal));
-        stopBtn.style.display = 'none';
-    }
-    input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            const value = input.value;
-            input.value = '';
-            void sendVerifierChatMessage(modal, value);
-        }
-    });
 }
 
 function verifierFetcherPanelHtml() {
@@ -774,24 +655,17 @@ function verifierFetcherPanelHtml() {
                         box-sizing: border-box;
                         background: transparent;
                     ">
-                        <div style="flex-shrink: 0; ${labelStyle}">Chat</div>
-                        <div id="wf-ops-verifier-chat-messages" style="
+                        <div style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                            <div style="${labelStyle}">Chat</div>
+                            <button type="button" id="wf-ops-verifier-chat-export" class="${btnClass('basic', 'compact')}">Export</button>
+                        </div>
+                        <div id="wf-ops-verifier-chat-mount" style="
                             flex: 1;
                             min-height: 120px;
-                            overflow: auto;
                             display: flex;
                             flex-direction: column;
-                            gap: 10px;
-                            padding: 4px;
                             box-sizing: border-box;
                         "></div>
-                        <div style="flex-shrink: 0; display: flex; flex-direction: column; gap: 6px;">
-                            <textarea id="wf-ops-verifier-chat-input" rows="3" placeholder="Ask a follow-up… (Enter to send, Shift+Enter for newline)" style="${compactInputStyle} width: 100%; resize: vertical; min-height: 64px;"></textarea>
-                            <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                                <button type="button" id="wf-ops-verifier-chat-stop" class="${btnClass('basic', 'compact')}" style="display: none;">Stop</button>
-                                <button type="button" id="wf-ops-verifier-chat-send" class="${btnClass('primary', 'compact')}">Send</button>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>`;
@@ -919,7 +793,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '4.5',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -951,6 +825,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered');
+        Logger.log('verifier-fetcher: tab registered v5.0');
     }
 };

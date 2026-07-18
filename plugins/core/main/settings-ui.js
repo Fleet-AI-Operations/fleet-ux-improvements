@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.6',
+    _version: '10.8',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -19,6 +19,7 @@ const plugin = {
     _presenceObserver: null,
     _docPaneCache: {},
     _gearClickHandler: null,
+    _updateTabOpenedAutomatically: false,
 
     init(state, context) {
         const self = this;
@@ -35,6 +36,7 @@ const plugin = {
         this._ensureModalPresence();
         this._startPresenceGuard();
         this._updatePulseAnimation();
+        this._autoOpenUpdateIfNeeded();
     },
 
     /**
@@ -2560,6 +2562,41 @@ const plugin = {
         }
     },
 
+    _getUpdateUrl() {
+        return `https://raw.githubusercontent.com/${Context.githubOwner || 'Fleet-AI-Operations'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js`;
+    },
+
+    _autoOpenUpdateIfNeeded() {
+        if (!Context.isOutdated || !Context.latestVersion) return;
+
+        const latestVersion = String(Context.latestVersion);
+        const storageKey = 'last-auto-opened-update-version';
+        if (Storage.get(storageKey, null) === latestVersion) return;
+
+        if (typeof Context.openInTab !== 'function') {
+            Logger.warn(`${this.id}: could not automatically open update because the tab opener is unavailable`);
+            return;
+        }
+
+        this._updateTabOpenedAutomatically = true;
+        this.openModal({ forceSettings: true });
+        if (!this._modalOpen) {
+            this._updateTabOpenedAutomatically = false;
+            Logger.warn(`${this.id}: could not automatically open update because the Settings modal failed to open`);
+            return;
+        }
+
+        requestAnimationFrame(() => {
+            try {
+                Context.openInTab(this._getUpdateUrl(), { active: true, insert: true, setParent: true });
+                Storage.set(storageKey, latestVersion);
+                Logger.log(`${this.id}: opened Settings and automatically opened update ${latestVersion} in a new tab`);
+            } catch (error) {
+                Logger.error(`${this.id}: failed to automatically open update ${latestVersion}`, error);
+            }
+        });
+    },
+
     _createUpdateNotificationHTML() {
         const currentVersion = Context.version || 'unknown';
         // If simulate update banner is enabled, simulate update by using current version + 0.1 as latest
@@ -2601,11 +2638,11 @@ const plugin = {
                             Extension Update Available
                         </h3>
                         <p style="font-size: 13px; color: #991b1b; margin: 0 0 10px 0; line-height: 1.5;">
-                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="https://raw.githubusercontent.com/${Context.githubOwner || 'Fleet-AI-Operations'}/${Context.githubRepo || 'fleet-ux-improvements'}/${Context.githubBranch || 'main'}/fleet.user.js" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
+                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="${this._getUpdateUrl()}" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
                         </p>
                     </div>
                 </div>
-                <div id="wf-update-refresh-row" style="display: none; margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">
+                <div id="wf-update-refresh-row" style="display: ${this._updateTabOpenedAutomatically ? 'block' : 'none'}; margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">
                     <button type="button" id="wf-update-refresh-btn" style="
                         padding: 8px 14px;
                         font-size: 13px;
