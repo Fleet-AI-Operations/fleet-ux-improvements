@@ -6,8 +6,15 @@
 // initial payloads. This module owns message rendering, composer wiring,
 // and chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '1.1';
+const AI_CHAT_VERSION = '1.2';
 const PLUGIN_ID = 'ai-chat';
+
+function aiChatCopyIconSvg() {
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"'
+        + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+        + ' aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>'
+        + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+}
 
 function aiChatHasKey() {
     return !!(Context.aiOpenRouter
@@ -83,11 +90,12 @@ function aiChatRenderMessages(root, state, opts) {
         row.appendChild(bubble);
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
-        copyBtn.textContent = 'Copy';
+        copyBtn.innerHTML = aiChatCopyIconSvg();
+        copyBtn.title = 'Copy message as Markdown';
         copyBtn.setAttribute('aria-label', 'Copy message as Markdown');
         copyBtn.className = Context.uiLib && typeof Context.uiLib.btnClass === 'function'
-            ? Context.uiLib.btnClass('basic', 'compact')
-            : 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--compact';
+            ? Context.uiLib.btnClass('basic', 'icon')
+            : 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon';
         copyBtn.addEventListener('click', async () => {
             const markdown = String(msg.content || '');
             try {
@@ -391,7 +399,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI and streaming controller',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

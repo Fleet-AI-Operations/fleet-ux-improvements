@@ -5773,6 +5773,7 @@ const searchOutputStatsPaneMethods = {
             : '';
 
         const btnCls = this._dashBtnClass('basic', 'nav');
+        const explainBtnCls = this._dashBtnClass('secondary', 'nav');
         const diagnosticsBtnHtml = Context.isDevBranch
             ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
@@ -5786,7 +5787,7 @@ const searchOutputStatsPaneMethods = {
             && typeof Context.ratingExplain.isOpen === 'function'
             && Context.ratingExplain.isOpen(workerId));
         const explainBtnHtml = explainAi
-            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-explain="1" data-wf-dash-rating-worker="'
+            ? ('<button type="button" class="' + explainBtnCls + '" data-wf-dash-rating-explain="1" data-wf-dash-rating-worker="'
                 + dashEscHtml(workerId) + '" aria-pressed="' + (explainOpen ? 'true' : 'false') + '">'
                 + (explainOpen ? 'Hide Explanation' : 'Explain Ratings') + '</button>')
             : '';
@@ -6097,7 +6098,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.1',
+    _version: '12.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
