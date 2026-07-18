@@ -752,6 +752,8 @@ function dashboardSettingsPanelHtml() {
     const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; '
         + 'display: flex; flex-direction: column; gap: 12px;';
     const hintStyle = dashSettingsHintStyle();
+    const dividerHtml = '<hr style="width: 100%; margin: 0; border: none; '
+        + 'border-top: 1px solid var(--border, #e2e8f0);">';
     return ''
         + '<div id="wf-dash-settings-panel" style="' + panelScroll + '" data-fleet-dash-settings="1">'
         + '<div id="wf-dash-settings-content" style="display: flex; flex-direction: column; gap: 16px; '
@@ -765,6 +767,7 @@ function dashboardSettingsPanelHtml() {
         + '</p>'
         + '<div id="wf-dash-settings-tab-order"></div>'
         + '</section>'
+        + dividerHtml
         + '<section aria-labelledby="wf-dash-settings-ai-heading" style="display: flex; flex-direction: column; gap: 10px;">'
         + '<h3 id="wf-dash-settings-ai-heading" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--foreground, #0f172a);">'
         + 'AI Integration'
@@ -896,7 +899,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order and AI Integration / OpenRouter',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
