@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.11';
+const AI_CHAT_VERSION = '3.0';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 
@@ -61,7 +61,39 @@ function aiChatQuery(root, selector) {
     return root.querySelector(selector);
 }
 
-function aiChatVisibleHistory(state) {
+function aiChatNormalizeDisplayAttachment(att) {
+    if (!att || typeof att !== 'object') return null;
+    if (att.type !== 'verifier-source') return null;
+    const source = String(att.source || '');
+    const verifierId = String(att.verifierId || '').trim();
+    if (!source || !verifierId) return null;
+    return {
+        type: 'verifier-source',
+        taskId: String(att.taskId || ''),
+        taskKey: String(att.taskKey || ''),
+        verifierId,
+        verifierKey: String(att.verifierKey || ''),
+        version: att.version != null ? att.version : null,
+        source,
+    };
+}
+
+function aiChatShortId(value) {
+    const s = String(value || '').trim();
+    if (!s) return '(none)';
+    return s.length > 12 ? s.slice(0, 8) + '…' : s;
+}
+
+function aiChatAttachmentSummary(att) {
+    const a = aiChatNormalizeDisplayAttachment(att);
+    if (!a) return '';
+    let label = 'Verifier · task ' + aiChatShortId(a.taskId)
+        + ' · verifier ' + aiChatShortId(a.verifierId);
+    if (a.version != null) label += ' · v' + a.version;
+    return label;
+}
+
+function aiChatVisibleStateMessages(state) {
     const out = [];
     const messages = (state && state.messages) || [];
     for (let i = 0; i < messages.length; i++) {
@@ -70,6 +102,16 @@ function aiChatVisibleHistory(state) {
         if (msg.role === 'system') continue;
         if (msg.role === 'assistant' && !(msg.content || '').trim() && msg.streaming) continue;
         if (msg.role === 'assistant' && !(msg.content || '').trim()) continue;
+        out.push(msg);
+    }
+    return out;
+}
+
+function aiChatVisibleHistory(state) {
+    const out = [];
+    const messages = aiChatVisibleStateMessages(state);
+    for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
         const role = msg.role === 'assistant' ? 'ai' : 'user';
         const text = msg.displayContent != null
             ? String(msg.displayContent)
@@ -77,6 +119,15 @@ function aiChatVisibleHistory(state) {
         out.push({ role, text });
     }
     return out;
+}
+
+function aiChatApplyUserMessageExtras(userMsg, extras) {
+    if (!userMsg || !extras) return userMsg;
+    if (extras.displayContent != null) userMsg.displayContent = extras.displayContent;
+    if (extras.hideInUi) userMsg.hideInUi = true;
+    const attachment = aiChatNormalizeDisplayAttachment(extras.displayAttachment);
+    if (attachment) userMsg.displayAttachment = attachment;
+    return userMsg;
 }
 
 function aiChatApplyTheme(el, opts) {
@@ -145,6 +196,29 @@ function aiChatApplyTheme(el, opts) {
         + '.wf-chat-copy:hover { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #e2e8f0; }'
         + '.wf-chat-copy--ok { opacity: 1 !important; color: #16a34a !important; }'
         + '.wf-chat-copy--fail { opacity: 1 !important; color: #dc2626 !important; }'
+        + '.wf-chat-attach {'
+        + '  display: block; width: 100%; max-width: 100%; box-sizing: border-box;'
+        + '  margin: 6px 0 0; padding: 0;'
+        + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
+        + '  border-radius: 10px;'
+        + '  background: color-mix(in srgb, var(--muted, #f1f5f9) 40%, transparent);'
+        + '  color: var(--foreground, #0f172a);'
+        + '}'
+        + '.wf-chat-attach > summary {'
+        + '  cursor: pointer; list-style: none; user-select: none;'
+        + '  padding: 8px 10px; font-size: 11px; font-weight: 600; color: #94a3b8;'
+        + '}'
+        + '.wf-chat-attach > summary::-webkit-details-marker { display: none; }'
+        + '.wf-chat-attach > summary::before {'
+        + '  content: "▸"; display: inline-block; width: 1em; margin-right: 4px;'
+        + '}'
+        + '.wf-chat-attach[open] > summary::before { content: "▾"; }'
+        + '.wf-chat-attach-body {'
+        + '  margin: 0; padding: 0 10px 10px; max-height: 240px; overflow: auto;'
+        + '  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);'
+        + '  font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;'
+        + '  color: var(--foreground, #0f172a);'
+        + '}'
         + (o.floatingInput
             ? '#chat-view { position: relative !important; }'
                 + '#messages { height: 100% !important; padding-bottom: 76px !important;'
@@ -250,6 +324,46 @@ function aiChatMessageRows(shadowRoot) {
     });
 }
 
+function aiChatReconcileAttachment(row, attachment) {
+    if (!row) return;
+    const bubble = row.querySelector('.message-bubble');
+    if (!bubble) return;
+    const inner = bubble.closest('.inner-message-container') || row;
+    const existing = inner.querySelector('[data-wf-chat-attach="1"]');
+    const att = aiChatNormalizeDisplayAttachment(attachment);
+    if (!att) {
+        if (existing) existing.remove();
+        return;
+    }
+    const summaryText = aiChatAttachmentSummary(att);
+    let details = existing;
+    if (!details) {
+        details = document.createElement('details');
+        details.setAttribute('data-wf-chat-attach', '1');
+        details.className = 'wf-chat-attach';
+        const summary = document.createElement('summary');
+        summary.setAttribute('data-wf-chat-attach-summary', '1');
+        details.appendChild(summary);
+        const body = document.createElement('pre');
+        body.setAttribute('data-wf-chat-attach-body', '1');
+        body.className = 'wf-chat-attach-body';
+        details.appendChild(body);
+        // Place under the bubble (and above the copy button when present).
+        const copyBtn = inner.querySelector('[data-wf-chat-copy="1"]');
+        if (copyBtn) inner.insertBefore(details, copyBtn);
+        else if (bubble.nextSibling) inner.insertBefore(details, bubble.nextSibling);
+        else inner.appendChild(details);
+    }
+    const summaryEl = details.querySelector('[data-wf-chat-attach-summary="1"]');
+    const bodyEl = details.querySelector('[data-wf-chat-attach-body="1"]');
+    if (summaryEl && summaryEl.textContent !== summaryText) {
+        summaryEl.textContent = summaryText;
+    }
+    if (bodyEl && bodyEl.textContent !== att.source) {
+        bodyEl.textContent = att.source;
+    }
+}
+
 function aiChatInjectCopyButton(el, row, opts) {
     const o = aiChatResolveOpts(opts);
     if (!row || row.querySelector('[data-wf-chat-copy="1"]')) return;
@@ -269,11 +383,16 @@ function aiChatInjectCopyButton(el, row, opts) {
         const index = rows.indexOf(row);
         let markdown = '';
         try {
-            const messages = typeof el.getMessages === 'function' ? el.getMessages() : [];
-            if (index >= 0 && messages && messages[index] && messages[index].text != null) {
-                markdown = String(messages[index].text);
+            const stateMsgs = aiChatVisibleStateMessages(el._wfAiChatState);
+            if (index >= 0 && stateMsgs[index] && stateMsgs[index].content != null) {
+                markdown = String(stateMsgs[index].content);
             } else {
-                markdown = String((bubble.textContent || '')).trim();
+                const messages = typeof el.getMessages === 'function' ? el.getMessages() : [];
+                if (index >= 0 && messages && messages[index] && messages[index].text != null) {
+                    markdown = String(messages[index].text);
+                } else {
+                    markdown = String((bubble.textContent || '')).trim();
+                }
             }
             if (!markdown) throw new Error('Message is empty');
             await navigator.clipboard.writeText(markdown);
@@ -294,6 +413,19 @@ function aiChatInjectCopyButton(el, row, opts) {
     }
 }
 
+function aiChatSyncRowEnhancements(el, opts) {
+    const shadow = el && el.shadowRoot;
+    if (!shadow) return;
+    const rows = aiChatMessageRows(shadow);
+    const stateMsgs = aiChatVisibleStateMessages(el._wfAiChatState);
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const msg = stateMsgs[i] || null;
+        aiChatReconcileAttachment(row, msg && msg.displayAttachment);
+        aiChatInjectCopyButton(el, row, opts);
+    }
+}
+
 function aiChatSetupCopyButtons(el, opts) {
     if (!el || el._wfCopyButtonsWired === '1') return;
     const attach = () => {
@@ -303,12 +435,7 @@ function aiChatSetupCopyButtons(el, opts) {
             try { el._wfCopyObserver.disconnect(); } catch (_e) { /* ignore */ }
             el._wfCopyObserver = null;
         }
-        const sync = () => {
-            const rows = aiChatMessageRows(shadow);
-            for (let i = 0; i < rows.length; i++) {
-                aiChatInjectCopyButton(el, rows[i], opts);
-            }
-        };
+        const sync = () => { aiChatSyncRowEnhancements(el, opts); };
         const observer = new MutationObserver(() => { sync(); });
         observer.observe(shadow, { childList: true, subtree: true });
         el._wfCopyObserver = observer;
@@ -550,6 +677,7 @@ async function aiChatHandleConnect(root, state, body, signals) {
     const userText = turnExtras.userText != null ? String(turnExtras.userText) : uiText;
     const userContent = turnExtras.userContent != null ? String(turnExtras.userContent) : userText;
     const displayContent = turnExtras.displayContent != null ? turnExtras.displayContent : null;
+    const displayAttachment = aiChatNormalizeDisplayAttachment(turnExtras.displayAttachment);
     const hideInUi = !!(turnExtras.hideInUi);
     const systemContent = turnExtras.systemContent != null ? turnExtras.systemContent : null;
     const apiMessagesOverride = turnExtras.apiMessages;
@@ -567,12 +695,14 @@ async function aiChatHandleConnect(root, state, body, signals) {
     }
 
     if (userContent) {
-        const userMsg = { role: 'user', content: userContent };
-        if (displayContent != null) userMsg.displayContent = displayContent;
-        if (hideInUi) userMsg.hideInUi = true;
+        const userMsg = aiChatApplyUserMessageExtras(
+            { role: 'user', content: userContent },
+            { displayContent, displayAttachment, hideInUi }
+        );
         state.messages.push(userMsg);
     }
     state.messages.push({ role: 'assistant', content: '', streaming: true });
+    try { aiChatSyncRowEnhancements(state._deepChat, wire); } catch (_e) { /* ignore */ }
 
     const apiMessages = apiMessagesOverride
         || aiChatBuildApiMessages(state, { systemContent });
@@ -609,6 +739,7 @@ async function aiChatHandleConnect(root, state, body, signals) {
                 Logger.warn(wire.logTag + ': onTurnDone failed', cbErr);
             }
         }
+        try { aiChatSyncRowEnhancements(state._deepChat, wire); } catch (_e) { /* ignore */ }
         if (pendingResolve) pendingResolve(full || '');
     } catch (err) {
         const last = state.messages[state.messages.length - 1];
@@ -760,11 +891,17 @@ function aiChatExportConversation(state, opts) {
         metadata: o.exportMetadata || undefined,
         messages: (state.messages || [])
             .filter((msg) => msg && !msg.streaming && (msg.role === 'user' || msg.role === 'assistant'))
-            .map((msg) => ({
-                role: msg.role,
-                content: String(msg.content || ''),
-                hiddenInUi: msg.hideInUi ? true : undefined,
-            })),
+            .map((msg) => {
+                const out = {
+                    role: msg.role,
+                    content: String(msg.content || ''),
+                    hiddenInUi: msg.hideInUi ? true : undefined,
+                };
+                if (msg.displayContent != null) out.displayContent = String(msg.displayContent);
+                const attachment = aiChatNormalizeDisplayAttachment(msg.displayAttachment);
+                if (attachment) out.displayAttachment = attachment;
+                return out;
+            }),
     };
     try {
         const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -798,6 +935,9 @@ async function aiChatSendTurn(root, state, opts) {
     const userText = opts && opts.userText != null ? String(opts.userText) : '';
     const userContent = opts && opts.userContent != null ? String(opts.userContent) : userText;
     const displayContent = opts && opts.displayContent != null ? opts.displayContent : null;
+    const displayAttachment = aiChatNormalizeDisplayAttachment(
+        opts && opts.displayAttachment
+    );
     const hideInUi = !!(opts && opts.hideInUi);
     const fromHandler = !!(root && root._wfAiChatFromHandler);
     const signals = root && root._wfAiChatSignals;
@@ -805,12 +945,14 @@ async function aiChatSendTurn(root, state, opts) {
     if (fromHandler && signals) {
         // Deep Chat already rendered the user bubble; stream into signals.
         if (userContent) {
-            const userMsg = { role: 'user', content: userContent };
-            if (displayContent != null) userMsg.displayContent = displayContent;
-            if (hideInUi) userMsg.hideInUi = true;
+            const userMsg = aiChatApplyUserMessageExtras(
+                { role: 'user', content: userContent },
+                { displayContent, displayAttachment, hideInUi }
+            );
             state.messages.push(userMsg);
         }
         state.messages.push({ role: 'assistant', content: '', streaming: true });
+        try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
         const systemContent = opts && opts.systemContent != null ? opts.systemContent : null;
         const apiMessages = (opts && opts.apiMessages)
             || aiChatBuildApiMessages(state, { systemContent });
@@ -843,6 +985,7 @@ async function aiChatSendTurn(root, state, opts) {
                     Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
                 }
             }
+            try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
             return full || '';
         } catch (err) {
             const last = state.messages[state.messages.length - 1];
@@ -863,8 +1006,10 @@ async function aiChatSendTurn(root, state, opts) {
     // Hidden machine payloads: stream without a visible user bubble (matches prior UX).
     if (hideInUi) {
         if (userContent) {
-            const userMsg = { role: 'user', content: userContent, hideInUi: true };
-            if (displayContent != null) userMsg.displayContent = displayContent;
+            const userMsg = aiChatApplyUserMessageExtras(
+                { role: 'user', content: userContent, hideInUi: true },
+                { displayContent, displayAttachment, hideInUi: true }
+            );
             state.messages.push(userMsg);
         }
         state.messages.push({ role: 'assistant', content: '', streaming: true });
@@ -952,6 +1097,7 @@ async function aiChatSendTurn(root, state, opts) {
         userText,
         userContent,
         displayContent,
+        displayAttachment,
         hideInUi: false,
         systemContent,
         apiMessages: apiMessagesOverride,
@@ -1003,7 +1149,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.12',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

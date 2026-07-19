@@ -241,7 +241,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.4',
+    _version: '9.5',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4983,6 +4983,28 @@ const plugin = {
     },
 
 
+    _buildVerifierChatFetchContext(result) {
+        if (!result || !String(result.source || '').trim()) return null;
+        return {
+            taskId: result.taskId || '',
+            taskKey: result.taskKey || '',
+            verifierId: result.verifierId || '',
+            verifierKey: result.verifierKey || '',
+            version: result.version != null ? result.version : null,
+            source: String(result.source || ''),
+        };
+    },
+
+    _notifyVerifierChatFetchContext(modal, ctx) {
+        const ui = Context.verifierFetcherUi;
+        if (!ui || typeof ui.setChatFetchContext !== 'function') return;
+        try {
+            ui.setChatFetchContext(modal, ctx || null);
+        } catch (err) {
+            Logger.warn('ops-tab: verifier chat fetch context notify failed', err);
+        }
+    },
+
     async _handleOpsVerifierFetch(modal) {
         const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInput');
         const fetchBtn = this._opsQuery(modal, '#wf-ops-fetch-verifier', 'verifierFetch');
@@ -4995,6 +5017,7 @@ const plugin = {
             }
             this._setOpsVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
             void this._setOpsVerifierOutput(modal, '');
+            this._notifyVerifierChatFetchContext(modal, null);
             this._captureOpsTabState(modal);
             return;
         }
@@ -5009,6 +5032,7 @@ const plugin = {
         this._setOpsVerifierStatus(modal, 'Fetching verifier code...');
         this._clearOpsVerifierVersionPicker(modal);
         void this._setOpsVerifierOutput(modal, '');
+        this._notifyVerifierChatFetchContext(modal, null);
         Logger.debug('ops-tab: handle verifier fetch', {
             input: (input.value || '').slice(0, 120),
             parsed: {
@@ -5024,11 +5048,13 @@ const plugin = {
             this._setOpsVerifierVersionPicker(modal, result, result.versions || [], result.selectedVersion);
             await this._setOpsVerifierOutput(modal, result.source);
             this._setOpsVerifierStatus(modal, '');
+            this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext(result));
             const versionText = result.version != null ? 'v' + result.version : 'latest version';
             Logger.log('ops-tab: verifier fetched ' + result.verifierId + ' ' + versionText);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             this._setOpsVerifierStatus(modal, message, true);
+            this._notifyVerifierChatFetchContext(modal, null);
             Logger.warn('ops-tab: verifier fetch failed', e);
         } finally {
             if (fetchBtn) {
@@ -5050,14 +5076,17 @@ const plugin = {
         state.selectedVersion = version;
         select.disabled = true;
         this._setOpsVerifierStatus(modal, 'Loading verifier v' + version + '...');
+        this._notifyVerifierChatFetchContext(modal, null);
         try {
             const result = await this._fetchOpsVerifierCodeForVersion(state.resolved, version);
             await this._setOpsVerifierOutput(modal, result.source);
             this._setOpsVerifierStatus(modal, '');
+            this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext(result));
             Logger.log('ops-tab: verifier version selected ' + result.verifierId + ' v' + (result.version != null ? result.version : version));
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             this._setOpsVerifierStatus(modal, message, true);
+            this._notifyVerifierChatFetchContext(modal, null);
             Logger.warn('ops-tab: verifier version change failed', e);
         } finally {
             select.disabled = false;
@@ -5265,6 +5294,15 @@ const plugin = {
             );
         } else {
             this._opsVerifierFetchState = null;
+        }
+        if (state.verifierOutput && state.verifierFetchState && state.verifierFetchState.resolved) {
+            this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext({
+                ...state.verifierFetchState.resolved,
+                version: state.verifierFetchState.selectedVersion,
+                source: state.verifierOutput,
+            }));
+        } else if (!state.verifierOutput) {
+            this._notifyVerifierChatFetchContext(modal, null);
         }
         if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.restoreScratchpadTabState === 'function') {
             Context.verifierFetcherUi.restoreScratchpadTabState(modal, state.verifierScratchpad || null);

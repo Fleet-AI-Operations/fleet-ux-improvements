@@ -196,6 +196,89 @@ function getVerifierChatState(modal) {
     return modal._wfVerifierChatState;
 }
 
+function setVerifierChatFetchContext(modal, ctx) {
+    if (!modal) return;
+    if (!ctx || !String(ctx.verifierId || '').trim() || !String(ctx.source || '').trim()) {
+        modal._wfVerifierChatPending = null;
+        Logger.debug('verifier-fetcher: chat fetch context cleared');
+        return;
+    }
+    modal._wfVerifierChatPending = {
+        taskId: String(ctx.taskId || ''),
+        taskKey: String(ctx.taskKey || ''),
+        verifierId: String(ctx.verifierId || ''),
+        verifierKey: String(ctx.verifierKey || ''),
+        version: ctx.version != null ? ctx.version : null,
+        source: String(ctx.source || ''),
+    };
+    Logger.debug('verifier-fetcher: chat fetch context set · verifier '
+        + modal._wfVerifierChatPending.verifierId
+        + (modal._wfVerifierChatPending.version != null
+            ? ' v' + modal._wfVerifierChatPending.version
+            : ''));
+}
+
+function getVerifierChatFetchContext(modal) {
+    return modal && modal._wfVerifierChatPending ? modal._wfVerifierChatPending : null;
+}
+
+function verifierChatHasAttachedId(state, verifierId) {
+    const id = String(verifierId || '').trim();
+    if (!id || !state || !Array.isArray(state.messages)) return false;
+    for (let i = 0; i < state.messages.length; i++) {
+        const msg = state.messages[i];
+        const att = msg && msg.displayAttachment;
+        if (att && att.type === 'verifier-source'
+            && String(att.verifierId || '').trim() === id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function buildVerifierSourceApiBlock(ctx) {
+    const taskId = String(ctx.taskId || '').trim() || '(none)';
+    const verifierId = String(ctx.verifierId || '').trim() || '(none)';
+    const versionLine = ctx.version != null ? '- Version: ' + ctx.version + '\n' : '';
+    return '## Verifier context\n\n'
+        + '- Task ID: ' + taskId + '\n'
+        + '- Verifier ID: ' + verifierId + '\n'
+        + versionLine
+        + '\n```python\n' + String(ctx.source || '') + '\n```';
+}
+
+function buildVerifierDisplayAttachment(ctx) {
+    return {
+        type: 'verifier-source',
+        taskId: String(ctx.taskId || ''),
+        taskKey: String(ctx.taskKey || ''),
+        verifierId: String(ctx.verifierId || ''),
+        verifierKey: String(ctx.verifierKey || ''),
+        version: ctx.version != null ? ctx.version : null,
+        source: String(ctx.source || ''),
+    };
+}
+
+/**
+ * Attach the current fetched verifier to the next turn when its ID is not
+ * already present in the transcript. Dedupes by verifier ID only.
+ */
+function takeVerifierAttachmentForTurn(modal, state) {
+    const pending = getVerifierChatFetchContext(modal);
+    if (!pending || !String(pending.verifierId || '').trim() || !String(pending.source || '').trim()) {
+        return null;
+    }
+    if (verifierChatHasAttachedId(state, pending.verifierId)) {
+        Logger.debug('verifier-fetcher: skip verifier attach — already in chat · '
+            + pending.verifierId);
+        return null;
+    }
+    Logger.log('verifier-fetcher: attaching verifier context · '
+        + pending.verifierId
+        + (pending.version != null ? ' v' + pending.version : ''));
+    return buildVerifierDisplayAttachment(pending);
+}
+
 function renderVerifierChatMessages(modal) {
     const chat = verifierChatApi();
     const state = getVerifierChatState(modal);
@@ -228,9 +311,17 @@ async function sendVerifierChatMessage(modal, userText) {
     writeVerifierChatOpenPref(true);
     syncVerifierAiUi(modal);
 
+    const attachment = takeVerifierAttachmentForTurn(modal, state);
+    const userContent = attachment
+        ? (buildVerifierSourceApiBlock(attachment) + '\n\n' + text)
+        : text;
+
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
             userText: text,
+            userContent,
+            displayContent: text,
+            displayAttachment: attachment,
             onTurnDone: (turn) => verifierRecordTurn(modal, turn),
         }));
     } catch (_err) {
@@ -271,19 +362,32 @@ async function decodeVerifierOutput(modal) {
     syncVerifierAiUi(modal);
     if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
 
-    const userPayload =
-        '## Verifier source\n\n```python\n' + codeText + '\n```\n\n'
-        + '## Verifier Output\n\n```\n' + outputText + '\n```';
+    const attachment = takeVerifierAttachmentForTurn(modal, state);
+    const parts = [];
+    if (attachment) {
+        parts.push(buildVerifierSourceApiBlock(attachment));
+    } else {
+        const pending = getVerifierChatFetchContext(modal);
+        const alreadyAttached = pending
+            ? verifierChatHasAttachedId(state, pending.verifierId)
+            : false;
+        // Safety net: code is on screen but fetch-context notify was missed and
+        // no verifier of this ID is in the transcript yet.
+        if (!alreadyAttached && codeText && !(pending && pending.verifierId)) {
+            parts.push('## Verifier source\n\n```python\n' + codeText + '\n```');
+        }
+    }
+    parts.push('## Verifier Output\n\n```\n' + outputText + '\n```');
+    const userPayload = parts.join('\n\n');
 
-    Logger.log('verifier-fetcher: Diagnose Issues started');
+    Logger.log('verifier-fetcher: Diagnose Issues started'
+        + (attachment ? ' · with verifier attach' : ' · without new verifier attach'));
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
             userContent: userPayload,
             displayContent: 'Diagnose Issues',
-            apiMessages: [
-                { role: 'system', content: DECODE_SYSTEM_PROMPT },
-                { role: 'user', content: userPayload },
-            ],
+            displayAttachment: attachment,
+            systemContent: DECODE_SYSTEM_PROMPT,
             onTurnDone: (turn) => verifierRecordTurn(modal, Object.assign({}, turn, {
                 userPreview: 'Diagnose Issues',
             })),
@@ -793,7 +897,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '5.1',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -808,7 +912,8 @@ const plugin = {
             syncOutputToolbar: (modal) => syncVerifierOutputToolbar(modal),
             syncAiUi: (modal) => syncVerifierAiUi(modal),
             captureScratchpadTabState: (modal) => captureVerifierScratchpadTabState(modal),
-            restoreScratchpadTabState: (modal, state) => restoreVerifierScratchpadTabState(modal, state)
+            restoreScratchpadTabState: (modal, state) => restoreVerifierScratchpadTabState(modal, state),
+            setChatFetchContext: (modal, ctx) => setVerifierChatFetchContext(modal, ctx),
         };
         Context.dashboard.registerTab({
             id: 'verifier-fetcher',
@@ -825,6 +930,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v5.0');
+        Logger.log('verifier-fetcher: tab registered v6.0');
     }
 };

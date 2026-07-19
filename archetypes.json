@@ -1,7 +1,7 @@
 {
   "version": "12.4.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.96",
+  "archetypesVersion": "14.97",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,8 +28,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.4",
-      "hash": "sha256-829337e8722cfa23a8111090270019d983dc6a4ad6174cd073edcee1a50547ea",
+      "version": "9.5",
+      "hash": "sha256-63f8bc6a63a603651cfdc3819dd44cafdd4d8a84b2fcb0eb20fabe9623de3f56",
       "log": false
     },
     {
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "2.12",
-      "hash": "sha256-a54072d2ca54b1280db231a611c459d39500000c409d19d4e6641ae1cd38e8a9",
+      "version": "3.0",
+      "hash": "sha256-fcbf8335dd633520e5b5ef6a783d5a1a72b73abc347ac96f0319ee8eca19e964",
       "log": false
     },
     {
@@ -230,8 +230,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "5.1",
-      "hash": "sha256-a08b1d2e7baab7240b8b23614f937268267b5756c75b724ea6bf53b80fdeb7ae",
+      "version": "6.0",
+      "hash": "sha256-cf489a0cf96736c79f96b88e59f8f13aa777bf41259373d2f3492c26c67ed316",
       "log": false
     },
     {
