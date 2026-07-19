@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.0';
+const AI_CHAT_VERSION = '3.1';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 
@@ -218,6 +218,12 @@ function aiChatApplyTheme(el, opts) {
         + '  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);'
         + '  font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;'
         + '  color: var(--foreground, #0f172a);'
+        + '}'
+        // The padded text input is taller than Deep Chat's assumed height, which
+        // leaves the bottom-pinned send/stop button sitting low. Center it.
+        + '#input .input-button {'
+        + '  top: 50% !important; bottom: auto !important;'
+        + '  transform: translateY(-50%) !important;'
         + '}'
         + (o.floatingInput
             ? '#chat-view { position: relative !important; }'
@@ -1149,7 +1155,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
