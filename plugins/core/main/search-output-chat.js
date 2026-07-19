@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '1.1';
+const SEARCH_CHAT_VERSION = '1.2';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 
@@ -139,6 +139,475 @@ function searchChatTruncate(text, maxChars) {
     const s = String(text == null ? '' : text);
     if (s.length <= maxChars) return s;
     return s.slice(0, Math.max(0, maxChars - 1)) + '…';
+}
+
+const SEARCH_CHAT_STOPWORDS = new Set([
+    'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'else', 'when', 'at', 'by',
+    'for', 'with', 'about', 'against', 'between', 'into', 'through', 'during', 'before',
+    'after', 'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off',
+    'over', 'under', 'again', 'further', 'once', 'here', 'there', 'all', 'any', 'both',
+    'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only',
+    'own', 'same', 'so', 'than', 'too', 'very', 'can', 'will', 'just', 'don', 'should',
+    'now', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
+    'do', 'does', 'did', 'of', 'as', 'it', 'its', 'this', 'that', 'these', 'those',
+    'i', 'you', 'he', 'she', 'we', 'they', 'me', 'him', 'her', 'us', 'them',
+]);
+
+function searchChatNormalizeText(text) {
+    return String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+}
+
+function searchChatTokenizeWords(text) {
+    const raw = String(text == null ? '' : text).toLowerCase();
+    const parts = raw.match(/[a-z0-9_]+/g) || [];
+    const out = [];
+    for (let i = 0; i < parts.length; i++) {
+        const t = parts[i];
+        if (t.length < 2) continue;
+        if (SEARCH_CHAT_STOPWORDS.has(t)) continue;
+        out.push(t);
+    }
+    return out;
+}
+
+function searchChatTokenSet(text) {
+    return new Set(searchChatTokenizeWords(text));
+}
+
+function searchChatJaccard(setA, setB) {
+    const a = setA instanceof Set ? setA : new Set(setA || []);
+    const b = setB instanceof Set ? setB : new Set(setB || []);
+    if (!a.size && !b.size) return 1;
+    if (!a.size || !b.size) return 0;
+    let inter = 0;
+    for (const t of a) {
+        if (b.has(t)) inter += 1;
+    }
+    const union = a.size + b.size - inter;
+    return union > 0 ? inter / union : 0;
+}
+
+function searchChatPromptTextForItem(item, versionNo) {
+    const task = item && item.task;
+    if (!task) return '';
+    if (versionNo != null && versionNo !== '' && Array.isArray(task.promptVersions)) {
+        const want = Number(versionNo);
+        for (let i = 0; i < task.promptVersions.length; i++) {
+            const v = task.promptVersions[i];
+            const n = v.displayVersionNo != null ? v.displayVersionNo : v.versionNo;
+            if (Number(n) === want && v.prompt != null) return String(v.prompt);
+        }
+    }
+    return String(task.prompt || '');
+}
+
+function searchChatLcsSimilarity(textA, textB, granularity) {
+    const eng = Context.diffEngine;
+    if (!eng || typeof eng.similarityPercent !== 'function') return null;
+    try {
+        const result = eng.similarityPercent(String(textA || ''), String(textB || ''), {
+            granularity: granularity || 'word',
+        });
+        const pct = result && Number.isFinite(result.percent) ? result.percent : null;
+        return pct == null ? null : Math.round(pct * 100) / 100;
+    } catch (err) {
+        Logger.warn(PLUGIN_ID + ': LCS similarity failed', err);
+        return null;
+    }
+}
+
+function searchChatPairMetrics(textA, textB, opts) {
+    const o = opts || {};
+    const a = String(textA || '');
+    const b = String(textB || '');
+    const setA = searchChatTokenSet(a);
+    const setB = searchChatTokenSet(b);
+    let shared = 0;
+    const sharedSample = [];
+    for (const t of setA) {
+        if (setB.has(t)) {
+            shared += 1;
+            if (sharedSample.length < 12) sharedSample.push(t);
+        }
+    }
+    const jaccard = searchChatJaccard(setA, setB);
+    const out = {
+        jaccard: Math.round(jaccard * 10000) / 10000,
+        charsA: a.length,
+        charsB: b.length,
+        wordsA: searchChatTokenizeWords(a).length,
+        wordsB: searchChatTokenizeWords(b).length,
+        uniqueTokensA: setA.size,
+        uniqueTokensB: setB.size,
+        sharedTokens: shared,
+        onlyA: setA.size - shared,
+        onlyB: setB.size - shared,
+        sharedTokenSample: sharedSample,
+    };
+    if (o.includeLcs !== false) {
+        out.lcsSimilarity = searchChatLcsSimilarity(a, b, o.granularity || 'word');
+    }
+    return out;
+}
+
+function searchChatLineDiffCounts(textA, textB) {
+    const aLines = String(textA || '').split('\n');
+    const bLines = String(textB || '').split('\n');
+    const setA = new Map();
+    for (let i = 0; i < aLines.length; i++) {
+        const line = aLines[i];
+        setA.set(line, (setA.get(line) || 0) + 1);
+    }
+    let equal = 0;
+    let add = 0;
+    const bRemain = new Map();
+    for (let i = 0; i < bLines.length; i++) {
+        const line = bLines[i];
+        bRemain.set(line, (bRemain.get(line) || 0) + 1);
+    }
+    for (const [line, countA] of setA) {
+        const countB = bRemain.get(line) || 0;
+        const shared = Math.min(countA, countB);
+        equal += shared;
+        // removals counted below
+        bRemain.set(line, countB - shared);
+        setA.set(line, countA - shared);
+    }
+    let remove = 0;
+    for (const count of setA.values()) remove += count;
+    for (const count of bRemain.values()) add += count;
+    return {
+        linesA: aLines.length,
+        linesB: bLines.length,
+        equalLines: equal,
+        addedLines: add,
+        removedLines: remove,
+    };
+}
+
+function searchChatCompactDiffSummary(textA, textB, opts) {
+    const o = opts || {};
+    const a = String(textA || '');
+    const b = String(textB || '');
+    const metrics = searchChatPairMetrics(a, b, {
+        includeLcs: true,
+        granularity: o.granularity || 'word',
+    });
+    const lineCounts = searchChatLineDiffCounts(a, b);
+    const summary = {
+        metrics,
+        lineCounts,
+        identical: a === b,
+    };
+    if (o.includeHunks) {
+        const maxChars = Math.max(200, Number(o.maxHunkChars) || 800);
+        const aLines = a.split('\n');
+        const bLines = b.split('\n');
+        const setB = new Set(bLines);
+        const setA = new Set(aLines);
+        const removed = [];
+        const added = [];
+        for (let i = 0; i < aLines.length && removed.join('\n').length < maxChars; i++) {
+            if (!setB.has(aLines[i]) && String(aLines[i]).trim()) {
+                removed.push('- ' + searchChatTruncate(aLines[i], 160));
+            }
+        }
+        for (let i = 0; i < bLines.length && added.join('\n').length < maxChars; i++) {
+            if (!setA.has(bLines[i]) && String(bLines[i]).trim()) {
+                added.push('+ ' + searchChatTruncate(bLines[i], 160));
+            }
+        }
+        summary.hunkPreview = {
+            removedSample: removed.slice(0, 12),
+            addedSample: added.slice(0, 12),
+            note: 'Unordered line samples (not a full alignment). Prefer metrics for ranking.',
+        };
+    }
+    return summary;
+}
+
+function searchChatAnalyzePromptStats(dash, args, settings) {
+    const a = args || {};
+    const items = searchChatGetScopeItems(dash);
+    let targets = [];
+    if (Array.isArray(a.taskIds) && a.taskIds.length) {
+        for (let i = 0; i < a.taskIds.length && targets.length < settings.maxResultsPerCall; i++) {
+            const it = searchChatFindItem(dash, a.taskIds[i]);
+            if (it) targets.push(it);
+        }
+    } else {
+        const sample = searchChatClampInt(a.sampleSize, 1, settings.maxResultsPerCall, Math.min(10, items.length || 1));
+        const n = Math.min(sample, items.length);
+        const used = new Set();
+        while (targets.length < n && used.size < items.length) {
+            const i = Math.floor(Math.random() * items.length);
+            if (used.has(i)) continue;
+            used.add(i);
+            targets.push(items[i]);
+        }
+    }
+    const rows = targets.map((it) => {
+        const prompt = searchChatPromptTextForItem(it);
+        const tokens = searchChatTokenizeWords(prompt);
+        const set = new Set(tokens);
+        const freq = new Map();
+        for (let i = 0; i < tokens.length; i++) {
+            freq.set(tokens[i], (freq.get(tokens[i]) || 0) + 1);
+        }
+        const topTokens = Array.from(freq.entries())
+            .sort((x, y) => y[1] - x[1])
+            .slice(0, 8)
+            .map(([token, count]) => ({ token, count }));
+        const row = {
+            taskId: it.task && it.task.id,
+            key: (it.task && it.task.key) || '',
+            chars: prompt.length,
+            words: tokens.length,
+            uniqueTokens: set.size,
+            topTokens,
+        };
+        if (a.includeExcerpt) {
+            row.excerpt = searchChatTruncate(prompt, Math.min(400, settings.maxPromptChars));
+        }
+        return row;
+    });
+    return { count: rows.length, stats: rows };
+}
+
+function searchChatFindSimilarPrompts(dash, args, settings) {
+    const a = args || {};
+    const limit = searchChatClampInt(a.limit, 1, settings.maxResultsPerCall, Math.min(15, settings.maxResultsPerCall));
+    const minJaccard = Number.isFinite(Number(a.minJaccard)) ? Number(a.minJaccard) : 0;
+    let sourceText = '';
+    let sourceTaskId = null;
+    if (a.taskId) {
+        const item = searchChatFindItem(dash, a.taskId);
+        if (!item) return { error: 'taskId not found in current results', taskId: a.taskId };
+        sourceText = searchChatPromptTextForItem(item);
+        sourceTaskId = item.task && item.task.id;
+    } else if (a.query != null && String(a.query).trim()) {
+        sourceText = String(a.query);
+    } else {
+        return { error: 'taskId or query is required' };
+    }
+    const sourceSet = searchChatTokenSet(sourceText);
+    if (!sourceSet.size && !String(sourceText).trim()) {
+        return { error: 'Source prompt/query is empty', results: [] };
+    }
+    const items = searchChatGetScopeItems(dash);
+    const ranked = [];
+    for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const task = it && it.task;
+        if (!task) continue;
+        if (sourceTaskId && String(task.id) === String(sourceTaskId)) continue;
+        const prompt = searchChatPromptTextForItem(it);
+        if (!String(prompt).trim()) continue;
+        const jaccard = searchChatJaccard(sourceSet, searchChatTokenSet(prompt));
+        if (jaccard < minJaccard) continue;
+        ranked.push({
+            taskId: task.id,
+            key: task.key || '',
+            worker: (task.author && (task.author.name || task.author.id)) || '',
+            jaccard: Math.round(jaccard * 10000) / 10000,
+            chars: prompt.length,
+            _prompt: prompt,
+        });
+    }
+    ranked.sort((x, y) => y.jaccard - x.jaccard || x.chars - y.chars);
+    const top = ranked.slice(0, limit);
+    if (a.refineWithLcs) {
+        for (let i = 0; i < top.length; i++) {
+            top[i].lcsSimilarity = searchChatLcsSimilarity(sourceText, top[i]._prompt, 'word');
+        }
+    }
+    return {
+        sourceTaskId,
+        query: a.taskId ? null : String(a.query || '').slice(0, 120),
+        minJaccard,
+        count: top.length,
+        results: top.map((r) => {
+            const row = {
+                taskId: r.taskId,
+                key: r.key,
+                worker: r.worker,
+                jaccard: r.jaccard,
+                chars: r.chars,
+            };
+            if (r.lcsSimilarity != null) row.lcsSimilarity = r.lcsSimilarity;
+            return row;
+        }),
+    };
+}
+
+function searchChatFindNearDuplicates(dash, args, settings) {
+    const a = args || {};
+    const minJaccard = Number.isFinite(Number(a.minJaccard)) ? Number(a.minJaccard) : 0.85;
+    const limit = searchChatClampInt(a.limit, 1, settings.maxResultsPerCall, Math.min(25, settings.maxResultsPerCall));
+    const items = searchChatGetScopeItems(dash);
+    const prepared = [];
+    for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const task = it && it.task;
+        if (!task) continue;
+        const prompt = searchChatPromptTextForItem(it);
+        if (!String(prompt).trim()) continue;
+        prepared.push({
+            taskId: task.id,
+            key: task.key || '',
+            worker: (task.author && (task.author.name || task.author.id)) || '',
+            set: searchChatTokenSet(prompt),
+            chars: prompt.length,
+        });
+    }
+    const pairs = [];
+    for (let i = 0; i < prepared.length; i++) {
+        for (let j = i + 1; j < prepared.length; j++) {
+            const jaccard = searchChatJaccard(prepared[i].set, prepared[j].set);
+            if (jaccard < minJaccard) continue;
+            pairs.push({
+                a: {
+                    taskId: prepared[i].taskId,
+                    key: prepared[i].key,
+                    worker: prepared[i].worker,
+                },
+                b: {
+                    taskId: prepared[j].taskId,
+                    key: prepared[j].key,
+                    worker: prepared[j].worker,
+                },
+                jaccard: Math.round(jaccard * 10000) / 10000,
+            });
+        }
+    }
+    pairs.sort((x, y) => y.jaccard - x.jaccard);
+    return {
+        minJaccard,
+        scanned: prepared.length,
+        pairCount: pairs.length,
+        pairs: pairs.slice(0, limit),
+    };
+}
+
+function searchChatComparePrompts(dash, args, settings) {
+    const a = args || {};
+    const idA = String(a.taskIdA || '').trim();
+    const idB = String(a.taskIdB || '').trim();
+    if (!idA || !idB) return { error: 'taskIdA and taskIdB are required' };
+    const itemA = searchChatFindItem(dash, idA);
+    const itemB = searchChatFindItem(dash, idB);
+    if (!itemA) return { error: 'taskIdA not found', taskIdA: idA };
+    if (!itemB) return { error: 'taskIdB not found', taskIdB: idB };
+    const textA = searchChatPromptTextForItem(itemA, a.versionA);
+    const textB = searchChatPromptTextForItem(itemB, a.versionB);
+    const summary = searchChatCompactDiffSummary(textA, textB, {
+        granularity: a.granularity === 'line' ? 'line' : 'word',
+        includeHunks: !!a.includeHunks,
+        maxHunkChars: Math.min(settings.maxPromptChars, 1200),
+    });
+    return {
+        taskIdA: idA,
+        taskIdB: idB,
+        versionA: a.versionA != null ? a.versionA : null,
+        versionB: a.versionB != null ? a.versionB : null,
+        keyA: (itemA.task && itemA.task.key) || '',
+        keyB: (itemB.task && itemB.task.key) || '',
+        summary,
+    };
+}
+
+function searchChatPromptOverlapMatrix(dash, args) {
+    const ids = Array.isArray(args && args.taskIds) ? args.taskIds.map((x) => String(x).trim()).filter(Boolean) : [];
+    if (ids.length < 2) return { error: 'taskIds requires at least 2 ids' };
+    if (ids.length > 12) return { error: 'taskIds capped at 12; got ' + ids.length };
+    const prepared = [];
+    for (let i = 0; i < ids.length; i++) {
+        const it = searchChatFindItem(dash, ids[i]);
+        if (!it || !it.task) {
+            return { error: 'taskId not found: ' + ids[i] };
+        }
+        const prompt = searchChatPromptTextForItem(it);
+        prepared.push({
+            taskId: it.task.id,
+            key: it.task.key || '',
+            set: searchChatTokenSet(prompt),
+        });
+    }
+    const matrix = {};
+    const pairs = [];
+    for (let i = 0; i < prepared.length; i++) {
+        matrix[prepared[i].taskId] = {};
+        for (let j = 0; j < prepared.length; j++) {
+            const jaccard = searchChatJaccard(prepared[i].set, prepared[j].set);
+            const score = Math.round(jaccard * 10000) / 10000;
+            matrix[prepared[i].taskId][prepared[j].taskId] = score;
+            if (j > i) {
+                pairs.push({
+                    a: prepared[i].taskId,
+                    b: prepared[j].taskId,
+                    keyA: prepared[i].key,
+                    keyB: prepared[j].key,
+                    jaccard: score,
+                });
+            }
+        }
+    }
+    pairs.sort((x, y) => y.jaccard - x.jaccard);
+    return { taskIds: prepared.map((p) => p.taskId), matrix, rankedPairs: pairs };
+}
+
+function searchChatPromptTokenOverlap(dash, args, settings) {
+    const ids = Array.isArray(args && args.taskIds) ? args.taskIds.map((x) => String(x).trim()).filter(Boolean) : [];
+    if (ids.length < 2) return { error: 'taskIds requires at least 2 ids' };
+    if (ids.length > settings.maxResultsPerCall) {
+        return { error: 'taskIds exceeds maxResultsPerCall (' + settings.maxResultsPerCall + ')' };
+    }
+    const sets = [];
+    const meta = [];
+    for (let i = 0; i < ids.length; i++) {
+        const it = searchChatFindItem(dash, ids[i]);
+        if (!it || !it.task) return { error: 'taskId not found: ' + ids[i] };
+        const prompt = searchChatPromptTextForItem(it);
+        const set = searchChatTokenSet(prompt);
+        sets.push(set);
+        meta.push({ taskId: it.task.id, key: it.task.key || '', uniqueTokens: set.size });
+    }
+    let shared = null;
+    for (let i = 0; i < sets.length; i++) {
+        if (!shared) shared = new Set(sets[i]);
+        else {
+            for (const t of Array.from(shared)) {
+                if (!sets[i].has(t)) shared.delete(t);
+            }
+        }
+    }
+    const only = meta.map((m, idx) => {
+        const exclusive = [];
+        for (const t of sets[idx]) {
+            let uniq = true;
+            for (let j = 0; j < sets.length; j++) {
+                if (j === idx) continue;
+                if (sets[j].has(t)) {
+                    uniq = false;
+                    break;
+                }
+            }
+            if (uniq) exclusive.push(t);
+        }
+        return {
+            taskId: m.taskId,
+            key: m.key,
+            onlyCount: exclusive.length,
+            onlySample: exclusive.slice(0, 16),
+        };
+    });
+    const sharedArr = Array.from(shared || []);
+    return {
+        tasks: meta,
+        sharedCount: sharedArr.length,
+        sharedSample: sharedArr.slice(0, 24),
+        only,
+    };
 }
 
 function searchChatCompactRow(item, fields) {
@@ -875,6 +1344,87 @@ function searchChatGetToolDefinitions() {
             'If ratings cards were already generated this session, return a compact overview; otherwise available:false.'
         ),
         searchChatToolFn(
+            'analyze_prompt_stats',
+            'Local prompt length/token stats for taskIds or a random sample. No full prompt unless includeExcerpt.',
+            {
+                type: 'object',
+                properties: {
+                    taskIds: { type: 'array', items: { type: 'string' } },
+                    sampleSize: { type: 'integer' },
+                    includeExcerpt: { type: 'boolean' },
+                },
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'find_similar_prompts',
+            'Rank scope prompts by Jaccard token overlap vs a taskId or free-text query. Optional LCS refine on top hits.',
+            {
+                type: 'object',
+                properties: {
+                    taskId: { type: 'string' },
+                    query: { type: 'string' },
+                    limit: { type: 'integer' },
+                    minJaccard: { type: 'number' },
+                    refineWithLcs: { type: 'boolean' },
+                },
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'find_near_duplicates',
+            'Find unordered prompt pairs with Jaccard above minJaccard (default 0.85). Returns ids + scores only.',
+            {
+                type: 'object',
+                properties: {
+                    minJaccard: { type: 'number' },
+                    limit: { type: 'integer' },
+                },
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'compare_prompts',
+            'Compare two task prompts (optional version nos): Jaccard, LCS similarity, line counts, optional short hunk samples.',
+            {
+                type: 'object',
+                properties: {
+                    taskIdA: { type: 'string' },
+                    taskIdB: { type: 'string' },
+                    versionA: { type: 'number' },
+                    versionB: { type: 'number' },
+                    granularity: { type: 'string', enum: ['word', 'line'] },
+                    includeHunks: { type: 'boolean' },
+                },
+                required: ['taskIdA', 'taskIdB'],
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'prompt_overlap_matrix',
+            'Pairwise Jaccard matrix for 2–12 taskIds plus ranked pairs.',
+            {
+                type: 'object',
+                properties: {
+                    taskIds: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['taskIds'],
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'prompt_token_overlap',
+            'Shared vs exclusive token-set stats for 2–N taskIds (samples capped).',
+            {
+                type: 'object',
+                properties: {
+                    taskIds: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['taskIds'],
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
             'respond',
             'REQUIRED to finish. Pass the final markdown answer for the operator. Do not answer in free-form assistant text.',
             {
@@ -991,6 +1541,24 @@ function searchChatCreateExecutor(dash) {
             case 'get_ratings_overview':
                 payload = searchChatRatingsOverview(dash);
                 break;
+            case 'analyze_prompt_stats':
+                payload = searchChatAnalyzePromptStats(dash, args, settings);
+                break;
+            case 'find_similar_prompts':
+                payload = searchChatFindSimilarPrompts(dash, args, settings);
+                break;
+            case 'find_near_duplicates':
+                payload = searchChatFindNearDuplicates(dash, args, settings);
+                break;
+            case 'compare_prompts':
+                payload = searchChatComparePrompts(dash, args, settings);
+                break;
+            case 'prompt_overlap_matrix':
+                payload = searchChatPromptOverlapMatrix(dash, args);
+                break;
+            case 'prompt_token_overlap':
+                payload = searchChatPromptTokenOverlap(dash, args, settings);
+                break;
             case 'respond':
                 payload = { ok: true };
                 break;
@@ -1021,6 +1589,9 @@ function searchChatBuildSystemPrompt(_dash) {
         'Do not put the final answer in plain assistant content — only respond.',
         'Start with get_search_summary or get_scope when you need size/context; then dig with find/list/search tools.',
         'Prefer cheap tools (summary, aggregate, filter_count, list/find) before get_task / get_tasks_batch.',
+        'For similarity, near-duplicates, and diffs: use find_similar_prompts, find_near_duplicates, compare_prompts,',
+        'prompt_overlap_matrix, prompt_token_overlap, or analyze_prompt_stats before fetching full prompts via get_task.',
+        'Prefer scores + task ids; pull excerpts only for the interesting subset.',
         'Budgets: maxToolRounds=' + settings.maxToolRounds
             + ', maxResultsPerCall=' + settings.maxResultsPerCall
             + ', maxPromptChars=' + settings.maxPromptChars
@@ -1397,7 +1968,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Dev-gated Chat tab over search results with OpenRouter tool loop',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
