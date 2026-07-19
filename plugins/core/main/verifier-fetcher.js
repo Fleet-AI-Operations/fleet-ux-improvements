@@ -189,22 +189,31 @@ function getVerifierChatState(modal) {
 
 function setVerifierChatFetchContext(modal, ctx) {
     if (!modal) return;
-    // Source is required; verifierId may be filled later from live ops context.
+    // Flag for "include this verifier on the next chat message".
+    // Source is required; verifierId falls back so uniqueness checks still work.
     if (!ctx || !String(ctx.source || '').trim()) {
         modal._wfVerifierChatPending = null;
         Logger.debug('verifier-fetcher: chat fetch context cleared');
         return;
     }
+    const taskId = String(ctx.taskId || '');
+    const taskKey = String(ctx.taskKey || '');
+    const verifierKey = String(ctx.verifierKey || '');
+    const verifierId = String(ctx.verifierId || '').trim()
+        || (taskKey ? ('task:' + taskKey) : '')
+        || (taskId ? ('task-id:' + taskId) : '')
+        || verifierKey
+        || 'verifier';
     modal._wfVerifierChatPending = {
-        taskId: String(ctx.taskId || ''),
-        taskKey: String(ctx.taskKey || ''),
-        verifierId: String(ctx.verifierId || ''),
-        verifierKey: String(ctx.verifierKey || ''),
+        taskId,
+        taskKey,
+        verifierId,
+        verifierKey,
         version: ctx.version != null ? ctx.version : null,
         source: String(ctx.source || ''),
     };
     Logger.debug('verifier-fetcher: chat fetch context set · verifier '
-        + (modal._wfVerifierChatPending.verifierId || '(pending-id)')
+        + modal._wfVerifierChatPending.verifierId
         + (modal._wfVerifierChatPending.version != null
             ? ' v' + modal._wfVerifierChatPending.version
             : ''));
@@ -212,16 +221,6 @@ function setVerifierChatFetchContext(modal, ctx) {
 
 function getVerifierChatFetchContext(modal) {
     return modal && modal._wfVerifierChatPending ? modal._wfVerifierChatPending : null;
-}
-
-function verifierSourceFingerprint(source) {
-    const s = String(source || '');
-    let hash = 2166136261;
-    for (let i = 0; i < s.length; i++) {
-        hash ^= s.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-    return 'src:' + (hash >>> 0).toString(16) + ':' + s.length;
 }
 
 function verifierChatHasAttachedId(state, verifierId) {
@@ -262,81 +261,16 @@ function buildVerifierDisplayAttachment(ctx) {
 }
 
 /**
- * Authoritative attach context: live ops source/meta, then pending cache,
- * then DOM text. Ensures chat can attach whenever code is on screen.
- */
-function resolveVerifierAttachContext(modal) {
-    if (!modal) return null;
-
-    let live = null;
-    const ops = Context.opsTab;
-    if (ops && typeof ops.getVerifierChatContext === 'function') {
-        try {
-            live = ops.getVerifierChatContext();
-        } catch (err) {
-            Logger.warn('verifier-fetcher: getVerifierChatContext failed', err);
-            live = null;
-        }
-    }
-
-    const pending = getVerifierChatFetchContext(modal);
-    const codeEl = modal.querySelector('#wf-ops-verifier-output');
-    const domSource = codeEl ? String(codeEl.textContent || '').trim() : '';
-    const source = String(
-        (live && live.source)
-        || (pending && pending.source)
-        || domSource
-        || ''
-    ).trim();
-    if (!source) return null;
-
-    const taskInput = modal.querySelector('#wf-ops-verifier-input');
-    const inputRaw = taskInput ? String(taskInput.value || '').trim() : '';
-    const taskId = String((live && live.taskId) || (pending && pending.taskId) || '').trim();
-    const taskKey = String(
-        (live && live.taskKey)
-        || (pending && pending.taskKey)
-        || inputRaw
-        || ''
-    ).trim();
-    const verifierKey = String(
-        (live && live.verifierKey) || (pending && pending.verifierKey) || ''
-    ).trim();
-    let verifierId = String(
-        (live && live.verifierId) || (pending && pending.verifierId) || ''
-    ).trim();
-    const version = (live && live.version != null)
-        ? live.version
-        : (pending && pending.version != null ? pending.version : null);
-
-    if (!verifierId) {
-        if (taskKey) verifierId = 'task:' + taskKey;
-        else if (taskId) verifierId = 'task-id:' + taskId;
-        else verifierId = verifierSourceFingerprint(source);
-    }
-
-    const ctx = {
-        taskId,
-        taskKey,
-        verifierId,
-        verifierKey,
-        version,
-        source,
-    };
-    modal._wfVerifierChatPending = ctx;
-    return ctx;
-}
-
-/**
- * Attach the currently displayed verifier to the next turn when its ID is not
- * already present in the transcript. Dedupes by verifier ID only.
+ * Consume the pending fetch flag for the next chat turn. Attaches when this
+ * verifier ID is not already in the transcript; otherwise skips.
  */
 function takeVerifierAttachmentForTurn(modal, state) {
-    const ctx = resolveVerifierAttachContext(modal);
-    if (!ctx) {
-        Logger.log('verifier-fetcher: skip verifier attach — no source on screen');
-        return null;
-    }
+    const ctx = getVerifierChatFetchContext(modal);
+    if (!ctx || !String(ctx.source || '').trim()) return null;
+
+    // Clear the flag either way — this message is the "next" one after fetch.
+    if (modal) modal._wfVerifierChatPending = null;
+
     if (verifierChatHasAttachedId(state, ctx.verifierId)) {
         Logger.log('verifier-fetcher: skip verifier attach — already in chat · '
             + ctx.verifierId);
@@ -950,7 +884,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -984,6 +918,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v6.2');
+        Logger.log('verifier-fetcher: tab registered v6.3');
     }
 };

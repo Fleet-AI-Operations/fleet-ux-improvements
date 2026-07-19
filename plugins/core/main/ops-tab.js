@@ -241,7 +241,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.6',
+    _version: '9.7',
     phase: 'core',
     enabledByDefault: true,
 
@@ -345,7 +345,6 @@ const plugin = {
                 this._stepVerifierContentMatchInElement(codeEl, searchState, delta, rerender),
             captureVerifierTabState: (modal) => this._captureOpsVerifierTabState(modal),
             restoreVerifierTabState: (modal) => this._restoreOpsVerifierTabState(modal),
-            getVerifierChatContext: () => this._getOpsVerifierChatContext(),
             copyVerifierCode: (modal, btn) => this._copyOpsVerifierCode(modal, btn),
             captureTaskLinkState: (modal) => this._captureOpsTaskLinkState(modal),
             captureState: (root) => this._captureOpsTabState(root),
@@ -4716,24 +4715,6 @@ const plugin = {
         select.style.display = 'block';
         this._opsVerifierFetchState = { resolved, versions: list, selectedVersion: Number(select.value) };
         Logger.debug('ops-tab: verifier version picker shown (' + list.length + ' versions)');
-    },
-
-    _getOpsVerifierChatContext() {
-        const source = String(this._opsVerifierSourceText || '').trim();
-        if (!source) return null;
-        const fetchState = this._opsVerifierFetchState;
-        const resolved = (fetchState && fetchState.resolved) || {};
-        const version = fetchState && fetchState.selectedVersion != null
-            ? fetchState.selectedVersion
-            : (resolved.version != null ? resolved.version : null);
-        return {
-            taskId: resolved.taskId || '',
-            taskKey: resolved.taskKey || '',
-            verifierId: resolved.verifierId || '',
-            verifierKey: resolved.verifierKey || '',
-            version,
-            source,
-        };
     },
 
     _captureOpsTabState(modal) {
