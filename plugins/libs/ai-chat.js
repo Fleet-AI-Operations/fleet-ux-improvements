@@ -7,10 +7,13 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.5';
+const AI_CHAT_VERSION = '3.6';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
-const AI_CHAT_CALLBACK_KEYS = ['onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts'];
+const AI_CHAT_CALLBACK_KEYS = [
+    'onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts',
+    'onToolActivity', 'executeTool',
+];
 
 function aiChatCopyIconSvg() {
     return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"'
@@ -123,9 +126,10 @@ function aiChatVisibleStateMessages(state) {
     for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
         if (!msg || msg.hideInUi) continue;
-        if (msg.role === 'system') continue;
-        if (msg.role === 'assistant' && !(msg.content || '').trim() && msg.streaming) continue;
-        if (msg.role === 'assistant' && !(msg.content || '').trim()) continue;
+        if (msg.role === 'system' || msg.role === 'tool') continue;
+        const hasDisplay = msg.displayContent != null && String(msg.displayContent).trim();
+        const hasContent = !!(msg.content || '').trim();
+        if (msg.role === 'assistant' && !hasContent && !hasDisplay) continue;
         out.push(msg);
     }
     return out;
@@ -562,6 +566,7 @@ function aiChatSyncHistory(el, state) {
 
 /**
  * Build OpenRouter message list from transcript state.
+ * Supports tool_calls on assistant messages and role:'tool' results.
  * @param {object} state
  * @param {{ systemContent?: string }} [opts]
  */
@@ -575,9 +580,30 @@ function aiChatBuildApiMessages(state, opts) {
     for (let i = 0; i < messages.length; i++) {
         const m = messages[i];
         if (m.streaming) break;
-        if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
-            if (m.role === 'system' && o.systemContent) continue;
-            api.push({ role: m.role, content: m.content || '' });
+        if (m.role === 'system') {
+            if (o.systemContent) continue;
+            api.push({ role: 'system', content: m.content || '' });
+            continue;
+        }
+        if (m.role === 'user') {
+            api.push({ role: 'user', content: m.content || '' });
+            continue;
+        }
+        if (m.role === 'assistant') {
+            const row = { role: 'assistant', content: m.content != null ? m.content : '' };
+            if (Array.isArray(m.tool_calls) && m.tool_calls.length) {
+                row.tool_calls = m.tool_calls;
+                if (row.content == null) row.content = '';
+            }
+            api.push(row);
+            continue;
+        }
+        if (m.role === 'tool') {
+            api.push({
+                role: 'tool',
+                tool_call_id: String(m.tool_call_id || ''),
+                content: m.content != null ? String(m.content) : '',
+            });
         }
     }
     return api;
@@ -626,10 +652,16 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
     const gen = state.streamGen;
     state.streaming = true;
     let assembled = '';
-    let doneMeta = { generationId: null, model: null };
+    let doneMeta = {
+        generationId: null,
+        model: null,
+        toolCalls: [],
+        finishReason: null,
+    };
     let settled = false;
     // Serialize Deep Chat onResponse promises so rapid SSE deltas cannot race.
     let responseChain = Promise.resolve();
+    const suppressText = !!(opts && opts.suppressTextDeltas);
 
     try { signals.onOpen(); } catch (_e) { /* ignore */ }
 
@@ -667,66 +699,88 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
         throw (err instanceof Error ? err : new Error(message));
     };
 
-    return new Promise((resolve, reject) => {
-        Promise.resolve(ai.chatCompletionStream({
-            messages: apiMessages,
-            onDelta: (delta) => {
-                if (gen !== state.streamGen) return;
-                const chunk = String(delta || '');
-                if (!chunk) return;
-                assembled += chunk;
+    const streamOpts = {
+        messages: apiMessages,
+        onDelta: (delta) => {
+            if (gen !== state.streamGen) return;
+            const chunk = String(delta || '');
+            if (!chunk) return;
+            assembled += chunk;
+            if (suppressText) return;
+            aiChatUpdateStreamingBubble(null, state, assembled, o);
+            // Stream mode appends each text chunk; do not overwrite full text.
+            void enqueueResponse({ text: chunk });
+        },
+        onDone: (result) => {
+            if (result && result.generationId) doneMeta.generationId = String(result.generationId);
+            if (result && result.model) doneMeta.model = String(result.model);
+            if (result && Array.isArray(result.toolCalls)) doneMeta.toolCalls = result.toolCalls;
+            if (result && result.finishReason) doneMeta.finishReason = String(result.finishReason);
+            const streamed = assembled;
+            const full = result && result.fullText != null ? String(result.fullText) : streamed;
+            assembled = full;
+            if (!suppressText) {
                 aiChatUpdateStreamingBubble(null, state, assembled, o);
-                // Stream mode appends each text chunk; do not overwrite full text.
-                void enqueueResponse({ text: chunk });
-            },
-            onDone: (result) => {
-                if (result && result.generationId) doneMeta.generationId = String(result.generationId);
-                if (result && result.model) doneMeta.model = String(result.model);
-                const streamed = assembled;
-                const full = result && result.fullText != null ? String(result.fullText) : streamed;
-                assembled = full;
-                aiChatUpdateStreamingBubble(null, state, assembled, o);
-                void responseChain.then(() => {
-                    if (gen !== state.streamGen) {
-                        resolve({
-                            text: assembled || '',
+            }
+            void responseChain.then(() => {
+                if (gen !== state.streamGen) {
+                    resolvePayload({
+                        text: assembled || '',
+                        generationId: doneMeta.generationId,
+                        model: doneMeta.model,
+                        toolCalls: doneMeta.toolCalls,
+                        finishReason: doneMeta.finishReason,
+                    });
+                    return;
+                }
+                const syncFinal = (!suppressText && full && full !== streamed)
+                    ? enqueueResponse({ text: full, overwrite: true })
+                    : Promise.resolve();
+                return syncFinal.then(() => {
+                    try {
+                        resolvePayload({
+                            text: settleOk(assembled) || '',
                             generationId: doneMeta.generationId,
                             model: doneMeta.model,
+                            toolCalls: doneMeta.toolCalls,
+                            finishReason: doneMeta.finishReason,
                         });
-                        return;
-                    }
-                    const syncFinal = (full && full !== streamed)
-                        ? enqueueResponse({ text: full, overwrite: true })
-                        : Promise.resolve();
-                    return syncFinal.then(() => {
-                        try {
-                            resolve({
-                                text: settleOk(assembled) || '',
-                                generationId: doneMeta.generationId,
-                                model: doneMeta.model,
-                            });
-                        } catch (err) {
-                            reject(err);
-                        }
-                    });
-                }).catch((err) => {
-                    try {
-                        settleErr(err);
-                    } catch (e) {
-                        reject(e);
+                    } catch (err) {
+                        rejectPayload(err);
                     }
                 });
-            },
-            onError: (err) => {
-                void responseChain.finally(() => {
-                    try {
-                        settleErr(err);
-                    } catch (e) {
-                        reject(e);
-                    }
-                });
-            }
-        })).then((handle) => {
+            }).catch((err) => {
+                try {
+                    settleErr(err);
+                } catch (e) {
+                    rejectPayload(e);
+                }
+            });
+        },
+        onError: (err) => {
+            void responseChain.finally(() => {
+                try {
+                    settleErr(err);
+                } catch (e) {
+                    rejectPayload(e);
+                }
+            });
+        },
+    };
+    if (opts && Array.isArray(opts.tools)) streamOpts.tools = opts.tools;
+    if (opts && opts.tool_choice != null) streamOpts.tool_choice = opts.tool_choice;
+    if (opts && opts.model != null) streamOpts.model = opts.model;
+    if (opts && Number.isFinite(opts.max_tokens)) streamOpts.max_tokens = opts.max_tokens;
+    if (opts && typeof opts.parallel_tool_calls === 'boolean') {
+        streamOpts.parallel_tool_calls = opts.parallel_tool_calls;
+    }
+
+    let resolvePayload;
+    let rejectPayload;
+    return new Promise((resolve, reject) => {
+        resolvePayload = resolve;
+        rejectPayload = reject;
+        Promise.resolve(ai.chatCompletionStream(streamOpts)).then((handle) => {
             state.streamAbort = handle;
         }).catch((err) => {
             try {
@@ -1223,6 +1277,331 @@ function aiChatRunStream(root, state, apiMessages, opts) {
     return aiChatRunStreamWithSignals(state, apiMessages, fakeSignals, o);
 }
 
+/**
+ * Parse tool call arguments JSON; returns {} on failure.
+ * @param {object} toolCall
+ */
+function aiChatParseToolArgs(toolCall) {
+    const raw = toolCall
+        && toolCall.function
+        && toolCall.function.arguments != null
+        ? String(toolCall.function.arguments)
+        : '{}';
+    try {
+        const parsed = JSON.parse(raw || '{}');
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_e) {
+        return { _parseError: true, _raw: raw };
+    }
+}
+
+/**
+ * Multi-round tool loop. Intermediate assistant/tool messages stay hideInUi.
+ * Only the finalize tool (default `respond`) produces a visible assistant bubble.
+ *
+ * opts:
+ * - userText / userContent
+ * - systemContent
+ * - tools (OpenAI tool defs)
+ * - executeTool(name, args, toolCall) => Promise<string|object> | string|object
+ * - finalizeToolName (default 'respond')
+ * - maxToolRounds (default 8)
+ * - model, max_tokens, parallel_tool_calls, tool_choice
+ * - onToolActivity({ round, name, argsSummary, resultBytes, error? })
+ * - onTurnDone
+ */
+async function aiChatSendToolTurn(root, state, opts) {
+    const o = aiChatResolveOpts(Object.assign({}, state && state._wireOpts, opts));
+    if (!state) return null;
+    if (state.streaming) return null;
+
+    const tools = opts && Array.isArray(opts.tools) ? opts.tools : null;
+    const executeTool = opts && typeof opts.executeTool === 'function' ? opts.executeTool : null;
+    if (!tools || !tools.length || !executeTool) {
+        throw new Error('sendToolTurn requires tools and executeTool');
+    }
+
+    const finalizeName = String(
+        (opts && opts.finalizeToolName) || 'respond'
+    ).trim() || 'respond';
+    const maxRounds = Math.max(
+        1,
+        Math.min(
+            20,
+            Number.isFinite(opts && opts.maxToolRounds) ? Math.floor(opts.maxToolRounds) : 8
+        )
+    );
+    const userText = opts && opts.userText != null ? String(opts.userText) : '';
+    const userContent = opts && opts.userContent != null ? String(opts.userContent) : userText;
+    const systemContent = opts && opts.systemContent != null ? opts.systemContent : null;
+    const fromHandler = !!(root && root._wfAiChatFromHandler);
+    const signals = root && root._wfAiChatSignals;
+
+    if (!String(userContent || '').trim()) return null;
+
+    if (userContent) {
+        state.messages.push({
+            role: 'user',
+            content: userContent,
+            displayContent: opts && opts.displayContent != null ? opts.displayContent : null,
+        });
+    }
+
+    state.streaming = true;
+    const useLiveSignals = !!(fromHandler && signals);
+
+    const quietSignals = signals || {
+        onOpen() {},
+        onClose() {},
+        onResponse() {},
+        stopClicked: { listener: null },
+    };
+
+    let lastGenerationId = null;
+    let lastModel = null;
+    let round = 0;
+
+    const notifyActivity = (payload) => {
+        if (typeof o.onToolActivity === 'function') {
+            try { o.onToolActivity(payload); } catch (_e) { /* ignore */ }
+        }
+        if (typeof opts.onToolActivity === 'function' && opts.onToolActivity !== o.onToolActivity) {
+            try { opts.onToolActivity(payload); } catch (_e) { /* ignore */ }
+        }
+    };
+
+    const syncWorking = (label) => {
+        if (useLiveSignals) {
+            try {
+                void Promise.resolve(signals.onResponse({ text: label, overwrite: true }));
+            } catch (_e) { /* ignore */ }
+        }
+    };
+
+    try {
+        while (round < maxRounds) {
+            round += 1;
+            syncWorking('Working… (round ' + round + ')');
+            state.streaming = true;
+
+            const apiMessages = aiChatBuildApiMessages(state, { systemContent });
+
+            const streamOpts = Object.assign({}, o, {
+                tools,
+                tool_choice: (opts && opts.tool_choice != null) ? opts.tool_choice : 'auto',
+                model: opts && opts.model,
+                max_tokens: opts && opts.max_tokens,
+                parallel_tool_calls: opts && opts.parallel_tool_calls,
+                suppressTextDeltas: true,
+            });
+
+            const result = await aiChatRunStreamWithSignals(
+                state,
+                apiMessages,
+                {
+                    onOpen() {},
+                    onClose() {},
+                    onResponse(response) {
+                        if (response && response.error) {
+                            throw new Error(String(response.error));
+                        }
+                    },
+                    stopClicked: quietSignals.stopClicked || { listener: null },
+                },
+                streamOpts
+            );
+
+            if (result && result.generationId) lastGenerationId = result.generationId;
+            if (result && result.model) lastModel = result.model;
+
+            const toolCalls = (result && Array.isArray(result.toolCalls))
+                ? result.toolCalls
+                : [];
+            const finishReason = result && result.finishReason
+                ? String(result.finishReason)
+                : '';
+
+            if (!toolCalls.length) {
+                const errMsg = finishReason === 'stop'
+                    ? 'Model finished without calling ' + finalizeName + '.'
+                    : 'Model returned no tool calls (finish_reason=' + (finishReason || 'unknown') + ').';
+                state.messages.push({
+                    role: 'assistant',
+                    content: 'Error: ' + errMsg,
+                });
+                try {
+                    if (state._deepChat) aiChatSyncHistory(state._deepChat, state);
+                    if (signals) await Promise.resolve(signals.onResponse({ error: errMsg }));
+                } catch (_e) { /* ignore */ }
+                state.streaming = false;
+                throw new Error(errMsg);
+            }
+
+            const respondCall = toolCalls.find((tc) =>
+                tc
+                && tc.function
+                && String(tc.function.name || '').trim() === finalizeName
+            );
+
+            state.messages.push({
+                role: 'assistant',
+                content: '',
+                tool_calls: toolCalls,
+                hideInUi: true,
+            });
+
+            if (respondCall) {
+                const args = aiChatParseToolArgs(respondCall);
+                const markdown = args && args.markdown != null
+                    ? String(args.markdown)
+                    : (args && args._parseError ? '' : '');
+                if (!String(markdown || '').trim()) {
+                    const errMsg = finalizeName + ' was called without markdown.';
+                    state.messages.push({
+                        role: 'assistant',
+                        content: 'Error: ' + errMsg,
+                    });
+                    state.streaming = false;
+                    throw new Error(errMsg);
+                }
+                state.messages.push({
+                    role: 'tool',
+                    tool_call_id: respondCall.id,
+                    content: JSON.stringify({ ok: true }),
+                    hideInUi: true,
+                });
+                notifyActivity({
+                    round,
+                    name: finalizeName,
+                    argsSummary: 'markdown ' + markdown.length + ' chars',
+                    resultBytes: markdown.length,
+                });
+                state.messages.push({
+                    role: 'assistant',
+                    content: markdown,
+                });
+                state.lastGenerationId = lastGenerationId;
+                state.lastModel = lastModel;
+                state.streaming = false;
+                try {
+                    if (useLiveSignals) {
+                        await Promise.resolve(signals.onResponse({
+                            text: markdown,
+                            overwrite: true,
+                        }));
+                        try { signals.onClose(); } catch (_e) { /* ignore */ }
+                    } else if (state._deepChat) {
+                        aiChatSyncHistory(state._deepChat, state);
+                    }
+                } catch (_e) { /* ignore */ }
+                Logger.log(o.logTag + ': tool turn done via ' + finalizeName
+                    + ' (' + markdown.length + ' chars'
+                    + (lastGenerationId ? ' · gen ' + lastGenerationId : '') + ')');
+                if (o.onTurnDone || (opts && opts.onTurnDone)) {
+                    const cb = opts && opts.onTurnDone ? opts.onTurnDone : o.onTurnDone;
+                    try {
+                        cb({
+                            generationId: lastGenerationId,
+                            model: lastModel,
+                            userPreview: String(userText || userContent).trim(),
+                            fullText: markdown,
+                        });
+                    } catch (cbErr) {
+                        Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
+                    }
+                }
+                try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
+                return markdown;
+            }
+
+            for (let ti = 0; ti < toolCalls.length; ti++) {
+                const tc = toolCalls[ti];
+                const name = tc && tc.function
+                    ? String(tc.function.name || '').trim()
+                    : '';
+                const args = aiChatParseToolArgs(tc);
+                let resultPayload;
+                let resultStr;
+                let errMsg = null;
+                try {
+                    resultPayload = await Promise.resolve(executeTool(name, args, tc));
+                    resultStr = typeof resultPayload === 'string'
+                        ? resultPayload
+                        : JSON.stringify(resultPayload == null ? null : resultPayload);
+                } catch (execErr) {
+                    errMsg = (execErr && execErr.message) || String(execErr);
+                    resultStr = JSON.stringify({ error: errMsg });
+                }
+                const bytes = resultStr ? resultStr.length : 0;
+                notifyActivity({
+                    round,
+                    name: name || 'unknown',
+                    argsSummary: aiChatToolArgsSummary(args),
+                    resultBytes: bytes,
+                    error: errMsg || undefined,
+                });
+                state.messages.push({
+                    role: 'tool',
+                    tool_call_id: tc.id,
+                    content: resultStr,
+                    hideInUi: true,
+                });
+            }
+            Logger.debug(o.logTag + ': tool round ' + round + ' — '
+                + toolCalls.length + ' call(s)');
+            state.streaming = true;
+        }
+
+        const errMsg = 'Exceeded max tool rounds (' + maxRounds + ') without '
+            + finalizeName + '.';
+        state.messages.push({ role: 'assistant', content: 'Error: ' + errMsg });
+        state.streaming = false;
+        try {
+            if (state._deepChat) aiChatSyncHistory(state._deepChat, state);
+        } catch (_e) { /* ignore */ }
+        throw new Error(errMsg);
+    } catch (err) {
+        state.streaming = false;
+        if (!(err && err.message && String(err.message).indexOf('without') >= 0)
+            && !(err && err.message && String(err.message).indexOf('Exceeded') >= 0)
+            && !(err && err.message && String(err.message).indexOf('markdown') >= 0)) {
+            const last = state.messages[state.messages.length - 1];
+            if (!last || last.role !== 'assistant' || !String(last.content || '').startsWith('Error:')) {
+                state.messages.push({
+                    role: 'assistant',
+                    content: 'Error: ' + ((err && err.message) || String(err)),
+                });
+            }
+            try {
+                if (state._deepChat) aiChatSyncHistory(state._deepChat, state);
+            } catch (_e) { /* ignore */ }
+        }
+        Logger.error(o.logTag + ': tool turn failed: ' + ((err && err.message) || err));
+        throw err;
+    } finally {
+        if (fromHandler && root) {
+            root._wfAiChatFromHandler = false;
+            root._wfAiChatSignals = null;
+        }
+    }
+}
+
+function aiChatToolArgsSummary(args) {
+    if (!args || typeof args !== 'object') return '';
+    try {
+        const keys = Object.keys(args).filter((k) => k.charAt(0) !== '_');
+        if (!keys.length) return '{}';
+        const parts = keys.slice(0, 4).map((k) => {
+            let v = args[k];
+            if (typeof v === 'string' && v.length > 40) v = v.slice(0, 37) + '…';
+            return k + '=' + JSON.stringify(v);
+        });
+        return parts.join(', ') + (keys.length > 4 ? '…' : '');
+    } catch (_e) {
+        return '';
+    }
+}
+
 const AiChatApi = {
     VERSION: AI_CHAT_VERSION,
     hasAiKey: aiChatHasKey,
@@ -1237,13 +1616,14 @@ const AiChatApi = {
     wireComposer: aiChatWireComposer,
     exportConversation: aiChatExportConversation,
     sendTurn: aiChatSendTurn,
+    sendToolTurn: aiChatSendToolTurn,
 };
 
 const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.5',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

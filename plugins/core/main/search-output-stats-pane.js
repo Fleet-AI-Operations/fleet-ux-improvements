@@ -31,6 +31,20 @@ const searchOutputStatsPaneMethods = {
         const statsTab = this._state ? (this._state.statsTab || 'stats') : 'stats';
         const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
         const statsPanel = 'flex: 1; min-height: 0; overflow: hidden; padding: 14px; flex-direction: column; gap: 12px;';
+        const chatTabBtn = Context.isDevBranch
+            ? ('<button type="button" data-wf-dash-stats-tab="chat" style="'
+                + this._statsTabStyle(statsTab === 'chat') + '">Chat</button>')
+            : '';
+        const chatPanel = Context.isDevBranch
+            ? ('<div id="wf-dash-stats-panel-chat" style="flex: 1; min-height: 0; overflow: hidden; padding: 14px;'
+                + ' flex-direction: column; gap: 12px; display: '
+                + (statsTab === 'chat' ? 'flex' : 'none') + ';">'
+                + (Context.searchOutputChat && typeof Context.searchOutputChat.panelHtml === 'function'
+                    ? Context.searchOutputChat.panelHtml()
+                    : '<div style="font-size: 12px; color: var(--muted-foreground, #64748b);">'
+                        + 'Search Chat module is not loaded.</div>')
+                + '</div>')
+            : '';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
             + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
@@ -38,6 +52,7 @@ const searchOutputStatsPaneMethods = {
             + '<nav style="display: flex; align-items: center; gap: 0; min-width: 0;" aria-label="Stats and ratings">'
             + '<button type="button" data-wf-dash-stats-tab="stats" style="' + this._statsTabStyle(statsTab === 'stats') + '">Stats</button>'
             + '<button type="button" data-wf-dash-stats-tab="ratings" style="' + this._statsTabStyle(statsTab === 'ratings') + '">Ratings</button>'
+            + chatTabBtn
             + '</nav>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
             + '</div>'
@@ -55,6 +70,7 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
             + '</div>'
+            + chatPanel
             + '</div>';
     },
 
@@ -4451,6 +4467,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _setStatsTab(tab) {
+        if (tab === 'chat' && !Context.isDevBranch) tab = 'stats';
         this._state.statsTab = tab;
         this._syncStatsTabUi();
         Logger.log('search-output-stats-pane: stats tab ' + tab);
@@ -4458,15 +4475,31 @@ const searchOutputStatsPaneMethods = {
             void this._renderStatsPanel();
         } else if (tab === 'ratings') {
             this._renderRatingsPanel();
+        } else if (tab === 'chat') {
+            this._activateSearchChatPanel();
         }
+    },
+
+    _activateSearchChatPanel() {
+        if (!Context.isDevBranch) return;
+        const api = Context.searchOutputChat;
+        const panel = this._q('[data-wf-dash-search-chat-panel]');
+        if (!api || typeof api.wirePanel !== 'function' || !panel) {
+            Logger.warn('search-output-stats-pane: Search Chat unavailable');
+            return;
+        }
+        api.wirePanel(panel, this);
+        Logger.log('search-output-stats-pane: Search Chat activated');
     },
 
     _syncStatsTabUi() {
         const tab = this._state.statsTab || 'stats';
         const ratingsPanel = this._q('#wf-dash-stats-panel-ratings');
         const statsPanel = this._q('#wf-dash-stats-panel-stats');
+        const chatPanel = this._q('#wf-dash-stats-panel-chat');
         if (ratingsPanel) ratingsPanel.style.display = tab === 'ratings' ? 'flex' : 'none';
         if (statsPanel) statsPanel.style.display = tab === 'stats' ? 'flex' : 'none';
+        if (chatPanel) chatPanel.style.display = tab === 'chat' ? 'flex' : 'none';
         if (this._modal) {
             this._modal.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
                 const active = btn.getAttribute('data-wf-dash-stats-tab') === tab;
@@ -6072,7 +6105,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.5',
+    _version: '12.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

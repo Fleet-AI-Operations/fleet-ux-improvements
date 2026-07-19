@@ -247,13 +247,78 @@ function openRouterGenerationContent(apiKey, generationId) {
 }
 
 /**
- * Stream an OpenRouter chat completion (SSE). Calls onDelta(textChunk) as content
- * arrives, then onDone({ fullText, model, generationId }). Abort via returned { abort }.
+ * Merge streamed tool_call deltas into an array keyed by index.
+ * @param {object[]} acc
+ * @param {object[]} deltas
  */
-function openRouterChatCompletionStream(apiKey, messages, callbacks) {
+function openRouterAccumulateToolCallDeltas(acc, deltas) {
+    if (!Array.isArray(deltas) || !deltas.length) return;
+    for (let i = 0; i < deltas.length; i++) {
+        const d = deltas[i];
+        if (!d || typeof d !== 'object') continue;
+        const idx = Number.isFinite(d.index) ? d.index : i;
+        while (acc.length <= idx) {
+            acc.push({
+                id: '',
+                type: 'function',
+                function: { name: '', arguments: '' },
+            });
+        }
+        const slot = acc[idx];
+        if (d.id != null && String(d.id).trim()) slot.id = String(d.id).trim();
+        if (d.type != null) slot.type = String(d.type);
+        const fn = d.function;
+        if (fn && typeof fn === 'object') {
+            if (fn.name != null && String(fn.name)) {
+                slot.function.name = String(fn.name);
+            }
+            if (fn.arguments != null) {
+                slot.function.arguments += String(fn.arguments);
+            }
+        }
+    }
+}
+
+/**
+ * Normalize accumulated tool call slots into OpenAI-shaped tool_calls.
+ * @param {object[]} acc
+ * @returns {object[]}
+ */
+function openRouterFinalizeToolCalls(acc) {
+    if (!Array.isArray(acc) || !acc.length) return [];
+    const out = [];
+    for (let i = 0; i < acc.length; i++) {
+        const slot = acc[i];
+        if (!slot || !slot.function) continue;
+        const name = String(slot.function.name || '').trim();
+        if (!name && !String(slot.function.arguments || '').trim()) continue;
+        out.push({
+            id: String(slot.id || ('call_' + i)).trim() || ('call_' + i),
+            type: slot.type || 'function',
+            function: {
+                name: name || 'unknown',
+                arguments: String(slot.function.arguments || ''),
+            },
+        });
+    }
+    return out;
+}
+
+/**
+ * Stream an OpenRouter chat completion (SSE). Calls onDelta(textChunk) as content
+ * arrives, then onDone({ fullText, toolCalls, finishReason, model, generationId }).
+ * Abort via returned { abort }.
+ *
+ * @param {string} apiKey
+ * @param {object[]} messages
+ * @param {{ onDelta?: Function, onDone?: Function, onError?: Function }} callbacks
+ * @param {{ tools?: object[], tool_choice?: *, model?: string, max_tokens?: number, parallel_tool_calls?: boolean }} [requestOpts]
+ */
+function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts) {
     const onDelta = callbacks && typeof callbacks.onDelta === 'function' ? callbacks.onDelta : null;
     const onDone = callbacks && typeof callbacks.onDone === 'function' ? callbacks.onDone : null;
     const onError = callbacks && typeof callbacks.onError === 'function' ? callbacks.onError : null;
+    const reqOpts = requestOpts && typeof requestOpts === 'object' ? requestOpts : {};
 
     if (typeof GM_xmlhttpRequest !== 'function') {
         if (onError) onError(new Error('GM_xmlhttpRequest unavailable'));
@@ -267,13 +332,24 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
     let fullText = '';
     let model = '';
     let generationId = '';
+    let finishReason = null;
+    const toolCallAcc = [];
     let finished = false;
     let usingReader = false;
 
     const finishOk = () => {
         if (finished || aborted) return;
         finished = true;
-        if (onDone) onDone({ fullText, model, generationId: generationId || null });
+        const toolCalls = openRouterFinalizeToolCalls(toolCallAcc);
+        if (onDone) {
+            onDone({
+                fullText,
+                toolCalls,
+                finishReason: finishReason || (toolCalls.length ? 'tool_calls' : 'stop'),
+                model,
+                generationId: generationId || null,
+            });
+        }
     };
 
     const fail = (err) => {
@@ -303,22 +379,24 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
                 generationId = openRouterPreferGenerationId(parsed.id, generationId);
             }
             if (parsed && parsed.model != null && !model) model = String(parsed.model);
-            const delta = parsed
-                && parsed.choices
-                && parsed.choices[0]
-                && parsed.choices[0].delta
-                && parsed.choices[0].delta.content != null
-                ? String(parsed.choices[0].delta.content)
+            const choice = parsed && parsed.choices && parsed.choices[0]
+                ? parsed.choices[0]
+                : null;
+            const deltaObj = choice && choice.delta ? choice.delta : null;
+            const delta = deltaObj && deltaObj.content != null
+                ? String(deltaObj.content)
                 : '';
             if (delta) {
                 fullText += delta;
                 if (onDelta) onDelta(delta);
             }
-            const finishReason = parsed
-                && parsed.choices
-                && parsed.choices[0]
-                && parsed.choices[0].finish_reason;
-            if (finishReason) finishOk();
+            if (deltaObj && Array.isArray(deltaObj.tool_calls)) {
+                openRouterAccumulateToolCallDeltas(toolCallAcc, deltaObj.tool_calls);
+            }
+            if (choice && choice.finish_reason) {
+                finishReason = String(choice.finish_reason);
+                finishOk();
+            }
         }
     };
 
@@ -362,6 +440,23 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
     // responseText. responseType 'stream' exposes a ReadableStream in
     // onloadstart for true incremental delivery; onprogress remains as the
     // fallback for managers without stream support.
+    const body = { messages, stream: true };
+    if (Array.isArray(reqOpts.tools) && reqOpts.tools.length) {
+        body.tools = reqOpts.tools;
+    }
+    if (reqOpts.tool_choice != null) {
+        body.tool_choice = reqOpts.tool_choice;
+    }
+    if (reqOpts.model != null && String(reqOpts.model).trim()) {
+        body.model = String(reqOpts.model).trim();
+    }
+    if (Number.isFinite(reqOpts.max_tokens) && reqOpts.max_tokens > 0) {
+        body.max_tokens = Math.floor(reqOpts.max_tokens);
+    }
+    if (typeof reqOpts.parallel_tool_calls === 'boolean') {
+        body.parallel_tool_calls = reqOpts.parallel_tool_calls;
+    }
+
     const req = GM_xmlhttpRequest({
         method: 'POST',
         url: OPENROUTER_CHAT_COMPLETIONS_URL,
@@ -373,7 +468,7 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks) {
             'X-Title': 'Fleet UX Enhancer',
             Accept: 'text/event-stream'
         },
-        data: JSON.stringify({ messages, stream: true }),
+        data: JSON.stringify(body),
         onloadstart: (response) => {
             if (aborted || finished) return;
             const headerGen = openRouterHeaderValue(response && response.responseHeaders, 'X-Generation-Id');
@@ -595,6 +690,14 @@ function renderAiSection(modal, options) {
         + '</div>'
         + '<div id="wf-dash-settings-ai-status" style="display: none; margin-top: 10px; '
         + hintStyle + ' line-height: 1.45;"></div>';
+
+    if (Context.isDevBranch
+        && Context.searchOutputChat
+        && typeof Context.searchOutputChat.settingsFieldsHtml === 'function') {
+        body += Context.searchOutputChat.settingsFieldsHtml(
+            Context.searchOutputChat.getSettings()
+        );
+    }
 
     root.innerHTML = body;
 }
@@ -914,6 +1017,41 @@ function attachDashboardSettingsListeners(modal) {
         if (testBtn) {
             e.preventDefault();
             void runOpenRouterTest(modal);
+            return;
+        }
+        const chatSave = e.target.closest('[data-wf-dash-search-chat-settings-save]');
+        if (chatSave && Context.isDevBranch && Context.searchOutputChat) {
+            e.preventDefault();
+            const api = Context.searchOutputChat;
+            const raw = api.readSettingsFromModal(modal);
+            if (!raw) return;
+            try {
+                api.saveSettings(raw);
+                if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(chatSave);
+                Logger.log(PLUGIN_ID + ': search chat settings saved');
+                renderAiSection(modal);
+                api.setSettingsStatus(modal, 'Search Chat limits saved.', false);
+            } catch (err) {
+                api.setSettingsStatus(modal, (err && err.message) || String(err), true);
+                if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(chatSave);
+                Logger.warn(PLUGIN_ID + ': search chat settings save failed', err);
+            }
+            return;
+        }
+        const chatReset = e.target.closest('[data-wf-dash-search-chat-settings-reset]');
+        if (chatReset && Context.isDevBranch && Context.searchOutputChat) {
+            e.preventDefault();
+            const api = Context.searchOutputChat;
+            try {
+                api.saveSettings(api.defaultSettings());
+                if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(chatReset);
+                Logger.log(PLUGIN_ID + ': search chat settings reset');
+                renderAiSection(modal);
+                api.setSettingsStatus(modal, 'Search Chat limits reset to defaults.', false);
+            } catch (err) {
+                api.setSettingsStatus(modal, (err && err.message) || String(err), true);
+                if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(chatReset);
+            }
         }
     });
 
@@ -931,8 +1069,8 @@ function attachDashboardSettingsListeners(modal) {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
-    description: 'Settings tab for dashboard tab order and AI Integration / OpenRouter',
-    _version: '1.11',
+    description: 'Settings tab for dashboard tab order, AI Integration / OpenRouter, and Search Chat limits',
+    _version: '1.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -957,6 +1095,13 @@ const plugin = {
                 const onDelta = opts && opts.onDelta;
                 const onDone = opts && opts.onDone;
                 const onError = opts && opts.onError;
+                const requestOpts = {
+                    tools: opts && opts.tools,
+                    tool_choice: opts && opts.tool_choice,
+                    model: opts && opts.model,
+                    max_tokens: opts && opts.max_tokens,
+                    parallel_tool_calls: opts && opts.parallel_tool_calls,
+                };
                 let apiKey;
                 try {
                     apiKey = await resolveOpenRouterApiKey();
@@ -969,7 +1114,12 @@ const plugin = {
                     if (typeof onError === 'function') onError(err);
                     throw err;
                 }
-                return openRouterChatCompletionStream(apiKey, messages, { onDelta, onDone, onError });
+                return openRouterChatCompletionStream(
+                    apiKey,
+                    messages,
+                    { onDelta, onDone, onError },
+                    requestOpts
+                );
             },
             async generationContent(generationId) {
                 const apiKey = await resolveOpenRouterApiKey();
