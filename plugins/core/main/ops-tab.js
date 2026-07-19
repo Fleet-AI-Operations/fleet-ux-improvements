@@ -241,7 +241,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.5',
+    _version: '9.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -345,6 +345,7 @@ const plugin = {
                 this._stepVerifierContentMatchInElement(codeEl, searchState, delta, rerender),
             captureVerifierTabState: (modal) => this._captureOpsVerifierTabState(modal),
             restoreVerifierTabState: (modal) => this._restoreOpsVerifierTabState(modal),
+            getVerifierChatContext: () => this._getOpsVerifierChatContext(),
             copyVerifierCode: (modal, btn) => this._copyOpsVerifierCode(modal, btn),
             captureTaskLinkState: (modal) => this._captureOpsTaskLinkState(modal),
             captureState: (root) => this._captureOpsTabState(root),
@@ -4678,29 +4679,61 @@ const plugin = {
         if (!select) return;
 
         select.innerHTML = '';
-        if (!Array.isArray(versions) || versions.length <= 1) {
+        const list = Array.isArray(versions) ? versions : [];
+        if (list.length <= 1) {
             select.style.display = 'none';
-            this._opsVerifierFetchState = (versions && versions.length === 1)
-                ? { resolved, versions, selectedVersion: versions[0].version }
-                : null;
+            // Keep resolved metadata even with 0/1 versions so chat attach + restore
+            // still know task/verifier IDs while source is on screen.
+            if (resolved && (resolved.verifierId || resolved.source || resolved.taskId || resolved.taskKey)) {
+                const fallbackVersion = list.length === 1
+                    ? list[0].version
+                    : (selectedVersion != null
+                        ? selectedVersion
+                        : (resolved.version != null ? resolved.version : null));
+                this._opsVerifierFetchState = {
+                    resolved,
+                    versions: list,
+                    selectedVersion: fallbackVersion
+                };
+            } else {
+                this._opsVerifierFetchState = null;
+            }
             return;
         }
 
-        versions.forEach((entry, index) => {
+        list.forEach((entry, index) => {
             const option = document.createElement('option');
             option.value = String(entry.version);
             option.textContent = this._formatOpsVerifierVersionLabel(entry, index === 0);
             select.appendChild(option);
         });
 
-        const selected = selectedVersion != null ? String(selectedVersion) : String(versions[0].version);
+        const selected = selectedVersion != null ? String(selectedVersion) : String(list[0].version);
         if ([...select.options].some(opt => opt.value === selected)) {
             select.value = selected;
         }
 
         select.style.display = 'block';
-        this._opsVerifierFetchState = { resolved, versions, selectedVersion: Number(select.value) };
-        Logger.debug('ops-tab: verifier version picker shown (' + versions.length + ' versions)');
+        this._opsVerifierFetchState = { resolved, versions: list, selectedVersion: Number(select.value) };
+        Logger.debug('ops-tab: verifier version picker shown (' + list.length + ' versions)');
+    },
+
+    _getOpsVerifierChatContext() {
+        const source = String(this._opsVerifierSourceText || '').trim();
+        if (!source) return null;
+        const fetchState = this._opsVerifierFetchState;
+        const resolved = (fetchState && fetchState.resolved) || {};
+        const version = fetchState && fetchState.selectedVersion != null
+            ? fetchState.selectedVersion
+            : (resolved.version != null ? resolved.version : null);
+        return {
+            taskId: resolved.taskId || '',
+            taskKey: resolved.taskKey || '',
+            verifierId: resolved.verifierId || '',
+            verifierKey: resolved.verifierKey || '',
+            version,
+            source,
+        };
     },
 
     _captureOpsTabState(modal) {
@@ -5285,23 +5318,26 @@ const plugin = {
                 void this._refreshVerifierOutputDisplay(modal);
             }
         }
-        if (state.verifierFetchState && state.verifierFetchState.versions && state.verifierFetchState.versions.length) {
+        if (state.verifierFetchState && state.verifierFetchState.resolved) {
             this._setOpsVerifierVersionPicker(
                 modal,
                 state.verifierFetchState.resolved,
-                state.verifierFetchState.versions,
+                state.verifierFetchState.versions || [],
                 state.verifierFetchState.selectedVersion
             );
         } else {
             this._opsVerifierFetchState = null;
         }
-        if (state.verifierOutput && state.verifierFetchState && state.verifierFetchState.resolved) {
+        if (state.verifierOutput) {
+            const resolved = (state.verifierFetchState && state.verifierFetchState.resolved) || {};
             this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext({
-                ...state.verifierFetchState.resolved,
-                version: state.verifierFetchState.selectedVersion,
+                ...resolved,
+                version: state.verifierFetchState
+                    ? state.verifierFetchState.selectedVersion
+                    : null,
                 source: state.verifierOutput,
             }));
-        } else if (!state.verifierOutput) {
+        } else {
             this._notifyVerifierChatFetchContext(modal, null);
         }
         if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.restoreScratchpadTabState === 'function') {
