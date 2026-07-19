@@ -4,10 +4,19 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '2.0';
+const SEARCH_CHAT_VERSION = '3.0';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
+const SEARCH_CHAT_MAX_LIVE_CHARTS = 6;
+const SEARCH_CHAT_MAX_CHART_LABELS = 40;
+const SEARCH_CHAT_MAX_CHART_DATASETS = 4;
+const SEARCH_CHAT_CHART_COLORS = [
+    'rgba(37, 99, 235, 0.85)',
+    'rgba(16, 185, 129, 0.85)',
+    'rgba(245, 158, 11, 0.85)',
+    'rgba(239, 68, 68, 0.85)',
+];
 
 const SEARCH_CHAT_SETTINGS_DEFAULTS = {
     maxToolRounds: 8,
@@ -27,12 +36,15 @@ const SEARCH_CHAT_SETTINGS_CLAMP = {
     maxTokens: { min: 256, max: 16384 },
 };
 
-/** @type {{ chatState: object|null, activity: object[], resultsFingerprint: string, bound: boolean }} */
+/** @type {{ chatState: object|null, activity: object[], resultsFingerprint: string, bound: boolean, charts: object[], chartInstances: object[], panel: Element|null }} */
 const searchChatUi = {
     chatState: null,
     activity: [],
     resultsFingerprint: '',
     bound: false,
+    charts: [],
+    chartInstances: [],
+    panel: null,
 };
 
 function searchChatEscHtml(value) {
@@ -1438,6 +1450,542 @@ function searchChatRatingsOverview(dash, cursor, limit) {
     };
 }
 
+function searchChatStatsCatalogCtx(dash, items) {
+    if (dash && typeof dash._statsCatalogCtx === 'function') {
+        return dash._statsCatalogCtx(items);
+    }
+    return {
+        filterListOptions: (dash && dash._state && dash._state.filterListOptions) || {},
+        listBounds: {},
+        items: items || [],
+        helpfulnessUi: (dash && dash._state && dash._state.helpfulnessUi) || {},
+        currentUserId: '',
+        sessionQaUi: (dash && dash._state && dash._state.sessionQaUi) || {},
+        resolveScopeLabel: (scopeKey) => scopeKey,
+        getMetricValue: () => null,
+        getVersionCount: (item) => {
+            if (!item || !item.hydrated || !item.task) return null;
+            const vers = item.task.promptVersions;
+            return Array.isArray(vers) ? vers.length : null;
+        },
+    };
+}
+
+function searchChatNormalizeChartType(type) {
+    const t = String(type || '').trim();
+    if (t === 'bar' || t === 'line' || t === 'combo') return 'barLine';
+    return t || 'pie';
+}
+
+function searchChatBuildChartSpec(args, engine) {
+    const a = args || {};
+    const rawType = String(a.type || 'pie').trim();
+    const type = searchChatNormalizeChartType(rawType);
+    const meta = (engine.getChartTypeMeta && engine.getChartTypeMeta(type)) || {
+        minSeries: 1,
+        maxSeries: 1,
+        skipGroupBy: false,
+        needsRenderAs: false,
+        needsDualAxis: false,
+        needsBarLayout: false,
+        needsOrientation: false,
+        needsLineAreaLayout: false,
+        defaultHeight: 220,
+    };
+    const seriesIn = Array.isArray(a.series) && a.series.length
+        ? a.series
+        : [{ metricId: 'count', agg: 'count', label: '' }];
+    const series = seriesIn.slice(0, meta.maxSeries || 4).map((s) => {
+        const entry = {
+            metricId: (s && s.metricId) || 'count',
+            agg: (s && s.agg) || 'count',
+            label: (s && s.label) || '',
+        };
+        if (meta.needsRenderAs) {
+            let renderAs = (s && s.renderAs) === 'line' ? 'line' : 'bar';
+            if (rawType === 'line') renderAs = 'line';
+            if (rawType === 'bar') renderAs = 'bar';
+            entry.renderAs = renderAs;
+            if (renderAs === 'line') entry.lineStyle = 'line';
+        }
+        if (meta.needsDualAxis) {
+            entry.yAxis = (s && s.yAxis) === 'y1' ? 'y1' : 'y';
+        }
+        return entry;
+    });
+    while (series.length < (meta.minSeries || 1)) {
+        const pad = { metricId: 'count', agg: 'count', label: '' };
+        if (meta.needsRenderAs) pad.renderAs = 'bar';
+        if (meta.needsDualAxis) pad.yAxis = 'y';
+        series.push(pad);
+    }
+    const chart = {
+        id: engine.newChartId ? engine.newChartId() : ('chart-chat-' + Date.now()),
+        title: String(a.title || 'Chart').trim() || 'Chart',
+        type,
+        groupBy: meta.skipGroupBy ? '__scope__' : String(a.groupBy || '__all__'),
+        series,
+        height: meta.defaultHeight || 220,
+        presetKey: null,
+        chartFilters: a.chartFilters
+            || (engine.emptyChartFilters ? engine.emptyChartFilters() : {}),
+    };
+    if (meta.needsBarLayout) {
+        chart.barLayout = a.barLayout === 'stacked' ? 'stacked' : 'grouped';
+    }
+    if (meta.needsOrientation) {
+        chart.orientation = a.orientation === 'horizontal' ? 'horizontal' : 'vertical';
+    }
+    if (meta.needsLineAreaLayout) chart.lineAreaLayout = 'origin';
+    if (meta.needsBarLayout && engine.normalizeCategorySort) {
+        chart.categorySort = engine.normalizeCategorySort(a.categorySort, series.length);
+    }
+    if (meta.allowsHorizontalStack) chart.allowHorizontalStack = true;
+    return chart;
+}
+
+function searchChatCompactCatalog(catalog, opts) {
+    const o = opts || {};
+    const types = ((catalog && catalog.chartTypes) || []).map((t) => {
+        const meta = (catalog.chartTypeMeta && catalog.chartTypeMeta[t])
+            || (Context.statsEngine && Context.statsEngine.getChartTypeMeta
+                && Context.statsEngine.getChartTypeMeta(t))
+            || {};
+        return {
+            id: t.id || t,
+            label: t.label || meta.label || String(t.id || t),
+            minSeries: meta.minSeries,
+            maxSeries: meta.maxSeries,
+        };
+    });
+    // catalog.chartTypes may be string ids
+    const typeList = Array.isArray(catalog && catalog.chartTypes)
+        ? catalog.chartTypes.map((t) => {
+            if (typeof t === 'string') {
+                const meta = (catalog.chartTypeMeta && catalog.chartTypeMeta[t])
+                    || (Context.statsEngine && Context.statsEngine.getChartTypeMeta
+                        && Context.statsEngine.getChartTypeMeta(t))
+                    || {};
+                return {
+                    id: t,
+                    label: meta.label || t,
+                    minSeries: meta.minSeries,
+                    maxSeries: meta.maxSeries,
+                };
+            }
+            return t;
+        })
+        : types;
+    const dimensions = ((catalog && catalog.dimensions) || []).map((d) => {
+        const row = { key: d.key, label: d.label || d.key };
+        if (o.includeOptions && Array.isArray(d.options)) {
+            row.optionsSample = d.options.slice(0, 20).map((opt) => ({
+                id: opt.id,
+                label: opt.label || opt.id,
+            }));
+            row.optionsCount = d.options.length;
+        }
+        return row;
+    });
+    const metrics = ((catalog && catalog.metrics) || []).map((m) => ({
+        id: m.id,
+        label: m.label || m.id,
+        requiresHydration: !!m.requiresHydration,
+        sampleCount: m.sampleCount != null ? m.sampleCount : undefined,
+    }));
+    const aggregations = ((catalog && catalog.aggregations)
+        || (Context.statsEngine && Context.statsEngine.aggregations
+            ? Context.statsEngine.aggregations()
+            : [])).map((a) => ({
+        id: a.id || a,
+        label: a.label || a.id || String(a),
+    }));
+    return { chartTypes: typeList, dimensions, metrics, aggregations };
+}
+
+function searchChatCompactAggData(chart, aggData, maxCategories) {
+    const maxCat = searchChatClampInt(maxCategories, 1, 100, 25);
+    if (!aggData || typeof aggData !== 'object') {
+        return { ok: false, error: 'No aggregate data' };
+    }
+    if (chart.type === 'scorecard' || (aggData.value != null && !Array.isArray(aggData.labels))) {
+        return {
+            ok: true,
+            type: 'scorecard',
+            title: chart.title,
+            value: aggData.value,
+            label: aggData.label || '',
+            subtitle: aggData.subtitle || '',
+        };
+    }
+    if (Array.isArray(aggData.labels) && Array.isArray(aggData.datasets)) {
+        let labels = aggData.labels.map((l) => String(l == null ? '' : l));
+        let datasets = aggData.datasets.map((d) => ({
+            label: d.label || '',
+            data: (d.data || []).map((n) => (Number.isFinite(Number(n)) ? Number(n) : 0)),
+            metricId: d.metricId,
+            agg: d.agg,
+            renderAs: d.renderAs,
+        }));
+        if (datasets[0] && datasets[0].data && datasets[0].data.length === labels.length) {
+            const idxs = labels.map((_, i) => i);
+            idxs.sort((a, b) => (datasets[0].data[b] || 0) - (datasets[0].data[a] || 0));
+            labels = idxs.map((i) => labels[i]);
+            datasets = datasets.map((ds) => Object.assign({}, ds, {
+                data: idxs.map((i) => ds.data[i] || 0),
+            }));
+        }
+        let truncated = false;
+        const fullCount = labels.length;
+        if (labels.length > maxCat) {
+            truncated = true;
+            labels = labels.slice(0, maxCat);
+            datasets = datasets.map((ds) => Object.assign({}, ds, {
+                data: ds.data.slice(0, maxCat),
+            }));
+        }
+        return {
+            ok: true,
+            type: chart.type,
+            title: chart.title,
+            groupBy: chart.groupBy,
+            labels,
+            datasets,
+            totals: datasets.map((ds) => ({
+                label: ds.label,
+                sum: ds.data.reduce((acc, n) => acc + n, 0),
+            })),
+            categoryCount: labels.length,
+            fullCategoryCount: fullCount,
+            truncated,
+        };
+    }
+    if (Array.isArray(aggData.points)) {
+        return {
+            ok: true,
+            type: chart.type,
+            title: chart.title,
+            pointCount: aggData.points.length,
+            pointsSample: aggData.points.slice(0, 40).map((p) => ({
+                x: p.x,
+                y: p.y,
+                r: p.r,
+                label: p.label,
+            })),
+            truncated: aggData.points.length > 40,
+        };
+    }
+    return {
+        ok: true,
+        type: chart.type,
+        title: chart.title,
+        data: aggData,
+    };
+}
+
+function searchChatListChartCatalog(dash, args) {
+    const engine = Context.statsEngine;
+    if (!engine || typeof engine.buildCatalog !== 'function') {
+        return { error: 'statsEngine unavailable' };
+    }
+    const items = searchChatGetScopeItems(dash);
+    const ctx = searchChatStatsCatalogCtx(dash, items);
+    const catalog = engine.buildCatalog(ctx);
+    const compact = searchChatCompactCatalog(catalog, {
+        includeOptions: !!(args && args.includeOptions),
+    });
+    return {
+        scopeCount: items.length,
+        chartTypes: compact.chartTypes,
+        dimensions: compact.dimensions,
+        metrics: compact.metrics,
+        aggregations: compact.aggregations,
+    };
+}
+
+function searchChatComputeChart(dash, args) {
+    const engine = Context.statsEngine;
+    if (!engine || typeof engine.aggregateChart !== 'function') {
+        return { ok: false, error: 'statsEngine unavailable' };
+    }
+    if (!(args && args.type)) return { ok: false, error: 'type is required' };
+    const items = searchChatGetScopeItems(dash);
+    const ctx = searchChatStatsCatalogCtx(dash, items);
+    const catalog = engine.buildCatalog(ctx);
+    const chart = searchChatBuildChartSpec(args, engine);
+    if (typeof engine.validateChart === 'function') {
+        const validation = engine.validateChart(chart, catalog, items, ctx);
+        if (!validation || !validation.ok) {
+            return {
+                ok: false,
+                missing: (validation && validation.missing) || [],
+                chart: { type: chart.type, groupBy: chart.groupBy, title: chart.title },
+            };
+        }
+    }
+    const aggData = engine.aggregateChart(chart, items, catalog, ctx);
+    const compact = searchChatCompactAggData(chart, aggData, args && args.maxCategories);
+    return Object.assign({
+        chart: {
+            type: chart.type,
+            groupBy: chart.groupBy,
+            title: chart.title,
+            series: chart.series,
+        },
+        scopedItemCount: items.length,
+    }, compact);
+}
+
+function searchChatAddChartToDashboard(dash, args) {
+    const engine = Context.statsEngine;
+    if (!engine) return { ok: false, error: 'statsEngine unavailable' };
+    if (!(args && args.type)) return { ok: false, error: 'type is required' };
+    const items = searchChatGetScopeItems(dash);
+    const ctx = searchChatStatsCatalogCtx(dash, items);
+    const catalog = engine.buildCatalog(ctx);
+    let chart = searchChatBuildChartSpec(args, engine);
+    if (typeof engine.prepareImportedChart === 'function') {
+        const prepared = engine.prepareImportedChart(chart);
+        if (prepared) chart = prepared;
+    }
+    if (typeof engine.validateChart === 'function') {
+        const validation = engine.validateChart(chart, catalog, items, ctx);
+        if (!validation || !validation.ok) {
+            return {
+                ok: false,
+                missing: (validation && validation.missing) || [],
+            };
+        }
+    }
+    let store;
+    let active;
+    if (dash && typeof dash._ensureStatsLayout === 'function') {
+        store = dash._ensureStatsLayout();
+        active = typeof dash._activeStatsDashboard === 'function'
+            ? dash._activeStatsDashboard()
+            : null;
+    } else {
+        store = engine.normalizeStore
+            ? engine.normalizeStore(engine.loadLayout())
+            : engine.loadLayout();
+        active = engine.getActiveDashboard(store);
+    }
+    if (!active || !Array.isArray(active.charts)) {
+        return { ok: false, error: 'No active Stats dashboard' };
+    }
+    chart.id = engine.newChartId ? engine.newChartId() : chart.id;
+    chart.title = String((args && args.title) || chart.title || 'Chart').trim() || 'Chart';
+    active.charts.push(chart);
+    if (dash && typeof dash._persistStatsLayout === 'function') {
+        dash._persistStatsLayout();
+    } else if (typeof engine.saveLayout === 'function') {
+        engine.saveLayout(store);
+    }
+    if (dash && typeof dash._renderStatsPanel === 'function') {
+        void dash._renderStatsPanel();
+    }
+    Logger.log(PLUGIN_ID + ': chart added to Stats dashboard — ' + chart.title + ' (' + chart.id + ')');
+    return {
+        ok: true,
+        chartId: chart.id,
+        title: chart.title,
+        type: chart.type,
+        dashboardId: active.id || null,
+        dashboardName: active.name || null,
+    };
+}
+
+function searchChatDestroyChartInstances() {
+    const inst = searchChatUi.chartInstances || [];
+    for (let i = 0; i < inst.length; i++) {
+        try {
+            if (inst[i] && typeof inst[i].destroy === 'function') inst[i].destroy();
+        } catch (_err) { /* ignore */ }
+    }
+    searchChatUi.chartInstances = [];
+}
+
+function searchChatClearCharts(panel) {
+    searchChatDestroyChartInstances();
+    searchChatUi.charts = [];
+    const list = panel && panel.querySelector('[data-wf-dash-search-chat-charts-list]');
+    if (list) list.innerHTML = '';
+    const wrap = panel && panel.querySelector('[data-wf-dash-search-chat-charts]');
+    if (wrap) wrap.style.display = 'none';
+}
+
+function searchChatBuildDisplayChartConfig(entry) {
+    const type = entry.type;
+    const labels = entry.labels;
+    const datasets = entry.datasets.map((ds, i) => {
+        const color = SEARCH_CHAT_CHART_COLORS[i % SEARCH_CHAT_CHART_COLORS.length];
+        if (type === 'pie') {
+            return {
+                label: ds.label || 'Series ' + (i + 1),
+                data: ds.data,
+                backgroundColor: ds.data.map((_, j) =>
+                    SEARCH_CHAT_CHART_COLORS[j % SEARCH_CHAT_CHART_COLORS.length]
+                ),
+            };
+        }
+        return {
+            label: ds.label || 'Series ' + (i + 1),
+            data: ds.data,
+            backgroundColor: type === 'line' ? 'transparent' : color,
+            borderColor: color,
+            borderWidth: 2,
+            fill: false,
+            tension: 0.2,
+        };
+    });
+    const config = {
+        type: type === 'pie' ? 'pie' : (type === 'line' ? 'line' : 'bar'),
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: type === 'pie' || datasets.length > 1 },
+                title: { display: !!entry.title, text: entry.title || '' },
+            },
+        },
+    };
+    if (type === 'bar' && entry.stacked) {
+        config.options.scales = {
+            x: { stacked: true },
+            y: { stacked: true, beginAtZero: true },
+        };
+    } else if (type !== 'pie') {
+        config.options.scales = {
+            y: { beginAtZero: true },
+        };
+    }
+    return config;
+}
+
+async function searchChatRenderChartsUi(panel) {
+    const host = panel || searchChatUi.panel;
+    if (!host) return;
+    const wrap = host.querySelector('[data-wf-dash-search-chat-charts]');
+    const list = host.querySelector('[data-wf-dash-search-chat-charts-list]');
+    if (!wrap || !list) return;
+    searchChatDestroyChartInstances();
+    list.innerHTML = '';
+    if (!searchChatUi.charts.length) {
+        wrap.style.display = 'none';
+        return;
+    }
+    wrap.style.display = '';
+    const chartJsApi = Context.chartJs;
+    if (!chartJsApi || typeof chartJsApi.ensureLoaded !== 'function') {
+        list.textContent = 'Chart.js unavailable.';
+        return;
+    }
+    let Chart;
+    try {
+        Chart = await chartJsApi.ensureLoaded();
+    } catch (err) {
+        list.textContent = 'Failed to load Chart.js.';
+        Logger.warn(PLUGIN_ID + ': Chart.js load failed', err);
+        return;
+    }
+    for (let i = 0; i < searchChatUi.charts.length; i++) {
+        const entry = searchChatUi.charts[i];
+        const card = document.createElement('div');
+        card.setAttribute('data-wf-dash-search-chat-chart', entry.id);
+        card.style.cssText = 'display: flex; flex-direction: column; gap: 4px;'
+            + ' border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 8px;'
+            + ' background: var(--card, #fff);';
+        const title = document.createElement('div');
+        title.style.cssText = 'font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a);';
+        title.textContent = entry.title || entry.type + ' chart';
+        const canvasWrap = document.createElement('div');
+        canvasWrap.style.cssText = 'position: relative; height: 180px; width: 100%;';
+        const canvas = document.createElement('canvas');
+        canvasWrap.appendChild(canvas);
+        card.appendChild(title);
+        card.appendChild(canvasWrap);
+        list.appendChild(card);
+        try {
+            const inst = new Chart(canvas, searchChatBuildDisplayChartConfig(entry));
+            searchChatUi.chartInstances.push(inst);
+        } catch (err) {
+            Logger.warn(PLUGIN_ID + ': chart render failed — ' + entry.id, err);
+            canvasWrap.textContent = 'Render failed.';
+        }
+    }
+}
+
+function searchChatRenderChatChart(args) {
+    const a = args || {};
+    const type = String(a.type || '').trim();
+    if (type !== 'bar' && type !== 'line' && type !== 'pie') {
+        return { ok: false, error: 'type must be bar, line, or pie' };
+    }
+    const labels = Array.isArray(a.labels) ? a.labels.map((l) => String(l == null ? '' : l)) : [];
+    if (!labels.length) return { ok: false, error: 'labels required' };
+    if (labels.length > SEARCH_CHAT_MAX_CHART_LABELS) {
+        return {
+            ok: false,
+            error: 'labels capped at ' + SEARCH_CHAT_MAX_CHART_LABELS + '; got ' + labels.length,
+        };
+    }
+    const rawDs = Array.isArray(a.datasets) ? a.datasets : [];
+    if (!rawDs.length) return { ok: false, error: 'datasets required' };
+    if (rawDs.length > SEARCH_CHAT_MAX_CHART_DATASETS) {
+        return {
+            ok: false,
+            error: 'datasets capped at ' + SEARCH_CHAT_MAX_CHART_DATASETS,
+        };
+    }
+    const datasets = [];
+    for (let i = 0; i < rawDs.length; i++) {
+        const ds = rawDs[i] || {};
+        const data = Array.isArray(ds.data) ? ds.data.map((n) => Number(n)) : [];
+        if (data.length !== labels.length) {
+            return {
+                ok: false,
+                error: 'dataset[' + i + '] data length (' + data.length
+                    + ') must match labels (' + labels.length + ')',
+            };
+        }
+        for (let j = 0; j < data.length; j++) {
+            if (!Number.isFinite(data[j])) {
+                return { ok: false, error: 'dataset[' + i + '] has non-finite value at ' + j };
+            }
+        }
+        datasets.push({
+            label: ds.label != null ? String(ds.label) : ('Series ' + (i + 1)),
+            data,
+        });
+    }
+    const id = 'chat-chart-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e4);
+    const entry = {
+        id,
+        type,
+        title: String(a.title || '').trim() || (type + ' chart'),
+        labels,
+        datasets,
+        stacked: type === 'bar' && !!a.stacked,
+    };
+    searchChatUi.charts.push(entry);
+    while (searchChatUi.charts.length > SEARCH_CHAT_MAX_LIVE_CHARTS) {
+        searchChatUi.charts.shift();
+    }
+    void searchChatRenderChartsUi(searchChatUi.panel);
+    Logger.log(PLUGIN_ID + ': render_chat_chart — ' + entry.title + ' (' + type + ', '
+        + labels.length + ' labels)');
+    return {
+        ok: true,
+        chartId: id,
+        type,
+        title: entry.title,
+        labelCount: labels.length,
+        datasetCount: datasets.length,
+        liveChartCount: searchChatUi.charts.length,
+    };
+}
+
 function searchChatToolFn(name, description, parameters) {
     return {
         type: 'function',
@@ -1757,6 +2305,115 @@ function searchChatGetToolDefinitions() {
             }
         ),
         searchChatToolFn(
+            'list_chart_catalog',
+            'List Stats chart types, dimensions, metrics, and aggregations for the current result scope (compact).',
+            {
+                type: 'object',
+                properties: {
+                    includeOptions: {
+                        type: 'boolean',
+                        description: 'Include up to 20 sample option ids per dimension',
+                    },
+                },
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'compute_chart',
+            'Locally aggregate a Stats-style chart spec over current results. Returns labels/series/totals only (no image).',
+            {
+                type: 'object',
+                properties: {
+                    title: { type: 'string' },
+                    type: {
+                        type: 'string',
+                        description: 'pie, barLine, bar, line, scorecard, polarArea, …',
+                    },
+                    groupBy: { type: 'string' },
+                    series: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                metricId: { type: 'string' },
+                                agg: { type: 'string' },
+                                label: { type: 'string' },
+                                renderAs: { type: 'string', enum: ['bar', 'line'] },
+                                yAxis: { type: 'string', enum: ['y', 'y1'] },
+                            },
+                            additionalProperties: false,
+                        },
+                    },
+                    chartFilters: { type: 'object' },
+                    barLayout: { type: 'string', enum: ['grouped', 'stacked'] },
+                    orientation: { type: 'string', enum: ['vertical', 'horizontal'] },
+                    categorySort: { type: 'object' },
+                    maxCategories: { type: 'integer' },
+                },
+                required: ['type'],
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'add_chart_to_dashboard',
+            'Validate a Stats-style chart and add it to the active Stats dashboard for the operator.',
+            {
+                type: 'object',
+                properties: {
+                    title: { type: 'string' },
+                    type: { type: 'string' },
+                    groupBy: { type: 'string' },
+                    series: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                metricId: { type: 'string' },
+                                agg: { type: 'string' },
+                                label: { type: 'string' },
+                                renderAs: { type: 'string', enum: ['bar', 'line'] },
+                                yAxis: { type: 'string', enum: ['y', 'y1'] },
+                            },
+                            additionalProperties: false,
+                        },
+                    },
+                    chartFilters: { type: 'object' },
+                    barLayout: { type: 'string', enum: ['grouped', 'stacked'] },
+                    orientation: { type: 'string', enum: ['vertical', 'horizontal'] },
+                    categorySort: { type: 'object' },
+                },
+                required: ['type'],
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
+            'render_chat_chart',
+            'Render a bar/line/pie chart locally in the Chat panel from labels+datasets. Returns ok+ids only (no image to the model).',
+            {
+                type: 'object',
+                properties: {
+                    type: { type: 'string', enum: ['bar', 'line', 'pie'] },
+                    title: { type: 'string' },
+                    labels: { type: 'array', items: { type: 'string' } },
+                    datasets: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                label: { type: 'string' },
+                                data: { type: 'array', items: { type: 'number' } },
+                            },
+                            required: ['data'],
+                            additionalProperties: false,
+                        },
+                    },
+                    stacked: { type: 'boolean' },
+                },
+                required: ['type', 'labels', 'datasets'],
+                additionalProperties: false,
+            }
+        ),
+        searchChatToolFn(
             'respond',
             'REQUIRED to finish. Pass the final markdown answer for the operator. Do not answer in free-form assistant text.',
             {
@@ -1907,6 +2564,18 @@ function searchChatCreateExecutor(dash) {
             case 'prompt_token_overlap':
                 payload = searchChatPromptTokenOverlap(dash, args, settings);
                 break;
+            case 'list_chart_catalog':
+                payload = searchChatListChartCatalog(dash, args);
+                break;
+            case 'compute_chart':
+                payload = searchChatComputeChart(dash, args);
+                break;
+            case 'add_chart_to_dashboard':
+                payload = searchChatAddChartToDashboard(dash, args);
+                break;
+            case 'render_chat_chart':
+                payload = searchChatRenderChatChart(args);
+                break;
             case 'respond':
                 payload = { ok: true };
                 break;
@@ -1943,6 +2612,9 @@ function searchChatBuildSystemPrompt(_dash) {
         'For similarity/diffs prefer find_similar_prompts, find_near_duplicates, compare_prompts,',
         'prompt_overlap_matrix, prompt_token_overlap, analyze_prompt_stats before get_task.',
         'Prefer scores + task ids; pull excerpts only for the interesting subset.',
+        'For distributions/breakdowns: list_chart_catalog then compute_chart (returns numbers only).',
+        'To show the operator a chart in Chat, call render_chat_chart with labels/datasets (often from compute_chart).',
+        'To pin a chart on the Stats tab, call add_chart_to_dashboard. Charts render locally — never claim an image was sent.',
         'Budgets: maxToolRounds=' + settings.maxToolRounds
             + ', maxResultsPerCall=' + settings.maxResultsPerCall
             + ', maxPromptChars=' + settings.maxPromptChars
@@ -1986,6 +2658,17 @@ function searchChatPanelHtml() {
         + '<div data-wf-dash-search-chat-activity-log style="max-height: 120px; overflow: auto;'
         + ' margin-top: 4px; font-family: var(--font-mono, ui-monospace, monospace);'
         + ' white-space: pre-wrap;"></div>'
+        + '</details>'
+        + '<details data-wf-dash-search-chat-charts open style="display: none; flex-shrink: 0;'
+        + ' font-size: 11px; color: var(--muted-foreground, #64748b);'
+        + ' border: 1px solid var(--border, #e2e8f0); border-radius: 6px; padding: 4px 8px;">'
+        + '<summary style="cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px;">'
+        + '<span>Charts</span>'
+        + '<button type="button" data-wf-dash-search-chat-clear-charts class="' + btn + '"'
+        + ' style="flex-shrink: 0;">Clear charts</button>'
+        + '</summary>'
+        + '<div data-wf-dash-search-chat-charts-list style="display: flex; flex-direction: column;'
+        + ' gap: 8px; margin-top: 6px; max-height: 420px; overflow: auto;"></div>'
         + '</details>'
         + '<div data-wf-dash-search-chat-mount style="flex: 1 1 auto; width: 100%; max-width: 100%;'
         + ' min-width: 0; min-height: 220px; display: flex; flex-direction: column;"></div>'
@@ -2054,6 +2737,8 @@ function searchChatEnsureState() {
 function searchChatResetChat(panel, dash) {
     const chat = Context.aiChat;
     searchChatUi.activity = [];
+    searchChatUi.panel = panel || searchChatUi.panel;
+    searchChatClearCharts(panel);
     searchChatUi.chatState = chat && typeof chat.createState === 'function'
         ? chat.createState({ source: 'search-chat' })
         : { messages: [], streaming: false, streamAbort: null, streamGen: 0 };
@@ -2116,6 +2801,7 @@ async function searchChatSend(panel, dash, userText) {
 
     const settings = searchChatGetSettings();
     const executeTool = searchChatCreateExecutor(dash);
+    searchChatUi.panel = panel;
     searchChatSetStatus(panel, 'Working…', false);
 
     try {
@@ -2137,9 +2823,13 @@ async function searchChatSend(panel, dash, userText) {
                     'Tool: ' + row.name + ' (round ' + row.round + ')…',
                     false
                 );
+                if (row.name === 'render_chat_chart') {
+                    void searchChatRenderChartsUi(panel);
+                }
             },
             onTurnDone: () => {
                 searchChatSetStatus(panel, '', false);
+                void searchChatRenderChartsUi(panel);
             },
         }));
         Logger.log(PLUGIN_ID + ': turn complete');
@@ -2154,9 +2844,18 @@ function searchChatWirePanel(panel, dash) {
     if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
         Context.uiLib.ensureButtonStyles(SEARCH_CHAT_SCOPE);
     }
+    searchChatUi.panel = panel;
     if (panel.getAttribute('data-wf-dash-search-chat-bound') !== '1') {
         panel.setAttribute('data-wf-dash-search-chat-bound', '1');
         panel.addEventListener('click', (e) => {
+            const clearChartsBtn = e.target.closest('[data-wf-dash-search-chat-clear-charts]');
+            if (clearChartsBtn && panel.contains(clearChartsBtn)) {
+                e.preventDefault();
+                e.stopPropagation();
+                searchChatClearCharts(panel);
+                Logger.log(PLUGIN_ID + ': charts cleared');
+                return;
+            }
             const clearBtn = e.target.closest('[data-wf-dash-search-chat-clear]');
             if (clearBtn && panel.contains(clearBtn)) {
                 searchChatResetChat(panel, dash);
@@ -2178,6 +2877,7 @@ function searchChatWirePanel(panel, dash) {
     else {
         searchChatUpdateBadge(panel, dash);
         searchChatRenderActivity(panel);
+        void searchChatRenderChartsUi(panel);
         const chat = Context.aiChat;
         if (chat) {
             chat.wireComposer(panel, searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
@@ -2319,7 +3019,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '2.0',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
