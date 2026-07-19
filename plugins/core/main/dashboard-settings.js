@@ -888,6 +888,16 @@ function dashboardSettingsPanelHtml() {
         + '<div id="wf-dash-settings-tab-order"></div>'
         + '</section>'
         + dividerHtml
+        + '<section aria-labelledby="wf-dash-settings-search-output-heading" style="display: flex; flex-direction: column; gap: 10px;">'
+        + '<h3 id="wf-dash-settings-search-output-heading" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--foreground, #0f172a);">'
+        + 'Search Output'
+        + '</h3>'
+        + '<p style="' + hintStyle + ' margin: 0; line-height: 1.45;">'
+        + 'Choose which right sidebar pane opens by default.'
+        + '</p>'
+        + '<div id="wf-dash-settings-default-stats-tab"></div>'
+        + '</section>'
+        + dividerHtml
         + '<section aria-labelledby="wf-dash-settings-ai-heading" style="display: flex; flex-direction: column; gap: 10px;">'
         + '<h3 id="wf-dash-settings-ai-heading" style="font-size: 14px; font-weight: 600; margin: 0; color: var(--foreground, #0f172a);">'
         + 'AI Integration'
@@ -950,6 +960,44 @@ function dashboardTabOrderHtml() {
 function renderDashboardTabOrder(modal) {
     const root = modal && modal.querySelector('#wf-dash-settings-tab-order');
     if (root) root.innerHTML = dashboardTabOrderHtml();
+}
+
+function defaultStatsTabOptions() {
+    const options = [
+        { id: 'stats', label: 'Stats' },
+        { id: 'ratings', label: 'Ratings' },
+    ];
+    if (Context.isDevBranch) {
+        options.push({ id: 'chat', label: 'Chat' });
+    }
+    return options;
+}
+
+function dashboardDefaultStatsTabHtml() {
+    const dashboard = Context.dashboard;
+    const selected = dashboard && typeof dashboard.getDefaultStatsTabId === 'function'
+        ? dashboard.getDefaultStatsTabId()
+        : 'stats';
+    const inputStyle = dashSettingsInputStyle();
+    const options = defaultStatsTabOptions().map((opt) => {
+        const id = dashSettingsEscHtml(opt.id);
+        const label = dashSettingsEscHtml(opt.label);
+        return '<option value="' + id + '"' + (opt.id === selected ? ' selected' : '') + '>'
+            + label + '</option>';
+    }).join('');
+    return ''
+        + '<label style="' + dashSettingsLabelStyle() + ' display: flex; flex-direction: column; gap: 6px;">'
+        + '<span>Default right sidebar pane</span>'
+        + '<select id="wf-dash-settings-default-stats-tab-select" data-wf-dash-default-stats-tab '
+        + 'style="' + inputStyle + ' max-width: 280px;">'
+        + options
+        + '</select>'
+        + '</label>';
+}
+
+function renderDefaultStatsTab(modal) {
+    const root = modal && modal.querySelector('#wf-dash-settings-default-stats-tab');
+    if (root) root.innerHTML = dashboardDefaultStatsTabHtml();
 }
 
 function attachDashboardSettingsListeners(modal) {
@@ -1072,6 +1120,18 @@ function attachDashboardSettingsListeners(modal) {
         }
     });
 
+    modal.addEventListener('change', (e) => {
+        const panel = modal.querySelector('[data-wf-dash-panel="dash-settings"]');
+        if (!panel || !panel.contains(e.target)) return;
+        const statsTabSelect = e.target.closest('[data-wf-dash-default-stats-tab]');
+        if (!statsTabSelect) return;
+        const tabId = String(statsTabSelect.value || '').trim();
+        if (Context.dashboard && typeof Context.dashboard.setDefaultStatsTab === 'function') {
+            Context.dashboard.setDefaultStatsTab(tabId);
+            renderDefaultStatsTab(modal);
+        }
+    });
+
     modal.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
         const panel = modal.querySelector('[data-wf-dash-panel="dash-settings"]');
@@ -1086,8 +1146,8 @@ function attachDashboardSettingsListeners(modal) {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
-    description: 'Settings tab for dashboard tab order, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.13',
+    description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
+    _version: '1.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1151,6 +1211,7 @@ const plugin = {
             attachListeners(modal) { attachDashboardSettingsListeners(modal); },
             onActivate(modal) {
                 renderDashboardTabOrder(modal);
+                renderDefaultStatsTab(modal);
                 renderAiSection(modal);
                 setAiStatus(modal, '', false);
                 setTestResult(modal, null);
