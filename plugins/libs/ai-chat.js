@@ -7,9 +7,10 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.1';
+const AI_CHAT_VERSION = '3.2';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
+const AI_CHAT_CALLBACK_KEYS = ['onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts'];
 
 function aiChatCopyIconSvg() {
     return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"'
@@ -54,6 +55,24 @@ function aiChatResolveOpts(opts) {
         getTurnOpts: typeof o.getTurnOpts === 'function' ? o.getTurnOpts : null,
         floatingInput: !!o.floatingInput,
     };
+}
+
+/**
+ * Merge previously wired composer options with a (possibly render-only) update.
+ * Explicit new values win; callback handlers omitted from `opts` are preserved
+ * so theme/history refreshes cannot erase onSend/onStop/etc.
+ */
+function aiChatResolveWireOpts(state, opts) {
+    const prev = (state && state._wireOpts) || {};
+    const next = opts || {};
+    const merged = Object.assign({}, prev, next);
+    for (let i = 0; i < AI_CHAT_CALLBACK_KEYS.length; i++) {
+        const key = AI_CHAT_CALLBACK_KEYS[i];
+        if (typeof next[key] !== 'function' && typeof prev[key] === 'function') {
+            merged[key] = prev[key];
+        }
+    }
+    return aiChatResolveOpts(merged);
 }
 
 function aiChatQuery(root, selector) {
@@ -780,8 +799,8 @@ function aiChatBindElement(el, root, state, opts) {
 }
 
 async function aiChatEnsureMounted(root, state, opts) {
-    const o = aiChatResolveOpts(opts);
     if (!root || !state) return null;
+    const o = aiChatResolveWireOpts(state, opts);
     state._wireOpts = o;
 
     const deep = Context.deepChat;
@@ -830,8 +849,8 @@ async function aiChatEnsureMounted(root, state, opts) {
 }
 
 function aiChatRenderMessages(root, state, opts) {
-    const o = aiChatResolveOpts(opts || (state && state._wireOpts));
     if (!root || !state) return;
+    const o = aiChatResolveWireOpts(state, opts || state._wireOpts);
     state._wireOpts = o;
     const run = async () => {
         try {
@@ -1155,7 +1174,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
