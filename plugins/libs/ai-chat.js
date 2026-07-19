@@ -7,9 +7,10 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.6';
+const AI_CHAT_VERSION = '3.7';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
+const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
 const AI_CHAT_CALLBACK_KEYS = [
     'onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts',
     'onToolActivity', 'executeTool',
@@ -590,10 +591,15 @@ function aiChatBuildApiMessages(state, opts) {
             continue;
         }
         if (m.role === 'assistant') {
-            const row = { role: 'assistant', content: m.content != null ? m.content : '' };
+            const row = { role: 'assistant' };
             if (Array.isArray(m.tool_calls) && m.tool_calls.length) {
                 row.tool_calls = m.tool_calls;
-                if (row.content == null) row.content = '';
+                // Providers expect null (not "") when tool_calls are present.
+                row.content = (m.content != null && String(m.content) !== '')
+                    ? m.content
+                    : null;
+            } else {
+                row.content = m.content != null ? m.content : '';
             }
             api.push(row);
             continue;
@@ -683,15 +689,17 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
     const settleOk = (text) => {
         if (settled) return text;
         settled = true;
-        state.streamAbort = null;
-        state.streaming = false;
+        // Keep streamAbort until caller aborts/replaces; clearing without abort
+        // left GM streams open between tool rounds.
         try { signals.onClose(); } catch (_e) { /* ignore */ }
+        if (!opts || !opts.keepStreamingFlag) {
+            state.streaming = false;
+        }
         return text;
     };
     const settleErr = (err) => {
         if (settled) return;
         settled = true;
-        state.streamAbort = null;
         state.streaming = false;
         const message = (err && err.message) || String(err || 'Stream failed');
         try { signals.onResponse({ error: message }); } catch (_e) { /* ignore */ }
@@ -1296,6 +1304,27 @@ function aiChatParseToolArgs(toolCall) {
 }
 
 /**
+ * Race a promise against a timeout; on timeout run onTimeout then reject.
+ */
+function aiChatWithTimeout(promise, ms, onTimeout, message) {
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            try {
+                if (typeof onTimeout === 'function') onTimeout();
+            } catch (_e) { /* ignore */ }
+            reject(new Error(message || ('Timed out after ' + ms + 'ms')));
+        }, ms);
+    });
+    return Promise.race([
+        Promise.resolve(promise).finally(() => {
+            if (timer) clearTimeout(timer);
+        }),
+        timeoutPromise,
+    ]);
+}
+
+/**
  * Multi-round tool loop. Intermediate assistant/tool messages stay hideInUi.
  * Only the finalize tool (default `respond`) produces a visible assistant bubble.
  *
@@ -1306,6 +1335,7 @@ function aiChatParseToolArgs(toolCall) {
  * - executeTool(name, args, toolCall) => Promise<string|object> | string|object
  * - finalizeToolName (default 'respond')
  * - maxToolRounds (default 8)
+ * - roundTimeoutMs (default 90000)
  * - model, max_tokens, parallel_tool_calls, tool_choice
  * - onToolActivity({ round, name, argsSummary, resultBytes, error? })
  * - onTurnDone
@@ -1330,6 +1360,12 @@ async function aiChatSendToolTurn(root, state, opts) {
             20,
             Number.isFinite(opts && opts.maxToolRounds) ? Math.floor(opts.maxToolRounds) : 8
         )
+    );
+    const roundTimeoutMs = Math.max(
+        10000,
+        Number.isFinite(opts && opts.roundTimeoutMs)
+            ? Math.floor(opts.roundTimeoutMs)
+            : AI_CHAT_TOOL_ROUND_TIMEOUT_MS
     );
     const userText = opts && opts.userText != null ? String(opts.userText) : '';
     const userContent = opts && opts.userContent != null ? String(opts.userContent) : userText;
@@ -1378,13 +1414,22 @@ async function aiChatSendToolTurn(root, state, opts) {
         }
     };
 
+    const abortPriorStream = () => {
+        if (state.streamAbort && typeof state.streamAbort.abort === 'function') {
+            try { state.streamAbort.abort(); } catch (_e) { /* ignore */ }
+        }
+        state.streamAbort = null;
+    };
+
     try {
         while (round < maxRounds) {
             round += 1;
             syncWorking('Working… (round ' + round + ')');
             state.streaming = true;
+            abortPriorStream();
 
             const apiMessages = aiChatBuildApiMessages(state, { systemContent });
+            let roundError = null;
 
             const streamOpts = Object.assign({}, o, {
                 tools,
@@ -1393,23 +1438,43 @@ async function aiChatSendToolTurn(root, state, opts) {
                 max_tokens: opts && opts.max_tokens,
                 parallel_tool_calls: opts && opts.parallel_tool_calls,
                 suppressTextDeltas: true,
+                keepStreamingFlag: true,
             });
 
-            const result = await aiChatRunStreamWithSignals(
-                state,
-                apiMessages,
-                {
-                    onOpen() {},
-                    onClose() {},
-                    onResponse(response) {
-                        if (response && response.error) {
-                            throw new Error(String(response.error));
-                        }
-                    },
-                    stopClicked: quietSignals.stopClicked || { listener: null },
-                },
-                streamOpts
-            );
+            Logger.log(o.logTag + ': tool round ' + round + '/' + maxRounds
+                + ' — requesting completion (' + apiMessages.length + ' msg)');
+
+            let result;
+            try {
+                result = await aiChatWithTimeout(
+                    aiChatRunStreamWithSignals(
+                        state,
+                        apiMessages,
+                        {
+                            onOpen() {},
+                            onClose() {},
+                            onResponse(response) {
+                                if (response && response.error) {
+                                    roundError = String(response.error);
+                                }
+                            },
+                            stopClicked: quietSignals.stopClicked || { listener: null },
+                        },
+                        streamOpts
+                    ),
+                    roundTimeoutMs,
+                    () => abortPriorStream(),
+                    'OpenRouter tool round timed out after ' + roundTimeoutMs + 'ms'
+                );
+            } catch (streamErr) {
+                abortPriorStream();
+                throw streamErr;
+            }
+
+            if (roundError) {
+                abortPriorStream();
+                throw new Error(roundError);
+            }
 
             if (result && result.generationId) lastGenerationId = result.generationId;
             if (result && result.model) lastModel = result.model;
@@ -1420,6 +1485,14 @@ async function aiChatSendToolTurn(root, state, opts) {
             const finishReason = result && result.finishReason
                 ? String(result.finishReason)
                 : '';
+            const toolNames = toolCalls.map((tc) =>
+                (tc && tc.function && tc.function.name) ? String(tc.function.name) : '?'
+            ).join(', ');
+            Logger.log(o.logTag + ': tool round ' + round + ' done — finish_reason='
+                + (finishReason || 'unknown')
+                + (toolNames ? ' · tools=[' + toolNames + ']' : ' · no tools'));
+
+            abortPriorStream();
 
             if (!toolCalls.length) {
                 const errMsg = finishReason === 'stop'
@@ -1445,7 +1518,7 @@ async function aiChatSendToolTurn(root, state, opts) {
 
             state.messages.push({
                 role: 'assistant',
-                content: '',
+                content: null,
                 tool_calls: toolCalls,
                 hideInUi: true,
             });
@@ -1547,8 +1620,6 @@ async function aiChatSendToolTurn(root, state, opts) {
                     hideInUi: true,
                 });
             }
-            Logger.debug(o.logTag + ': tool round ' + round + ' — '
-                + toolCalls.length + ' call(s)');
             state.streaming = true;
         }
 
@@ -1561,22 +1632,25 @@ async function aiChatSendToolTurn(root, state, opts) {
         } catch (_e) { /* ignore */ }
         throw new Error(errMsg);
     } catch (err) {
+        abortPriorStream();
         state.streaming = false;
-        if (!(err && err.message && String(err.message).indexOf('without') >= 0)
-            && !(err && err.message && String(err.message).indexOf('Exceeded') >= 0)
-            && !(err && err.message && String(err.message).indexOf('markdown') >= 0)) {
-            const last = state.messages[state.messages.length - 1];
-            if (!last || last.role !== 'assistant' || !String(last.content || '').startsWith('Error:')) {
-                state.messages.push({
-                    role: 'assistant',
-                    content: 'Error: ' + ((err && err.message) || String(err)),
-                });
-            }
-            try {
-                if (state._deepChat) aiChatSyncHistory(state._deepChat, state);
-            } catch (_e) { /* ignore */ }
+        const msg = (err && err.message) || String(err);
+        const last = state.messages[state.messages.length - 1];
+        if (!last || last.role !== 'assistant' || !String(last.content || '').startsWith('Error:')) {
+            state.messages.push({
+                role: 'assistant',
+                content: 'Error: ' + msg,
+            });
         }
-        Logger.error(o.logTag + ': tool turn failed: ' + ((err && err.message) || err));
+        try {
+            if (useLiveSignals && signals) {
+                await Promise.resolve(signals.onResponse({ error: msg }));
+                try { signals.onClose(); } catch (_e) { /* ignore */ }
+            } else if (state._deepChat) {
+                aiChatSyncHistory(state._deepChat, state);
+            }
+        } catch (_e) { /* ignore */ }
+        Logger.error(o.logTag + ': tool turn failed: ' + msg);
         throw err;
     } finally {
         if (fromHandler && root) {
@@ -1623,7 +1697,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

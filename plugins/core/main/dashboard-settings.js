@@ -336,6 +336,20 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts
     const toolCallAcc = [];
     let finished = false;
     let usingReader = false;
+    let streamReader = null;
+    let req = null;
+
+    const releaseRequest = () => {
+        try {
+            if (streamReader && typeof streamReader.cancel === 'function') {
+                streamReader.cancel().catch(() => {});
+            }
+        } catch (_e) { /* ignore */ }
+        streamReader = null;
+        try {
+            if (req && typeof req.abort === 'function') req.abort();
+        } catch (_e) { /* ignore */ }
+    };
 
     const finishOk = () => {
         if (finished || aborted) return;
@@ -350,12 +364,15 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts
                 generationId: generationId || null,
             });
         }
+        // Release the HTTP stream so the next tool round can open a new request.
+        releaseRequest();
     };
 
     const fail = (err) => {
         if (finished || aborted) return;
         finished = true;
         if (onError) onError(err instanceof Error ? err : new Error(String(err || 'Request failed')));
+        releaseRequest();
     };
 
     const consumeSseBlock = (block) => {
@@ -457,7 +474,7 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts
         body.parallel_tool_calls = reqOpts.parallel_tool_calls;
     }
 
-    const req = GM_xmlhttpRequest({
+    req = GM_xmlhttpRequest({
         method: 'POST',
         url: OPENROUTER_CHAT_COMPLETIONS_URL,
         responseType: 'stream',
@@ -477,6 +494,7 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts
             if (!body || typeof body.getReader !== 'function') return;
             usingReader = true;
             const reader = body.getReader();
+            streamReader = reader;
             const decoder = new TextDecoder();
             const pump = () => {
                 reader.read().then(({ done, value }) => {
@@ -489,7 +507,7 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts
                     ingestRaw(decoder.decode(value, { stream: true }));
                     pump();
                 }).catch((err) => {
-                    if (!aborted) fail(err);
+                    if (!aborted && !finished) fail(err);
                 });
             };
             pump();
@@ -528,17 +546,16 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts
         onabort: () => {
             aborted = true;
             finished = true;
+            streamReader = null;
         }
     });
 
     return {
         abort() {
-            if (aborted || finished) return;
+            if (aborted) return;
             aborted = true;
             finished = true;
-            try {
-                if (req && typeof req.abort === 'function') req.abort();
-            } catch (_e) { /* ignore */ }
+            releaseRequest();
         }
     };
 }
@@ -1070,7 +1087,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.12',
+    _version: '1.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
