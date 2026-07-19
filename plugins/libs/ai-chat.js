@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.2';
+const AI_CHAT_VERSION = '3.3';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_CALLBACK_KEYS = ['onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts'];
@@ -855,7 +855,11 @@ function aiChatRenderMessages(root, state, opts) {
     const run = async () => {
         try {
             const el = await aiChatEnsureMounted(root, state, o);
-            if (!state.streaming) aiChatSyncHistory(el, state);
+            // Do not reset Deep Chat history while a live connect/stream turn is
+            // in flight — that races the just-painted user bubble and wipes it.
+            if (!state.streaming && !root._wfAiChatFromHandler) {
+                aiChatSyncHistory(el, state);
+            }
         } catch (err) {
             Logger.error(o.logTag + ': renderMessages failed', err);
             const mount = aiChatQuery(root, o.mountSelector);
@@ -1174,7 +1178,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

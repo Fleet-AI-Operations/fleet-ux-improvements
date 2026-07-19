@@ -312,8 +312,7 @@ async function sendVerifierChatMessage(modal, userText) {
     const text = String(userText || '').trim();
     if (!chat || !state || !text || state.streaming) return;
 
-    writeVerifierChatOpenPref(true);
-    syncVerifierAiUi(modal);
+    ensureVerifierChatPaneOpen(modal);
 
     const attachment = takeVerifierAttachmentForTurn(modal, state);
     const userContent = attachment
@@ -362,8 +361,7 @@ async function decodeVerifierOutput(modal) {
         return;
     }
 
-    writeVerifierChatOpenPref(true);
-    syncVerifierAiUi(modal);
+    ensureVerifierChatPaneOpen(modal);
     if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
 
     const attachment = takeVerifierAttachmentForTurn(modal, state);
@@ -430,6 +428,34 @@ function applyVerifierScratchpadLayout(modal, openOverride) {
 
     toggleBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
     toggleBtn.textContent = open ? 'Hide Verifier Output' : 'Verifier Output';
+}
+
+/**
+ * Show the chat pane without remounting/syncing Deep Chat history.
+ * Used on the send path so an async history refresh cannot race the live turn.
+ */
+function ensureVerifierChatPaneOpen(modal) {
+    if (!modal) return;
+    ensureVerifierBtnStyles();
+    writeVerifierChatOpenPref(true);
+    const ai = hasVerifierAiKey();
+    const chatOpen = ai;
+    const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
+    const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
+    const chatPane = modal.querySelector('#wf-ops-verifier-chat-pane');
+    const workspace = modal.querySelector('#wf-ops-verifier-workspace');
+
+    if (chatToggle) {
+        chatToggle.style.display = ai ? '' : 'none';
+        chatToggle.textContent = chatOpen ? 'Hide chat' : 'Chat';
+        chatToggle.setAttribute('aria-pressed', chatOpen ? 'true' : 'false');
+    }
+    if (decodeBtn) decodeBtn.style.display = ai ? '' : 'none';
+    if (chatPane) {
+        chatPane.style.display = chatOpen ? 'flex' : 'none';
+        chatPane.setAttribute('aria-hidden', chatOpen ? 'false' : 'true');
+    }
+    if (workspace) workspace.setAttribute('data-wf-ai-chat', chatOpen ? '1' : '0');
 }
 
 function syncVerifierAiUi(modal) {
@@ -884,7 +910,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '6.3',
+    _version: '6.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -918,6 +944,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v6.3');
+        Logger.log('verifier-fetcher: tab registered v6.4');
     }
 };
