@@ -1,10 +1,10 @@
 // ============= search-output-chat.js =============
-// Dev-gated Search Output Chat: tool loop over current results.
+// Search Output Chat: tool loop over current results.
 // Final answer only via required `respond` tool. Settings live under
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '1.2';
+const SEARCH_CHAT_VERSION = '1.3';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 
@@ -1884,7 +1884,7 @@ function searchChatSettingsFieldsHtml(settings) {
         + ' margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border, #e2e8f0);">'
         + '<div style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);">Search Chat</div>'
         + '<p style="margin: 0; font-size: 11px; line-height: 1.45; color: var(--muted-foreground, #64748b);">'
-        + 'Dev-only limits for Search Output → Chat. Other AI features ignore these.'
+        + 'Limits for Search Output → Chat. Other AI features ignore these.'
         + '</p>'
         + '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">'
         + row('wf-dash-search-chat-maxToolRounds', 'Max tool rounds / turn', s.maxToolRounds, 'type="number" min="1" max="20"')
@@ -1967,8 +1967,8 @@ const SearchOutputChatApi = {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
-    description: 'Dev-gated Chat tab over search results with OpenRouter tool loop',
-    _version: '1.2',
+    description: 'Chat tab over search results with OpenRouter tool loop',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
