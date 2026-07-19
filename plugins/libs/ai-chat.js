@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.7';
+const AI_CHAT_VERSION = '3.8';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -1396,6 +1396,9 @@ async function aiChatSendToolTurn(root, state, opts) {
     let lastGenerationId = null;
     let lastModel = null;
     let round = 0;
+    let forceFinalize = false;
+    let forcedFinalizeAttempts = 0;
+    const maxForcedFinalizeAttempts = 2;
 
     const notifyActivity = (payload) => {
         if (typeof o.onToolActivity === 'function') {
@@ -1421,8 +1424,64 @@ async function aiChatSendToolTurn(root, state, opts) {
         state.streamAbort = null;
     };
 
+    const deliverFinalAnswer = async (markdown, viaLabel) => {
+        const text = String(markdown || '').trim();
+        state.messages.push({
+            role: 'assistant',
+            content: text,
+        });
+        state.lastGenerationId = lastGenerationId;
+        state.lastModel = lastModel;
+        state.streaming = false;
+        try {
+            if (useLiveSignals) {
+                await Promise.resolve(signals.onResponse({
+                    text: text,
+                    overwrite: true,
+                }));
+                try { signals.onClose(); } catch (_e) { /* ignore */ }
+            } else if (state._deepChat) {
+                aiChatSyncHistory(state._deepChat, state);
+            }
+        } catch (_e) { /* ignore */ }
+        Logger.log(o.logTag + ': tool turn done via ' + viaLabel
+            + ' (' + text.length + ' chars'
+            + (lastGenerationId ? ' · gen ' + lastGenerationId : '') + ')');
+        if (o.onTurnDone || (opts && opts.onTurnDone)) {
+            const cb = opts && opts.onTurnDone ? opts.onTurnDone : o.onTurnDone;
+            try {
+                cb({
+                    generationId: lastGenerationId,
+                    model: lastModel,
+                    userPreview: String(userText || userContent).trim(),
+                    fullText: text,
+                });
+            } catch (cbErr) {
+                Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
+            }
+        }
+        try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
+        return text;
+    };
+
+    const queueForcedFinalize = (reason) => {
+        if (forcedFinalizeAttempts >= maxForcedFinalizeAttempts) return false;
+        forcedFinalizeAttempts += 1;
+        forceFinalize = true;
+        state.messages.push({
+            role: 'user',
+            content: 'You must call ' + finalizeName
+                + '({ markdown }) now with the complete operator-facing answer. '
+                + 'Do not reply with plain text. Reason: ' + reason,
+            hideInUi: true,
+        });
+        Logger.warn(o.logTag + ': forcing ' + finalizeName + ' — ' + reason
+            + ' (attempt ' + forcedFinalizeAttempts + '/' + maxForcedFinalizeAttempts + ')');
+        return true;
+    };
+
     try {
-        while (round < maxRounds) {
+        while (round < maxRounds + maxForcedFinalizeAttempts) {
             round += 1;
             syncWorking('Working… (round ' + round + ')');
             state.streaming = true;
@@ -1430,10 +1489,13 @@ async function aiChatSendToolTurn(root, state, opts) {
 
             const apiMessages = aiChatBuildApiMessages(state, { systemContent });
             let roundError = null;
+            const choice = forceFinalize
+                ? { type: 'function', function: { name: finalizeName } }
+                : ((opts && opts.tool_choice != null) ? opts.tool_choice : 'auto');
 
             const streamOpts = Object.assign({}, o, {
                 tools,
-                tool_choice: (opts && opts.tool_choice != null) ? opts.tool_choice : 'auto',
+                tool_choice: choice,
                 model: opts && opts.model,
                 max_tokens: opts && opts.max_tokens,
                 parallel_tool_calls: opts && opts.parallel_tool_calls,
@@ -1442,6 +1504,7 @@ async function aiChatSendToolTurn(root, state, opts) {
             });
 
             Logger.log(o.logTag + ': tool round ' + round + '/' + maxRounds
+                + (forceFinalize ? ' (force ' + finalizeName + ')' : '')
                 + ' — requesting completion (' + apiMessages.length + ' msg)');
 
             let result;
@@ -1485,30 +1548,45 @@ async function aiChatSendToolTurn(root, state, opts) {
             const finishReason = result && result.finishReason
                 ? String(result.finishReason)
                 : '';
+            const salvageText = String(result && result.text != null ? result.text : '').trim();
             const toolNames = toolCalls.map((tc) =>
                 (tc && tc.function && tc.function.name) ? String(tc.function.name) : '?'
             ).join(', ');
             Logger.log(o.logTag + ': tool round ' + round + ' done — finish_reason='
                 + (finishReason || 'unknown')
-                + (toolNames ? ' · tools=[' + toolNames + ']' : ' · no tools'));
+                + (toolNames ? ' · tools=[' + toolNames + ']' : ' · no tools')
+                + (salvageText && !toolCalls.length ? ' · salvageText=' + salvageText.length + 'c' : ''));
 
             abortPriorStream();
 
             if (!toolCalls.length) {
-                const errMsg = finishReason === 'stop'
-                    ? 'Model finished without calling ' + finalizeName + '.'
-                    : 'Model returned no tool calls (finish_reason=' + (finishReason || 'unknown') + ').';
-                state.messages.push({
-                    role: 'assistant',
-                    content: 'Error: ' + errMsg,
-                });
-                try {
-                    if (state._deepChat) aiChatSyncHistory(state._deepChat, state);
-                    if (signals) await Promise.resolve(signals.onResponse({ error: errMsg }));
-                } catch (_e) { /* ignore */ }
-                state.streaming = false;
-                throw new Error(errMsg);
+                if (salvageText) {
+                    Logger.warn(o.logTag + ': model skipped ' + finalizeName
+                        + ' — accepting plain completion as final answer');
+                    notifyActivity({
+                        round,
+                        name: finalizeName,
+                        argsSummary: 'salvaged plain text ' + salvageText.length + ' chars',
+                        resultBytes: salvageText.length,
+                    });
+                    return await deliverFinalAnswer(salvageText, finalizeName + ' (salvaged)');
+                }
+                if (queueForcedFinalize(
+                    finishReason === 'stop'
+                        ? 'finished with stop and no tool calls'
+                        : 'no tool calls (finish_reason=' + (finishReason || 'unknown') + ')'
+                )) {
+                    state.streaming = true;
+                    continue;
+                }
+                Logger.warn(o.logTag + ': no tool calls and salvage/force exhausted — soft fallback');
+                return await deliverFinalAnswer(
+                    'I could not produce a final answer for that turn. Please try again.',
+                    'soft-fallback'
+                );
             }
+
+            forceFinalize = false;
 
             const respondCall = toolCalls.find((tc) =>
                 tc
@@ -1529,13 +1607,20 @@ async function aiChatSendToolTurn(root, state, opts) {
                     ? String(args.markdown)
                     : (args && args._parseError ? '' : '');
                 if (!String(markdown || '').trim()) {
-                    const errMsg = finalizeName + ' was called without markdown.';
                     state.messages.push({
-                        role: 'assistant',
-                        content: 'Error: ' + errMsg,
+                        role: 'tool',
+                        tool_call_id: respondCall.id,
+                        content: JSON.stringify({ error: finalizeName + ' requires non-empty markdown' }),
+                        hideInUi: true,
                     });
-                    state.streaming = false;
-                    throw new Error(errMsg);
+                    if (queueForcedFinalize(finalizeName + ' called without markdown')) {
+                        state.streaming = true;
+                        continue;
+                    }
+                    return await deliverFinalAnswer(
+                        'I could not produce a final answer for that turn. Please try again.',
+                        'soft-fallback'
+                    );
                 }
                 state.messages.push({
                     role: 'tool',
@@ -1549,42 +1634,7 @@ async function aiChatSendToolTurn(root, state, opts) {
                     argsSummary: 'markdown ' + markdown.length + ' chars',
                     resultBytes: markdown.length,
                 });
-                state.messages.push({
-                    role: 'assistant',
-                    content: markdown,
-                });
-                state.lastGenerationId = lastGenerationId;
-                state.lastModel = lastModel;
-                state.streaming = false;
-                try {
-                    if (useLiveSignals) {
-                        await Promise.resolve(signals.onResponse({
-                            text: markdown,
-                            overwrite: true,
-                        }));
-                        try { signals.onClose(); } catch (_e) { /* ignore */ }
-                    } else if (state._deepChat) {
-                        aiChatSyncHistory(state._deepChat, state);
-                    }
-                } catch (_e) { /* ignore */ }
-                Logger.log(o.logTag + ': tool turn done via ' + finalizeName
-                    + ' (' + markdown.length + ' chars'
-                    + (lastGenerationId ? ' · gen ' + lastGenerationId : '') + ')');
-                if (o.onTurnDone || (opts && opts.onTurnDone)) {
-                    const cb = opts && opts.onTurnDone ? opts.onTurnDone : o.onTurnDone;
-                    try {
-                        cb({
-                            generationId: lastGenerationId,
-                            model: lastModel,
-                            userPreview: String(userText || userContent).trim(),
-                            fullText: markdown,
-                        });
-                    } catch (cbErr) {
-                        Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
-                    }
-                }
-                try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
-                return markdown;
+                return await deliverFinalAnswer(markdown, finalizeName);
             }
 
             for (let ti = 0; ti < toolCalls.length; ti++) {
@@ -1621,16 +1671,18 @@ async function aiChatSendToolTurn(root, state, opts) {
                 });
             }
             state.streaming = true;
+            if (round >= maxRounds) {
+                if (!queueForcedFinalize('exceeded max tool rounds without ' + finalizeName)) {
+                    break;
+                }
+            }
         }
 
-        const errMsg = 'Exceeded max tool rounds (' + maxRounds + ') without '
-            + finalizeName + '.';
-        state.messages.push({ role: 'assistant', content: 'Error: ' + errMsg });
-        state.streaming = false;
-        try {
-            if (state._deepChat) aiChatSyncHistory(state._deepChat, state);
-        } catch (_e) { /* ignore */ }
-        throw new Error(errMsg);
+        Logger.warn(o.logTag + ': tool loop ended without ' + finalizeName + ' — soft fallback');
+        return await deliverFinalAnswer(
+            'I reached the tool-round limit before finishing. Please try a narrower question.',
+            'soft-fallback'
+        );
     } catch (err) {
         abortPriorStream();
         state.streaming = false;
@@ -1697,7 +1749,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.7',
+    _version: '3.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

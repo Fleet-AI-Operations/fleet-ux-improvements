@@ -1,7 +1,7 @@
 {
   "version": "12.4.7",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.114",
+  "archetypesVersion": "14.115",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "3.7",
-      "hash": "sha256-588ae58a086ff05addb52d7cb7cb77916d5d4038d75e23edf83bbef3615d4c95",
+      "version": "3.8",
+      "hash": "sha256-2db72aab38f5249bcdb3f8524566b5a4297a267f109abf4e1adacdd17b0a0d6c",
       "log": false
     },
     {
