@@ -193,6 +193,7 @@ function aiChatApplyTheme(el, opts) {
                 border: '1px solid var(--input, #cbd5e1)',
                 backgroundColor: 'var(--background, #fff)',
                 color: 'var(--foreground, #0f172a)',
+                padding: '12px 16px',
             },
             text: {
                 fontSize: '12px',
@@ -1002,7 +1003,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.11',
+    _version: '2.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
