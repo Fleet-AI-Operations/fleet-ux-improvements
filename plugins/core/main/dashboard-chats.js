@@ -16,6 +16,7 @@ const CHATS_SOURCES = [
     { id: 'chats', label: 'Chats' },
     { id: 'explain-ratings', label: 'Explain Ratings' },
     { id: 'verifier', label: 'Verifier' },
+    { id: 'search-chat', label: 'Search Chat' },
 ];
 
 /** @type {{ conversations: object[], activeId: string|null, chatState: object|null, hydrating: boolean, listeners: Set<Function> }} */
@@ -982,7 +983,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

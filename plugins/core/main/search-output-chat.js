@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '3.1';
+const SEARCH_CHAT_VERSION = '3.2';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -46,6 +46,54 @@ const searchChatUi = {
     chartInstances: [],
     panel: null,
 };
+
+function searchChatUuid() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    return 'search-chat-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function searchChatCreateState() {
+    const chat = Context.aiChat;
+    return chat && typeof chat.createState === 'function'
+        ? chat.createState({
+            source: 'search-chat',
+            conversationKey: searchChatUuid(),
+        })
+        : {
+            messages: [],
+            streaming: false,
+            streamAbort: null,
+            streamGen: 0,
+            source: 'search-chat',
+            conversationKey: searchChatUuid(),
+        };
+}
+
+function searchChatRecordTurn(state, turn) {
+    const api = Context.dashboardChats;
+    if (!api || typeof api.recordTurn !== 'function') {
+        Logger.warn(PLUGIN_ID + ': dashboardChats unavailable — turn not indexed');
+        return;
+    }
+    const t = turn || {};
+    const conversationKey = state && state.conversationKey
+        ? String(state.conversationKey)
+        : '';
+    if (!conversationKey) {
+        Logger.warn(PLUGIN_ID + ': recordTurn skipped — missing conversationKey');
+        return;
+    }
+    const titleHint = (t.userPreview && String(t.userPreview).trim()) || 'Search Chat';
+    api.recordTurn({
+        source: 'search-chat',
+        conversationKey,
+        titleHint,
+        generationId: t.generationId,
+        model: t.model,
+    });
+}
 
 function searchChatEscHtml(value) {
     const lib = Context.dashboardLib;
@@ -2827,11 +2875,8 @@ function searchChatChatOpts() {
 }
 
 function searchChatEnsureState() {
-    const chat = Context.aiChat;
     if (!searchChatUi.chatState) {
-        searchChatUi.chatState = chat && typeof chat.createState === 'function'
-            ? chat.createState({ source: 'search-chat' })
-            : { messages: [], streaming: false, streamAbort: null, streamGen: 0 };
+        searchChatUi.chatState = searchChatCreateState();
     }
     return searchChatUi.chatState;
 }
@@ -2841,9 +2886,7 @@ function searchChatResetChat(panel, dash) {
     searchChatUi.activity = [];
     searchChatUi.panel = panel || searchChatUi.panel;
     searchChatClearCharts(panel);
-    searchChatUi.chatState = chat && typeof chat.createState === 'function'
-        ? chat.createState({ source: 'search-chat' })
-        : { messages: [], streaming: false, streamAbort: null, streamGen: 0 };
+    searchChatUi.chatState = searchChatCreateState();
     searchChatUi.resultsFingerprint = searchChatResultsFingerprint(dash);
     searchChatRenderActivity(panel);
     searchChatSetStatus(panel, '', false);
@@ -2929,7 +2972,8 @@ async function searchChatSend(panel, dash, userText) {
                     void searchChatRenderChartsUi(panel);
                 }
             },
-            onTurnDone: () => {
+            onTurnDone: (turn) => {
+                searchChatRecordTurn(state, turn);
                 searchChatSetStatus(panel, '', false);
                 void searchChatRenderChartsUi(panel);
             },
@@ -3121,7 +3165,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

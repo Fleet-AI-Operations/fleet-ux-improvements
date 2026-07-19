@@ -1,7 +1,7 @@
 {
   "version": "12.4.7",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.115",
+  "archetypesVersion": "14.116",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -176,8 +176,8 @@
     },
     {
       "name": "dashboard-chats.js",
-      "version": "3.3",
-      "hash": "sha256-1a3d5a312df9af5618aea4db5db5c6d5ccc5858dfc3a06e2394617608ede8578",
+      "version": "3.4",
+      "hash": "sha256-c39385a124868edf88f90ffa1fe995110be2192922297e45081fbe60f1884ccd",
       "log": false
     },
     {
@@ -206,8 +206,8 @@
     },
     {
       "name": "search-output-chat.js",
-      "version": "3.1",
-      "hash": "sha256-a7f864da4eb6fe538454195b0d84986120b433241e53f5f478e62d74f9f318e0",
+      "version": "3.2",
+      "hash": "sha256-6f0ece157f4cb06c4311bf7c021e750bfadf8f0bcc2a712feb65002df9f74499",
       "log": false
     },
     {
