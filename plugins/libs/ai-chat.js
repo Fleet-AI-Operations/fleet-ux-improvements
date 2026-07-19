@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.4';
+const AI_CHAT_VERSION = '3.5';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_CALLBACK_KEYS = ['onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts'];
@@ -99,19 +99,22 @@ function aiChatNormalizeDisplayAttachment(att) {
     };
 }
 
-function aiChatShortId(value) {
-    const s = String(value || '').trim();
-    if (!s) return '(none)';
-    return s.length > 12 ? s.slice(0, 8) + '…' : s;
-}
-
-function aiChatAttachmentSummary(att) {
+function aiChatAttachmentTaskId(att) {
     const a = aiChatNormalizeDisplayAttachment(att);
     if (!a) return '';
-    let label = 'Verifier · task ' + aiChatShortId(a.taskId)
-        + ' · verifier ' + aiChatShortId(a.verifierId);
-    if (a.version != null) label += ' · v' + a.version;
-    return label;
+    return String(a.taskId || a.taskKey || '').trim();
+}
+
+function aiChatFlashAttachIdButton(btn, ok) {
+    if (!btn) return;
+    btn.classList.remove('wf-chat-attach-id--ok', 'wf-chat-attach-id--fail');
+    btn.classList.add(ok ? 'wf-chat-attach-id--ok' : 'wf-chat-attach-id--fail');
+    const prev = btn._wfAttachIdFlashTimer;
+    if (prev) clearTimeout(prev);
+    btn._wfAttachIdFlashTimer = setTimeout(() => {
+        btn.classList.remove('wf-chat-attach-id--ok', 'wf-chat-attach-id--fail');
+        btn._wfAttachIdFlashTimer = null;
+    }, 600);
 }
 
 function aiChatVisibleStateMessages(state) {
@@ -227,13 +230,30 @@ function aiChatApplyTheme(el, opts) {
         + '}'
         + '.wf-chat-attach > summary {'
         + '  cursor: pointer; list-style: none; user-select: none;'
-        + '  padding: 8px 10px; font-size: 11px; font-weight: 600; color: #94a3b8;'
+        + '  padding: 6px 8px; font-size: 11px; font-weight: 600; color: #94a3b8;'
+        + '  display: flex; align-items: center; gap: 6px;'
         + '}'
         + '.wf-chat-attach > summary::-webkit-details-marker { display: none; }'
         + '.wf-chat-attach > summary::before {'
-        + '  content: "▸"; display: inline-block; width: 1em; margin-right: 4px;'
+        + '  content: "▸"; display: inline-block; width: 1em; flex-shrink: 0;'
         + '}'
         + '.wf-chat-attach[open] > summary::before { content: "▾"; }'
+        + '.wf-chat-attach-id {'
+        + '  display: inline-block; max-width: 100%; margin: 0; padding: 3px 8px;'
+        + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
+        + '  border-radius: 6px; font-size: 11px; font-weight: 500; font-family: inherit;'
+        + '  color: var(--foreground, #0f172a);'
+        + '  background: color-mix(in srgb, var(--muted, #f1f5f9) 55%, transparent);'
+        + '  text-align: left; overflow-wrap: anywhere; cursor: pointer;'
+        + '}'
+        + '.wf-chat-attach-id:hover {'
+        + '  background: color-mix(in srgb, #94a3b8 18%, transparent);'
+        + '}'
+        + '.wf-chat-attach-id--ok { color: #16a34a !important; border-color: #16a34a !important; }'
+        + '.wf-chat-attach-id--fail { color: #dc2626 !important; border-color: #dc2626 !important; }'
+        + '.wf-chat-attach-id--empty {'
+        + '  cursor: default; opacity: 0.65; border-style: dashed;'
+        + '}'
         + '.wf-chat-attach-body {'
         + '  margin: 0; padding: 0 10px 10px; max-height: 240px; overflow: auto;'
         + '  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);'
@@ -362,29 +382,72 @@ function aiChatReconcileAttachment(row, attachment) {
         if (existing) existing.remove();
         return;
     }
-    const summaryText = aiChatAttachmentSummary(att);
+    const taskId = aiChatAttachmentTaskId(att);
     let details = existing;
     if (!details) {
         details = document.createElement('details');
         details.setAttribute('data-wf-chat-attach', '1');
         details.className = 'wf-chat-attach';
-        const summary = document.createElement('summary');
-        summary.setAttribute('data-wf-chat-attach-summary', '1');
-        details.appendChild(summary);
-        const body = document.createElement('pre');
-        body.setAttribute('data-wf-chat-attach-body', '1');
-        body.className = 'wf-chat-attach-body';
-        details.appendChild(body);
         // Place under the bubble (and above the copy button when present).
         const copyBtn = inner.querySelector('[data-wf-chat-copy="1"]');
         if (copyBtn) inner.insertBefore(details, copyBtn);
         else if (bubble.nextSibling) inner.insertBefore(details, bubble.nextSibling);
         else inner.appendChild(details);
     }
-    const summaryEl = details.querySelector('[data-wf-chat-attach-summary="1"]');
+    let summary = details.querySelector('[data-wf-chat-attach-summary="1"]');
+    let idBtn = details.querySelector('[data-wf-chat-attach-id="1"]');
+    if (!summary || !idBtn) {
+        details.replaceChildren();
+        summary = document.createElement('summary');
+        summary.setAttribute('data-wf-chat-attach-summary', '1');
+        idBtn = document.createElement('button');
+        idBtn.type = 'button';
+        idBtn.setAttribute('data-wf-chat-attach-id', '1');
+        idBtn.className = 'wf-chat-attach-id';
+        idBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const value = String(idBtn.getAttribute('data-wf-copy') || '').trim();
+            if (!value) return;
+            try {
+                await navigator.clipboard.writeText(value);
+                aiChatFlashAttachIdButton(idBtn, true);
+                if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+                    Context.buttonFeedback.flashSuccess(idBtn);
+                }
+                Logger.log(PLUGIN_ID + ': copied verifier task id (' + value.length + ' chars)');
+            } catch (err) {
+                aiChatFlashAttachIdButton(idBtn, false);
+                if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+                    Context.buttonFeedback.flashFailure(idBtn);
+                }
+                Logger.error(PLUGIN_ID + ': failed to copy verifier task id', err);
+            }
+        });
+        summary.appendChild(idBtn);
+        details.appendChild(summary);
+        const body = document.createElement('pre');
+        body.setAttribute('data-wf-chat-attach-body', '1');
+        body.className = 'wf-chat-attach-body';
+        details.appendChild(body);
+    }
     const bodyEl = details.querySelector('[data-wf-chat-attach-body="1"]');
-    if (summaryEl && summaryEl.textContent !== summaryText) {
-        summaryEl.textContent = summaryText;
+    if (idBtn) {
+        if (taskId) {
+            idBtn.textContent = taskId;
+            idBtn.setAttribute('data-wf-copy', taskId);
+            idBtn.title = 'Click to copy task ID';
+            idBtn.setAttribute('aria-label', 'Copy task ID ' + taskId);
+            idBtn.classList.remove('wf-chat-attach-id--empty');
+            idBtn.disabled = false;
+        } else {
+            idBtn.textContent = '(no task ID)';
+            idBtn.removeAttribute('data-wf-copy');
+            idBtn.title = 'No task ID for this verifier';
+            idBtn.setAttribute('aria-label', 'No task ID');
+            idBtn.classList.add('wf-chat-attach-id--empty');
+            idBtn.disabled = true;
+        }
     }
     if (bodyEl && bodyEl.textContent !== att.source) {
         bodyEl.textContent = att.source;
@@ -1180,7 +1243,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
