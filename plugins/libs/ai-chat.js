@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.3';
+const AI_CHAT_VERSION = '3.4';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_CALLBACK_KEYS = ['onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts'];
@@ -53,7 +53,9 @@ function aiChatResolveOpts(opts) {
         onExport: typeof o.onExport === 'function' ? o.onExport : null,
         onTurnDone: typeof o.onTurnDone === 'function' ? o.onTurnDone : null,
         getTurnOpts: typeof o.getTurnOpts === 'function' ? o.getTurnOpts : null,
-        floatingInput: !!o.floatingInput,
+        // Standard chat layout: composer floats inside the chat viewport.
+        // Consumers may explicitly opt out with `floatingInput: false`.
+        floatingInput: o.floatingInput !== false,
     };
 }
 
@@ -1178,7 +1180,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
