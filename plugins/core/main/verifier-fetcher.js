@@ -148,7 +148,7 @@ function verifierChatOpts() {
         exportSelector: '#wf-ops-verifier-chat-export',
         wiredAttr: 'data-wf-chat-wired',
         logTag: 'verifier-fetcher',
-        placeholder: 'Ask a follow-up…',
+        placeholder: 'Message…',
     };
 }
 
@@ -793,7 +793,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
