@@ -8,12 +8,11 @@
 
 const VERIFIER_SCRATCHPAD_WIDTH_KEY = 'fleet-ux:verifier-fetcher-scratchpad-width';
 const VERIFIER_SCRATCHPAD_OPEN_KEY = 'fleet-ux:verifier-fetcher-scratchpad-open';
-const VERIFIER_SCRATCHPAD_TEXT_KEY = 'fleet-ux:verifier-fetcher-scratchpad-text';
+const VERIFIER_SCRATCHPAD_LEGACY_TEXT_KEY = 'fleet-ux:verifier-fetcher-scratchpad-text';
 const VERIFIER_CHAT_OPEN_KEY = 'fleet-ux:verifier-fetcher-chat-open';
 const VERIFIER_SCRATCHPAD_DEFAULT_WIDTH = 320;
 const VERIFIER_SCRATCHPAD_MIN_WIDTH = 200;
 const VERIFIER_SCRATCHPAD_MIN_CODE_WIDTH = 240;
-const VERIFIER_SCRATCHPAD_TEXT_SAVE_MS = 400;
 const VERIFIER_MONO_FONT = 'font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);';
 const VERIFIER_SETTINGS_WIDTH_PX = 640;
 const VERIFIER_MAIN_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX * 2;
@@ -98,19 +97,11 @@ function writeVerifierScratchpadOpenPref(open) {
     }
 }
 
-function readVerifierScratchpadTextPref() {
+function clearLegacyVerifierScratchpadText() {
     try {
-        return Storage.getData(VERIFIER_SCRATCHPAD_TEXT_KEY, '') || '';
-    } catch (_e) {
-        return '';
-    }
-}
-
-function writeVerifierScratchpadTextPref(text) {
-    try {
-        Storage.setData(VERIFIER_SCRATCHPAD_TEXT_KEY, text || '');
+        Storage.deleteData(VERIFIER_SCRATCHPAD_LEGACY_TEXT_KEY);
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write verifier output text pref', err);
+        Logger.warn('verifier-fetcher: failed to clear legacy verifier output text', err);
     }
 }
 
@@ -505,7 +496,6 @@ function restoreVerifierScratchpadState(modal) {
     if (!modal) return;
     const textarea = modal.querySelector('#wf-ops-verifier-scratchpad');
     if (textarea && !textarea.dataset.wfScratchpadRestored) {
-        textarea.value = readVerifierScratchpadTextPref();
         textarea.dataset.wfScratchpadRestored = '1';
     }
     applyVerifierScratchpadLayout(modal);
@@ -523,7 +513,7 @@ function captureVerifierScratchpadTabState(modal) {
     const textarea = modal.querySelector('#wf-ops-verifier-scratchpad');
     return {
         open: readVerifierScratchpadOpenPref(),
-        text: textarea ? textarea.value : readVerifierScratchpadTextPref(),
+        text: textarea ? textarea.value : '',
         chatOpen: readVerifierChatOpenPref()
     };
 }
@@ -538,10 +528,9 @@ function restoreVerifierScratchpadTabState(modal, state) {
         writeVerifierChatOpenPref(Boolean(state.chatOpen));
     }
     if (textarea) {
-        const text = state && state.text != null ? String(state.text) : readVerifierScratchpadTextPref();
+        const text = state && state.text != null ? String(state.text) : '';
         textarea.value = text;
         textarea.dataset.wfScratchpadRestored = '1';
-        writeVerifierScratchpadTextPref(text);
     }
     applyVerifierScratchpadLayout(modal);
     syncVerifierAiUi(modal);
@@ -831,13 +820,8 @@ function attachVerifierFetcherListeners(modal) {
     }
 
     if (scratchpadTextarea) {
-        let saveTimer = null;
         scratchpadTextarea.addEventListener('input', () => {
-            if (saveTimer) clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => {
-                writeVerifierScratchpadTextPref(scratchpadTextarea.value);
-                if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
-            }, VERIFIER_SCRATCHPAD_TEXT_SAVE_MS);
+            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
         });
     }
 
@@ -897,12 +881,13 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init() {
+        clearLegacyVerifierScratchpadText();
         const loader = Context.dashboard && Context.dashboard._loader;
         if (!loader) {
             Logger.error('verifier-fetcher: dashboard loader not registered');
@@ -930,6 +915,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v6.0');
+        Logger.log('verifier-fetcher: tab registered v6.1');
     }
 };
