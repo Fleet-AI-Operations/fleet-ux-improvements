@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.8',
+    _version: '10.9',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -1257,7 +1257,7 @@ const plugin = {
                 const confirmed = confirm(
                     'Are you sure? This will clear all settings and data stored by this userscript, ' +
                     'including server actions, dashboard caches, and plugin preferences. ' +
-                    'Dev branch handshake keys on the page are not affected.'
+                    'Local build handshake keys on the page are not affected.'
                 );
                 if (confirmed) {
                     const allPlugins = PluginManager.getAll();

@@ -1,19 +1,19 @@
 // ============= verifier-fetcher.js =============
 // Verifier Fetcher tab for the Ops dashboard.
 //
-// AI gating: Diagnose Issues, Chat toggle, and the chat pane stay hidden unless
+// AI gating: Diagnose Issues and Chat stay visible without an OpenRouter key;
+// Diagnose is disabled and Chat shows the shared no-key overlay until
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
 // Chat transcript UI / streaming uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
 
 const VERIFIER_SCRATCHPAD_WIDTH_KEY = 'fleet-ux:verifier-fetcher-scratchpad-width';
 const VERIFIER_SCRATCHPAD_OPEN_KEY = 'fleet-ux:verifier-fetcher-scratchpad-open';
-const VERIFIER_SCRATCHPAD_TEXT_KEY = 'fleet-ux:verifier-fetcher-scratchpad-text';
+const VERIFIER_SCRATCHPAD_LEGACY_TEXT_KEY = 'fleet-ux:verifier-fetcher-scratchpad-text';
 const VERIFIER_CHAT_OPEN_KEY = 'fleet-ux:verifier-fetcher-chat-open';
 const VERIFIER_SCRATCHPAD_DEFAULT_WIDTH = 320;
 const VERIFIER_SCRATCHPAD_MIN_WIDTH = 200;
 const VERIFIER_SCRATCHPAD_MIN_CODE_WIDTH = 240;
-const VERIFIER_SCRATCHPAD_TEXT_SAVE_MS = 400;
 const VERIFIER_MONO_FONT = 'font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);';
 const VERIFIER_SETTINGS_WIDTH_PX = 640;
 const VERIFIER_MAIN_MAX_WIDTH_PX = VERIFIER_SETTINGS_WIDTH_PX * 2;
@@ -98,19 +98,11 @@ function writeVerifierScratchpadOpenPref(open) {
     }
 }
 
-function readVerifierScratchpadTextPref() {
+function clearLegacyVerifierScratchpadText() {
     try {
-        return Storage.getData(VERIFIER_SCRATCHPAD_TEXT_KEY, '') || '';
-    } catch (_e) {
-        return '';
-    }
-}
-
-function writeVerifierScratchpadTextPref(text) {
-    try {
-        Storage.setData(VERIFIER_SCRATCHPAD_TEXT_KEY, text || '');
+        Storage.deleteData(VERIFIER_SCRATCHPAD_LEGACY_TEXT_KEY);
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write verifier output text pref', err);
+        Logger.warn('verifier-fetcher: failed to clear legacy verifier output text', err);
     }
 }
 
@@ -148,7 +140,7 @@ function verifierChatOpts() {
         exportSelector: '#wf-ops-verifier-chat-export',
         wiredAttr: 'data-wf-chat-wired',
         logTag: 'verifier-fetcher',
-        placeholder: 'Ask a follow-up…',
+        placeholder: 'Message…',
     };
 }
 
@@ -196,6 +188,102 @@ function getVerifierChatState(modal) {
     return modal._wfVerifierChatState;
 }
 
+function setVerifierChatFetchContext(modal, ctx) {
+    if (!modal) return;
+    // Flag for "include this verifier on the next chat message".
+    // Source is required; verifierId falls back so uniqueness checks still work.
+    if (!ctx || !String(ctx.source || '').trim()) {
+        modal._wfVerifierChatPending = null;
+        Logger.debug('verifier-fetcher: chat fetch context cleared');
+        return;
+    }
+    const taskId = String(ctx.taskId || '');
+    const taskKey = String(ctx.taskKey || '');
+    const verifierKey = String(ctx.verifierKey || '');
+    const verifierId = String(ctx.verifierId || '').trim()
+        || (taskKey ? ('task:' + taskKey) : '')
+        || (taskId ? ('task-id:' + taskId) : '')
+        || verifierKey
+        || 'verifier';
+    modal._wfVerifierChatPending = {
+        taskId,
+        taskKey,
+        verifierId,
+        verifierKey,
+        version: ctx.version != null ? ctx.version : null,
+        source: String(ctx.source || ''),
+    };
+    Logger.debug('verifier-fetcher: chat fetch context set · verifier '
+        + modal._wfVerifierChatPending.verifierId
+        + (modal._wfVerifierChatPending.version != null
+            ? ' v' + modal._wfVerifierChatPending.version
+            : ''));
+}
+
+function getVerifierChatFetchContext(modal) {
+    return modal && modal._wfVerifierChatPending ? modal._wfVerifierChatPending : null;
+}
+
+function verifierChatHasAttachedId(state, verifierId) {
+    const id = String(verifierId || '').trim();
+    if (!id || !state || !Array.isArray(state.messages)) return false;
+    for (let i = 0; i < state.messages.length; i++) {
+        const msg = state.messages[i];
+        const att = msg && msg.displayAttachment;
+        if (att && att.type === 'verifier-source'
+            && String(att.verifierId || '').trim() === id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function buildVerifierSourceApiBlock(ctx) {
+    const taskId = String(ctx.taskId || '').trim() || '(none)';
+    const verifierId = String(ctx.verifierId || '').trim() || '(none)';
+    const versionLine = ctx.version != null ? '- Version: ' + ctx.version + '\n' : '';
+    return '## Verifier context\n\n'
+        + '- Task ID: ' + taskId + '\n'
+        + '- Verifier ID: ' + verifierId + '\n'
+        + versionLine
+        + '\n```python\n' + String(ctx.source || '') + '\n```';
+}
+
+function buildVerifierDisplayAttachment(ctx) {
+    return {
+        type: 'verifier-source',
+        taskId: String(ctx.taskId || ''),
+        taskKey: String(ctx.taskKey || ''),
+        verifierId: String(ctx.verifierId || ''),
+        verifierKey: String(ctx.verifierKey || ''),
+        version: ctx.version != null ? ctx.version : null,
+        source: String(ctx.source || ''),
+    };
+}
+
+/**
+ * Consume the pending fetch flag for the next chat turn. Attaches when this
+ * verifier ID is not already in the transcript; otherwise skips.
+ */
+function takeVerifierAttachmentForTurn(modal, state) {
+    const ctx = getVerifierChatFetchContext(modal);
+    if (!ctx || !String(ctx.source || '').trim()) return null;
+
+    // Clear the flag either way — this message is the "next" one after fetch.
+    if (modal) modal._wfVerifierChatPending = null;
+
+    if (verifierChatHasAttachedId(state, ctx.verifierId)) {
+        Logger.log('verifier-fetcher: skip verifier attach — already in chat · '
+            + ctx.verifierId);
+        return null;
+    }
+    Logger.log('verifier-fetcher: attaching verifier context · '
+        + ctx.verifierId
+        + (ctx.version != null ? ' v' + ctx.version : '')
+        + ' (' + ctx.source.length + ' chars)');
+    return buildVerifierDisplayAttachment(ctx);
+}
+
 function renderVerifierChatMessages(modal) {
     const chat = verifierChatApi();
     const state = getVerifierChatState(modal);
@@ -224,13 +312,24 @@ async function sendVerifierChatMessage(modal, userText) {
     const state = getVerifierChatState(modal);
     const text = String(userText || '').trim();
     if (!chat || !state || !text || state.streaming) return;
+    if (!hasVerifierAiKey()) {
+        Logger.warn('verifier-fetcher: send blocked — no OpenRouter key stored');
+        return;
+    }
 
-    writeVerifierChatOpenPref(true);
-    syncVerifierAiUi(modal);
+    ensureVerifierChatPaneOpen(modal);
+
+    const attachment = takeVerifierAttachmentForTurn(modal, state);
+    const userContent = attachment
+        ? (buildVerifierSourceApiBlock(attachment) + '\n\n' + text)
+        : text;
 
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
             userText: text,
+            userContent,
+            displayContent: text,
+            displayAttachment: attachment,
             onTurnDone: (turn) => verifierRecordTurn(modal, turn),
         }));
     } catch (_err) {
@@ -240,6 +339,10 @@ async function sendVerifierChatMessage(modal, userText) {
 
 async function decodeVerifierOutput(modal) {
     const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
+    if (!hasVerifierAiKey()) {
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — no OpenRouter key stored');
+        return;
+    }
     const codeEl = modal.querySelector('#wf-ops-verifier-output');
     const ta = modal.querySelector('#wf-ops-verifier-scratchpad');
     const codeText = codeEl ? String(codeEl.textContent || '').trim() : '';
@@ -267,23 +370,25 @@ async function decodeVerifierOutput(modal) {
         return;
     }
 
-    writeVerifierChatOpenPref(true);
-    syncVerifierAiUi(modal);
+    ensureVerifierChatPaneOpen(modal);
     if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
 
-    const userPayload =
-        '## Verifier source\n\n```python\n' + codeText + '\n```\n\n'
-        + '## Verifier Output\n\n```\n' + outputText + '\n```';
+    const attachment = takeVerifierAttachmentForTurn(modal, state);
+    const parts = [];
+    if (attachment) {
+        parts.push(buildVerifierSourceApiBlock(attachment));
+    }
+    parts.push('## Verifier Output\n\n```\n' + outputText + '\n```');
+    const userPayload = parts.join('\n\n');
 
-    Logger.log('verifier-fetcher: Diagnose Issues started');
+    Logger.log('verifier-fetcher: Diagnose Issues started'
+        + (attachment ? ' · with verifier attach' : ' · without new verifier attach'));
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
             userContent: userPayload,
             displayContent: 'Diagnose Issues',
-            apiMessages: [
-                { role: 'system', content: DECODE_SYSTEM_PROMPT },
-                { role: 'user', content: userPayload },
-            ],
+            displayAttachment: attachment,
+            systemContent: DECODE_SYSTEM_PROMPT,
             onTurnDone: (turn) => verifierRecordTurn(modal, Object.assign({}, turn, {
                 userPreview: 'Diagnose Issues',
             })),
@@ -334,30 +439,80 @@ function applyVerifierScratchpadLayout(modal, openOverride) {
     toggleBtn.textContent = open ? 'Hide Verifier Output' : 'Verifier Output';
 }
 
+/**
+ * Show the chat pane without remounting/syncing Deep Chat history.
+ * Used on the send path so an async history refresh cannot race the live turn.
+ */
+function ensureVerifierChatPaneOpen(modal) {
+    if (!modal) return;
+    ensureVerifierBtnStyles();
+    writeVerifierChatOpenPref(true);
+    const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
+    const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
+    const chatPane = modal.querySelector('#wf-ops-verifier-chat-pane');
+    const workspace = modal.querySelector('#wf-ops-verifier-workspace');
+    const ai = hasVerifierAiKey();
+
+    if (chatToggle) {
+        chatToggle.style.display = '';
+        chatToggle.textContent = 'Hide chat';
+        chatToggle.setAttribute('aria-pressed', 'true');
+    }
+    if (decodeBtn) {
+        decodeBtn.style.display = '';
+        decodeBtn.disabled = !ai;
+        decodeBtn.style.opacity = ai ? '' : '0.5';
+        decodeBtn.title = ai
+            ? ''
+            : 'Requires an OpenRouter API key in Settings';
+    }
+    if (chatPane) {
+        chatPane.style.display = 'flex';
+        chatPane.setAttribute('aria-hidden', 'false');
+    }
+    if (workspace) workspace.setAttribute('data-wf-ai-chat', '1');
+}
+
 function syncVerifierAiUi(modal) {
     if (!modal) return;
     ensureVerifierBtnStyles();
     const ai = hasVerifierAiKey();
-    const chatOpen = ai && readVerifierChatOpenPref();
+    const chatOpen = readVerifierChatOpenPref();
     const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
     const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
     const chatPane = modal.querySelector('#wf-ops-verifier-chat-pane');
     const workspace = modal.querySelector('#wf-ops-verifier-workspace');
 
     if (chatToggle) {
-        chatToggle.style.display = ai ? '' : 'none';
+        chatToggle.style.display = '';
         chatToggle.textContent = chatOpen ? 'Hide chat' : 'Chat';
         chatToggle.setAttribute('aria-pressed', chatOpen ? 'true' : 'false');
     }
-    if (decodeBtn) decodeBtn.style.display = ai ? '' : 'none';
+    if (decodeBtn) {
+        decodeBtn.style.display = '';
+        decodeBtn.disabled = !ai;
+        decodeBtn.style.opacity = ai ? '' : '0.5';
+        decodeBtn.title = ai
+            ? ''
+            : 'Requires an OpenRouter API key in Settings';
+    }
     if (chatPane) {
         chatPane.style.display = chatOpen ? 'flex' : 'none';
         chatPane.setAttribute('aria-hidden', chatOpen ? 'false' : 'true');
     }
     if (workspace) workspace.setAttribute('data-wf-ai-chat', chatOpen ? '1' : '0');
     if (chatOpen) {
+        wireVerifierChatComposer(modal);
         renderVerifierChatMessages(modal);
         setVerifierChatStreamingUi(modal, !!(getVerifierChatState(modal).streaming));
+        const chat = verifierChatApi();
+        if (chat && typeof chat.setKeyGate === 'function') {
+            chat.setKeyGate(modal, {
+                mountSelector: '#wf-ops-verifier-chat-mount',
+                state: getVerifierChatState(modal),
+                wireOpts: verifierChatOpts(),
+            });
+        }
     }
     Logger.debug('verifier-fetcher: syncAiUi ai=' + ai + ' chatOpen=' + chatOpen);
 }
@@ -401,7 +556,6 @@ function restoreVerifierScratchpadState(modal) {
     if (!modal) return;
     const textarea = modal.querySelector('#wf-ops-verifier-scratchpad');
     if (textarea && !textarea.dataset.wfScratchpadRestored) {
-        textarea.value = readVerifierScratchpadTextPref();
         textarea.dataset.wfScratchpadRestored = '1';
     }
     applyVerifierScratchpadLayout(modal);
@@ -419,7 +573,7 @@ function captureVerifierScratchpadTabState(modal) {
     const textarea = modal.querySelector('#wf-ops-verifier-scratchpad');
     return {
         open: readVerifierScratchpadOpenPref(),
-        text: textarea ? textarea.value : readVerifierScratchpadTextPref(),
+        text: textarea ? textarea.value : '',
         chatOpen: readVerifierChatOpenPref()
     };
 }
@@ -434,10 +588,9 @@ function restoreVerifierScratchpadTabState(modal, state) {
         writeVerifierChatOpenPref(Boolean(state.chatOpen));
     }
     if (textarea) {
-        const text = state && state.text != null ? String(state.text) : readVerifierScratchpadTextPref();
+        const text = state && state.text != null ? String(state.text) : '';
         textarea.value = text;
         textarea.dataset.wfScratchpadRestored = '1';
-        writeVerifierScratchpadTextPref(text);
     }
     applyVerifierScratchpadLayout(modal);
     syncVerifierAiUi(modal);
@@ -543,7 +696,7 @@ function verifierFetcherPanelHtml() {
                             </div>
                             <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
                                 <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Verifier Output</button>
-                                <button type="button" id="wf-ops-verifier-chat-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="display: none; flex-shrink: 0;">Chat</button>
+                                <button type="button" id="wf-ops-verifier-chat-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Chat</button>
                             </div>
                         </div>
                         <div id="wf-ops-verifier-output-wrap" style="
@@ -635,7 +788,7 @@ function verifierFetcherPanelHtml() {
                                     padding: 6px 8px;
                                     border-top: 1px solid var(--border, #e5e5e5);
                                 ">
-                                    <button type="button" id="wf-ops-verifier-decode-btn" class="${btnClass('secondary', 'compact')}" style="display: none;">Diagnose Issues</button>
+                                    <button type="button" id="wf-ops-verifier-decode-btn" class="${btnClass('secondary', 'compact')}">Diagnose Issues</button>
                                 </div>
                             </aside>
                         </div>
@@ -664,6 +817,7 @@ function verifierFetcherPanelHtml() {
                             min-height: 120px;
                             display: flex;
                             flex-direction: column;
+                            position: relative;
                             box-sizing: border-box;
                         "></div>
                     </div>
@@ -713,7 +867,6 @@ function attachVerifierFetcherListeners(modal) {
 
     if (chatToggle) {
         chatToggle.addEventListener('click', () => {
-            if (!hasVerifierAiKey()) return;
             const nextOpen = !readVerifierChatOpenPref();
             writeVerifierChatOpenPref(nextOpen);
             syncVerifierAiUi(modal);
@@ -723,17 +876,18 @@ function attachVerifierFetcherListeners(modal) {
     }
 
     if (decodeBtn) {
-        decodeBtn.addEventListener('click', () => { void decodeVerifierOutput(modal); });
+        decodeBtn.addEventListener('click', () => {
+            if (!hasVerifierAiKey()) {
+                Logger.warn('verifier-fetcher: Diagnose Issues blocked — no OpenRouter key stored');
+                return;
+            }
+            void decodeVerifierOutput(modal);
+        });
     }
 
     if (scratchpadTextarea) {
-        let saveTimer = null;
         scratchpadTextarea.addEventListener('input', () => {
-            if (saveTimer) clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => {
-                writeVerifierScratchpadTextPref(scratchpadTextarea.value);
-                if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
-            }, VERIFIER_SCRATCHPAD_TEXT_SAVE_MS);
+            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
         });
     }
 
@@ -793,12 +947,13 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '5.0',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init() {
+        clearLegacyVerifierScratchpadText();
         const loader = Context.dashboard && Context.dashboard._loader;
         if (!loader) {
             Logger.error('verifier-fetcher: dashboard loader not registered');
@@ -808,7 +963,8 @@ const plugin = {
             syncOutputToolbar: (modal) => syncVerifierOutputToolbar(modal),
             syncAiUi: (modal) => syncVerifierAiUi(modal),
             captureScratchpadTabState: (modal) => captureVerifierScratchpadTabState(modal),
-            restoreScratchpadTabState: (modal, state) => restoreVerifierScratchpadTabState(modal, state)
+            restoreScratchpadTabState: (modal, state) => restoreVerifierScratchpadTabState(modal, state),
+            setChatFetchContext: (modal, ctx) => setVerifierChatFetchContext(modal, ctx),
         };
         Context.dashboard.registerTab({
             id: 'verifier-fetcher',
@@ -825,6 +981,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v5.0');
+        Logger.log('verifier-fetcher: tab registered v7.0');
     }
 };

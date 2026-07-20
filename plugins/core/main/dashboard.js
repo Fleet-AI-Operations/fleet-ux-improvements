@@ -16,6 +16,9 @@ const DASH_STATS_PANEL_HIDDEN_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-hidd
 const DASH_STATS_PANEL_WIDTH_STORAGE_KEY = 'fleet-ux:dashboard-stats-panel-width';
 const DASH_TAB_ORDER_STORAGE_KEY = 'fleet-ux:dashboard-tab-order';
 const DASH_DEFAULT_TAB_STORAGE_KEY = 'fleet-ux:dashboard-default-tab';
+const DASH_DEFAULT_STATS_TAB_STORAGE_KEY = 'fleet-ux:dashboard-default-stats-tab';
+const DASH_DEFAULT_STATS_TAB = 'stats';
+const DASH_STATS_TAB_IDS = ['stats', 'ratings', 'chat'];
 const DASH_DEFAULT_TAB_ORDER = [
     'search-output',
     'diff-viewer',
@@ -110,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.10',
+    _version: '11.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -169,6 +172,8 @@ const plugin = {
             resetTabOrder: () => self._resetTabOrder(),
             getDefaultTabId: () => self._readDefaultTabId(),
             setDefaultTab: (tabId) => self._setDefaultTab(tabId),
+            getDefaultStatsTabId: () => self._readDefaultStatsTabId(),
+            setDefaultStatsTab: (tabId) => self._setDefaultStatsTab(tabId),
             copyChipHtml: (text) => self._copyChipHtml(text),
             personChipsHtml: (name, email, id, linkTitle) => self._personChipsHtml(name, email, id, linkTitle),
             panelBoxStyle: () => self._panelBoxStyle(),
@@ -357,6 +362,34 @@ const plugin = {
         }
     },
 
+    _normalizeStatsTabId(tabId) {
+        const id = String(tabId || '').trim();
+        if (!DASH_STATS_TAB_IDS.includes(id)) return DASH_DEFAULT_STATS_TAB;
+        return id;
+    },
+
+    _readDefaultStatsTabId() {
+        try {
+            const raw = Storage.getData(DASH_DEFAULT_STATS_TAB_STORAGE_KEY, DASH_DEFAULT_STATS_TAB);
+            return this._normalizeStatsTabId(raw);
+        } catch (err) {
+            Logger.warn('dashboard: failed to read default stats tab', err);
+            return DASH_DEFAULT_STATS_TAB;
+        }
+    },
+
+    _setDefaultStatsTab(tabId) {
+        const id = this._normalizeStatsTabId(tabId);
+        try {
+            Storage.setData(DASH_DEFAULT_STATS_TAB_STORAGE_KEY, id);
+            Logger.log('dashboard: default stats tab set — ' + id);
+            return true;
+        } catch (err) {
+            Logger.error('dashboard: failed to save default stats tab', err);
+            return false;
+        }
+    },
+
     _createInitialState() {
         return {
             catalog: null,
@@ -379,7 +412,7 @@ const plugin = {
             resultsPage: 0,
             activeTab: this._readDefaultTabId(),
             leftTab: 'search',
-            statsTab: 'stats',
+            statsTab: this._readDefaultStatsTabId(),
             statsUseFiltered: true,
             ratingsHideProvisional: false,
             ratingsSortKey: null,
@@ -552,6 +585,12 @@ const plugin = {
                 }
                 this._state.activeTab = this._readDefaultTabId();
                 this._setActiveTab(this._resolveActiveTabId(this._state.activeTab));
+                const defaultStatsTab = this._readDefaultStatsTabId();
+                if (typeof this._setStatsTab === 'function') {
+                    this._setStatsTab(defaultStatsTab);
+                } else {
+                    this._state.statsTab = defaultStatsTab;
+                }
                 this._syncIncompleteTabsBanner();
                 for (const tab of this._tabs) {
                     if (typeof tab.onOpen === 'function') {

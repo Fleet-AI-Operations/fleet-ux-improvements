@@ -7,9 +7,16 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '2.11';
+const AI_CHAT_VERSION = '4.1';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
+const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
+const AI_CHAT_NO_KEY_OVERLAY_ATTR = 'data-wf-ai-chat-no-key-overlay';
+const AI_CHAT_KEY_GATED_ATTR = 'data-wf-ai-chat-key-gated';
+const AI_CHAT_CALLBACK_KEYS = [
+    'onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts',
+    'onToolActivity', 'executeTool',
+];
 
 function aiChatCopyIconSvg() {
     return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"'
@@ -22,6 +29,97 @@ function aiChatHasKey() {
     return !!(Context.aiOpenRouter
         && typeof Context.aiOpenRouter.hasStoredKey === 'function'
         && Context.aiOpenRouter.hasStoredKey());
+}
+
+/**
+ * Shared no-key copy for Ops AI chat surfaces (red centered overlay body).
+ */
+function aiChatNoKeyMessageHtml() {
+    return '<div style="text-align: center; font-size: 13px; line-height: 1.5;'
+        + ' color: var(--destructive, #dc2626); max-width: 36em; margin: 0 auto; padding: 12px;">'
+        + 'This feature needs a valid OpenRouter API key to work. Get a key at '
+        + '<a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer"'
+        + ' style="color: inherit; text-decoration: underline; pointer-events: auto; cursor: pointer;">'
+        + 'openrouter.ai</a>,'
+        + ' then paste it in the <strong>Settings</strong> tab under AI Integration.'
+        + '</div>';
+}
+
+/**
+ * Resolve the Deep Chat mount node from a mount element or a panel root + selector.
+ */
+function aiChatResolveMountNode(rootOrMount, opts) {
+    if (!rootOrMount) return null;
+    const o = opts || {};
+    if (o.mount && o.mount.nodeType === 1) return o.mount;
+    if (o.mountSelector && typeof rootOrMount.querySelector === 'function') {
+        const found = rootOrMount.querySelector(o.mountSelector);
+        if (found) return found;
+    }
+    if (rootOrMount.tagName === 'DEEP-CHAT') {
+        return rootOrMount.parentElement;
+    }
+    if (typeof rootOrMount.querySelector === 'function'
+        && rootOrMount.querySelector(':scope > deep-chat')) {
+        return rootOrMount;
+    }
+    return rootOrMount;
+}
+
+/**
+ * Show or hide the no-key overlay and grey the Deep Chat input.
+ * Returns whether a stored OpenRouter key is present (after applying opts.hasKey override).
+ *
+ * @param {Element} rootOrMount Panel root or chat mount node
+ * @param {{ mountSelector?: string, mount?: Element, hasKey?: boolean,
+ *   state?: object, wireOpts?: object }} [opts]
+ */
+function aiChatSetKeyGate(rootOrMount, opts) {
+    const o = opts || {};
+    const hasKey = o.hasKey != null ? !!o.hasKey : aiChatHasKey();
+    const mount = aiChatResolveMountNode(rootOrMount, o);
+    if (!mount) return hasKey;
+
+    const computed = window.getComputedStyle(mount);
+    if (computed.position === 'static') {
+        mount.style.position = 'relative';
+    }
+
+    let overlay = mount.querySelector('[' + AI_CHAT_NO_KEY_OVERLAY_ATTR + '="1"]');
+    if (!hasKey) {
+        mount.setAttribute(AI_CHAT_KEY_GATED_ATTR, '1');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.setAttribute(AI_CHAT_NO_KEY_OVERLAY_ATTR, '1');
+            overlay.setAttribute('role', 'status');
+            // Leave the floating input strip (~76px) visible and greyed underneath.
+            overlay.style.cssText = 'position: absolute; inset: 0 0 76px 0; z-index: 4;'
+                + ' display: flex; align-items: center; justify-content: center;'
+                + ' pointer-events: none; box-sizing: border-box; padding: 16px;';
+            overlay.innerHTML = aiChatNoKeyMessageHtml();
+            mount.appendChild(overlay);
+        } else {
+            overlay.style.display = 'flex';
+            if (!overlay.innerHTML) overlay.innerHTML = aiChatNoKeyMessageHtml();
+        }
+    } else {
+        mount.removeAttribute(AI_CHAT_KEY_GATED_ATTR);
+        if (overlay) overlay.style.display = 'none';
+    }
+
+    const state = o.state || null;
+    const el = (state && state._deepChat)
+        || mount.querySelector('deep-chat')
+        || null;
+    if (el) {
+        el._wfAiChatKeyGated = !hasKey;
+        const wireOpts = o.wireOpts || (state && state._wireOpts) || {};
+        aiChatApplyTheme(el, aiChatResolveOpts(wireOpts));
+        try {
+            el.disableSubmitButton(!hasKey);
+        } catch (_e) { /* ignore */ }
+    }
+    return hasKey;
 }
 
 function aiChatCreateState(extra) {
@@ -52,8 +150,28 @@ function aiChatResolveOpts(opts) {
         onExport: typeof o.onExport === 'function' ? o.onExport : null,
         onTurnDone: typeof o.onTurnDone === 'function' ? o.onTurnDone : null,
         getTurnOpts: typeof o.getTurnOpts === 'function' ? o.getTurnOpts : null,
-        floatingInput: !!o.floatingInput,
+        // Standard chat layout: composer floats inside the chat viewport.
+        // Consumers may explicitly opt out with `floatingInput: false`.
+        floatingInput: o.floatingInput !== false,
     };
+}
+
+/**
+ * Merge previously wired composer options with a (possibly render-only) update.
+ * Explicit new values win; callback handlers omitted from `opts` are preserved
+ * so theme/history refreshes cannot erase onSend/onStop/etc.
+ */
+function aiChatResolveWireOpts(state, opts) {
+    const prev = (state && state._wireOpts) || {};
+    const next = opts || {};
+    const merged = Object.assign({}, prev, next);
+    for (let i = 0; i < AI_CHAT_CALLBACK_KEYS.length; i++) {
+        const key = AI_CHAT_CALLBACK_KEYS[i];
+        if (typeof next[key] !== 'function' && typeof prev[key] === 'function') {
+            merged[key] = prev[key];
+        }
+    }
+    return aiChatResolveOpts(merged);
 }
 
 function aiChatQuery(root, selector) {
@@ -61,15 +179,61 @@ function aiChatQuery(root, selector) {
     return root.querySelector(selector);
 }
 
-function aiChatVisibleHistory(state) {
+function aiChatNormalizeDisplayAttachment(att) {
+    if (!att || typeof att !== 'object') return null;
+    if (att.type !== 'verifier-source') return null;
+    const source = String(att.source || '');
+    const verifierId = String(att.verifierId || '').trim();
+    if (!source || !verifierId) return null;
+    return {
+        type: 'verifier-source',
+        taskId: String(att.taskId || ''),
+        taskKey: String(att.taskKey || ''),
+        verifierId,
+        verifierKey: String(att.verifierKey || ''),
+        version: att.version != null ? att.version : null,
+        source,
+    };
+}
+
+function aiChatAttachmentTaskId(att) {
+    const a = aiChatNormalizeDisplayAttachment(att);
+    if (!a) return '';
+    return String(a.taskId || a.taskKey || '').trim();
+}
+
+function aiChatFlashAttachIdButton(btn, ok) {
+    if (!btn) return;
+    btn.classList.remove('wf-chat-attach-id--ok', 'wf-chat-attach-id--fail');
+    btn.classList.add(ok ? 'wf-chat-attach-id--ok' : 'wf-chat-attach-id--fail');
+    const prev = btn._wfAttachIdFlashTimer;
+    if (prev) clearTimeout(prev);
+    btn._wfAttachIdFlashTimer = setTimeout(() => {
+        btn.classList.remove('wf-chat-attach-id--ok', 'wf-chat-attach-id--fail');
+        btn._wfAttachIdFlashTimer = null;
+    }, 600);
+}
+
+function aiChatVisibleStateMessages(state) {
     const out = [];
     const messages = (state && state.messages) || [];
     for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
         if (!msg || msg.hideInUi) continue;
-        if (msg.role === 'system') continue;
-        if (msg.role === 'assistant' && !(msg.content || '').trim() && msg.streaming) continue;
-        if (msg.role === 'assistant' && !(msg.content || '').trim()) continue;
+        if (msg.role === 'system' || msg.role === 'tool') continue;
+        const hasDisplay = msg.displayContent != null && String(msg.displayContent).trim();
+        const hasContent = !!(msg.content || '').trim();
+        if (msg.role === 'assistant' && !hasContent && !hasDisplay) continue;
+        out.push(msg);
+    }
+    return out;
+}
+
+function aiChatVisibleHistory(state) {
+    const out = [];
+    const messages = aiChatVisibleStateMessages(state);
+    for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
         const role = msg.role === 'assistant' ? 'ai' : 'user';
         const text = msg.displayContent != null
             ? String(msg.displayContent)
@@ -77,6 +241,15 @@ function aiChatVisibleHistory(state) {
         out.push({ role, text });
     }
     return out;
+}
+
+function aiChatApplyUserMessageExtras(userMsg, extras) {
+    if (!userMsg || !extras) return userMsg;
+    if (extras.displayContent != null) userMsg.displayContent = extras.displayContent;
+    if (extras.hideInUi) userMsg.hideInUi = true;
+    const attachment = aiChatNormalizeDisplayAttachment(extras.displayAttachment);
+    if (attachment) userMsg.displayAttachment = attachment;
+    return userMsg;
 }
 
 function aiChatApplyTheme(el, opts) {
@@ -145,6 +318,52 @@ function aiChatApplyTheme(el, opts) {
         + '.wf-chat-copy:hover { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #e2e8f0; }'
         + '.wf-chat-copy--ok { opacity: 1 !important; color: #16a34a !important; }'
         + '.wf-chat-copy--fail { opacity: 1 !important; color: #dc2626 !important; }'
+        + '.wf-chat-attach {'
+        + '  display: block; width: 100%; max-width: 100%; box-sizing: border-box;'
+        + '  margin: 6px 0 0; padding: 0;'
+        + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
+        + '  border-radius: 10px;'
+        + '  background: color-mix(in srgb, var(--muted, #f1f5f9) 40%, transparent);'
+        + '  color: var(--foreground, #0f172a);'
+        + '}'
+        + '.wf-chat-attach > summary {'
+        + '  cursor: pointer; list-style: none; user-select: none;'
+        + '  padding: 6px 8px; font-size: 11px; font-weight: 600; color: #94a3b8;'
+        + '  display: flex; align-items: center; gap: 6px;'
+        + '}'
+        + '.wf-chat-attach > summary::-webkit-details-marker { display: none; }'
+        + '.wf-chat-attach > summary::before {'
+        + '  content: "▸"; display: inline-block; width: 1em; flex-shrink: 0;'
+        + '}'
+        + '.wf-chat-attach[open] > summary::before { content: "▾"; }'
+        + '.wf-chat-attach-id {'
+        + '  display: inline-block; max-width: 100%; margin: 0; padding: 3px 8px;'
+        + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
+        + '  border-radius: 6px; font-size: 11px; font-weight: 500; font-family: inherit;'
+        + '  color: var(--foreground, #0f172a);'
+        + '  background: color-mix(in srgb, var(--muted, #f1f5f9) 55%, transparent);'
+        + '  text-align: left; overflow-wrap: anywhere; cursor: pointer;'
+        + '}'
+        + '.wf-chat-attach-id:hover {'
+        + '  background: color-mix(in srgb, #94a3b8 18%, transparent);'
+        + '}'
+        + '.wf-chat-attach-id--ok { color: #16a34a !important; border-color: #16a34a !important; }'
+        + '.wf-chat-attach-id--fail { color: #dc2626 !important; border-color: #dc2626 !important; }'
+        + '.wf-chat-attach-id--empty {'
+        + '  cursor: default; opacity: 0.65; border-style: dashed;'
+        + '}'
+        + '.wf-chat-attach-body {'
+        + '  margin: 0; padding: 0 10px 10px; max-height: 240px; overflow: auto;'
+        + '  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);'
+        + '  font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;'
+        + '  color: var(--foreground, #0f172a);'
+        + '}'
+        // The padded text input is taller than Deep Chat's assumed height, which
+        // leaves the bottom-pinned send/stop button sitting low. Center it.
+        + '#input .input-button {'
+        + '  top: 50% !important; bottom: auto !important;'
+        + '  transform: translateY(-50%) !important;'
+        + '}'
         + (o.floatingInput
             ? '#chat-view { position: relative !important; }'
                 + '#messages { height: 100% !important; padding-bottom: 76px !important;'
@@ -152,6 +371,12 @@ function aiChatApplyTheme(el, opts) {
                 + '#input { position: absolute !important; inset-inline: 0 !important; bottom: 6px !important;'
                 + ' z-index: 5 !important; margin: 0 auto !important; border: none !important;'
                 + ' background: transparent !important; box-shadow: none !important; }'
+            : '')
+        + (el._wfAiChatKeyGated
+            ? '#input { opacity: 0.45 !important; pointer-events: none !important;'
+                + ' filter: grayscale(0.35); }'
+                + '#input textarea, #input input, #input [contenteditable] {'
+                + ' cursor: not-allowed !important; }'
             : '');
     el.messageStyles = {
         default: {
@@ -193,6 +418,7 @@ function aiChatApplyTheme(el, opts) {
                 border: '1px solid var(--input, #cbd5e1)',
                 backgroundColor: 'var(--background, #fff)',
                 color: 'var(--foreground, #0f172a)',
+                padding: '12px 16px',
             },
             text: {
                 fontSize: '12px',
@@ -249,6 +475,89 @@ function aiChatMessageRows(shadowRoot) {
     });
 }
 
+function aiChatReconcileAttachment(row, attachment) {
+    if (!row) return;
+    const bubble = row.querySelector('.message-bubble');
+    if (!bubble) return;
+    const inner = bubble.closest('.inner-message-container') || row;
+    const existing = inner.querySelector('[data-wf-chat-attach="1"]');
+    const att = aiChatNormalizeDisplayAttachment(attachment);
+    if (!att) {
+        if (existing) existing.remove();
+        return;
+    }
+    const taskId = aiChatAttachmentTaskId(att);
+    let details = existing;
+    if (!details) {
+        details = document.createElement('details');
+        details.setAttribute('data-wf-chat-attach', '1');
+        details.className = 'wf-chat-attach';
+        // Place under the bubble (and above the copy button when present).
+        const copyBtn = inner.querySelector('[data-wf-chat-copy="1"]');
+        if (copyBtn) inner.insertBefore(details, copyBtn);
+        else if (bubble.nextSibling) inner.insertBefore(details, bubble.nextSibling);
+        else inner.appendChild(details);
+    }
+    let summary = details.querySelector('[data-wf-chat-attach-summary="1"]');
+    let idBtn = details.querySelector('[data-wf-chat-attach-id="1"]');
+    if (!summary || !idBtn) {
+        details.replaceChildren();
+        summary = document.createElement('summary');
+        summary.setAttribute('data-wf-chat-attach-summary', '1');
+        idBtn = document.createElement('button');
+        idBtn.type = 'button';
+        idBtn.setAttribute('data-wf-chat-attach-id', '1');
+        idBtn.className = 'wf-chat-attach-id';
+        idBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const value = String(idBtn.getAttribute('data-wf-copy') || '').trim();
+            if (!value) return;
+            try {
+                await navigator.clipboard.writeText(value);
+                aiChatFlashAttachIdButton(idBtn, true);
+                if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+                    Context.buttonFeedback.flashSuccess(idBtn);
+                }
+                Logger.log(PLUGIN_ID + ': copied verifier task id (' + value.length + ' chars)');
+            } catch (err) {
+                aiChatFlashAttachIdButton(idBtn, false);
+                if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+                    Context.buttonFeedback.flashFailure(idBtn);
+                }
+                Logger.error(PLUGIN_ID + ': failed to copy verifier task id', err);
+            }
+        });
+        summary.appendChild(idBtn);
+        details.appendChild(summary);
+        const body = document.createElement('pre');
+        body.setAttribute('data-wf-chat-attach-body', '1');
+        body.className = 'wf-chat-attach-body';
+        details.appendChild(body);
+    }
+    const bodyEl = details.querySelector('[data-wf-chat-attach-body="1"]');
+    if (idBtn) {
+        if (taskId) {
+            idBtn.textContent = taskId;
+            idBtn.setAttribute('data-wf-copy', taskId);
+            idBtn.title = 'Click to copy task ID';
+            idBtn.setAttribute('aria-label', 'Copy task ID ' + taskId);
+            idBtn.classList.remove('wf-chat-attach-id--empty');
+            idBtn.disabled = false;
+        } else {
+            idBtn.textContent = '(no task ID)';
+            idBtn.removeAttribute('data-wf-copy');
+            idBtn.title = 'No task ID for this verifier';
+            idBtn.setAttribute('aria-label', 'No task ID');
+            idBtn.classList.add('wf-chat-attach-id--empty');
+            idBtn.disabled = true;
+        }
+    }
+    if (bodyEl && bodyEl.textContent !== att.source) {
+        bodyEl.textContent = att.source;
+    }
+}
+
 function aiChatInjectCopyButton(el, row, opts) {
     const o = aiChatResolveOpts(opts);
     if (!row || row.querySelector('[data-wf-chat-copy="1"]')) return;
@@ -268,11 +577,16 @@ function aiChatInjectCopyButton(el, row, opts) {
         const index = rows.indexOf(row);
         let markdown = '';
         try {
-            const messages = typeof el.getMessages === 'function' ? el.getMessages() : [];
-            if (index >= 0 && messages && messages[index] && messages[index].text != null) {
-                markdown = String(messages[index].text);
+            const stateMsgs = aiChatVisibleStateMessages(el._wfAiChatState);
+            if (index >= 0 && stateMsgs[index] && stateMsgs[index].content != null) {
+                markdown = String(stateMsgs[index].content);
             } else {
-                markdown = String((bubble.textContent || '')).trim();
+                const messages = typeof el.getMessages === 'function' ? el.getMessages() : [];
+                if (index >= 0 && messages && messages[index] && messages[index].text != null) {
+                    markdown = String(messages[index].text);
+                } else {
+                    markdown = String((bubble.textContent || '')).trim();
+                }
             }
             if (!markdown) throw new Error('Message is empty');
             await navigator.clipboard.writeText(markdown);
@@ -293,6 +607,19 @@ function aiChatInjectCopyButton(el, row, opts) {
     }
 }
 
+function aiChatSyncRowEnhancements(el, opts) {
+    const shadow = el && el.shadowRoot;
+    if (!shadow) return;
+    const rows = aiChatMessageRows(shadow);
+    const stateMsgs = aiChatVisibleStateMessages(el._wfAiChatState);
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const msg = stateMsgs[i] || null;
+        aiChatReconcileAttachment(row, msg && msg.displayAttachment);
+        aiChatInjectCopyButton(el, row, opts);
+    }
+}
+
 function aiChatSetupCopyButtons(el, opts) {
     if (!el || el._wfCopyButtonsWired === '1') return;
     const attach = () => {
@@ -302,12 +629,7 @@ function aiChatSetupCopyButtons(el, opts) {
             try { el._wfCopyObserver.disconnect(); } catch (_e) { /* ignore */ }
             el._wfCopyObserver = null;
         }
-        const sync = () => {
-            const rows = aiChatMessageRows(shadow);
-            for (let i = 0; i < rows.length; i++) {
-                aiChatInjectCopyButton(el, rows[i], opts);
-            }
-        };
+        const sync = () => { aiChatSyncRowEnhancements(el, opts); };
         const observer = new MutationObserver(() => { sync(); });
         observer.observe(shadow, { childList: true, subtree: true });
         el._wfCopyObserver = observer;
@@ -344,6 +666,7 @@ function aiChatSyncHistory(el, state) {
 
 /**
  * Build OpenRouter message list from transcript state.
+ * Supports tool_calls on assistant messages and role:'tool' results.
  * @param {object} state
  * @param {{ systemContent?: string }} [opts]
  */
@@ -357,9 +680,35 @@ function aiChatBuildApiMessages(state, opts) {
     for (let i = 0; i < messages.length; i++) {
         const m = messages[i];
         if (m.streaming) break;
-        if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
-            if (m.role === 'system' && o.systemContent) continue;
-            api.push({ role: m.role, content: m.content || '' });
+        if (m.role === 'system') {
+            if (o.systemContent) continue;
+            api.push({ role: 'system', content: m.content || '' });
+            continue;
+        }
+        if (m.role === 'user') {
+            api.push({ role: 'user', content: m.content || '' });
+            continue;
+        }
+        if (m.role === 'assistant') {
+            const row = { role: 'assistant' };
+            if (Array.isArray(m.tool_calls) && m.tool_calls.length) {
+                row.tool_calls = m.tool_calls;
+                // Providers expect null (not "") when tool_calls are present.
+                row.content = (m.content != null && String(m.content) !== '')
+                    ? m.content
+                    : null;
+            } else {
+                row.content = m.content != null ? m.content : '';
+            }
+            api.push(row);
+            continue;
+        }
+        if (m.role === 'tool') {
+            api.push({
+                role: 'tool',
+                tool_call_id: String(m.tool_call_id || ''),
+                content: m.content != null ? String(m.content) : '',
+            });
         }
     }
     return api;
@@ -408,10 +757,16 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
     const gen = state.streamGen;
     state.streaming = true;
     let assembled = '';
-    let doneMeta = { generationId: null, model: null };
+    let doneMeta = {
+        generationId: null,
+        model: null,
+        toolCalls: [],
+        finishReason: null,
+    };
     let settled = false;
     // Serialize Deep Chat onResponse promises so rapid SSE deltas cannot race.
     let responseChain = Promise.resolve();
+    const suppressText = !!(opts && opts.suppressTextDeltas);
 
     try { signals.onOpen(); } catch (_e) { /* ignore */ }
 
@@ -433,15 +788,17 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
     const settleOk = (text) => {
         if (settled) return text;
         settled = true;
-        state.streamAbort = null;
-        state.streaming = false;
+        // Keep streamAbort until caller aborts/replaces; clearing without abort
+        // left GM streams open between tool rounds.
         try { signals.onClose(); } catch (_e) { /* ignore */ }
+        if (!opts || !opts.keepStreamingFlag) {
+            state.streaming = false;
+        }
         return text;
     };
     const settleErr = (err) => {
         if (settled) return;
         settled = true;
-        state.streamAbort = null;
         state.streaming = false;
         const message = (err && err.message) || String(err || 'Stream failed');
         try { signals.onResponse({ error: message }); } catch (_e) { /* ignore */ }
@@ -449,66 +806,88 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
         throw (err instanceof Error ? err : new Error(message));
     };
 
-    return new Promise((resolve, reject) => {
-        Promise.resolve(ai.chatCompletionStream({
-            messages: apiMessages,
-            onDelta: (delta) => {
-                if (gen !== state.streamGen) return;
-                const chunk = String(delta || '');
-                if (!chunk) return;
-                assembled += chunk;
+    const streamOpts = {
+        messages: apiMessages,
+        onDelta: (delta) => {
+            if (gen !== state.streamGen) return;
+            const chunk = String(delta || '');
+            if (!chunk) return;
+            assembled += chunk;
+            if (suppressText) return;
+            aiChatUpdateStreamingBubble(null, state, assembled, o);
+            // Stream mode appends each text chunk; do not overwrite full text.
+            void enqueueResponse({ text: chunk });
+        },
+        onDone: (result) => {
+            if (result && result.generationId) doneMeta.generationId = String(result.generationId);
+            if (result && result.model) doneMeta.model = String(result.model);
+            if (result && Array.isArray(result.toolCalls)) doneMeta.toolCalls = result.toolCalls;
+            if (result && result.finishReason) doneMeta.finishReason = String(result.finishReason);
+            const streamed = assembled;
+            const full = result && result.fullText != null ? String(result.fullText) : streamed;
+            assembled = full;
+            if (!suppressText) {
                 aiChatUpdateStreamingBubble(null, state, assembled, o);
-                // Stream mode appends each text chunk; do not overwrite full text.
-                void enqueueResponse({ text: chunk });
-            },
-            onDone: (result) => {
-                if (result && result.generationId) doneMeta.generationId = String(result.generationId);
-                if (result && result.model) doneMeta.model = String(result.model);
-                const streamed = assembled;
-                const full = result && result.fullText != null ? String(result.fullText) : streamed;
-                assembled = full;
-                aiChatUpdateStreamingBubble(null, state, assembled, o);
-                void responseChain.then(() => {
-                    if (gen !== state.streamGen) {
-                        resolve({
-                            text: assembled || '',
+            }
+            void responseChain.then(() => {
+                if (gen !== state.streamGen) {
+                    resolvePayload({
+                        text: assembled || '',
+                        generationId: doneMeta.generationId,
+                        model: doneMeta.model,
+                        toolCalls: doneMeta.toolCalls,
+                        finishReason: doneMeta.finishReason,
+                    });
+                    return;
+                }
+                const syncFinal = (!suppressText && full && full !== streamed)
+                    ? enqueueResponse({ text: full, overwrite: true })
+                    : Promise.resolve();
+                return syncFinal.then(() => {
+                    try {
+                        resolvePayload({
+                            text: settleOk(assembled) || '',
                             generationId: doneMeta.generationId,
                             model: doneMeta.model,
+                            toolCalls: doneMeta.toolCalls,
+                            finishReason: doneMeta.finishReason,
                         });
-                        return;
-                    }
-                    const syncFinal = (full && full !== streamed)
-                        ? enqueueResponse({ text: full, overwrite: true })
-                        : Promise.resolve();
-                    return syncFinal.then(() => {
-                        try {
-                            resolve({
-                                text: settleOk(assembled) || '',
-                                generationId: doneMeta.generationId,
-                                model: doneMeta.model,
-                            });
-                        } catch (err) {
-                            reject(err);
-                        }
-                    });
-                }).catch((err) => {
-                    try {
-                        settleErr(err);
-                    } catch (e) {
-                        reject(e);
+                    } catch (err) {
+                        rejectPayload(err);
                     }
                 });
-            },
-            onError: (err) => {
-                void responseChain.finally(() => {
-                    try {
-                        settleErr(err);
-                    } catch (e) {
-                        reject(e);
-                    }
-                });
-            }
-        })).then((handle) => {
+            }).catch((err) => {
+                try {
+                    settleErr(err);
+                } catch (e) {
+                    rejectPayload(e);
+                }
+            });
+        },
+        onError: (err) => {
+            void responseChain.finally(() => {
+                try {
+                    settleErr(err);
+                } catch (e) {
+                    rejectPayload(e);
+                }
+            });
+        },
+    };
+    if (opts && Array.isArray(opts.tools)) streamOpts.tools = opts.tools;
+    if (opts && opts.tool_choice != null) streamOpts.tool_choice = opts.tool_choice;
+    if (opts && opts.model != null) streamOpts.model = opts.model;
+    if (opts && Number.isFinite(opts.max_tokens)) streamOpts.max_tokens = opts.max_tokens;
+    if (opts && typeof opts.parallel_tool_calls === 'boolean') {
+        streamOpts.parallel_tool_calls = opts.parallel_tool_calls;
+    }
+
+    let resolvePayload;
+    let rejectPayload;
+    return new Promise((resolve, reject) => {
+        resolvePayload = resolve;
+        rejectPayload = reject;
+        Promise.resolve(ai.chatCompletionStream(streamOpts)).then((handle) => {
             state.streamAbort = handle;
         }).catch((err) => {
             try {
@@ -524,6 +903,15 @@ async function aiChatHandleConnect(root, state, body, signals) {
     const wire = aiChatResolveOpts(state._wireOpts || {});
     const pending = state._pendingTurn;
     state._pendingTurn = null;
+
+    if (!aiChatHasKey()) {
+        try {
+            signals.onResponse({ error: 'OpenRouter API key required.' });
+        } catch (_e) { /* ignore */ }
+        try { signals.onClose(); } catch (_e2) { /* ignore */ }
+        Logger.warn(wire.logTag + ': send blocked — no OpenRouter key stored');
+        return;
+    }
 
     const turnExtras = pending
         || (wire.getTurnOpts ? (wire.getTurnOpts() || {}) : {})
@@ -549,6 +937,7 @@ async function aiChatHandleConnect(root, state, body, signals) {
     const userText = turnExtras.userText != null ? String(turnExtras.userText) : uiText;
     const userContent = turnExtras.userContent != null ? String(turnExtras.userContent) : userText;
     const displayContent = turnExtras.displayContent != null ? turnExtras.displayContent : null;
+    const displayAttachment = aiChatNormalizeDisplayAttachment(turnExtras.displayAttachment);
     const hideInUi = !!(turnExtras.hideInUi);
     const systemContent = turnExtras.systemContent != null ? turnExtras.systemContent : null;
     const apiMessagesOverride = turnExtras.apiMessages;
@@ -566,12 +955,14 @@ async function aiChatHandleConnect(root, state, body, signals) {
     }
 
     if (userContent) {
-        const userMsg = { role: 'user', content: userContent };
-        if (displayContent != null) userMsg.displayContent = displayContent;
-        if (hideInUi) userMsg.hideInUi = true;
+        const userMsg = aiChatApplyUserMessageExtras(
+            { role: 'user', content: userContent },
+            { displayContent, displayAttachment, hideInUi }
+        );
         state.messages.push(userMsg);
     }
     state.messages.push({ role: 'assistant', content: '', streaming: true });
+    try { aiChatSyncRowEnhancements(state._deepChat, wire); } catch (_e) { /* ignore */ }
 
     const apiMessages = apiMessagesOverride
         || aiChatBuildApiMessages(state, { systemContent });
@@ -608,6 +999,7 @@ async function aiChatHandleConnect(root, state, body, signals) {
                 Logger.warn(wire.logTag + ': onTurnDone failed', cbErr);
             }
         }
+        try { aiChatSyncRowEnhancements(state._deepChat, wire); } catch (_e) { /* ignore */ }
         if (pendingResolve) pendingResolve(full || '');
     } catch (err) {
         const last = state.messages[state.messages.length - 1];
@@ -642,8 +1034,8 @@ function aiChatBindElement(el, root, state, opts) {
 }
 
 async function aiChatEnsureMounted(root, state, opts) {
-    const o = aiChatResolveOpts(opts);
     if (!root || !state) return null;
+    const o = aiChatResolveWireOpts(state, opts);
     state._wireOpts = o;
 
     const deep = Context.deepChat;
@@ -667,8 +1059,16 @@ async function aiChatEnsureMounted(root, state, opts) {
     }
     if (!el) {
         el = document.createElement('deep-chat');
-        mount.innerHTML = '';
-        mount.appendChild(el);
+        // Keep the no-key overlay if present; only clear other mount children.
+        Array.from(mount.childNodes).forEach((child) => {
+            if (child.nodeType === 1
+                && child.getAttribute
+                && child.getAttribute(AI_CHAT_NO_KEY_OVERLAY_ATTR) === '1') {
+                return;
+            }
+            child.remove();
+        });
+        mount.insertBefore(el, mount.firstChild);
         Logger.log(o.logTag + ': deep-chat mounted');
     }
     el.style.cssText = 'display:block;width:100%;max-width:min(100%,' + AI_CHAT_MAX_WIDTH_PX
@@ -688,17 +1088,31 @@ async function aiChatEnsureMounted(root, state, opts) {
         mount.style.flexDirection = 'column';
     }
     aiChatBindElement(el, root, state, o);
+    aiChatSetKeyGate(root, {
+        mountSelector: o.mountSelector,
+        state,
+        wireOpts: o,
+    });
     return el;
 }
 
 function aiChatRenderMessages(root, state, opts) {
-    const o = aiChatResolveOpts(opts || (state && state._wireOpts));
     if (!root || !state) return;
+    const o = aiChatResolveWireOpts(state, opts || state._wireOpts);
     state._wireOpts = o;
     const run = async () => {
         try {
             const el = await aiChatEnsureMounted(root, state, o);
-            if (!state.streaming) aiChatSyncHistory(el, state);
+            // Do not reset Deep Chat history while a live connect/stream turn is
+            // in flight — that races the just-painted user bubble and wipes it.
+            if (!state.streaming && !root._wfAiChatFromHandler) {
+                aiChatSyncHistory(el, state);
+            }
+            aiChatSetKeyGate(root, {
+                mountSelector: o.mountSelector,
+                state,
+                wireOpts: o,
+            });
         } catch (err) {
             Logger.error(o.logTag + ': renderMessages failed', err);
             const mount = aiChatQuery(root, o.mountSelector);
@@ -743,6 +1157,11 @@ function aiChatWireComposer(root, stateOrOpts, maybeOpts) {
 
     void aiChatEnsureMounted(root, state, o).then((el) => {
         if (el) aiChatSyncHistory(el, state);
+        aiChatSetKeyGate(root, {
+            mountSelector: o.mountSelector,
+            state,
+            wireOpts: o,
+        });
     }).catch((err) => {
         Logger.error(o.logTag + ': wireComposer mount failed', err);
     });
@@ -758,12 +1177,45 @@ function aiChatExportConversation(state, opts) {
         exportedAt: new Date().toISOString(),
         metadata: o.exportMetadata || undefined,
         messages: (state.messages || [])
-            .filter((msg) => msg && !msg.streaming && (msg.role === 'user' || msg.role === 'assistant'))
-            .map((msg) => ({
-                role: msg.role,
-                content: String(msg.content || ''),
-                hiddenInUi: msg.hideInUi ? true : undefined,
-            })),
+            .filter((msg) => {
+                if (!msg || msg.streaming) return false;
+                if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'tool') return true;
+                return false;
+            })
+            .map((msg) => {
+                const out = {
+                    role: msg.role,
+                    hiddenInUi: msg.hideInUi ? true : undefined,
+                };
+                if (msg.role === 'tool') {
+                    out.tool_call_id = msg.tool_call_id != null ? String(msg.tool_call_id) : '';
+                    out.content = msg.content != null ? String(msg.content) : '';
+                    return out;
+                }
+                if (msg.content != null && msg.content !== '') {
+                    out.content = String(msg.content);
+                } else if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+                    out.content = null;
+                } else {
+                    out.content = String(msg.content || '');
+                }
+                if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+                    out.tool_calls = msg.tool_calls.map((tc) => ({
+                        id: tc && tc.id != null ? String(tc.id) : '',
+                        type: (tc && tc.type) || 'function',
+                        function: {
+                            name: tc && tc.function ? String(tc.function.name || '') : '',
+                            arguments: tc && tc.function
+                                ? String(tc.function.arguments != null ? tc.function.arguments : '')
+                                : '',
+                        },
+                    }));
+                }
+                if (msg.displayContent != null) out.displayContent = String(msg.displayContent);
+                const attachment = aiChatNormalizeDisplayAttachment(msg.displayAttachment);
+                if (attachment) out.displayAttachment = attachment;
+                return out;
+            }),
     };
     try {
         const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -797,6 +1249,9 @@ async function aiChatSendTurn(root, state, opts) {
     const userText = opts && opts.userText != null ? String(opts.userText) : '';
     const userContent = opts && opts.userContent != null ? String(opts.userContent) : userText;
     const displayContent = opts && opts.displayContent != null ? opts.displayContent : null;
+    const displayAttachment = aiChatNormalizeDisplayAttachment(
+        opts && opts.displayAttachment
+    );
     const hideInUi = !!(opts && opts.hideInUi);
     const fromHandler = !!(root && root._wfAiChatFromHandler);
     const signals = root && root._wfAiChatSignals;
@@ -804,12 +1259,14 @@ async function aiChatSendTurn(root, state, opts) {
     if (fromHandler && signals) {
         // Deep Chat already rendered the user bubble; stream into signals.
         if (userContent) {
-            const userMsg = { role: 'user', content: userContent };
-            if (displayContent != null) userMsg.displayContent = displayContent;
-            if (hideInUi) userMsg.hideInUi = true;
+            const userMsg = aiChatApplyUserMessageExtras(
+                { role: 'user', content: userContent },
+                { displayContent, displayAttachment, hideInUi }
+            );
             state.messages.push(userMsg);
         }
         state.messages.push({ role: 'assistant', content: '', streaming: true });
+        try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
         const systemContent = opts && opts.systemContent != null ? opts.systemContent : null;
         const apiMessages = (opts && opts.apiMessages)
             || aiChatBuildApiMessages(state, { systemContent });
@@ -842,6 +1299,7 @@ async function aiChatSendTurn(root, state, opts) {
                     Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
                 }
             }
+            try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
             return full || '';
         } catch (err) {
             const last = state.messages[state.messages.length - 1];
@@ -862,8 +1320,10 @@ async function aiChatSendTurn(root, state, opts) {
     // Hidden machine payloads: stream without a visible user bubble (matches prior UX).
     if (hideInUi) {
         if (userContent) {
-            const userMsg = { role: 'user', content: userContent, hideInUi: true };
-            if (displayContent != null) userMsg.displayContent = displayContent;
+            const userMsg = aiChatApplyUserMessageExtras(
+                { role: 'user', content: userContent, hideInUi: true },
+                { displayContent, displayAttachment, hideInUi: true }
+            );
             state.messages.push(userMsg);
         }
         state.messages.push({ role: 'assistant', content: '', streaming: true });
@@ -951,6 +1411,7 @@ async function aiChatSendTurn(root, state, opts) {
         userText,
         userContent,
         displayContent,
+        displayAttachment,
         hideInUi: false,
         systemContent,
         apiMessages: apiMessagesOverride,
@@ -982,9 +1443,454 @@ function aiChatRunStream(root, state, apiMessages, opts) {
     return aiChatRunStreamWithSignals(state, apiMessages, fakeSignals, o);
 }
 
+/**
+ * Parse tool call arguments JSON; returns {} on failure.
+ * @param {object} toolCall
+ */
+function aiChatParseToolArgs(toolCall) {
+    const raw = toolCall
+        && toolCall.function
+        && toolCall.function.arguments != null
+        ? String(toolCall.function.arguments)
+        : '{}';
+    try {
+        const parsed = JSON.parse(raw || '{}');
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch (_e) {
+        return { _parseError: true, _raw: raw };
+    }
+}
+
+/**
+ * Race a promise against a timeout; on timeout run onTimeout then reject.
+ */
+function aiChatWithTimeout(promise, ms, onTimeout, message) {
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            try {
+                if (typeof onTimeout === 'function') onTimeout();
+            } catch (_e) { /* ignore */ }
+            reject(new Error(message || ('Timed out after ' + ms + 'ms')));
+        }, ms);
+    });
+    return Promise.race([
+        Promise.resolve(promise).finally(() => {
+            if (timer) clearTimeout(timer);
+        }),
+        timeoutPromise,
+    ]);
+}
+
+/**
+ * Multi-round tool loop. Intermediate assistant/tool messages stay hideInUi.
+ * Only the finalize tool (default `respond`) produces a visible assistant bubble.
+ *
+ * opts:
+ * - userText / userContent
+ * - systemContent
+ * - tools (OpenAI tool defs)
+ * - executeTool(name, args, toolCall) => Promise<string|object> | string|object
+ * - finalizeToolName (default 'respond')
+ * - maxToolRounds (default 8)
+ * - roundTimeoutMs (default 90000)
+ * - model, max_tokens, parallel_tool_calls, tool_choice
+ * - onToolActivity({ round, name, argsSummary, resultBytes, error? })
+ * - onTurnDone
+ */
+async function aiChatSendToolTurn(root, state, opts) {
+    const o = aiChatResolveOpts(Object.assign({}, state && state._wireOpts, opts));
+    if (!state) return null;
+    if (state.streaming) return null;
+
+    const tools = opts && Array.isArray(opts.tools) ? opts.tools : null;
+    const executeTool = opts && typeof opts.executeTool === 'function' ? opts.executeTool : null;
+    if (!tools || !tools.length || !executeTool) {
+        throw new Error('sendToolTurn requires tools and executeTool');
+    }
+
+    const finalizeName = String(
+        (opts && opts.finalizeToolName) || 'respond'
+    ).trim() || 'respond';
+    const maxRounds = Math.max(
+        1,
+        Math.min(
+            20,
+            Number.isFinite(opts && opts.maxToolRounds) ? Math.floor(opts.maxToolRounds) : 8
+        )
+    );
+    const roundTimeoutMs = Math.max(
+        10000,
+        Number.isFinite(opts && opts.roundTimeoutMs)
+            ? Math.floor(opts.roundTimeoutMs)
+            : AI_CHAT_TOOL_ROUND_TIMEOUT_MS
+    );
+    const userText = opts && opts.userText != null ? String(opts.userText) : '';
+    const userContent = opts && opts.userContent != null ? String(opts.userContent) : userText;
+    const systemContent = opts && opts.systemContent != null ? opts.systemContent : null;
+    const fromHandler = !!(root && root._wfAiChatFromHandler);
+    const signals = root && root._wfAiChatSignals;
+
+    if (!String(userContent || '').trim()) return null;
+
+    if (userContent) {
+        state.messages.push({
+            role: 'user',
+            content: userContent,
+            displayContent: opts && opts.displayContent != null ? opts.displayContent : null,
+        });
+    }
+
+    state.streaming = true;
+    const useLiveSignals = !!(fromHandler && signals);
+
+    const quietSignals = signals || {
+        onOpen() {},
+        onClose() {},
+        onResponse() {},
+        stopClicked: { listener: null },
+    };
+
+    let lastGenerationId = null;
+    let lastModel = null;
+    let round = 0;
+    let forceFinalize = false;
+    let forcedFinalizeAttempts = 0;
+    const maxForcedFinalizeAttempts = 2;
+
+    const notifyActivity = (payload) => {
+        if (typeof o.onToolActivity === 'function') {
+            try { o.onToolActivity(payload); } catch (_e) { /* ignore */ }
+        }
+        if (typeof opts.onToolActivity === 'function' && opts.onToolActivity !== o.onToolActivity) {
+            try { opts.onToolActivity(payload); } catch (_e) { /* ignore */ }
+        }
+    };
+
+    const syncWorking = (label) => {
+        if (useLiveSignals) {
+            try {
+                void Promise.resolve(signals.onResponse({ text: label, overwrite: true }));
+            } catch (_e) { /* ignore */ }
+        }
+    };
+
+    const abortPriorStream = () => {
+        if (state.streamAbort && typeof state.streamAbort.abort === 'function') {
+            try { state.streamAbort.abort(); } catch (_e) { /* ignore */ }
+        }
+        state.streamAbort = null;
+    };
+
+    const deliverFinalAnswer = async (markdown, viaLabel) => {
+        const text = String(markdown || '').trim();
+        state.messages.push({
+            role: 'assistant',
+            content: text,
+        });
+        state.lastGenerationId = lastGenerationId;
+        state.lastModel = lastModel;
+        state.streaming = false;
+        try {
+            if (useLiveSignals) {
+                await Promise.resolve(signals.onResponse({
+                    text: text,
+                    overwrite: true,
+                }));
+                try { signals.onClose(); } catch (_e) { /* ignore */ }
+            } else if (state._deepChat) {
+                aiChatSyncHistory(state._deepChat, state);
+            }
+        } catch (_e) { /* ignore */ }
+        Logger.log(o.logTag + ': tool turn done via ' + viaLabel
+            + ' (' + text.length + ' chars'
+            + (lastGenerationId ? ' · gen ' + lastGenerationId : '') + ')');
+        if (o.onTurnDone || (opts && opts.onTurnDone)) {
+            const cb = opts && opts.onTurnDone ? opts.onTurnDone : o.onTurnDone;
+            try {
+                cb({
+                    generationId: lastGenerationId,
+                    model: lastModel,
+                    userPreview: String(userText || userContent).trim(),
+                    fullText: text,
+                });
+            } catch (cbErr) {
+                Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
+            }
+        }
+        try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
+        return text;
+    };
+
+    const queueForcedFinalize = (reason) => {
+        if (forcedFinalizeAttempts >= maxForcedFinalizeAttempts) return false;
+        forcedFinalizeAttempts += 1;
+        forceFinalize = true;
+        state.messages.push({
+            role: 'user',
+            content: 'You must call ' + finalizeName
+                + '({ markdown }) now with the complete operator-facing answer. '
+                + 'Do not reply with plain text. Reason: ' + reason,
+            hideInUi: true,
+        });
+        Logger.warn(o.logTag + ': forcing ' + finalizeName + ' — ' + reason
+            + ' (attempt ' + forcedFinalizeAttempts + '/' + maxForcedFinalizeAttempts + ')');
+        return true;
+    };
+
+    try {
+        while (round < maxRounds + maxForcedFinalizeAttempts) {
+            round += 1;
+            syncWorking('Working… (round ' + round + ')');
+            state.streaming = true;
+            abortPriorStream();
+
+            const apiMessages = aiChatBuildApiMessages(state, { systemContent });
+            let roundError = null;
+            const choice = forceFinalize
+                ? { type: 'function', function: { name: finalizeName } }
+                : ((opts && opts.tool_choice != null) ? opts.tool_choice : 'auto');
+
+            const streamOpts = Object.assign({}, o, {
+                tools,
+                tool_choice: choice,
+                model: opts && opts.model,
+                max_tokens: opts && opts.max_tokens,
+                parallel_tool_calls: opts && opts.parallel_tool_calls,
+                suppressTextDeltas: true,
+                keepStreamingFlag: true,
+            });
+
+            Logger.log(o.logTag + ': tool round ' + round + '/' + maxRounds
+                + (forceFinalize ? ' (force ' + finalizeName + ')' : '')
+                + ' — requesting completion (' + apiMessages.length + ' msg)');
+
+            let result;
+            try {
+                result = await aiChatWithTimeout(
+                    aiChatRunStreamWithSignals(
+                        state,
+                        apiMessages,
+                        {
+                            onOpen() {},
+                            onClose() {},
+                            onResponse(response) {
+                                if (response && response.error) {
+                                    roundError = String(response.error);
+                                }
+                            },
+                            stopClicked: quietSignals.stopClicked || { listener: null },
+                        },
+                        streamOpts
+                    ),
+                    roundTimeoutMs,
+                    () => abortPriorStream(),
+                    'OpenRouter tool round timed out after ' + roundTimeoutMs + 'ms'
+                );
+            } catch (streamErr) {
+                abortPriorStream();
+                throw streamErr;
+            }
+
+            if (roundError) {
+                abortPriorStream();
+                throw new Error(roundError);
+            }
+
+            if (result && result.generationId) lastGenerationId = result.generationId;
+            if (result && result.model) lastModel = result.model;
+
+            const toolCalls = (result && Array.isArray(result.toolCalls))
+                ? result.toolCalls
+                : [];
+            const finishReason = result && result.finishReason
+                ? String(result.finishReason)
+                : '';
+            const salvageText = String(result && result.text != null ? result.text : '').trim();
+            const toolNames = toolCalls.map((tc) =>
+                (tc && tc.function && tc.function.name) ? String(tc.function.name) : '?'
+            ).join(', ');
+            Logger.log(o.logTag + ': tool round ' + round + ' done — finish_reason='
+                + (finishReason || 'unknown')
+                + (toolNames ? ' · tools=[' + toolNames + ']' : ' · no tools')
+                + (salvageText && !toolCalls.length ? ' · salvageText=' + salvageText.length + 'c' : ''));
+
+            abortPriorStream();
+
+            if (!toolCalls.length) {
+                if (salvageText) {
+                    Logger.warn(o.logTag + ': model skipped ' + finalizeName
+                        + ' — accepting plain completion as final answer');
+                    notifyActivity({
+                        round,
+                        name: finalizeName,
+                        argsSummary: 'salvaged plain text ' + salvageText.length + ' chars',
+                        resultBytes: salvageText.length,
+                    });
+                    return await deliverFinalAnswer(salvageText, finalizeName + ' (salvaged)');
+                }
+                if (queueForcedFinalize(
+                    finishReason === 'stop'
+                        ? 'finished with stop and no tool calls'
+                        : 'no tool calls (finish_reason=' + (finishReason || 'unknown') + ')'
+                )) {
+                    state.streaming = true;
+                    continue;
+                }
+                Logger.warn(o.logTag + ': no tool calls and salvage/force exhausted — soft fallback');
+                return await deliverFinalAnswer(
+                    'I could not produce a final answer for that turn. Please try again.',
+                    'soft-fallback'
+                );
+            }
+
+            forceFinalize = false;
+
+            const respondCall = toolCalls.find((tc) =>
+                tc
+                && tc.function
+                && String(tc.function.name || '').trim() === finalizeName
+            );
+
+            state.messages.push({
+                role: 'assistant',
+                content: null,
+                tool_calls: toolCalls,
+                hideInUi: true,
+            });
+
+            if (respondCall) {
+                const args = aiChatParseToolArgs(respondCall);
+                const markdown = args && args.markdown != null
+                    ? String(args.markdown)
+                    : (args && args._parseError ? '' : '');
+                if (!String(markdown || '').trim()) {
+                    state.messages.push({
+                        role: 'tool',
+                        tool_call_id: respondCall.id,
+                        content: JSON.stringify({ error: finalizeName + ' requires non-empty markdown' }),
+                        hideInUi: true,
+                    });
+                    if (queueForcedFinalize(finalizeName + ' called without markdown')) {
+                        state.streaming = true;
+                        continue;
+                    }
+                    return await deliverFinalAnswer(
+                        'I could not produce a final answer for that turn. Please try again.',
+                        'soft-fallback'
+                    );
+                }
+                state.messages.push({
+                    role: 'tool',
+                    tool_call_id: respondCall.id,
+                    content: JSON.stringify({ ok: true }),
+                    hideInUi: true,
+                });
+                notifyActivity({
+                    round,
+                    name: finalizeName,
+                    argsSummary: 'markdown ' + markdown.length + ' chars',
+                    resultBytes: markdown.length,
+                });
+                return await deliverFinalAnswer(markdown, finalizeName);
+            }
+
+            for (let ti = 0; ti < toolCalls.length; ti++) {
+                const tc = toolCalls[ti];
+                const name = tc && tc.function
+                    ? String(tc.function.name || '').trim()
+                    : '';
+                const args = aiChatParseToolArgs(tc);
+                let resultPayload;
+                let resultStr;
+                let errMsg = null;
+                try {
+                    resultPayload = await Promise.resolve(executeTool(name, args, tc));
+                    resultStr = typeof resultPayload === 'string'
+                        ? resultPayload
+                        : JSON.stringify(resultPayload == null ? null : resultPayload);
+                } catch (execErr) {
+                    errMsg = (execErr && execErr.message) || String(execErr);
+                    resultStr = JSON.stringify({ error: errMsg });
+                }
+                const bytes = resultStr ? resultStr.length : 0;
+                notifyActivity({
+                    round,
+                    name: name || 'unknown',
+                    argsSummary: aiChatToolArgsSummary(args),
+                    resultBytes: bytes,
+                    error: errMsg || undefined,
+                });
+                state.messages.push({
+                    role: 'tool',
+                    tool_call_id: tc.id,
+                    content: resultStr,
+                    hideInUi: true,
+                });
+            }
+            state.streaming = true;
+            if (round >= maxRounds) {
+                if (!queueForcedFinalize('exceeded max tool rounds without ' + finalizeName)) {
+                    break;
+                }
+            }
+        }
+
+        Logger.warn(o.logTag + ': tool loop ended without ' + finalizeName + ' — soft fallback');
+        return await deliverFinalAnswer(
+            'I reached the tool-round limit before finishing. Please try a narrower question.',
+            'soft-fallback'
+        );
+    } catch (err) {
+        abortPriorStream();
+        state.streaming = false;
+        const msg = (err && err.message) || String(err);
+        const last = state.messages[state.messages.length - 1];
+        if (!last || last.role !== 'assistant' || !String(last.content || '').startsWith('Error:')) {
+            state.messages.push({
+                role: 'assistant',
+                content: 'Error: ' + msg,
+            });
+        }
+        try {
+            if (useLiveSignals && signals) {
+                await Promise.resolve(signals.onResponse({ error: msg }));
+                try { signals.onClose(); } catch (_e) { /* ignore */ }
+            } else if (state._deepChat) {
+                aiChatSyncHistory(state._deepChat, state);
+            }
+        } catch (_e) { /* ignore */ }
+        Logger.error(o.logTag + ': tool turn failed: ' + msg);
+        throw err;
+    } finally {
+        if (fromHandler && root) {
+            root._wfAiChatFromHandler = false;
+            root._wfAiChatSignals = null;
+        }
+    }
+}
+
+function aiChatToolArgsSummary(args) {
+    if (!args || typeof args !== 'object') return '';
+    try {
+        const keys = Object.keys(args).filter((k) => k.charAt(0) !== '_');
+        if (!keys.length) return '{}';
+        const parts = keys.slice(0, 4).map((k) => {
+            let v = args[k];
+            if (typeof v === 'string' && v.length > 40) v = v.slice(0, 37) + '…';
+            return k + '=' + JSON.stringify(v);
+        });
+        return parts.join(', ') + (keys.length > 4 ? '…' : '');
+    } catch (_e) {
+        return '';
+    }
+}
+
 const AiChatApi = {
     VERSION: AI_CHAT_VERSION,
     hasAiKey: aiChatHasKey,
+    noKeyMessageHtml: aiChatNoKeyMessageHtml,
+    setKeyGate: aiChatSetKeyGate,
     createState: aiChatCreateState,
     ensureMounted: aiChatEnsureMounted,
     renderMessages: aiChatRenderMessages,
@@ -996,13 +1902,14 @@ const AiChatApi = {
     wireComposer: aiChatWireComposer,
     exportConversation: aiChatExportConversation,
     sendTurn: aiChatSendTurn,
+    sendToolTurn: aiChatSendToolTurn,
 };
 
 const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '2.11',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

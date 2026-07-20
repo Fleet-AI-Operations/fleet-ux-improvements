@@ -4516,6 +4516,10 @@ const searchOutputCoreMethods = {
                 void this._renderStatsPanel();
             } else if ((this._state.statsTab || 'stats') === 'ratings') {
                 this._renderRatingsPanel();
+            } else if ((this._state.statsTab || 'stats') === 'chat'
+                && Context.searchOutputChat
+                && typeof Context.searchOutputChat.onResultsChanged === 'function') {
+                Context.searchOutputChat.onResultsChanged(this);
             }
         };
 
@@ -5872,7 +5876,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.17',
+    _version: '9.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -31,6 +31,16 @@ const searchOutputStatsPaneMethods = {
         const statsTab = this._state ? (this._state.statsTab || 'stats') : 'stats';
         const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
         const statsPanel = 'flex: 1; min-height: 0; overflow: hidden; padding: 14px; flex-direction: column; gap: 12px;';
+        const chatTabBtn = '<button type="button" data-wf-dash-stats-tab="chat" style="'
+            + this._statsTabStyle(statsTab === 'chat') + '">Chat</button>';
+        const chatPanel = '<div id="wf-dash-stats-panel-chat" style="flex: 1; min-height: 0; overflow: hidden; padding: 14px;'
+            + ' flex-direction: column; gap: 12px; display: '
+            + (statsTab === 'chat' ? 'flex' : 'none') + ';">'
+            + (Context.searchOutputChat && typeof Context.searchOutputChat.panelHtml === 'function'
+                ? Context.searchOutputChat.panelHtml()
+                : '<div style="font-size: 12px; color: var(--muted-foreground, #64748b);">'
+                    + 'Search Chat module is not loaded.</div>')
+            + '</div>';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
             + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
@@ -38,6 +48,7 @@ const searchOutputStatsPaneMethods = {
             + '<nav style="display: flex; align-items: center; gap: 0; min-width: 0;" aria-label="Stats and ratings">'
             + '<button type="button" data-wf-dash-stats-tab="stats" style="' + this._statsTabStyle(statsTab === 'stats') + '">Stats</button>'
             + '<button type="button" data-wf-dash-stats-tab="ratings" style="' + this._statsTabStyle(statsTab === 'ratings') + '">Ratings</button>'
+            + chatTabBtn
             + '</nav>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
             + '</div>'
@@ -55,6 +66,7 @@ const searchOutputStatsPaneMethods = {
             + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
             + '</div>'
             + '</div>'
+            + chatPanel
             + '</div>';
     },
 
@@ -4458,15 +4470,30 @@ const searchOutputStatsPaneMethods = {
             void this._renderStatsPanel();
         } else if (tab === 'ratings') {
             this._renderRatingsPanel();
+        } else if (tab === 'chat') {
+            this._activateSearchChatPanel();
         }
+    },
+
+    _activateSearchChatPanel() {
+        const api = Context.searchOutputChat;
+        const panel = this._q('[data-wf-dash-search-chat-panel]');
+        if (!api || typeof api.wirePanel !== 'function' || !panel) {
+            Logger.warn('search-output-stats-pane: Search Chat unavailable');
+            return;
+        }
+        api.wirePanel(panel, this);
+        Logger.log('search-output-stats-pane: Search Chat activated');
     },
 
     _syncStatsTabUi() {
         const tab = this._state.statsTab || 'stats';
         const ratingsPanel = this._q('#wf-dash-stats-panel-ratings');
         const statsPanel = this._q('#wf-dash-stats-panel-stats');
+        const chatPanel = this._q('#wf-dash-stats-panel-chat');
         if (ratingsPanel) ratingsPanel.style.display = tab === 'ratings' ? 'flex' : 'none';
         if (statsPanel) statsPanel.style.display = tab === 'stats' ? 'flex' : 'none';
+        if (chatPanel) chatPanel.style.display = tab === 'chat' ? 'flex' : 'none';
         if (this._modal) {
             this._modal.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
                 const active = btn.getAttribute('data-wf-dash-stats-tab') === tab;
@@ -5746,18 +5773,15 @@ const searchOutputStatsPaneMethods = {
         const llmDataBtnHtml = Context.isDevBranch
             ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
             : '';
-        const explainAi = !!(Context.ratingExplain
-            && typeof Context.ratingExplain.hasAiKey === 'function'
-            && Context.ratingExplain.hasAiKey());
-        const explainOpen = !!(explainAi && Context.ratingExplain
+        const explainOpen = !!(Context.ratingExplain
             && typeof Context.ratingExplain.isOpen === 'function'
             && Context.ratingExplain.isOpen(workerId));
-        const explainBtnHtml = explainAi
+        const explainBtnHtml = Context.ratingExplain
             ? ('<button type="button" class="' + explainBtnCls + '" data-wf-dash-rating-explain="1" data-wf-dash-rating-worker="'
                 + dashEscHtml(workerId) + '" aria-pressed="' + (explainOpen ? 'true' : 'false') + '">'
                 + (explainOpen ? 'Hide Explanation' : 'Explain Ratings') + '</button>')
             : '';
-        const explainPanelHtml = (explainAi && Context.ratingExplain && typeof Context.ratingExplain.panelHtml === 'function')
+        const explainPanelHtml = (Context.ratingExplain && typeof Context.ratingExplain.panelHtml === 'function')
             ? Context.ratingExplain.panelHtml(workerId)
             : '';
         const box = this._panelBoxStyle();
@@ -6072,7 +6096,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.5',
+    _version: '12.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

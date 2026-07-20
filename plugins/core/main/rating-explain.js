@@ -1,7 +1,8 @@
 // ============= rating-explain.js =============
 // Inline "Explain Ratings" chat for Worker Output Search rating cards.
 //
-// AI gating: the Explain Ratings button stays hidden unless
+// AI gating: the Explain Ratings control stays visible without an OpenRouter
+// key; the chat panel shows the shared no-key overlay until
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
 //
@@ -340,6 +341,10 @@ async function sendRatingExplainFollowUp(panel, workerId, state, userText) {
     if (!chat || typeof chat.sendTurn !== 'function') return;
     const text = String(userText || '').trim();
     if (!text || state.streaming) return;
+    if (!hasRatingExplainAiKey()) {
+        Logger.warn(PLUGIN_ID + ': follow-up blocked — no OpenRouter key stored');
+        return;
+    }
     Logger.log(PLUGIN_ID + ': follow-up — ' + workerId + ' · ' + text.length + ' chars');
     try {
         await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
@@ -396,7 +401,8 @@ function ratingExplainPanelHtml(workerId) {
         + '<button type="button" class="' + btnStop + '" data-wf-dash-rating-explain-export="1">Export</button>'
         + '</div>'
         + '<div data-wf-dash-rating-explain-mount="1" style="display: flex; flex-direction: column;'
-        + ' min-height: 200px; height: 320px; max-height: 75vh; resize: vertical; overflow: auto;"></div>'
+        + ' min-height: 200px; height: 320px; max-height: 75vh; resize: vertical; overflow: auto;'
+        + ' position: relative;"></div>'
         + '</div>';
 }
 
@@ -442,14 +448,21 @@ function mountRatingExplainPanel(root, workerId) {
     if (chat) {
         chat.renderMessages(panel, state, ratingExplainChatOpts());
         chat.setStreamingUi(panel, state, !!state.streaming, ratingExplainChatOpts());
+        if (typeof chat.setKeyGate === 'function') {
+            chat.setKeyGate(panel, {
+                mountSelector: '[data-wf-dash-rating-explain-mount]',
+                state,
+                wireOpts: ratingExplainChatOpts(),
+            });
+        }
     }
-    if (state.open && !state.overviewStarted) {
+    if (state.open && !state.overviewStarted && hasRatingExplainAiKey()) {
         startRatingExplainOverview(panel, workerId, state);
     }
 }
 
 function remountOpenRatingExplainPanels(root) {
-    if (!root || !hasRatingExplainAiKey()) return;
+    if (!root) return;
     ensureRatingExplainBtnStyles();
     for (const [workerId, state] of ratingExplainByWorker) {
         if (!state.open) continue;
@@ -458,14 +471,11 @@ function remountOpenRatingExplainPanels(root) {
 }
 
 function toggleRatingExplain(root, workerId) {
-    if (!hasRatingExplainAiKey()) {
-        Logger.warn(PLUGIN_ID + ': explain skipped — no OpenRouter key stored');
-        return;
-    }
     const state = getRatingExplainState(workerId);
     if (!state) return;
     state.open = !state.open;
-    Logger.log(PLUGIN_ID + ': explain ' + (state.open ? 'opened' : 'closed') + ' — ' + workerId);
+    Logger.log(PLUGIN_ID + ': explain ' + (state.open ? 'opened' : 'closed') + ' — ' + workerId
+        + (hasRatingExplainAiKey() ? '' : ' · no OpenRouter key'));
     const card = findRatingCard(root, workerId);
     const btn = card && card.querySelector('[data-wf-dash-rating-explain]');
     if (btn) {
@@ -496,7 +506,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '2.6',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -508,6 +518,6 @@ const plugin = {
         }
         Context.ratingExplain = RatingExplain;
         if (state) state.registered = true;
-        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v2.0');
+        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v3.0');
     }
 };
