@@ -1,7 +1,7 @@
 {
-  "version": "12.4.10",
+  "version": "12.4.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.130",
+  "archetypesVersion": "14.131",
   "logs": {
     "debug": false,
     "verbose": false,
