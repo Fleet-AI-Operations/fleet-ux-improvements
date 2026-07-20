@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '4.0';
+const SEARCH_CHAT_VERSION = '4.1';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -3172,10 +3172,6 @@ async function searchChatSend(panel, dash, userText) {
         Logger.warn(PLUGIN_ID + ': send skipped — streaming or missing state');
         return;
     }
-    if (!Context.isDevBranch) {
-        Logger.warn(PLUGIN_ID + ': send skipped — not a dev build');
-        return;
-    }
     if (!searchChatHasAiKey()) {
         searchChatSetStatus(panel, 'OpenRouter API key required.', true);
         return;
@@ -3248,7 +3244,7 @@ async function searchChatSend(panel, dash, userText) {
 }
 
 function searchChatWirePanel(panel, dash) {
-    if (!panel || !Context.isDevBranch) return;
+    if (!panel) return;
     if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
         Context.uiLib.ensureButtonStyles(SEARCH_CHAT_SCOPE);
     }
@@ -3324,7 +3320,7 @@ function searchChatWirePanel(panel, dash) {
 }
 
 function searchChatOnResultsChanged(dash) {
-    if (!Context.isDevBranch || !dash) return;
+    if (!dash) return;
     const fp = searchChatResultsFingerprint(dash);
     const modal = dash._modal;
     const panel = modal && modal.querySelector(SEARCH_CHAT_SCOPE);
@@ -3443,7 +3439,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
