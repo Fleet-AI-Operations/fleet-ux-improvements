@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '3.6';
+const SEARCH_CHAT_VERSION = '3.7';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -42,7 +42,7 @@ const SEARCH_CHAT_SETTINGS_CLAMP = {
     maxTokens: { min: 256, max: 16384 },
 };
 
-/** @type {{ chatState: object|null, activity: object[], resultsFingerprint: string, bound: boolean, charts: object[], chartInstances: object[], panel: Element|null }} */
+/** @type {{ chatState: object|null, activity: object[], resultsFingerprint: string, bound: boolean, charts: object[], chartInstances: object[], panel: Element|null, sendInFlight: boolean }} */
 const searchChatUi = {
     chatState: null,
     activity: [],
@@ -51,6 +51,7 @@ const searchChatUi = {
     charts: [],
     chartInstances: [],
     panel: null,
+    sendInFlight: false,
 };
 
 function searchChatUuid() {
@@ -3087,6 +3088,7 @@ function searchChatEnsureState() {
 function searchChatResetChat(panel, dash) {
     const chat = Context.aiChat;
     searchChatUi.activity = [];
+    searchChatUi.sendInFlight = false;
     searchChatUi.panel = panel || searchChatUi.panel;
     searchChatClearCharts(panel);
     searchChatUi.chatState = searchChatCreateState();
@@ -3096,7 +3098,7 @@ function searchChatResetChat(panel, dash) {
     searchChatUpdateBadge(panel, dash);
     if (chat && panel) {
         chat.wireComposer(panel, searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
-            onSend: (value) => void searchChatSend(panel, dash, value),
+            onSend: (value) => searchChatSend(panel, dash, value),
             onStop: () => {
                 const state = searchChatUi.chatState;
                 if (!state || !chat) return;
@@ -3123,9 +3125,17 @@ function searchChatResetChat(panel, dash) {
 
 async function searchChatSend(panel, dash, userText) {
     const chat = Context.aiChat;
-    const state = searchChatEnsureState();
     const text = String(userText || '').trim();
-    if (!chat || !state || !text || state.streaming) return;
+    if (!chat || !text) return;
+    if (searchChatUi.sendInFlight) {
+        Logger.warn(PLUGIN_ID + ': send skipped — turn already in flight');
+        return;
+    }
+    let state = searchChatEnsureState();
+    if (!state || state.streaming) {
+        Logger.warn(PLUGIN_ID + ': send skipped — streaming or missing state');
+        return;
+    }
     if (!Context.isDevBranch) {
         Logger.warn(PLUGIN_ID + ': send skipped — not a dev build');
         return;
@@ -3142,14 +3152,25 @@ async function searchChatSend(panel, dash, userText) {
 
     const fp = searchChatResultsFingerprint(dash);
     if (searchChatUi.resultsFingerprint && searchChatUi.resultsFingerprint !== fp) {
-        searchChatSetStatus(panel, 'Results changed; starting a new chat.', false);
-        searchChatResetChat(panel, dash);
+        searchChatSetStatus(
+            panel,
+            'Results changed; start a new chat to use the updated set.',
+            false
+        );
+        Logger.warn(PLUGIN_ID + ': results fingerprint changed — keeping conversation; tools use current scope');
     }
     searchChatUi.resultsFingerprint = fp;
+
+    state = searchChatEnsureState();
+    if (!state || state.streaming || searchChatUi.sendInFlight) {
+        Logger.warn(PLUGIN_ID + ': send aborted — state busy after fingerprint check');
+        return;
+    }
 
     const settings = searchChatGetSettings();
     const executeTool = searchChatCreateExecutor(dash);
     searchChatUi.panel = panel;
+    searchChatUi.sendInFlight = true;
     searchChatSetStatus(panel, 'Working…', false);
 
     try {
@@ -3185,6 +3206,8 @@ async function searchChatSend(panel, dash, userText) {
     } catch (err) {
         searchChatSetStatus(panel, (err && err.message) || String(err), true);
         Logger.error(PLUGIN_ID + ': turn failed', err);
+    } finally {
+        searchChatUi.sendInFlight = false;
     }
 }
 
@@ -3230,7 +3253,7 @@ function searchChatWirePanel(panel, dash) {
         const chat = Context.aiChat;
         if (chat) {
             chat.wireComposer(panel, searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
-                onSend: (value) => void searchChatSend(panel, dash, value),
+                onSend: (value) => searchChatSend(panel, dash, value),
                 onStop: () => {
                     chat.stopStream(searchChatUi.chatState, searchChatChatOpts());
                     searchChatSetStatus(panel, 'Stopped.', false);
@@ -3368,7 +3391,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
