@@ -22,8 +22,8 @@
 #      GITHUB_CONFIG.branch, VERSION).
 #   4. Commits any sync changes (or no-op if already in sync) and pushes the
 #      branch to origin.
-#   5. Prints the GitHub tree URL and explains that this branch is for testing
-#      how users on the current main script would experience an update before
+#   5. Prints the raw fleet.user.js install URL and explains that this branch is for
+#      testing how users on the current main script would experience an update before
 #      releasing; install from the printed URL to find script-breaking issues.
 #
 # Use this to validate an upcoming main release: install the test-branch script,
@@ -117,6 +117,10 @@ if [[ "$dry_run" == true ]]; then
   echo "[dry-run] Would run: git add ."
   echo "[dry-run] Would run: git commit -m \"Sync branch config for $branch\""
   echo "[dry-run] Would run: git push -u origin $branch"
+  url="$(cd "$root" && gh browse --no-browser)"
+  ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}')
+  ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)(?:/|$)}')
+  echo "[dry-run] Would print install URL: https://raw.githubusercontent.com/$ghuser/$ghrepo/$branch/fleet.user.js"
   exit 0
 fi
 
@@ -143,13 +147,12 @@ fi
 echo "[info] Pushing to origin..."
 git -C "$root" push -u origin "$branch"
 
-url="$(cd "$root" && gh browse --no-browser "$branch")"
+url="$(cd "$root" && gh browse --no-browser)"
 ghuser=$(echo "$url" | perl -nE 'say $1 if m{github\.com/([^/]+)}')
-ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)/}')
-ghfile=$(echo "$url" | perl -nE 'say $1 if m{tree/[^/]+/(.+)}')
-GITHUB_URL="https://github.com/$ghuser/$ghrepo/tree/$branch/$ghfile"
+ghrepo=$(echo "$url" | perl -nE 'say $1 if m{'"$ghuser"'/([^/]+)(?:/|$)}')
+MAIN_INSTALL_URL="https://raw.githubusercontent.com/$ghuser/$ghrepo/$branch/fleet.user.js"
 
 echo "The purpose of this step is to test how users on the current main userscript would experience the changes before updating their script to the current version."
 echo "If the incoming update introduces script breaking errors, this is where those would be identified."
 echo "Install the test userscript from:"
-echo "$GITHUB_URL"
+echo "$MAIN_INSTALL_URL"
