@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '3.5';
+const SEARCH_CHAT_VERSION = '3.6';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -2942,6 +2942,10 @@ function searchChatBuildSystemPrompt(dash) {
         'NEVER cite prompt-version UUIDs. NEVER call a UUID a task ID. Prompt IDs are useless to the operator — do not mention them.',
         'evalTaskId is an internal UUID only; do not show it unless the operator explicitly asks for eval_task UUIDs.',
         'In respond(), every task must be identified by taskId (task_…). Cite worker by name, not worker UUID.',
+        'Prompt revisions: each task has numbered prompt versions (versionNo: 1, 2, 3, …). Prefer versionNo in context',
+        '(e.g. "v1 vs v3", "submitted as version 2"). Use get_task / get_tasks_batch with sections including "versions"',
+        'to list versionNo/env/createdAt/size. Use compare_prompts versionA/versionB (numbers) to diff specific revisions.',
+        'Default similarity tools use the current prompt; pin a version number when the operator cares about an older revision.',
         'Always finish by calling respond({ markdown }) with the operator-facing answer.',
         'Do not put the final answer in plain assistant content — only respond.',
         'Start with get_search_summary or get_scope when you need size/context; then dig with find/list/search tools.',
@@ -2961,7 +2965,7 @@ function searchChatBuildSystemPrompt(dash) {
             + ', maxToolResultBytes=' + settings.maxToolResultBytes
             + ', maxTokens=' + settings.maxTokens + '.',
         'Data shape (one result card): taskId (Fleet task_… key), evalTaskId (internal), worker {id,name,email}, status, env/project/team,',
-        'current prompt + promptVersions[], QA feedback, disputes[], flags[],',
+        'current prompt + promptVersions[] (each with versionNo), QA feedback, disputes[], flags[],',
         'hydrated boolean, optional ratings if the operator already generated ratings this session.',
         'Discovery vs display: Task Creation / QA / Disputes are search methods that identified tasks;',
         'a hydrated card still exposes the full timeline regardless of how it was found.',
@@ -3364,7 +3368,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '3.5',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

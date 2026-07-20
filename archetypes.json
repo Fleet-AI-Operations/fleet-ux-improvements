@@ -1,7 +1,7 @@
 {
   "version": "12.4.7",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.119",
+  "archetypesVersion": "14.120",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -206,8 +206,8 @@
     },
     {
       "name": "search-output-chat.js",
-      "version": "3.5",
-      "hash": "sha256-5cfc4fdc11b75202e34be2c65268c7fdeb92a0533a94eb1f231e2659f38b55e3",
+      "version": "3.6",
+      "hash": "sha256-ca32bb3c40c9442388156cbfb841e000960d9d71bbecabe4fa7095db0ef12fb6",
       "log": false
     },
     {
