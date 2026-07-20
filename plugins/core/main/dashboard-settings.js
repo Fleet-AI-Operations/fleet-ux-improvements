@@ -704,7 +704,7 @@ function renderAiSection(modal, options) {
                 : '')
             + '</div>'
             + '<p style="' + hintStyle + ' margin: 8px 0 0 0; line-height: 1.45;">'
-            + 'Stored encrypted with your Ops password. Only the last 4 characters are shown after save.'
+            + 'Once the key is saved, it cannot be viewed again.'
             + '</p>';
     } else {
         body += ''
@@ -1176,7 +1176,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.17',
+    _version: '1.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
