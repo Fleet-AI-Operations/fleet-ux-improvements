@@ -1,7 +1,7 @@
 {
   "version": "12.4.7",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.124",
+  "archetypesVersion": "14.125",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "4.0",
-      "hash": "sha256-6ce8e3494ec1efd45ed8d4d37970871b5a9791559fdc206a457a11e64afd75ef",
+      "version": "4.1",
+      "hash": "sha256-8ff44b64b1c70d68c4550b850c7c4513941e352ebd8cebdae492acedb7154e81",
       "log": false
     },
     {
@@ -242,8 +242,8 @@
     },
     {
       "name": "dashboard-settings.js",
-      "version": "1.16",
-      "hash": "sha256-766dd4bc998f2003205e0ab71e30420fcd83f623dae224b8bf41b21679b6a252",
+      "version": "1.17",
+      "hash": "sha256-fe7aa2ccc83fde49937ec26132b223ea1d7cff9a5edb3a9837900ce1c3e08f14",
       "log": false
     }
   ],

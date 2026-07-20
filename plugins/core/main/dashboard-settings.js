@@ -695,7 +695,7 @@ function renderAiSection(modal, options) {
             + '</label>'
             + '<div style="display: flex; gap: 8px; align-items: stretch;">'
             + '<input type="password" id="wf-dash-settings-ai-key-input" autocomplete="off" '
-            + 'placeholder="sk-or-…" style="' + inputStyle + ' flex: 1; min-width: 0;">'
+            + 'style="' + inputStyle + ' flex: 1; min-width: 0;">'
             + '<button type="button" id="wf-dash-settings-ai-key-save" class="'
             + dashSettingsBtnClass('primary', 'regular') + '" style="flex-shrink: 0;">Save</button>'
             + (record
@@ -1176,7 +1176,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.16',
+    _version: '1.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

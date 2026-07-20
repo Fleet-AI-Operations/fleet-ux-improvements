@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '4.0';
+const AI_CHAT_VERSION = '4.1';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -39,7 +39,8 @@ function aiChatNoKeyMessageHtml() {
         + ' color: var(--destructive, #dc2626); max-width: 36em; margin: 0 auto; padding: 12px;">'
         + 'This feature needs a valid OpenRouter API key to work. Get a key at '
         + '<a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer"'
-        + ' style="color: inherit; text-decoration: underline;">openrouter.ai</a>,'
+        + ' style="color: inherit; text-decoration: underline; pointer-events: auto; cursor: pointer;">'
+        + 'openrouter.ai</a>,'
         + ' then paste it in the <strong>Settings</strong> tab under AI Integration.'
         + '</div>';
 }
@@ -1908,7 +1909,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
