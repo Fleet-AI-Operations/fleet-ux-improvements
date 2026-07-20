@@ -31,20 +31,16 @@ const searchOutputStatsPaneMethods = {
         const statsTab = this._state ? (this._state.statsTab || 'stats') : 'stats';
         const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
         const statsPanel = 'flex: 1; min-height: 0; overflow: hidden; padding: 14px; flex-direction: column; gap: 12px;';
-        const chatTabBtn = Context.isDevBranch
-            ? ('<button type="button" data-wf-dash-stats-tab="chat" style="'
-                + this._statsTabStyle(statsTab === 'chat') + '">Chat</button>')
-            : '';
-        const chatPanel = Context.isDevBranch
-            ? ('<div id="wf-dash-stats-panel-chat" style="flex: 1; min-height: 0; overflow: hidden; padding: 14px;'
-                + ' flex-direction: column; gap: 12px; display: '
-                + (statsTab === 'chat' ? 'flex' : 'none') + ';">'
-                + (Context.searchOutputChat && typeof Context.searchOutputChat.panelHtml === 'function'
-                    ? Context.searchOutputChat.panelHtml()
-                    : '<div style="font-size: 12px; color: var(--muted-foreground, #64748b);">'
-                        + 'Search Chat module is not loaded.</div>')
-                + '</div>')
-            : '';
+        const chatTabBtn = '<button type="button" data-wf-dash-stats-tab="chat" style="'
+            + this._statsTabStyle(statsTab === 'chat') + '">Chat</button>';
+        const chatPanel = '<div id="wf-dash-stats-panel-chat" style="flex: 1; min-height: 0; overflow: hidden; padding: 14px;'
+            + ' flex-direction: column; gap: 12px; display: '
+            + (statsTab === 'chat' ? 'flex' : 'none') + ';">'
+            + (Context.searchOutputChat && typeof Context.searchOutputChat.panelHtml === 'function'
+                ? Context.searchOutputChat.panelHtml()
+                : '<div style="font-size: 12px; color: var(--muted-foreground, #64748b);">'
+                    + 'Search Chat module is not loaded.</div>')
+            + '</div>';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
             + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
@@ -4467,7 +4463,6 @@ const searchOutputStatsPaneMethods = {
     },
 
     _setStatsTab(tab) {
-        if (tab === 'chat' && !Context.isDevBranch) tab = 'stats';
         this._state.statsTab = tab;
         this._syncStatsTabUi();
         Logger.log('search-output-stats-pane: stats tab ' + tab);
@@ -4481,7 +4476,6 @@ const searchOutputStatsPaneMethods = {
     },
 
     _activateSearchChatPanel() {
-        if (!Context.isDevBranch) return;
         const api = Context.searchOutputChat;
         const panel = this._q('[data-wf-dash-search-chat-panel]');
         if (!api || typeof api.wirePanel !== 'function' || !panel) {
@@ -6105,7 +6099,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.6',
+    _version: '12.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

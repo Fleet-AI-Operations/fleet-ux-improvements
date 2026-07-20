@@ -708,8 +708,7 @@ function renderAiSection(modal, options) {
         + '<div id="wf-dash-settings-ai-status" style="display: none; margin-top: 10px; '
         + hintStyle + ' line-height: 1.45;"></div>';
 
-    if (Context.isDevBranch
-        && Context.searchOutputChat
+    if (Context.searchOutputChat
         && typeof Context.searchOutputChat.settingsFieldsHtml === 'function') {
         body += Context.searchOutputChat.settingsFieldsHtml(
             Context.searchOutputChat.getSettings()
@@ -963,14 +962,11 @@ function renderDashboardTabOrder(modal) {
 }
 
 function defaultStatsTabOptions() {
-    const options = [
+    return [
         { id: 'stats', label: 'Stats' },
         { id: 'ratings', label: 'Ratings' },
+        { id: 'chat', label: 'Chat' },
     ];
-    if (Context.isDevBranch) {
-        options.push({ id: 'chat', label: 'Chat' });
-    }
-    return options;
 }
 
 function dashboardDefaultStatsTabHtml() {
@@ -1085,7 +1081,7 @@ function attachDashboardSettingsListeners(modal) {
             return;
         }
         const chatSave = e.target.closest('[data-wf-dash-search-chat-settings-save]');
-        if (chatSave && Context.isDevBranch && Context.searchOutputChat) {
+        if (chatSave && Context.searchOutputChat) {
             e.preventDefault();
             const api = Context.searchOutputChat;
             const raw = api.readSettingsFromModal(modal);
@@ -1104,7 +1100,7 @@ function attachDashboardSettingsListeners(modal) {
             return;
         }
         const chatReset = e.target.closest('[data-wf-dash-search-chat-settings-reset]');
-        if (chatReset && Context.isDevBranch && Context.searchOutputChat) {
+        if (chatReset && Context.searchOutputChat) {
             e.preventDefault();
             const api = Context.searchOutputChat;
             try {
@@ -1147,7 +1143,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.14',
+    _version: '1.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

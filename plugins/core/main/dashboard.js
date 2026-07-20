@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.11',
+    _version: '11.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -365,7 +365,6 @@ const plugin = {
     _normalizeStatsTabId(tabId) {
         const id = String(tabId || '').trim();
         if (!DASH_STATS_TAB_IDS.includes(id)) return DASH_DEFAULT_STATS_TAB;
-        if (id === 'chat' && !Context.isDevBranch) return DASH_DEFAULT_STATS_TAB;
         return id;
     },
 
