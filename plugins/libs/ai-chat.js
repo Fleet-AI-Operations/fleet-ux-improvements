@@ -7,10 +7,12 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.9';
+const AI_CHAT_VERSION = '4.0';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
+const AI_CHAT_NO_KEY_OVERLAY_ATTR = 'data-wf-ai-chat-no-key-overlay';
+const AI_CHAT_KEY_GATED_ATTR = 'data-wf-ai-chat-key-gated';
 const AI_CHAT_CALLBACK_KEYS = [
     'onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts',
     'onToolActivity', 'executeTool',
@@ -27,6 +29,96 @@ function aiChatHasKey() {
     return !!(Context.aiOpenRouter
         && typeof Context.aiOpenRouter.hasStoredKey === 'function'
         && Context.aiOpenRouter.hasStoredKey());
+}
+
+/**
+ * Shared no-key copy for Ops AI chat surfaces (red centered overlay body).
+ */
+function aiChatNoKeyMessageHtml() {
+    return '<div style="text-align: center; font-size: 13px; line-height: 1.5;'
+        + ' color: var(--destructive, #dc2626); max-width: 36em; margin: 0 auto; padding: 12px;">'
+        + 'This feature needs a valid OpenRouter API key to work. Get a key at '
+        + '<a href="https://openrouter.ai/" target="_blank" rel="noopener noreferrer"'
+        + ' style="color: inherit; text-decoration: underline;">openrouter.ai</a>,'
+        + ' then paste it in the <strong>Settings</strong> tab under AI Integration.'
+        + '</div>';
+}
+
+/**
+ * Resolve the Deep Chat mount node from a mount element or a panel root + selector.
+ */
+function aiChatResolveMountNode(rootOrMount, opts) {
+    if (!rootOrMount) return null;
+    const o = opts || {};
+    if (o.mount && o.mount.nodeType === 1) return o.mount;
+    if (o.mountSelector && typeof rootOrMount.querySelector === 'function') {
+        const found = rootOrMount.querySelector(o.mountSelector);
+        if (found) return found;
+    }
+    if (rootOrMount.tagName === 'DEEP-CHAT') {
+        return rootOrMount.parentElement;
+    }
+    if (typeof rootOrMount.querySelector === 'function'
+        && rootOrMount.querySelector(':scope > deep-chat')) {
+        return rootOrMount;
+    }
+    return rootOrMount;
+}
+
+/**
+ * Show or hide the no-key overlay and grey the Deep Chat input.
+ * Returns whether a stored OpenRouter key is present (after applying opts.hasKey override).
+ *
+ * @param {Element} rootOrMount Panel root or chat mount node
+ * @param {{ mountSelector?: string, mount?: Element, hasKey?: boolean,
+ *   state?: object, wireOpts?: object }} [opts]
+ */
+function aiChatSetKeyGate(rootOrMount, opts) {
+    const o = opts || {};
+    const hasKey = o.hasKey != null ? !!o.hasKey : aiChatHasKey();
+    const mount = aiChatResolveMountNode(rootOrMount, o);
+    if (!mount) return hasKey;
+
+    const computed = window.getComputedStyle(mount);
+    if (computed.position === 'static') {
+        mount.style.position = 'relative';
+    }
+
+    let overlay = mount.querySelector('[' + AI_CHAT_NO_KEY_OVERLAY_ATTR + '="1"]');
+    if (!hasKey) {
+        mount.setAttribute(AI_CHAT_KEY_GATED_ATTR, '1');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.setAttribute(AI_CHAT_NO_KEY_OVERLAY_ATTR, '1');
+            overlay.setAttribute('role', 'status');
+            // Leave the floating input strip (~76px) visible and greyed underneath.
+            overlay.style.cssText = 'position: absolute; inset: 0 0 76px 0; z-index: 4;'
+                + ' display: flex; align-items: center; justify-content: center;'
+                + ' pointer-events: none; box-sizing: border-box; padding: 16px;';
+            overlay.innerHTML = aiChatNoKeyMessageHtml();
+            mount.appendChild(overlay);
+        } else {
+            overlay.style.display = 'flex';
+            if (!overlay.innerHTML) overlay.innerHTML = aiChatNoKeyMessageHtml();
+        }
+    } else {
+        mount.removeAttribute(AI_CHAT_KEY_GATED_ATTR);
+        if (overlay) overlay.style.display = 'none';
+    }
+
+    const state = o.state || null;
+    const el = (state && state._deepChat)
+        || mount.querySelector('deep-chat')
+        || null;
+    if (el) {
+        el._wfAiChatKeyGated = !hasKey;
+        const wireOpts = o.wireOpts || (state && state._wireOpts) || {};
+        aiChatApplyTheme(el, aiChatResolveOpts(wireOpts));
+        try {
+            el.disableSubmitButton(!hasKey);
+        } catch (_e) { /* ignore */ }
+    }
+    return hasKey;
 }
 
 function aiChatCreateState(extra) {
@@ -278,6 +370,12 @@ function aiChatApplyTheme(el, opts) {
                 + '#input { position: absolute !important; inset-inline: 0 !important; bottom: 6px !important;'
                 + ' z-index: 5 !important; margin: 0 auto !important; border: none !important;'
                 + ' background: transparent !important; box-shadow: none !important; }'
+            : '')
+        + (el._wfAiChatKeyGated
+            ? '#input { opacity: 0.45 !important; pointer-events: none !important;'
+                + ' filter: grayscale(0.35); }'
+                + '#input textarea, #input input, #input [contenteditable] {'
+                + ' cursor: not-allowed !important; }'
             : '');
     el.messageStyles = {
         default: {
@@ -805,6 +903,15 @@ async function aiChatHandleConnect(root, state, body, signals) {
     const pending = state._pendingTurn;
     state._pendingTurn = null;
 
+    if (!aiChatHasKey()) {
+        try {
+            signals.onResponse({ error: 'OpenRouter API key required.' });
+        } catch (_e) { /* ignore */ }
+        try { signals.onClose(); } catch (_e2) { /* ignore */ }
+        Logger.warn(wire.logTag + ': send blocked — no OpenRouter key stored');
+        return;
+    }
+
     const turnExtras = pending
         || (wire.getTurnOpts ? (wire.getTurnOpts() || {}) : {})
         || {};
@@ -951,8 +1058,16 @@ async function aiChatEnsureMounted(root, state, opts) {
     }
     if (!el) {
         el = document.createElement('deep-chat');
-        mount.innerHTML = '';
-        mount.appendChild(el);
+        // Keep the no-key overlay if present; only clear other mount children.
+        Array.from(mount.childNodes).forEach((child) => {
+            if (child.nodeType === 1
+                && child.getAttribute
+                && child.getAttribute(AI_CHAT_NO_KEY_OVERLAY_ATTR) === '1') {
+                return;
+            }
+            child.remove();
+        });
+        mount.insertBefore(el, mount.firstChild);
         Logger.log(o.logTag + ': deep-chat mounted');
     }
     el.style.cssText = 'display:block;width:100%;max-width:min(100%,' + AI_CHAT_MAX_WIDTH_PX
@@ -972,6 +1087,11 @@ async function aiChatEnsureMounted(root, state, opts) {
         mount.style.flexDirection = 'column';
     }
     aiChatBindElement(el, root, state, o);
+    aiChatSetKeyGate(root, {
+        mountSelector: o.mountSelector,
+        state,
+        wireOpts: o,
+    });
     return el;
 }
 
@@ -987,6 +1107,11 @@ function aiChatRenderMessages(root, state, opts) {
             if (!state.streaming && !root._wfAiChatFromHandler) {
                 aiChatSyncHistory(el, state);
             }
+            aiChatSetKeyGate(root, {
+                mountSelector: o.mountSelector,
+                state,
+                wireOpts: o,
+            });
         } catch (err) {
             Logger.error(o.logTag + ': renderMessages failed', err);
             const mount = aiChatQuery(root, o.mountSelector);
@@ -1031,6 +1156,11 @@ function aiChatWireComposer(root, stateOrOpts, maybeOpts) {
 
     void aiChatEnsureMounted(root, state, o).then((el) => {
         if (el) aiChatSyncHistory(el, state);
+        aiChatSetKeyGate(root, {
+            mountSelector: o.mountSelector,
+            state,
+            wireOpts: o,
+        });
     }).catch((err) => {
         Logger.error(o.logTag + ': wireComposer mount failed', err);
     });
@@ -1758,6 +1888,8 @@ function aiChatToolArgsSummary(args) {
 const AiChatApi = {
     VERSION: AI_CHAT_VERSION,
     hasAiKey: aiChatHasKey,
+    noKeyMessageHtml: aiChatNoKeyMessageHtml,
+    setKeyGate: aiChatSetKeyGate,
     createState: aiChatCreateState,
     ensureMounted: aiChatEnsureMounted,
     renderMessages: aiChatRenderMessages,
@@ -1776,7 +1908,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.9',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -5773,18 +5773,15 @@ const searchOutputStatsPaneMethods = {
         const llmDataBtnHtml = Context.isDevBranch
             ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
             : '';
-        const explainAi = !!(Context.ratingExplain
-            && typeof Context.ratingExplain.hasAiKey === 'function'
-            && Context.ratingExplain.hasAiKey());
-        const explainOpen = !!(explainAi && Context.ratingExplain
+        const explainOpen = !!(Context.ratingExplain
             && typeof Context.ratingExplain.isOpen === 'function'
             && Context.ratingExplain.isOpen(workerId));
-        const explainBtnHtml = explainAi
+        const explainBtnHtml = Context.ratingExplain
             ? ('<button type="button" class="' + explainBtnCls + '" data-wf-dash-rating-explain="1" data-wf-dash-rating-worker="'
                 + dashEscHtml(workerId) + '" aria-pressed="' + (explainOpen ? 'true' : 'false') + '">'
                 + (explainOpen ? 'Hide Explanation' : 'Explain Ratings') + '</button>')
             : '';
-        const explainPanelHtml = (explainAi && Context.ratingExplain && typeof Context.ratingExplain.panelHtml === 'function')
+        const explainPanelHtml = (Context.ratingExplain && typeof Context.ratingExplain.panelHtml === 'function')
             ? Context.ratingExplain.panelHtml(workerId)
             : '';
         const box = this._panelBoxStyle();
@@ -6099,7 +6096,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.7',
+    _version: '12.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

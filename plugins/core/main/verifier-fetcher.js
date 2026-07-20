@@ -1,7 +1,8 @@
 // ============= verifier-fetcher.js =============
 // Verifier Fetcher tab for the Ops dashboard.
 //
-// AI gating: Diagnose Issues, Chat toggle, and the chat pane stay hidden unless
+// AI gating: Diagnose Issues and Chat stay visible without an OpenRouter key;
+// Diagnose is disabled and Chat shows the shared no-key overlay until
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
 // Chat transcript UI / streaming uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
@@ -311,6 +312,10 @@ async function sendVerifierChatMessage(modal, userText) {
     const state = getVerifierChatState(modal);
     const text = String(userText || '').trim();
     if (!chat || !state || !text || state.streaming) return;
+    if (!hasVerifierAiKey()) {
+        Logger.warn('verifier-fetcher: send blocked — no OpenRouter key stored');
+        return;
+    }
 
     ensureVerifierChatPaneOpen(modal);
 
@@ -334,6 +339,10 @@ async function sendVerifierChatMessage(modal, userText) {
 
 async function decodeVerifierOutput(modal) {
     const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
+    if (!hasVerifierAiKey()) {
+        Logger.warn('verifier-fetcher: Diagnose Issues blocked — no OpenRouter key stored');
+        return;
+    }
     const codeEl = modal.querySelector('#wf-ops-verifier-output');
     const ta = modal.querySelector('#wf-ops-verifier-scratchpad');
     const codeText = codeEl ? String(codeEl.textContent || '').trim() : '';
@@ -438,50 +447,72 @@ function ensureVerifierChatPaneOpen(modal) {
     if (!modal) return;
     ensureVerifierBtnStyles();
     writeVerifierChatOpenPref(true);
-    const ai = hasVerifierAiKey();
-    const chatOpen = ai;
     const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
     const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
     const chatPane = modal.querySelector('#wf-ops-verifier-chat-pane');
     const workspace = modal.querySelector('#wf-ops-verifier-workspace');
+    const ai = hasVerifierAiKey();
 
     if (chatToggle) {
-        chatToggle.style.display = ai ? '' : 'none';
-        chatToggle.textContent = chatOpen ? 'Hide chat' : 'Chat';
-        chatToggle.setAttribute('aria-pressed', chatOpen ? 'true' : 'false');
+        chatToggle.style.display = '';
+        chatToggle.textContent = 'Hide chat';
+        chatToggle.setAttribute('aria-pressed', 'true');
     }
-    if (decodeBtn) decodeBtn.style.display = ai ? '' : 'none';
+    if (decodeBtn) {
+        decodeBtn.style.display = '';
+        decodeBtn.disabled = !ai;
+        decodeBtn.style.opacity = ai ? '' : '0.5';
+        decodeBtn.title = ai
+            ? ''
+            : 'Requires an OpenRouter API key in Settings';
+    }
     if (chatPane) {
-        chatPane.style.display = chatOpen ? 'flex' : 'none';
-        chatPane.setAttribute('aria-hidden', chatOpen ? 'false' : 'true');
+        chatPane.style.display = 'flex';
+        chatPane.setAttribute('aria-hidden', 'false');
     }
-    if (workspace) workspace.setAttribute('data-wf-ai-chat', chatOpen ? '1' : '0');
+    if (workspace) workspace.setAttribute('data-wf-ai-chat', '1');
 }
 
 function syncVerifierAiUi(modal) {
     if (!modal) return;
     ensureVerifierBtnStyles();
     const ai = hasVerifierAiKey();
-    const chatOpen = ai && readVerifierChatOpenPref();
+    const chatOpen = readVerifierChatOpenPref();
     const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
     const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
     const chatPane = modal.querySelector('#wf-ops-verifier-chat-pane');
     const workspace = modal.querySelector('#wf-ops-verifier-workspace');
 
     if (chatToggle) {
-        chatToggle.style.display = ai ? '' : 'none';
+        chatToggle.style.display = '';
         chatToggle.textContent = chatOpen ? 'Hide chat' : 'Chat';
         chatToggle.setAttribute('aria-pressed', chatOpen ? 'true' : 'false');
     }
-    if (decodeBtn) decodeBtn.style.display = ai ? '' : 'none';
+    if (decodeBtn) {
+        decodeBtn.style.display = '';
+        decodeBtn.disabled = !ai;
+        decodeBtn.style.opacity = ai ? '' : '0.5';
+        decodeBtn.title = ai
+            ? ''
+            : 'Requires an OpenRouter API key in Settings';
+    }
     if (chatPane) {
         chatPane.style.display = chatOpen ? 'flex' : 'none';
         chatPane.setAttribute('aria-hidden', chatOpen ? 'false' : 'true');
     }
     if (workspace) workspace.setAttribute('data-wf-ai-chat', chatOpen ? '1' : '0');
     if (chatOpen) {
+        wireVerifierChatComposer(modal);
         renderVerifierChatMessages(modal);
         setVerifierChatStreamingUi(modal, !!(getVerifierChatState(modal).streaming));
+        const chat = verifierChatApi();
+        if (chat && typeof chat.setKeyGate === 'function') {
+            chat.setKeyGate(modal, {
+                mountSelector: '#wf-ops-verifier-chat-mount',
+                state: getVerifierChatState(modal),
+                wireOpts: verifierChatOpts(),
+            });
+        }
     }
     Logger.debug('verifier-fetcher: syncAiUi ai=' + ai + ' chatOpen=' + chatOpen);
 }
@@ -665,7 +696,7 @@ function verifierFetcherPanelHtml() {
                             </div>
                             <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
                                 <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Verifier Output</button>
-                                <button type="button" id="wf-ops-verifier-chat-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="display: none; flex-shrink: 0;">Chat</button>
+                                <button type="button" id="wf-ops-verifier-chat-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Chat</button>
                             </div>
                         </div>
                         <div id="wf-ops-verifier-output-wrap" style="
@@ -757,7 +788,7 @@ function verifierFetcherPanelHtml() {
                                     padding: 6px 8px;
                                     border-top: 1px solid var(--border, #e5e5e5);
                                 ">
-                                    <button type="button" id="wf-ops-verifier-decode-btn" class="${btnClass('secondary', 'compact')}" style="display: none;">Diagnose Issues</button>
+                                    <button type="button" id="wf-ops-verifier-decode-btn" class="${btnClass('secondary', 'compact')}">Diagnose Issues</button>
                                 </div>
                             </aside>
                         </div>
@@ -786,6 +817,7 @@ function verifierFetcherPanelHtml() {
                             min-height: 120px;
                             display: flex;
                             flex-direction: column;
+                            position: relative;
                             box-sizing: border-box;
                         "></div>
                     </div>
@@ -835,7 +867,6 @@ function attachVerifierFetcherListeners(modal) {
 
     if (chatToggle) {
         chatToggle.addEventListener('click', () => {
-            if (!hasVerifierAiKey()) return;
             const nextOpen = !readVerifierChatOpenPref();
             writeVerifierChatOpenPref(nextOpen);
             syncVerifierAiUi(modal);
@@ -845,7 +876,13 @@ function attachVerifierFetcherListeners(modal) {
     }
 
     if (decodeBtn) {
-        decodeBtn.addEventListener('click', () => { void decodeVerifierOutput(modal); });
+        decodeBtn.addEventListener('click', () => {
+            if (!hasVerifierAiKey()) {
+                Logger.warn('verifier-fetcher: Diagnose Issues blocked — no OpenRouter key stored');
+                return;
+            }
+            void decodeVerifierOutput(modal);
+        });
     }
 
     if (scratchpadTextarea) {
@@ -910,7 +947,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '6.4',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -944,6 +981,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v6.4');
+        Logger.log('verifier-fetcher: tab registered v7.0');
     }
 };

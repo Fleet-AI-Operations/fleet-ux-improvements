@@ -1,9 +1,10 @@
 // ============= dashboard-settings.js =============
 // Settings tab for the Ops dashboard (AI Integration / OpenRouter).
 //
-// AI gating rule: any AI-specific UI elsewhere in Fleet UX must stay hidden unless
-// an OpenRouter key record exists (enc + last4). Actual API calls still require
-// Ops unlock to decrypt the key via Context.aiOpenRouter.resolveApiKey().
+// AI gating rule: OpenRouter-dependent chat UI stays visible without a key and
+// shows the shared no-key gate (greyed input + centered message). Actual API
+// calls still require a stored key record (enc + last4) and Ops unlock to
+// decrypt via Context.aiOpenRouter.resolveApiKey().
 
 const DASH_SETTINGS_CONTENT_MAX_WIDTH_PX = 640;
 const AI_OPENROUTER_KEY_STORAGE_KEY = 'fleet-ux:ai-openrouter-key';
@@ -561,15 +562,47 @@ function openRouterChatCompletionStream(apiKey, messages, callbacks, requestOpts
 }
 
 function notifyAiKeyConsumers() {
-    const ui = Context.verifierFetcherUi;
-    if (!ui || typeof ui.syncAiUi !== 'function') return;
-    try {
-        const modal = document.getElementById('wf-dash-modal')
-            || document.querySelector('[data-fleet-dash-modal="1"]')
-            || document.body;
-        ui.syncAiUi(modal);
-    } catch (err) {
-        Logger.debug(PLUGIN_ID + ': syncAiUi notify failed', err);
+    const modal = document.getElementById('wf-dash-modal')
+        || document.querySelector('[data-fleet-dash-modal="1"]')
+        || document.body;
+
+    const verifierUi = Context.verifierFetcherUi;
+    if (verifierUi && typeof verifierUi.syncAiUi === 'function') {
+        try {
+            verifierUi.syncAiUi(modal);
+        } catch (err) {
+            Logger.debug(PLUGIN_ID + ': syncAiUi notify failed', err);
+        }
+    }
+
+    const dash = Context.dashboard;
+    const searchChat = Context.searchOutputChat;
+    if (searchChat && typeof searchChat.wirePanel === 'function' && dash) {
+        try {
+            const panel = modal && modal.querySelector('[data-wf-dash-search-chat-panel]');
+            if (panel) searchChat.wirePanel(panel, dash);
+        } catch (err) {
+            Logger.debug(PLUGIN_ID + ': search chat key notify failed', err);
+        }
+    }
+
+    const chatsApi = Context.dashboardChats;
+    if (chatsApi && typeof chatsApi.syncPanel === 'function') {
+        try {
+            const panel = modal && modal.querySelector('[data-wf-dash-chats-panel]');
+            if (panel) chatsApi.syncPanel(panel);
+        } catch (err) {
+            Logger.debug(PLUGIN_ID + ': chats key notify failed', err);
+        }
+    }
+
+    const explain = Context.ratingExplain;
+    if (explain && typeof explain.remountOpen === 'function') {
+        try {
+            explain.remountOpen(modal);
+        } catch (err) {
+            Logger.debug(PLUGIN_ID + ': rating explain key notify failed', err);
+        }
     }
 }
 
@@ -1143,7 +1176,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.15',
+    _version: '1.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

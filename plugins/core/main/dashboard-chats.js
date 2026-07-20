@@ -633,13 +633,8 @@ function chatsPanelHtml() {
         : '';
     return '<div data-wf-dash-chats-panel="1" style="display: flex; flex-direction: column; gap: 10px;'
         + ' height: 100%; min-height: 420px; box-sizing: border-box;">'
-        + '<div data-wf-dash-chats-no-key style="display: none; font-size: 12px; line-height: 1.45;'
-        + ' color: var(--muted-foreground, #64748b); padding: 12px;'
-        + ' border: 1px dashed var(--border, #e2e8f0); border-radius: 8px;">'
-        + 'Add an OpenRouter API key in the <strong>Settings</strong> tab to use Chats.'
-        + ' Conversations require Input &amp; Output Logging enabled in your OpenRouter Observability settings'
-        + ' so transcripts can be fetched by generation id.</div>'
-        + '<div data-wf-dash-chats-body style="display: none; flex: 1 1 auto; min-height: 0;">'
+        + '<div data-wf-dash-chats-body style="display: flex; flex: 1 1 auto; min-height: 0;'
+        + ' flex-direction: column;">'
         + '<div data-wf-dash-chats-body-row style="display: flex; gap: 0; height: 100%; min-height: 0; min-width: 0;">'
         + '<aside data-wf-dash-chats-sidebar style="width: 260px; flex-shrink: 0; display: flex;'
         + ' flex-direction: column; gap: 8px; min-height: 0; border: 1px solid var(--border, #e2e8f0);'
@@ -669,7 +664,7 @@ function chatsPanelHtml() {
         + '<div data-wf-dash-chats-chat-column style="width: 100%; max-width: 900px; min-width: 0;'
         + ' min-height: 280px; margin: 0 auto; display: flex; flex-direction: column;">'
         + '<div data-wf-dash-chats-mount style="flex: 1 1 auto; width: 100%; max-width: 100%;'
-        + ' min-width: 0; min-height: 280px; display: flex; flex-direction: column;"></div>'
+        + ' min-width: 0; min-height: 280px; display: flex; flex-direction: column; position: relative;"></div>'
         + '</div></div>'
         + '</section></div></div></div>';
 }
@@ -730,6 +725,10 @@ function chatsUpdateTitle(panel) {
 function chatsStartNewChat(panel) {
     const chat = Context.aiChat;
     if (!chat) return;
+    if (!chatsHasAiKey()) {
+        Logger.warn(PLUGIN_ID + ': new chat skipped — no OpenRouter key stored');
+        return;
+    }
     chatsUi.activeId = null;
     chatsUi.chatState = chat.createState({
         source: 'chats',
@@ -817,6 +816,10 @@ async function chatsSendMessage(panel, userText) {
     const state = chatsEnsureChatState();
     const text = String(userText || '').trim();
     if (!chat || !state || !text || state.streaming || chatsUi.hydrating) return;
+    if (!chatsHasAiKey()) {
+        chatsSetStatus(panel, 'OpenRouter API key required.', true);
+        return;
+    }
 
     const isNew = !chatsUi.activeId;
     const conversationKey = state.conversationKey || chatsUuid();
@@ -897,16 +900,19 @@ function chatsWirePanel(panel) {
     panel.addEventListener('click', (e) => {
         const newBtn = e.target.closest('[data-wf-dash-chats-new]');
         if (newBtn && panel.contains(newBtn)) {
+            if (!chatsHasAiKey()) return;
             chatsStartNewChat(panel);
             return;
         }
         const openBtn = e.target.closest('[data-wf-dash-chats-open]');
         if (openBtn && panel.contains(openBtn)) {
+            if (!chatsHasAiKey()) return;
             void chatsOpenConversation(panel, openBtn.getAttribute('data-wf-dash-chats-open'));
             return;
         }
         const renameBtn = e.target.closest('[data-wf-dash-chats-rename]');
         if (renameBtn && panel.contains(renameBtn)) {
+            if (!chatsHasAiKey()) return;
             const id = renameBtn.getAttribute('data-wf-dash-chats-rename');
             const conv = chatsGetConversation(id);
             const next = window.prompt('Rename conversation', conv && conv.title ? conv.title : '');
@@ -919,6 +925,7 @@ function chatsWirePanel(panel) {
         }
         const deleteBtn = e.target.closest('[data-wf-dash-chats-delete]');
         if (deleteBtn && panel.contains(deleteBtn)) {
+            if (!chatsHasAiKey()) return;
             const id = deleteBtn.getAttribute('data-wf-dash-chats-delete');
             if (window.confirm('Delete this conversation from the local index? (OpenRouter logs are unchanged.)')) {
                 const wasActive = String(chatsUi.activeId) === String(id);
@@ -946,26 +953,56 @@ function chatsWirePanel(panel) {
 function chatsSyncPanel(panel) {
     if (!panel) return;
     chatsEnsureBtnStyles();
-    const noKey = panel.querySelector('[data-wf-dash-chats-no-key]');
     const body = panel.querySelector('[data-wf-dash-chats-body]');
     const hasKey = chatsHasAiKey();
-    if (noKey) noKey.style.display = hasKey ? 'none' : '';
     if (body) {
-        body.style.display = hasKey ? 'flex' : 'none';
+        body.style.display = 'flex';
         body.style.flex = '1 1 auto';
         body.style.minHeight = '0';
         body.style.flexDirection = 'column';
     }
-    if (!hasKey) return;
+    const newBtn = panel.querySelector('[data-wf-dash-chats-new]');
+    const exportBtn = panel.querySelector('[data-wf-dash-chats-export]');
+    if (newBtn) {
+        newBtn.disabled = !hasKey;
+        newBtn.style.opacity = hasKey ? '' : '0.5';
+    }
+    if (exportBtn) {
+        exportBtn.disabled = !hasKey;
+        exportBtn.style.opacity = hasKey ? '' : '0.5';
+    }
     chatsApplySidebarWidth(panel);
     chatsWirePanel(panel);
-    if (!chatsUi.chatState) chatsStartNewChat(panel);
-    else {
+    if (!chatsUi.chatState) {
+        // Mount an empty chat shell even without a key so the greyed input + overlay show.
+        const chat = Context.aiChat;
+        if (chat) {
+            chatsUi.chatState = chat.createState({
+                source: 'chats',
+                conversationKey: chatsUuid(),
+            });
+            chat.wireComposer(
+                panel,
+                chatsUi.chatState,
+                Object.assign({}, chatsChatOpts(), chatsComposerHandlers(panel))
+            );
+            chatsRenderMessages(panel, chatsUi.chatState);
+            chatsUpdateTitle(panel);
+            chatsRenderSidebar(panel);
+        }
+    } else {
         chatsRenderSidebar(panel);
         chatsUpdateTitle(panel);
         const chat = Context.aiChat;
         if (chat && chatsUi.chatState) {
             chatsRenderMessages(panel, chatsUi.chatState);
+            if (typeof chat.setKeyGate === 'function') {
+                chat.setKeyGate(panel, {
+                    mountSelector: '[data-wf-dash-chats-mount]',
+                    state: chatsUi.chatState,
+                    wireOpts: chatsChatOpts(),
+                });
+            }
         }
     }
 }
@@ -977,13 +1014,14 @@ const DashboardChatsApi = {
     renameConversation: chatsRenameConversation,
     deleteConversation: chatsDeleteConversation,
     onIndexChange: chatsOnIndexChange,
+    syncPanel: chatsSyncPanel,
 };
 
 const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '3.4',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1010,7 +1048,7 @@ const plugin = {
             },
         });
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v3.3');
+            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v4.0');
             state.registered = true;
         }
     },

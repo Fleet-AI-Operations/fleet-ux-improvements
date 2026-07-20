@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '3.8';
+const SEARCH_CHAT_VERSION = '4.0';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -3030,13 +3030,7 @@ function searchChatPanelHtml() {
     return ''
         + '<div data-wf-dash-search-chat-panel="1" style="display: flex; flex-direction: column;'
         + ' flex: 1; min-height: 0; gap: 8px; box-sizing: border-box;">'
-        + '<div data-wf-dash-search-chat-no-key style="display: none; font-size: 12px; line-height: 1.45;'
-        + ' color: var(--muted-foreground, #64748b); padding: 12px;'
-        + ' border: 1px dashed var(--border, #e2e8f0); border-radius: 8px;">'
-        + 'Add an OpenRouter API key in the <strong>Settings</strong> tab to use Search Chat.'
-        + ' Tool calls send requested excerpts to OpenRouter.'
-        + '</div>'
-        + '<div data-wf-dash-search-chat-body style="display: none; flex: 1; min-height: 0;'
+        + '<div data-wf-dash-search-chat-body style="display: flex; flex: 1; min-height: 0;'
         + ' flex-direction: column; gap: 8px;">'
         + '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;'
         + ' flex-shrink: 0;">'
@@ -3067,7 +3061,7 @@ function searchChatPanelHtml() {
         + ' gap: 8px; margin-top: 6px; max-height: 420px; overflow: auto;"></div>'
         + '</details>'
         + '<div data-wf-dash-search-chat-mount style="flex: 1 1 auto; width: 100%; max-width: 100%;'
-        + ' min-width: 0; min-height: 220px; display: flex; flex-direction: column;"></div>'
+        + ' min-width: 0; min-height: 220px; display: flex; flex-direction: column; position: relative;"></div>'
         + '</div></div>';
 }
 
@@ -3272,21 +3266,29 @@ function searchChatWirePanel(panel, dash) {
             }
             const clearBtn = e.target.closest('[data-wf-dash-search-chat-clear]');
             if (clearBtn && panel.contains(clearBtn)) {
+                if (!searchChatHasAiKey()) return;
                 searchChatResetChat(panel, dash);
             }
         });
     }
-    const noKey = panel.querySelector('[data-wf-dash-search-chat-no-key]');
     const body = panel.querySelector('[data-wf-dash-search-chat-body]');
-    const hasKey = searchChatHasAiKey();
-    if (noKey) noKey.style.display = hasKey ? 'none' : '';
     if (body) {
-        body.style.display = hasKey ? 'flex' : 'none';
+        body.style.display = 'flex';
         body.style.flexDirection = 'column';
         body.style.flex = '1 1 auto';
         body.style.minHeight = '0';
     }
-    if (!hasKey) return;
+    const hasKey = searchChatHasAiKey();
+    const clearBtn = panel.querySelector('[data-wf-dash-search-chat-clear]');
+    const exportBtn = panel.querySelector('[data-wf-dash-search-chat-export]');
+    if (clearBtn) {
+        clearBtn.disabled = !hasKey;
+        clearBtn.style.opacity = hasKey ? '' : '0.5';
+    }
+    if (exportBtn) {
+        exportBtn.disabled = !hasKey;
+        exportBtn.style.opacity = hasKey ? '' : '0.5';
+    }
     if (!searchChatUi.chatState) searchChatResetChat(panel, dash);
     else {
         searchChatUpdateBadge(panel, dash);
@@ -3301,6 +3303,7 @@ function searchChatWirePanel(panel, dash) {
                     searchChatSetStatus(panel, 'Stopped.', false);
                 },
                 onExport: () => {
+                    if (!searchChatHasAiKey()) return;
                     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
                     chat.exportConversation(searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
                         exportFilename: 'search-chat-' + stamp + '.json',
@@ -3309,6 +3312,13 @@ function searchChatWirePanel(panel, dash) {
                 },
             }));
             chat.renderMessages(panel, searchChatUi.chatState, searchChatChatOpts());
+            if (typeof chat.setKeyGate === 'function') {
+                chat.setKeyGate(panel, {
+                    mountSelector: '[data-wf-dash-search-chat-mount]',
+                    state: searchChatUi.chatState,
+                    wireOpts: searchChatChatOpts(),
+                });
+            }
         }
     }
 }
@@ -3433,7 +3443,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '3.8',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
