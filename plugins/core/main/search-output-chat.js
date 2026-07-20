@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '3.7';
+const SEARCH_CHAT_VERSION = '3.8';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -140,11 +140,19 @@ function searchChatPaginate(sortedArray, cursor, limit) {
     };
 }
 
+function searchChatWorkerHasProfile(author) {
+    if (!author) return false;
+    return !!(String(author.name || '').trim() || String(author.email || '').trim());
+}
+
 function searchChatWorkerMeta(task) {
     const a = task && task.author;
+    const hasProfile = searchChatWorkerHasProfile(a);
     return {
-        worker: (a && (a.name || a.email || a.id)) || '',
+        // Display label only — never fall back to UUID (empty name+email = anonymous / dismissed).
+        worker: hasProfile ? String(a.name || a.email).trim() : '',
         workerId: (a && a.id) || '',
+        workerHasProfile: hasProfile,
     };
 }
 
@@ -594,6 +602,7 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
     const onlyWorkerId = a.workerId != null && String(a.workerId).trim()
         ? String(a.workerId).trim()
         : '';
+    const requireNamedWorkers = !!a.requireNamedWorkers;
     const items = searchChatGetScopeItems(dash);
     const ranked = [];
     for (let i = 0; i < items.length; i++) {
@@ -602,6 +611,7 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
         if (!task) continue;
         if (sourceEvalTaskId && String(task.id) === String(sourceEvalTaskId)) continue;
         const w = searchChatWorkerMeta(task);
+        if (requireNamedWorkers && !w.workerHasProfile) continue;
         if (onlyWorkerId && String(w.workerId) !== onlyWorkerId) continue;
         if (w.workerId && excludeWorkerIds.has(String(w.workerId))) continue;
         if (a.differentWorkers) {
@@ -620,6 +630,7 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
             evalTaskId: ref.evalTaskId,
             worker: w.worker,
             workerId: w.workerId,
+            workerHasProfile: w.workerHasProfile,
             jaccard: Math.round(jaccard * 10000) / 10000,
             chars: prompt.length,
             _prompt: prompt,
@@ -639,6 +650,7 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
         minJaccard,
         maxJaccard,
         differentWorkers: !!a.differentWorkers,
+        requireNamedWorkers: requireNamedWorkers,
         cursor: page.cursor,
         limit: page.limit,
         total: page.total,
@@ -649,6 +661,7 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
                 evalTaskId: r.evalTaskId,
                 worker: r.worker,
                 workerId: r.workerId,
+                workerHasProfile: !!r.workerHasProfile,
                 jaccard: r.jaccard,
                 chars: r.chars,
             };
@@ -670,6 +683,7 @@ function searchChatFindNearDuplicates(dash, args, settings) {
     const requireWorkerId = a.workerId != null && String(a.workerId).trim()
         ? String(a.workerId).trim()
         : '';
+    const requireNamedWorkers = !!a.requireNamedWorkers;
     const excludeTaskIds = new Set(
         Array.isArray(a.excludeTaskIds)
             ? a.excludeTaskIds.map((x) => String(x).trim()).filter(Boolean)
@@ -684,12 +698,14 @@ function searchChatFindNearDuplicates(dash, args, settings) {
         const prompt = searchChatPromptTextForItem(it);
         if (!String(prompt).trim()) continue;
         const w = searchChatWorkerMeta(task);
+        if (requireNamedWorkers && !w.workerHasProfile) continue;
         const ref = searchChatTaskRef(task);
         prepared.push({
             taskId: ref.taskId,
             evalTaskId: ref.evalTaskId,
             worker: w.worker,
             workerId: w.workerId,
+            workerHasProfile: w.workerHasProfile,
             identity: searchChatWorkerIdentityKey(w),
             set: searchChatTokenSet(prompt),
         });
@@ -725,12 +741,14 @@ function searchChatFindNearDuplicates(dash, args, settings) {
                     evalTaskId: left.evalTaskId,
                     worker: left.worker,
                     workerId: left.workerId,
+                    workerHasProfile: !!left.workerHasProfile,
                 },
                 b: {
                     taskId: right.taskId,
                     evalTaskId: right.evalTaskId,
                     worker: right.worker,
                     workerId: right.workerId,
+                    workerHasProfile: !!right.workerHasProfile,
                 },
                 jaccard: Math.round(jaccard * 10000) / 10000,
             };
@@ -749,6 +767,7 @@ function searchChatFindNearDuplicates(dash, args, settings) {
             differentWorkers: !!a.differentWorkers,
             sameWorker: !!a.sameWorker,
             workerId: requireWorkerId || null,
+            requireNamedWorkers: requireNamedWorkers,
             excludeTaskIds: excludeTaskIds.size ? Array.from(excludeTaskIds) : [],
         },
         scanned: prepared.length,
@@ -982,6 +1001,7 @@ function searchChatTaskCitation(task, extra) {
         evalTaskId: ref.evalTaskId,
         worker: w.worker,
         workerId: w.workerId,
+        workerHasProfile: w.workerHasProfile,
     }, extra || {});
 }
 
@@ -992,11 +1012,13 @@ function searchChatCompactRow(item, fields) {
         ? new Set(fields.map((f) => String(f)))
         : null;
     const ref = searchChatTaskRef(task);
+    const w = searchChatWorkerMeta(task);
     const row = {
         taskId: ref.taskId,
         evalTaskId: ref.evalTaskId,
-        worker: (task.author && (task.author.name || task.author.email || task.author.id)) || '',
-        workerId: (task.author && task.author.id) || '',
+        worker: w.worker,
+        workerId: w.workerId,
+        workerHasProfile: w.workerHasProfile,
         status: task.status || '',
         env: task.envKey || task.environment || '',
         kind: item.kind || (Array.isArray(item.kinds) ? item.kinds.join(',') : ''),
@@ -1066,9 +1088,11 @@ function searchChatBuildSummary(dash, opts) {
         for (let i = 0; i < items.length; i++) {
             const a = items[i] && items[i].task && items[i].task.author;
             if (a && a.id) {
+                const hasProfile = searchChatWorkerHasProfile(a);
                 const prev = workers.get(a.id) || {
                     id: a.id,
-                    name: a.name || a.email || a.id,
+                    name: hasProfile ? String(a.name || a.email).trim() : '',
+                    hasProfile,
                     count: 0,
                 };
                 prev.count += 1;
@@ -1078,7 +1102,12 @@ function searchChatBuildSummary(dash, opts) {
         out.topWorkers = Array.from(workers.values())
             .sort((a, b) => b.count - a.count)
             .slice(0, searchChatClampInt(o.topWorkersLimit, 1, 50, 12))
-            .map((w) => ({ id: w.id, name: w.name, count: w.count }));
+            .map((w) => ({
+                id: w.id,
+                name: w.name,
+                hasProfile: !!w.hasProfile,
+                count: w.count,
+            }));
     }
     return out;
 }
@@ -1380,6 +1409,7 @@ function searchChatListWorkers(dash, cursor, limit, query) {
             id: a.id,
             name: a.name || '',
             email: a.email || '',
+            hasProfile: searchChatWorkerHasProfile(a),
             count: 0,
         };
         prev.count += 1;
@@ -2409,6 +2439,10 @@ function searchChatGetToolDefinitions() {
                     differentWorkers: { type: 'boolean' },
                     workerId: { type: 'string' },
                     excludeWorkerIds: { type: 'array', items: { type: 'string' } },
+                    requireNamedWorkers: {
+                        type: 'boolean',
+                        description: 'If true, skip workers with empty name and email (anonymous / dismissed profiles).',
+                    },
                 },
                 additionalProperties: false,
             }
@@ -2427,6 +2461,10 @@ function searchChatGetToolDefinitions() {
                     sameWorker: { type: 'boolean' },
                     workerId: { type: 'string' },
                     excludeTaskIds: { type: 'array', items: { type: 'string' } },
+                    requireNamedWorkers: {
+                        type: 'boolean',
+                        description: 'If true, only pairs where both workers have a non-empty name or email.',
+                    },
                 },
                 additionalProperties: false,
             }
@@ -2942,7 +2980,10 @@ function searchChatBuildSystemPrompt(dash) {
         'CRITICAL — Task IDs: tools return taskId as the Fleet task key (task_…). ALWAYS cite that taskId in respond().',
         'NEVER cite prompt-version UUIDs. NEVER call a UUID a task ID. Prompt IDs are useless to the operator — do not mention them.',
         'evalTaskId is an internal UUID only; do not show it unless the operator explicitly asks for eval_task UUIDs.',
-        'In respond(), every task must be identified by taskId (task_…). Cite worker by name, not worker UUID.',
+        'In respond(), every task must be identified by taskId (task_…). Cite worker by name/email when present;',
+        'if workerHasProfile is false (empty name and email), treat as anonymous/dismissed — do not invent a name',
+        'and do not cite truncated worker UUIDs as identity. When the operator asks to exclude unnamed workers,',
+        'pass requireNamedWorkers:true on find_similar_prompts / find_near_duplicates (or skip those rows).',
         'Prompt revisions: each task has numbered prompt versions (versionNo: 1, 2, 3, …). Prefer versionNo in context',
         '(e.g. "v1 vs v3", "submitted as version 2"). Use get_task / get_tasks_batch with sections including "versions"',
         'to list versionNo/env/createdAt/size. Use compare_prompts versionA/versionB (numbers) to diff specific revisions.',
@@ -2954,6 +2995,7 @@ function searchChatBuildSystemPrompt(dash) {
         'List/search tools return { cursor, limit, total, nextCursor }. Page with cursor instead of guessing.',
         'For cross-author copy or similarity: find_near_duplicates({ differentWorkers: true, minJaccard: 0, topk: 3 })',
         'or find_similar_prompts with differentWorkers: true. Use sameWorker only when looking for self-resubmits.',
+        'Add requireNamedWorkers: true when the operator wants only workers with a real name or email.',
         'For similarity/diffs prefer find_similar_prompts, find_near_duplicates, compare_prompts,',
         'prompt_overlap_matrix, prompt_token_overlap, analyze_prompt_stats before get_task.',
         'Prefer scores + taskId (task_… keys); pull excerpts only for the interesting subset.',
@@ -3391,7 +3433,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '3.7',
+    _version: '3.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

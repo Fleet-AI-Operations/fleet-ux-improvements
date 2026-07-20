@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '3.8';
+const AI_CHAT_VERSION = '3.9';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -1046,13 +1046,40 @@ function aiChatExportConversation(state, opts) {
         exportedAt: new Date().toISOString(),
         metadata: o.exportMetadata || undefined,
         messages: (state.messages || [])
-            .filter((msg) => msg && !msg.streaming && (msg.role === 'user' || msg.role === 'assistant'))
+            .filter((msg) => {
+                if (!msg || msg.streaming) return false;
+                if (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'tool') return true;
+                return false;
+            })
             .map((msg) => {
                 const out = {
                     role: msg.role,
-                    content: String(msg.content || ''),
                     hiddenInUi: msg.hideInUi ? true : undefined,
                 };
+                if (msg.role === 'tool') {
+                    out.tool_call_id = msg.tool_call_id != null ? String(msg.tool_call_id) : '';
+                    out.content = msg.content != null ? String(msg.content) : '';
+                    return out;
+                }
+                if (msg.content != null && msg.content !== '') {
+                    out.content = String(msg.content);
+                } else if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+                    out.content = null;
+                } else {
+                    out.content = String(msg.content || '');
+                }
+                if (Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+                    out.tool_calls = msg.tool_calls.map((tc) => ({
+                        id: tc && tc.id != null ? String(tc.id) : '',
+                        type: (tc && tc.type) || 'function',
+                        function: {
+                            name: tc && tc.function ? String(tc.function.name || '') : '',
+                            arguments: tc && tc.function
+                                ? String(tc.function.arguments != null ? tc.function.arguments : '')
+                                : '',
+                        },
+                    }));
+                }
                 if (msg.displayContent != null) out.displayContent = String(msg.displayContent);
                 const attachment = aiChatNormalizeDisplayAttachment(msg.displayAttachment);
                 if (attachment) out.displayAttachment = attachment;
@@ -1749,7 +1776,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '3.8',
+    _version: '3.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
