@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.10
+// @version      12.4.11
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -40,7 +40,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.10';
+    const VERSION = '12.4.11';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -370,6 +370,23 @@
         }
     }
 
+    function clearMatchingDevIdMarker() {
+        const storage = getPageLocalStorage();
+        if (!storage) return;
+        try {
+            if (storage.getItem(DEV_ID_STORAGE_KEY) === GITHUB_CONFIG.branch) {
+                storage.removeItem(DEV_ID_STORAGE_KEY);
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    function clearFeatureClaimsForCurrentBranch() {
+        clearDevActiveBranchMarker();
+        clearMatchingDevIdMarker();
+    }
+
     function getMainActiveBranchMarker() {
         const storage = getPageLocalStorage();
         if (!storage) return null;
@@ -392,7 +409,7 @@
             `${LOG_PREFIX} Branch "${GITHUB_CONFIG.branch}" appears deleted (${detail}); yielding to main userscript`
         );
         markCurrentBranchOrphaned();
-        clearDevActiveBranchMarker();
+        clearFeatureClaimsForCurrentBranch();
         try {
             const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
             const sessionStore = pageWindow && pageWindow.sessionStorage ? pageWindow.sessionStorage : null;
@@ -429,7 +446,26 @@
                         'Expires': '0'
                     },
                     onload: (response) => {
-                        resolve(typeof response.status === 'number' ? response.status : 0);
+                        const status = typeof response.status === 'number' ? response.status : 0;
+                        if (status !== 200) {
+                            resolve(status);
+                            return;
+                        }
+                        const raw = response.responseText || '';
+                        if (!raw.trim()) {
+                            resolve(0);
+                            return;
+                        }
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                                resolve(0);
+                                return;
+                            }
+                            resolve(200);
+                        } catch (e) {
+                            resolve(0);
+                        }
                     },
                     onerror: () => resolve(0),
                     ontimeout: () => resolve(0)
@@ -4265,11 +4301,9 @@
                     const orphanBranch = pageWindow.localStorage.getItem(ORPHAN_BRANCH_STORAGE_KEY);
                     const devActiveBranch = pageWindow.localStorage.getItem(DEV_ACTIVE_STORAGE_KEY);
                     const devIdBranch = pageWindow.localStorage.getItem(DEV_ID_STORAGE_KEY);
-                    const orphanMatchesDev = !!(
-                        orphanBranch &&
-                        (orphanBranch === devIdBranch || orphanBranch === devActiveBranch)
-                    );
-                    if (orphanMatchesDev) {
+                    // Any orphan marker means a feature build yielded; main owns the page
+                    // regardless of leftover / mismatched DEV_ID or DEV_ACTIVE claims.
+                    if (orphanBranch) {
                         pageWindow.localStorage.removeItem(DEV_ACTIVE_STORAGE_KEY);
                         pageWindow.localStorage.removeItem(DEV_ID_STORAGE_KEY);
                         console.log(
@@ -4307,7 +4341,13 @@
 
                 let skipArchetypesProbe = false;
                 if (isCurrentBranchOrphaned()) {
-                    clearDevActiveBranchMarker();
+                    clearFeatureClaimsForCurrentBranch();
+                    if (getMainActiveBranchMarker()) {
+                        console.log(
+                            `${LOG_PREFIX} - Branch "${GITHUB_CONFIG.branch}" is orphaned and main is installed; yielding`
+                        );
+                        return;
+                    }
                     console.log(
                         `${LOG_PREFIX} - Branch "${GITHUB_CONFIG.branch}" has orphan marker; re-probing archetypes.json`
                     );
