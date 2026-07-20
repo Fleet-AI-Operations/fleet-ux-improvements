@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.8
+// @version      12.4.10
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -40,7 +40,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.8';
+    const VERSION = '12.4.10';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -307,16 +307,11 @@
     };
 
     // ============= DEV-ONLY REDIRECT (DEV ID) =============
-    // If this build is not main and the user does not have the branch dev-ID userscript, show a modal and stop.
     const MAIN_SCRIPT_RAW_URL = 'https://raw.githubusercontent.com/' + GITHUB_CONFIG.owner + '/' + GITHUB_CONFIG.repo + '/main/fleet.user.js';
     const DEV_ID_STORAGE_KEY = 'fleet-dev-branch-id';
-    /** Dev builds stamp this at document-start; main-like builds yield when it is present. */
     const DEV_ACTIVE_STORAGE_KEY = 'fleet-dev-active-branch';
-    /** Main-like builds stamp this at document-start (same pattern as dev-ID). */
     const MAIN_ACTIVE_STORAGE_KEY = 'fleet-main-active-branch';
-    /** Sticky marker when a feature branch's remote archetypes.json is gone (deleted branch). */
     const ORPHAN_BRANCH_STORAGE_KEY = 'fleet-dev-orphan-branch';
-    /** sessionStorage guard so orphan yield reloads at most once per tab session. */
     const ORPHAN_RELOAD_SESSION_KEY = 'fleet-dev-orphan-reload';
     const SCRIPT_HANDSHAKE_DELAY_MS = 100;
 
@@ -391,11 +386,6 @@
         return /HTTP\s*404/.test(msg);
     }
 
-    /**
-     * Feature remote is gone (archetypes 404). Sticky-orphan + clear DEV_ACTIVE so main can run after reload.
-     * @param {string} [reason]
-     * @returns {boolean} true if a reload was triggered
-     */
     function yieldToMainForOrphanedBranch(reason) {
         const detail = reason || 'archetypes.json missing';
         console.warn(
@@ -414,7 +404,7 @@
                 sessionStore.setItem(ORPHAN_RELOAD_SESSION_KEY, GITHUB_CONFIG.branch);
             }
         } catch (e) {
-            // still attempt reload
+            // ignore
         }
         try {
             location.reload();
@@ -425,7 +415,6 @@
         }
     }
 
-    /** Probe remote archetypes.json for this build's branch. Returns HTTP status, or 0 on network/error. */
     function probeBranchArchetypesStatus() {
         const timestamp = Date.now();
         const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.archetypesPath}?t=${timestamp}`;
@@ -4244,26 +4233,15 @@
     
     // ============= STARTUP =============
     async function startup() {
-        // Always log script version (cannot be disabled)
         console.log(`${LOG_PREFIX} v${VERSION}`);
         Logger.log('Starting...');
         try {
             Storage.migratePageLocalStorageOnce();
-
-            // NetworkObserver.init() runs at document-start (before handshake); idempotent if already installed.
             NetworkObserver.init();
-
-            // Initialize navigation monitoring FIRST
             NavigationManager.init();
             NavigationManager.onNavigate(handleNavigation);
-
-            // Wait for body
             await waitForBody();
-
-            // Load and initialize core plugins
             await initializeCorePlugins();
-
-            // Initialize archetype-specific plugins
             await initializeForPage();
         } catch (error) {
             if (DEV_SCRIPTS_ENABLED && isArchetypesHttp404Error(error)) {
@@ -4273,8 +4251,7 @@
             Logger.error('Startup failed:', error);
         }
     }
-    
-    // Start!
+
     startup();
     }
 
@@ -4317,21 +4294,43 @@
         NetworkObserver.init();
         setTimeout(function() {
             void (async function() {
+                function showOrphanYieldModalIfNoMain() {
+                    if (getMainActiveBranchMarker()) return;
+                    if (document.body) {
+                        showNonDevRedirectModal();
+                        console.log(`${LOG_PREFIX} - Orphaned branch with no main install; redirect modal shown`);
+                    } else {
+                        document.addEventListener('DOMContentLoaded', showNonDevRedirectModal);
+                        console.log(`${LOG_PREFIX} - Orphaned branch with no main install; redirect modal listener added`);
+                    }
+                }
+
+                let skipArchetypesProbe = false;
                 if (isCurrentBranchOrphaned()) {
                     clearDevActiveBranchMarker();
                     console.log(
-                        `${LOG_PREFIX} - Branch "${GITHUB_CONFIG.branch}" is orphaned; yielding to main userscript`
+                        `${LOG_PREFIX} - Branch "${GITHUB_CONFIG.branch}" has orphan marker; re-probing archetypes.json`
                     );
-                    if (!getMainActiveBranchMarker()) {
-                        if (document.body) {
-                            showNonDevRedirectModal();
-                            console.log(`${LOG_PREFIX} - Orphaned branch with no main install; redirect modal shown`);
-                        } else {
-                            document.addEventListener('DOMContentLoaded', showNonDevRedirectModal);
-                            console.log(`${LOG_PREFIX} - Orphaned branch with no main install; redirect modal listener added`);
-                        }
+                    const orphanProbeStatus = await probeBranchArchetypesStatus();
+                    if (orphanProbeStatus === 200) {
+                        clearOrphanMarkerForCurrentBranch();
+                        console.log(
+                            `${LOG_PREFIX} - Branch "${GITHUB_CONFIG.branch}" archetypes restored; clearing orphan marker`
+                        );
+                        skipArchetypesProbe = true;
+                    } else if (orphanProbeStatus === 404) {
+                        console.log(
+                            `${LOG_PREFIX} - Branch "${GITHUB_CONFIG.branch}" is still orphaned; yielding to main userscript`
+                        );
+                        showOrphanYieldModalIfNoMain();
+                        return;
+                    } else {
+                        console.warn(
+                            `${LOG_PREFIX} - Orphan re-probe failed (HTTP ${orphanProbeStatus || 'network'}); staying yielded`
+                        );
+                        showOrphanYieldModalIfNoMain();
+                        return;
                     }
-                    return;
                 }
 
                 let isDev = false;
@@ -4345,7 +4344,6 @@
                             pageWindow.localStorage.removeItem(DEV_ID_STORAGE_KEY);
                             console.log(`[Fleet UX Enhancer] - Dev ID detected for branch "${devIdBranch}", removing dev ID key`);
                         }
-                        // Explicitly disable legacy GODMODE behavior.
                         pageWindow.localStorage.removeItem('fleet-godmode');
                     }
                 } catch (e) {
@@ -4362,21 +4360,23 @@
                     return;
                 }
 
-                const archetypesStatus = await probeBranchArchetypesStatus();
-                if (archetypesStatus === 404) {
-                    yieldToMainForOrphanedBranch('archetypes.json HTTP 404');
-                    return;
-                }
-                if (archetypesStatus === 200) {
-                    clearOrphanMarkerForCurrentBranch();
-                } else if (archetypesStatus === 0) {
-                    console.warn(
-                        `${LOG_PREFIX} Archetypes probe failed (network); proceeding without orphaning`
-                    );
-                } else {
-                    console.warn(
-                        `${LOG_PREFIX} Archetypes probe returned HTTP ${archetypesStatus}; proceeding without orphaning`
-                    );
+                if (!skipArchetypesProbe) {
+                    const archetypesStatus = await probeBranchArchetypesStatus();
+                    if (archetypesStatus === 404) {
+                        yieldToMainForOrphanedBranch('archetypes.json HTTP 404');
+                        return;
+                    }
+                    if (archetypesStatus === 200) {
+                        clearOrphanMarkerForCurrentBranch();
+                    } else if (archetypesStatus === 0) {
+                        console.warn(
+                            `${LOG_PREFIX} Archetypes probe failed (network); proceeding without orphaning`
+                        );
+                    } else {
+                        console.warn(
+                            `${LOG_PREFIX} Archetypes probe returned HTTP ${archetypesStatus}; proceeding without orphaning`
+                        );
+                    }
                 }
                 runFleet();
             })();
