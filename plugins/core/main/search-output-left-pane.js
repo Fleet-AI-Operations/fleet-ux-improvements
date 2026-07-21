@@ -411,8 +411,8 @@ const searchOutputLeftPaneMethods = {
                             </div>
                             <div id="wf-dash-section-retrieve" style="${section}">
                                 <div style="${label} font-weight: 600;">Retrieve Task</div>
-                                <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, or task key — or a comma-separated list (spaces are stripped). Full Fleet URLs are also accepted.</p>
-                                <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID(s), key(s), or URL(s) — comma-separated" style="${input}">
+                                <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, or task key — or a comma-separated list (spaces stripped). Pasted JSON arrays work too (brackets, quotes, and newlines are ignored). Full Fleet URLs are also accepted.</p>
+                                <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID(s), key(s), URL(s), or pasted JSON list" style="${input}">
                                 <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                 ${this._resultsModeToggleHtml('retrieve')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
@@ -1765,7 +1765,13 @@ const searchOutputLeftPaneMethods = {
     },
 
     _parseRetrieveInputList(raw) {
-        const tokens = String(raw || '')
+        // Strip JSON array chrome ([ ] " ') and turn newlines into commas so pasted
+        // lists like ["uuid-a", "uuid-b"] or multiline task_ids arrays work. Those
+        // characters never appear in UUIDs, task keys, or Fleet URLs.
+        const normalized = String(raw || '')
+            .replace(/[\[\]"']/g, '')
+            .replace(/[\r\n]+/g, ',');
+        const tokens = normalized
             .split(',')
             .map((t) => t.trim())
             .filter(Boolean);
@@ -2823,7 +2829,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.5',
+    _version: '4.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
