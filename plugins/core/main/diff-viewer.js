@@ -11,6 +11,8 @@ const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_LINK_SPLITS_KEY = 'fleet-ux:diff-viewer-link-splits';
 const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
+const DV_HIGHLIGHT_LENGTH_MIN = 1;
+const DV_HIGHLIGHT_LENGTH_MAX = 50;
 const DV_MAX_SLOTS = 6;
 const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
@@ -41,8 +43,8 @@ const _dvState = {
     showHighlights: true,
     highlightModality: 'differences', // 'differences' | 'similarities'
     linkSplits: false, // similarities: bridge one-sided equal-run gaps as one both-or-none unit
-    highlightMinLength: null,   // null = use highlightLengthRange.min
-    highlightLengthRange: { min: 0, max: 0 },
+    highlightMinLength: DV_HIGHLIGHT_DEFAULT_MIN_WORDS, // user preference; fixed UI range 1–50
+    highlightLengthRange: { min: 0, max: 0 }, // diff metadata for subset % label only
     rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
@@ -129,20 +131,15 @@ function _dvPlainPromptHtml(text) {
     return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
 }
 
-function _dvModalityDefaultMinLength() {
-    return _dvState.granularity === 'word' ? DV_HIGHLIGHT_DEFAULT_MIN_WORDS : null;
-}
-
-function _dvApplyModalityHighlightMinDefault() {
-    const def = _dvModalityDefaultMinLength();
-    if (def != null) _dvState.highlightMinLength = def;
+function _dvClampHighlightMinLength(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DV_HIGHLIGHT_DEFAULT_MIN_WORDS;
+    return Math.max(DV_HIGHLIGHT_LENGTH_MIN, Math.min(DV_HIGHLIGHT_LENGTH_MAX, Math.round(n)));
 }
 
 function _dvEffectiveHighlightMinLength() {
     if (!_dvState.showHighlights) return 0;
-    const range = _dvState.highlightLengthRange;
-    if (!range || range.max === 0) return 0;
-    return _dvState.highlightMinLength != null ? _dvState.highlightMinLength : range.min;
+    return _dvClampHighlightMinLength(_dvState.highlightMinLength);
 }
 
 function _dvHighlightLengthUnitLabel() {
@@ -208,7 +205,6 @@ function _dvRefreshHighlightLengthRange(modal) {
     const eng = _dvEngine();
     if (!eng || !_dvState.showHighlights) {
         _dvState.highlightLengthRange = { min: 0, max: 0 };
-        _dvState.highlightMinLength = null;
         _dvSyncHighlightLengthUi(modal);
         return;
     }
@@ -231,19 +227,8 @@ function _dvRefreshHighlightLengthRange(modal) {
     }
     if (!allLengths.length) {
         _dvState.highlightLengthRange = { min: 0, max: 0 };
-        _dvState.highlightMinLength = null;
     } else {
         _dvState.highlightLengthRange = { min: globalMin, max: globalMax };
-        if (_dvState.highlightMinLength == null) {
-            const modalityDefault = _dvModalityDefaultMinLength();
-            _dvState.highlightMinLength = modalityDefault != null
-                ? Math.max(modalityDefault, globalMin)
-                : globalMin;
-        } else if (_dvState.highlightMinLength < globalMin) {
-            _dvState.highlightMinLength = globalMin;
-        } else if (_dvState.highlightMinLength > globalMax) {
-            _dvState.highlightMinLength = globalMax;
-        }
     }
     _dvSyncHighlightLengthUi(modal);
 }
@@ -1286,8 +1271,8 @@ function _dvPanelHtml(dash) {
             <div id="dv-highlight-length-wrap" class="dv-highlight-length-wrap" style="display:${showHighlights ? 'flex' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Min Highlight Length</div>
                 <div class="dv-highlight-length-row">
-                    <input type="range" id="dv-highlight-length-slider" min="0" max="0" step="1" value="0"
-                           aria-label="Minimum highlight section length" disabled />
+                    <input type="range" id="dv-highlight-length-slider" min="1" max="50" step="1" value="3"
+                           aria-label="Minimum highlight section length" />
                     <span id="dv-highlight-length-readout" class="dv-highlight-length-readout"></span>
                 </div>
             </div>
@@ -2143,21 +2128,13 @@ function _dvSyncHighlightLengthUi(modal) {
         return;
     }
     wrap.style.display = 'flex';
-    const range = _dvState.highlightLengthRange;
+    const current = _dvClampHighlightMinLength(_dvState.highlightMinLength);
+    _dvState.highlightMinLength = current;
     const unit = _dvHighlightLengthUnitLabel();
-    if (!range || range.max === 0) {
-        slider.disabled = true;
-        slider.min = '0';
-        slider.max = '0';
-        slider.value = '0';
-        if (readout) readout.textContent = 'No highlight sections';
-        return;
-    }
-    const current = _dvState.highlightMinLength != null ? _dvState.highlightMinLength : range.min;
-    slider.min = String(range.min);
-    slider.max = String(range.max);
+    slider.min = String(DV_HIGHLIGHT_LENGTH_MIN);
+    slider.max = String(DV_HIGHLIGHT_LENGTH_MAX);
     slider.value = String(current);
-    slider.disabled = range.min === range.max;
+    slider.disabled = false;
     if (readout) readout.textContent = '≥ ' + current + ' ' + unit;
 }
 
@@ -2245,7 +2222,6 @@ function _dvAttachListeners(modal) {
             const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
             if (modality !== _dvState.highlightModality) {
                 _dvState.highlightModality = modality;
-                _dvApplyModalityHighlightMinDefault();
                 try { Storage.setData(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
                 _dvSyncHighlightModalityUi(modal);
                 _dvRenderDiffs(modal);
@@ -2438,12 +2414,12 @@ function _dvAttachListeners(modal) {
         lengthSlider.addEventListener('input', () => {
             const val = parseInt(lengthSlider.value, 10);
             if (!Number.isFinite(val)) return;
-            _dvState.highlightMinLength = val;
+            _dvState.highlightMinLength = _dvClampHighlightMinLength(val);
             _dvSyncHighlightLengthUi(modal);
             _dvRenderDiffs(modal);
             _dvUpdateAboveLabels(modal);
             if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
-            Logger.log('diff-viewer: highlight min length → ' + val);
+            Logger.log('diff-viewer: highlight min length → ' + _dvState.highlightMinLength);
         });
     }
 
@@ -3134,7 +3110,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
 
