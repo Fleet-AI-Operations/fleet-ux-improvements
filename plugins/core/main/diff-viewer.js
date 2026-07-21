@@ -10,6 +10,7 @@ const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_LINK_SPLITS_KEY = 'fleet-ux:diff-viewer-link-splits';
+const DV_PUNCTUATION_KEY = 'fleet-ux:diff-viewer-punctuation';
 const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
 const DV_HIGHLIGHT_LENGTH_MIN = 1;
 const DV_HIGHLIGHT_LENGTH_MAX = 50;
@@ -39,6 +40,7 @@ let _dvLensSyncScheduled = false;
 const _dvState = {
     mode: 'tasks',       // 'tasks' | 'free-text'
     granularity: 'word', // 'word' | 'char'
+    punctuationMode: 'ignore', // 'ignore' | 'highlight'
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
     highlightModality: 'differences', // 'differences' | 'similarities'
@@ -229,7 +231,8 @@ function _dvRefreshHighlightLengthRange(modal) {
     const opts = {
         granularity: _dvState.granularity,
         highlightModality: _dvState.highlightModality,
-        linkSplits: _dvState.linkSplits
+        linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode
     };
     for (const pair of pairs) {
         const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
@@ -257,7 +260,8 @@ function _dvDiffPair(baseText, compareText, granularity) {
         showHighlights: _dvState.showHighlights,
         highlightModality: _dvState.highlightModality,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
-        linkSplits: _dvState.linkSplits
+        linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode
     });
 }
 
@@ -1262,6 +1266,7 @@ function _dvPanelHtml(dash) {
     const btnClass = (variant, size) => (dash.dashBtnClass ? dash.dashBtnClass(variant, size) : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
 
     const gran = _dvState.granularity;
+    const punctMode = _dvState.punctuationMode;
     const compMode = _dvState.compMode;
     const showHighlights = _dvState.showHighlights;
     const highlightModality = _dvState.highlightModality;
@@ -1275,6 +1280,7 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Type', `<div class="dv-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
             ${_dvToggleCell(label, 'Granularity', `<div class="dv-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
+            ${_dvToggleCell(label, 'Punctuation', `<div class="dv-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
             <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Link Splits</div>
                 <div class="dv-seg-group" role="group" aria-label="Link split similarity matches">
@@ -1460,6 +1466,7 @@ function _dvAboveLabelInnerHtml() {
         showHighlights: _dvState.showHighlights,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
         linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode,
         lengthRange: _dvState.highlightLengthRange
     });
 }
@@ -2102,6 +2109,10 @@ function _dvSyncGranularityUi(modal) {
     _dvSyncSegPressed(modal, 'data-dv-seg', _dvState.granularity);
 }
 
+function _dvSyncPunctuationUi(modal) {
+    _dvSyncSegPressed(modal, 'data-dv-punctuation', _dvState.punctuationMode);
+}
+
 function _dvSyncHighlightModalityUi(modal) {
     if (!modal) return;
     _dvSyncSegPressed(modal, 'data-dv-highlight-modality', _dvState.highlightModality);
@@ -2224,6 +2235,22 @@ function _dvAttachListeners(modal) {
                 _dvUpdateAboveLabels(modal);
                 if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
                 Logger.log('diff-viewer: granularity → ' + gran);
+            }
+            return;
+        }
+
+        // ── Punctuation toggle ──
+        const punctBtn = e.target.closest('[data-dv-punctuation]');
+        if (punctBtn && modal.contains(punctBtn)) {
+            const punctMode = punctBtn.getAttribute('data-dv-punctuation');
+            if (punctMode !== _dvState.punctuationMode) {
+                _dvState.punctuationMode = punctMode;
+                try { Storage.setData(DV_PUNCTUATION_KEY, punctMode); } catch (_e) { /* no-op */ }
+                _dvSyncPunctuationUi(modal);
+                _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
+                if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                Logger.log('diff-viewer: punctuation → ' + punctMode);
             }
             return;
         }
@@ -3084,7 +3111,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '3.7',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3113,6 +3140,14 @@ const plugin = {
         try {
             const stored = Storage.getData(DV_GRANULARITY_KEY, null);
             if (stored === 'char' || stored === 'word') _dvState.granularity = stored;
+        } catch (_e) { /* no-op */ }
+
+        // Restore persisted punctuation mode (default ignore)
+        try {
+            const storedPunct = Storage.getData(DV_PUNCTUATION_KEY, null);
+            if (storedPunct === 'ignore' || storedPunct === 'highlight') {
+                _dvState.punctuationMode = storedPunct;
+            }
         } catch (_e) { /* no-op */ }
 
         // Restore persisted comparison mode
