@@ -206,7 +206,17 @@ function _deIsWhitespaceOnlyValues(values) {
     return values.length > 0 && values.every((v) => /^[ \t]+$/.test(v));
 }
 
-function _deCoalesceHighlightGroups(groups, highlightType) {
+function _deIsPunctuationOnlyValues(values) {
+    return values.length > 0 && values.every((v) => _deIsPunctuationToken(v));
+}
+
+/** Whitespace, or punctuation-only when absorbPunctuation (Highlight mode). */
+function _deIsCoalesceSeparator(values, absorbPunctuation) {
+    if (_deIsWhitespaceOnlyValues(values)) return true;
+    return !!(absorbPunctuation && _deIsPunctuationOnlyValues(values));
+}
+
+function _deCoalesceHighlightGroups(groups, highlightType, absorbPunctuation) {
     if (!groups.length) return groups;
     const out = [];
     let i = 0;
@@ -223,7 +233,7 @@ function _deCoalesceHighlightGroups(groups, highlightType) {
         while (i < groups.length) {
             const sep = groups[i];
             if (sep.type === highlightType) break;
-            if (!_deIsWhitespaceOnlyValues(sep.values)) break;
+            if (!_deIsCoalesceSeparator(sep.values, absorbPunctuation)) break;
             values.push(...sep.values);
             trimTrailing = sep.trimTrailing;
             i++;
@@ -240,7 +250,39 @@ function _deCoalesceHighlightGroups(groups, highlightType) {
     return out;
 }
 
-function _deGroupConsecutive(diff, includeTypes, highlightType) {
+/**
+ * Pull equal punctuation tokens that sit directly beside a highlight into that
+ * highlight (e.g. quotes around a changed word, "." before a changed extension).
+ */
+function _deAbsorbAdjacentPunctuationIntoHighlights(groups, highlightType) {
+    if (!groups.length) return groups;
+    const out = groups.map((g) => ({
+        type: g.type,
+        values: g.values.slice(),
+        trimTrailing: g.trimTrailing
+    }));
+    let i = 0;
+    while (i < out.length) {
+        if (out[i].type !== highlightType) {
+            i++;
+            continue;
+        }
+        while (i > 0 && out[i - 1].type === 'equal' && _deIsPunctuationOnlyValues(out[i - 1].values)) {
+            out[i].values = out[i - 1].values.concat(out[i].values);
+            out.splice(i - 1, 1);
+            i--;
+        }
+        while (i + 1 < out.length && out[i + 1].type === 'equal' && _deIsPunctuationOnlyValues(out[i + 1].values)) {
+            out[i].values = out[i].values.concat(out[i + 1].values);
+            out[i].trimTrailing = out[i + 1].trimTrailing;
+            out.splice(i + 1, 1);
+        }
+        i++;
+    }
+    return out;
+}
+
+function _deGroupConsecutive(diff, includeTypes, highlightType, absorbPunctuation) {
     const filtered = diff.filter((d) => includeTypes.includes(d.type));
     const groups = [];
     for (let i = 0; i < filtered.length; i++) {
@@ -256,7 +298,11 @@ function _deGroupConsecutive(diff, includeTypes, highlightType) {
             groups.push(group);
         }
     }
-    return _deCoalesceHighlightGroups(groups, highlightType);
+    let out = _deCoalesceHighlightGroups(groups, highlightType, absorbPunctuation);
+    if (absorbPunctuation) {
+        out = _deAbsorbAdjacentPunctuationIntoHighlights(out, highlightType);
+    }
+    return out;
 }
 
 function _deTrimTrailing(str) { return str.replace(/[ \t]+$/, ''); }
@@ -410,10 +456,27 @@ function _deQualifyingEqualIndexSet(diff, effectiveGranularity, minHighlightLeng
         if (!_deUnitPassesMinLength(unit, effectiveGranularity, minHighlightLength, ignorePunctuation)) continue;
         for (const idx of unit.indices) set.add(idx);
     }
+    if (!ignorePunctuation) {
+        // Include equal punctuation touching a qualifying match (mirrors difference absorb).
+        const seed = [...set];
+        for (const idx of seed) {
+            let j = idx - 1;
+            while (j >= 0 && diff[j].type === 'equal' && _deIsPunctuationToken(diff[j].value)) {
+                set.add(j);
+                j--;
+            }
+            j = idx + 1;
+            while (j < diff.length && diff[j].type === 'equal' && _deIsPunctuationToken(diff[j].value)) {
+                set.add(j);
+                j++;
+            }
+        }
+    }
     return set;
 }
 
 function _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity, linkSplits, ignorePunctuation) {
+    const absorbPunctuation = !ignorePunctuation;
     if (highlightModality === 'similarities') {
         const lengths = [];
         const units = _deBuildCorrespondenceUnits(diff, !!linkSplits);
@@ -426,8 +489,8 @@ function _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGra
     }
     const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
     const lengths = [];
-    const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight);
-    const compareGroups = _deGroupConsecutive(diff, ['equal', 'add'], compareHighlight);
+    const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight, absorbPunctuation);
+    const compareGroups = _deGroupConsecutive(diff, ['equal', 'add'], compareHighlight, absorbPunctuation);
     for (const group of baseGroups) {
         if (group.type !== baseHighlight) continue;
         const len = _deSectionUnitLength(group, effectiveGranularity, ignorePunctuation);
@@ -444,6 +507,8 @@ function _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGra
 
 function _deShouldHighlightGroup(group, highlightType, effectiveGranularity, minHighlightLength, ignorePunctuation) {
     if (group.type !== highlightType) return false;
+    // Punctuation Highlight: always show punctuation-only difference spans (min length is about words).
+    if (!ignorePunctuation && _deIsPunctuationOnlyValues(group.values || [])) return true;
     const len = _deSectionUnitLength(group, effectiveGranularity, ignorePunctuation);
     if (len <= 0) return false;
     if (!minHighlightLength) return true;
@@ -451,6 +516,7 @@ function _deShouldHighlightGroup(group, highlightType, effectiveGranularity, min
 }
 
 function _deJoinQualifyingSubsetTexts(diff, highlightModality, effectiveGranularity, minHighlightLength, linkSplits, ignorePunctuation) {
+    const absorbPunctuation = !ignorePunctuation;
     if (highlightModality === 'similarities') {
         const parts = [];
         const units = _deBuildCorrespondenceUnits(diff, !!linkSplits);
@@ -463,8 +529,8 @@ function _deJoinQualifyingSubsetTexts(diff, highlightModality, effectiveGranular
         return { baseSubset: subset, compareSubset: subset };
     }
     const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
-    const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight);
-    const compareGroups = _deGroupConsecutive(diff, ['equal', 'add'], compareHighlight);
+    const baseGroups = _deGroupConsecutive(diff, ['equal', 'remove'], baseHighlight, absorbPunctuation);
+    const compareGroups = _deGroupConsecutive(diff, ['equal', 'add'], compareHighlight, absorbPunctuation);
     const baseParts = [];
     const compareParts = [];
     for (const group of baseGroups) {
@@ -511,7 +577,8 @@ function _deRenderSideHtml(diff, includeTypes, highlightStyle, highlightType, re
     const minHighlightLength = (renderOpts && renderOpts.minHighlightLength) || 0;
     const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
     const ignorePunctuation = !!(renderOpts && renderOpts.ignorePunctuation);
-    const groups = _deGroupConsecutive(diff, includeTypes, highlightType);
+    const absorbPunctuation = !ignorePunctuation;
+    const groups = _deGroupConsecutive(diff, includeTypes, highlightType, absorbPunctuation);
     let html = '';
     groups.forEach((group, gi) => {
         if (gi > 0 && effectiveGranularity === 'line') html += '\n';
@@ -638,7 +705,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
