@@ -1601,7 +1601,6 @@ const searchOutputLeftPaneMethods = {
             searchBtn.disabled = searchDisabled;
         }
         const retrieveBtn = this._q('#wf-dash-retrieve-btn');
-        const retrieveClipboardBtn = this._q('#wf-dash-retrieve-clipboard');
         const retrieveInputEl = this._q('#wf-dash-retrieve-input');
         if (retrieveBtn) {
             if (this._state.loading) {
@@ -1612,7 +1611,7 @@ const searchOutputLeftPaneMethods = {
                 retrieveBtn.disabled = retrieveDisabled;
             }
         }
-        if (retrieveClipboardBtn) retrieveClipboardBtn.disabled = this._state.loading;
+        this._setRetrieveClipboardButtonsDisabled(this._state.loading);
         if (retrieveInputEl) retrieveInputEl.disabled = this._state.loading;
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
@@ -1853,6 +1852,19 @@ const searchOutputLeftPaneMethods = {
         this._syncLeftMessagesBar();
     },
 
+    _retrieveClipboardButtons() {
+        return [
+            this._q('#wf-dash-retrieve-clipboard'),
+            this._q('#wf-dash-results-retrieve-clipboard')
+        ].filter(Boolean);
+    },
+
+    _setRetrieveClipboardButtonsDisabled(disabled) {
+        for (const btn of this._retrieveClipboardButtons()) {
+            btn.disabled = Boolean(disabled);
+        }
+    },
+
     _setRetrieveError(text) {
         this._setRetrieveMessage(text, 'error');
     },
@@ -1865,8 +1877,7 @@ const searchOutputLeftPaneMethods = {
         }
         const clearBtn = this._q('#wf-dash-retrieve-clear');
         if (clearBtn) clearBtn.disabled = loading;
-        const clipboardBtn = this._q('#wf-dash-retrieve-clipboard');
-        if (clipboardBtn) clipboardBtn.disabled = loading;
+        this._setRetrieveClipboardButtonsDisabled(loading);
         const input = this._q('#wf-dash-retrieve-input');
         if (input) input.disabled = loading;
     },
@@ -1879,8 +1890,10 @@ const searchOutputLeftPaneMethods = {
         Logger.log('search-output: retrieve task input cleared');
     },
 
-    async _submitRetrieveFromClipboard() {
-        const clipboardBtn = this._q('#wf-dash-retrieve-clipboard');
+    async _submitRetrieveFromClipboard(sourceBtn) {
+        const clipboardBtn = sourceBtn
+            || this._q('#wf-dash-retrieve-clipboard')
+            || this._q('#wf-dash-results-retrieve-clipboard');
         if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
             this._setRetrieveError('Clipboard read is not available in this browser.');
             if (clipboardBtn && Context.buttonFeedback) {
@@ -2875,7 +2888,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.7',
+    _version: '4.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
