@@ -109,16 +109,6 @@ function _deFilterPunctuationTokens(tokens) {
     return (tokens || []).filter((t) => !_deIsPunctuationToken(t));
 }
 
-/** Demote punctuation-only add/remove ops to equal so they render without highlight. */
-function _deApplyIgnorePunctuation(diff) {
-    return (diff || []).map((item) => {
-        if ((item.type === 'add' || item.type === 'remove') && _deIsPunctuationToken(item.value)) {
-            return { type: 'equal', value: item.value, suppressHighlight: true };
-        }
-        return item;
-    });
-}
-
 function _deTokenize(text) {
     const tokens = [];
     const chars = [...String(text ?? '')];
@@ -339,7 +329,7 @@ function _deHighlightTypes(highlightModality) {
     };
 }
 
-function _deComputeDiff(baseText, compareText, granularity, punctuationMode) {
+function _deComputeDiff(baseText, compareText, granularity, _punctuationMode) {
     const isChar = granularity === 'char';
     let diff;
     let effectiveGranularity;
@@ -359,9 +349,9 @@ function _deComputeDiff(baseText, compareText, granularity, punctuationMode) {
             diff = _deComputeWordDiff(baseText, compareText);
         }
     }
-    if (punctuationMode === 'ignore') {
-        diff = _deApplyIgnorePunctuation(diff);
-    }
+    // Ignore mode must NOT demote side-only punctuation add/remove to equal — that
+    // paints characters onto the opposite pane. Ignore is handled at highlight /
+    // similarity time (skip punct-only highlights; filter punct from scoring).
     return { diff, effectiveGranularity };
 }
 
@@ -579,8 +569,8 @@ function _deRenderSideHtml(diff, includeTypes, highlightStyle, highlightType, re
     const minHighlightLength = (renderOpts && renderOpts.minHighlightLength) || 0;
     const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
     const ignorePunctuation = !!(renderOpts && renderOpts.ignorePunctuation);
-    // Always absorb punctuation into neighboring highlights so Ignore mode does not leave
-    // naked & / " between word spans (Ignore still demotes punctuation-only diffs).
+    // Glue punctuation into neighboring highlights for contiguous spans; side-only
+    // punct stays add/remove so it never leaks to the opposite pane.
     const groups = _deGroupConsecutive(diff, includeTypes, highlightType, true);
     let html = '';
     groups.forEach((group, gi) => {
@@ -708,7 +698,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
