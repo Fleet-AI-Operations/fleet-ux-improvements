@@ -210,7 +210,7 @@ function _deIsPunctuationOnlyValues(values) {
     return values.length > 0 && values.every((v) => _deIsPunctuationToken(v));
 }
 
-/** Whitespace, or punctuation-only when absorbPunctuation (Highlight mode). */
+/** Whitespace, or punctuation-only when absorbPunctuation (visual glue into highlights). */
 function _deIsCoalesceSeparator(values, absorbPunctuation) {
     if (_deIsWhitespaceOnlyValues(values)) return true;
     return !!(absorbPunctuation && _deIsPunctuationOnlyValues(values));
@@ -476,7 +476,9 @@ function _deQualifyingEqualIndexSet(diff, effectiveGranularity, minHighlightLeng
 }
 
 function _deCollectHighlightSectionLengths(diff, highlightModality, effectiveGranularity, linkSplits, ignorePunctuation) {
-    const absorbPunctuation = !ignorePunctuation;
+    // Always glue punctuation into highlight spans for display continuity; Ignore only
+    // affects whether punctuation-only diffs count / get their own highlight.
+    const absorbPunctuation = true;
     if (highlightModality === 'similarities') {
         const lengths = [];
         const units = _deBuildCorrespondenceUnits(diff, !!linkSplits);
@@ -516,7 +518,7 @@ function _deShouldHighlightGroup(group, highlightType, effectiveGranularity, min
 }
 
 function _deJoinQualifyingSubsetTexts(diff, highlightModality, effectiveGranularity, minHighlightLength, linkSplits, ignorePunctuation) {
-    const absorbPunctuation = !ignorePunctuation;
+    const absorbPunctuation = true;
     if (highlightModality === 'similarities') {
         const parts = [];
         const units = _deBuildCorrespondenceUnits(diff, !!linkSplits);
@@ -577,8 +579,9 @@ function _deRenderSideHtml(diff, includeTypes, highlightStyle, highlightType, re
     const minHighlightLength = (renderOpts && renderOpts.minHighlightLength) || 0;
     const effectiveGranularity = (renderOpts && renderOpts.effectiveGranularity) || 'word';
     const ignorePunctuation = !!(renderOpts && renderOpts.ignorePunctuation);
-    const absorbPunctuation = !ignorePunctuation;
-    const groups = _deGroupConsecutive(diff, includeTypes, highlightType, absorbPunctuation);
+    // Always absorb punctuation into neighboring highlights so Ignore mode does not leave
+    // naked & / " between word spans (Ignore still demotes punctuation-only diffs).
+    const groups = _deGroupConsecutive(diff, includeTypes, highlightType, true);
     let html = '';
     groups.forEach((group, gi) => {
         if (gi > 0 && effectiveGranularity === 'line') html += '\n';
@@ -705,7 +708,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
