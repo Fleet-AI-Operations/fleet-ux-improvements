@@ -411,8 +411,8 @@ const searchOutputLeftPaneMethods = {
                             </div>
                             <div id="wf-dash-section-retrieve" style="${section}">
                                 <div style="${label} font-weight: 600;">Retrieve Task</div>
-                                <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, or task key. Full Fleet URLs are also accepted.</p>
-                                <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID, version ID, task key, or URL" style="${input}">
+                                <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, or task key — or a comma-separated list (spaces are stripped). Full Fleet URLs are also accepted.</p>
+                                <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID(s), key(s), or URL(s) — comma-separated" style="${input}">
                                 <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                 ${this._resultsModeToggleHtml('retrieve')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
@@ -1764,6 +1764,29 @@ const searchOutputLeftPaneMethods = {
         return null;
     },
 
+    _parseRetrieveInputList(raw) {
+        const tokens = String(raw || '')
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean);
+        const parsed = [];
+        const invalid = [];
+        for (const token of tokens) {
+            const one = this._parseRetrieveInput(token);
+            if (one) parsed.push(one);
+            else invalid.push(token);
+        }
+        return { parsed, invalid };
+    },
+
+    _formatRetrieveLabel(values) {
+        const list = (values || []).map((v) => String(v || '').trim()).filter(Boolean);
+        if (!list.length) return '';
+        if (list.length === 1) return list[0];
+        if (list.length <= 3) return list.join(', ');
+        return list.slice(0, 2).join(', ') + ' (+' + (list.length - 2) + ' more)';
+    },
+
     async _fetchTaskRowForRetrieve(parsed) {
         if (parsed.kind === 'key') {
             const rows = await this._pgQuery('tasks.select_search', { key: 'eq.' + parsed.value, limit: '1' }, 'search');
@@ -1799,13 +1822,30 @@ const searchOutputLeftPaneMethods = {
         return Object.assign({}, items[0], { hydrated: false });
     },
 
-    _setRetrieveError(text) {
+    _setRetrieveMessage(text, kind) {
         const el = this._q('#wf-dash-retrieve-error');
-        if (el) {
-            el.textContent = text ? 'Error: ' + text : '';
-            el.style.display = text ? 'block' : 'none';
+        if (!el) {
+            this._syncLeftMessagesBar();
+            return;
         }
+        if (!text) {
+            el.textContent = '';
+            el.style.display = 'none';
+            el.style.color = 'var(--destructive, #dc2626)';
+            this._syncLeftMessagesBar();
+            return;
+        }
+        const isWarning = kind === 'warning';
+        el.textContent = (isWarning ? 'Warning: ' : 'Error: ') + text;
+        el.style.display = 'block';
+        el.style.color = isWarning
+            ? 'var(--warning, #b45309)'
+            : 'var(--destructive, #dc2626)';
         this._syncLeftMessagesBar();
+    },
+
+    _setRetrieveError(text) {
+        this._setRetrieveMessage(text, 'error');
     },
 
     _setRetrieveButtonLoading(loading) {
@@ -1832,18 +1872,24 @@ const searchOutputLeftPaneMethods = {
         const inputEl = this._q('#wf-dash-retrieve-input');
         const raw = inputEl ? inputEl.value : (this._state.retrieveInput || '');
         this._state.retrieveInput = String(raw || '').trim();
-        const parsed = this._parseRetrieveInput(raw);
-        if (!parsed) {
+        const { parsed, invalid } = this._parseRetrieveInputList(raw);
+        if (!parsed.length) {
             this._logDashApiSkip('retrieve-task', 'invalid input');
-            this._setRetrieveError('Enter a valid task ID, version ID, task key, or Fleet URL.');
+            this._setRetrieveError(
+                invalid.length
+                    ? 'Enter a valid task ID, version ID, task key, or Fleet URL (comma-separated lists are supported).'
+                    : 'Enter a valid task ID, version ID, task key, or Fleet URL.'
+            );
             return;
         }
         this._setRetrieveError('');
         this._setSearchError('');
 
+        const totalRequested = parsed.length + invalid.length;
         const retrieveCommitted = {
             retrieveMode: true,
-            retrieveLabel: parsed.value,
+            retrieveLabel: this._formatRetrieveLabel(parsed.map((p) => p.value)),
+            retrieveCount: parsed.length,
             includeTaskCreation: true,
             includeQa: false,
             includeDisputes: false,
@@ -1855,7 +1901,9 @@ const searchOutputLeftPaneMethods = {
         };
         this._beginResultsLoad();
         this._resetSearchLoadLog();
-        this._state.searchLoadPhase = 'Retrieving task…';
+        this._state.searchLoadPhase = parsed.length > 1
+            ? ('Retrieving task 1 of ' + parsed.length + '…')
+            : 'Retrieving task…';
         this._state.committed = retrieveCommitted;
         this._setRetrieveButtonLoading(true);
         this._setSearchButtonLoading(false);
@@ -1866,25 +1914,93 @@ const searchOutputLeftPaneMethods = {
 
         this._state.searchFetchActive = true;
         try {
-            this._logDashApiClick('retrieve-task', parsed.kind + ' ' + parsed.value);
-            const { row, versionOverride } = await this._fetchTaskRowForRetrieve(parsed);
-            if (!row) {
-                this._setRetrieveError('No task found for that identifier.');
+            this._logDashApiClick(
+                'retrieve-task',
+                parsed.length + ' id(s)'
+                    + (invalid.length ? (', ' + invalid.length + ' invalid') : '')
+            );
+            const items = [];
+            const seenTaskIds = new Set();
+            const notFound = [];
+            const foundLabels = [];
+
+            for (let i = 0; i < parsed.length; i++) {
+                const one = parsed[i];
+                if (parsed.length > 1) {
+                    this._setSearchLoadPhase(
+                        'Retrieving task ' + (i + 1) + ' of ' + parsed.length + '…',
+                        items.length
+                    );
+                }
+                const { row, versionOverride } = await this._fetchTaskRowForRetrieve(one);
+                if (!row) {
+                    notFound.push(one.value);
+                    continue;
+                }
+                const taskId = String(row.id || '');
+                if (taskId && seenTaskIds.has(taskId)) continue;
+                if (taskId) seenTaskIds.add(taskId);
+                const item = await this._buildRetrieveTaskItem(row, versionOverride);
+                items.push(item);
+                foundLabels.push(one.value);
+            }
+
+            if (!items.length) {
+                this._setRetrieveError(
+                    notFound.length > 1
+                        ? 'No tasks found for those identifiers.'
+                        : 'No task found for that identifier.'
+                );
                 this._restoreResultsLoadSnapshotOnError();
                 return;
             }
-            const item = await this._buildRetrieveTaskItem(row, versionOverride);
-            this._state.cachedItems = [item];
-            this._setSearchLoadPhase('Hydrating task…', 1);
-            await this._hydrateAllSearchResults([item], { skipFeedbackFetch: false });
-            this._setSearchLoadPhase('Applying filters…', 1);
-            Logger.log('search-output: retrieve task loaded — ' + row.id + ' (fully hydrated)');
+
+            retrieveCommitted.retrieveLabel = this._formatRetrieveLabel(foundLabels);
+            retrieveCommitted.retrieveCount = items.length;
+            this._state.committed = retrieveCommitted;
+            this._state.cachedItems = items;
+            this._setSearchLoadPhase(
+                items.length > 1
+                    ? ('Hydrating ' + items.length + ' tasks…')
+                    : 'Hydrating task…',
+                items.length
+            );
+            await this._hydrateAllSearchResults(items, { skipFeedbackFetch: false });
+            this._setSearchLoadPhase('Applying filters…', items.length);
+            Logger.log(
+                'search-output: retrieve task loaded — '
+                    + items.length + ' found'
+                    + (invalid.length ? (', ' + invalid.length + ' invalid') : '')
+                    + (notFound.length ? (', ' + notFound.length + ' not found') : '')
+                    + ' (fully hydrated)'
+            );
             const additive = this._isAdditiveResultsMode()
                 && Array.isArray(this._state.resultsLoadSnapshot)
                 && this._state.resultsLoadSnapshot.length > 0;
-            this._finalizeResultsLoad([item], {
+            this._finalizeResultsLoad(items, {
                 committed: additive ? null : retrieveCommitted
             });
+
+            const warnParts = [];
+            if (invalid.length) {
+                warnParts.push(
+                    'Skipped invalid: '
+                        + this._formatRetrieveLabel(invalid)
+                );
+            }
+            if (notFound.length) {
+                warnParts.push(
+                    'Not found: '
+                        + this._formatRetrieveLabel(notFound)
+                );
+            }
+            if (warnParts.length) {
+                this._setRetrieveMessage(
+                    'Retrieved ' + items.length + ' of ' + totalRequested + '. '
+                        + warnParts.join(' '),
+                    'warning'
+                );
+            }
         } catch (err) {
             if (this._handleDashSessionRefreshError(err)) {
                 this._setRetrieveError('');
@@ -2191,7 +2307,11 @@ const searchOutputLeftPaneMethods = {
 
     _searchStatusDetail(committed) {
         if (!committed) return '';
-        if (committed.retrieveMode) return 'task: ' + (committed.retrieveLabel || '');
+        if (committed.retrieveMode) {
+            const count = Number(committed.retrieveCount) || 0;
+            const prefix = count > 1 ? ('tasks (' + count + '): ') : 'task: ';
+            return prefix + (committed.retrieveLabel || '');
+        }
         const parts = [];
         if (committed.ratingsEveryone) {
             parts.push('contributors: ' + DASH_EVERYONE_AUTHOR_LABEL);
@@ -2703,7 +2823,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.4',
+    _version: '4.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

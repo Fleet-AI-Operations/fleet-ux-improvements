@@ -1313,7 +1313,8 @@ const searchOutputResultsPaneMethods = {
                 beforeLocal: committed.beforeLocal,
                 searchKinds: committed.searchKinds,
                 retrieveMode: committed.retrieveMode,
-                retrieveLabel: committed.retrieveLabel
+                retrieveLabel: committed.retrieveLabel,
+                retrieveCount: committed.retrieveCount
             },
             view: {
                 resultsKindTab: this._state.resultsKindTab || 'all',
@@ -5121,7 +5122,11 @@ const searchOutputResultsPaneMethods = {
             const committed = s.committed;
             const retrieving = committed && committed.retrieveMode;
             const detail = retrieving
-                ? ('task: ' + (committed.retrieveLabel || ''))
+                ? (() => {
+                    const count = Number(committed.retrieveCount) || 0;
+                    const prefix = count > 1 ? ('tasks (' + count + '): ') : 'task: ';
+                    return prefix + (committed.retrieveLabel || '');
+                })()
                 : this._searchStatusDetail(committed);
             const verb = retrieving ? 'Retrieving' : 'Searching';
             el.innerHTML = detail
@@ -5159,7 +5164,11 @@ const searchOutputResultsPaneMethods = {
                 const countLabel = s.filteredItems.length === scopeTotal
                     ? s.filteredItems.length + ' result(s)'
                     : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
-                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved task ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
+                const retrieveCount = Number(committed.retrieveCount) || 0;
+                const taskWord = retrieveCount === 1 || !retrieveCount
+                    ? 'task'
+                    : 'tasks';
+                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved ${taskWord} ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
                 return;
             }
             const authorLabel = committed.ratingsEveryone
@@ -6380,7 +6389,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.10',
+    _version: '5.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
