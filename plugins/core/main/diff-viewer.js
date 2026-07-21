@@ -1478,9 +1478,41 @@ function _dvSetAboveLabelEl(el, inner) {
     }
 }
 
+function _dvPositionAboveLabel(modal) {
+    const el = _dvQ(modal, 'dv-slots-above-label');
+    if (!el) return;
+    const clear = () => {
+        el.style.transform = '';
+    };
+    if (
+        !modal
+        || !_dvState.showHighlights
+        || _dvState.mode !== 'tasks'
+        || _dvState.compMode !== 'rolling'
+        || _dvState.slots.length < 2
+    ) {
+        clear();
+        return;
+    }
+    _dvClampRollingLeft();
+    const leftWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft);
+    const stack = el.parentElement;
+    if (!leftWrap || !stack) {
+        clear();
+        return;
+    }
+    const stackRect = stack.getBoundingClientRect();
+    const leftRect = leftWrap.getBoundingClientRect();
+    let offset = leftRect.left - stackRect.left;
+    const maxOffset = Math.max(0, stackRect.width - el.offsetWidth);
+    offset = Math.max(0, Math.min(offset, maxOffset));
+    el.style.transform = offset ? ('translateX(' + offset + 'px)') : '';
+}
+
 function _dvUpdateAboveLabels(modal) {
     if (!modal) return;
     _dvSetAboveLabelEl(_dvQ(modal, 'dv-slots-above-label'), _dvAboveLabelInnerHtml());
+    _dvPositionAboveLabel(modal);
 }
 
 function _dvSlotHtml(slot, slotIdx) {
@@ -1879,17 +1911,22 @@ function _dvRemoveRollingOverlay(modal) {
 function _dvUpdateRollingOverlay(modal) {
     if (!modal || !_dvState.showHighlights || _dvState.mode !== 'tasks' || _dvState.compMode !== 'rolling' || _dvState.slots.length < 2) {
         _dvRemoveRollingOverlay(modal);
+        _dvPositionAboveLabel(modal);
         return;
     }
 
     _dvClampRollingLeft();
     const slotsArea = _dvQ(modal, 'dv-slots-area');
-    if (!slotsArea) return;
+    if (!slotsArea) {
+        _dvPositionAboveLabel(modal);
+        return;
+    }
 
     const leftWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft);
     const rightWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft + 1);
     if (!leftWrap || !rightWrap) {
         _dvRemoveRollingOverlay(modal);
+        _dvPositionAboveLabel(modal);
         return;
     }
 
@@ -1913,6 +1950,7 @@ function _dvUpdateRollingOverlay(modal) {
     overlay.style.top = top + 'px';
     overlay.style.width = Math.max(0, right - left) + 'px';
     overlay.style.height = Math.max(0, bottom - top) + 'px';
+    _dvPositionAboveLabel(modal);
 }
 
 function _dvScheduleReelLensSync(modal) {
@@ -2574,6 +2612,7 @@ function _dvInjectStyles() {
         '  flex-wrap: wrap;',
         '  width: fit-content;',
         '  max-width: 100%;',
+        '  transition: transform 0.25s cubic-bezier(0.37, 0, 0.63, 1);',
         '}',
         '#wf-dash-modal .dv-slot-above-label-sim {',
         '  font-size: 9px;',
@@ -3095,7 +3134,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
 
