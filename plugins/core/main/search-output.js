@@ -5137,6 +5137,8 @@ function attachSearchOutputListeners(modal, dash) {
         if (clearParams) clearParams.addEventListener('click', () => dash._clearParameters());
         const retrieveBtn = dash._q('#wf-dash-retrieve-btn');
         if (retrieveBtn) retrieveBtn.addEventListener('click', () => { void dash._submitRetrieveTask(); });
+        const retrieveClipboard = dash._q('#wf-dash-retrieve-clipboard');
+        if (retrieveClipboard) retrieveClipboard.addEventListener('click', () => { void dash._submitRetrieveFromClipboard(); });
         const retrieveClear = dash._q('#wf-dash-retrieve-clear');
         if (retrieveClear) retrieveClear.addEventListener('click', () => dash._clearRetrieveInput());
         const retrieveInput = dash._q('#wf-dash-retrieve-input');
@@ -5876,7 +5878,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.18',
+    _version: '9.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

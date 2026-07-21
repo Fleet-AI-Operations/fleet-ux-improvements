@@ -417,6 +417,7 @@ const searchOutputLeftPaneMethods = {
                                 ${this._resultsModeToggleHtml('retrieve')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
                                     <button type="button" id="wf-dash-retrieve-clear" class="${this._dashBtnClass('basic', 'nav')}">Clear</button>
+                                    <button type="button" id="wf-dash-retrieve-clipboard" class="${this._dashBtnClass('basic', 'nav')}">Clipboard</button>
                                     <button type="button" id="wf-dash-retrieve-btn" class="${this._dashBtnClass('primary', 'nav')}">Retrieve</button>
                                 </div>
                             </div>
@@ -1600,6 +1601,7 @@ const searchOutputLeftPaneMethods = {
             searchBtn.disabled = searchDisabled;
         }
         const retrieveBtn = this._q('#wf-dash-retrieve-btn');
+        const retrieveClipboardBtn = this._q('#wf-dash-retrieve-clipboard');
         const retrieveInputEl = this._q('#wf-dash-retrieve-input');
         if (retrieveBtn) {
             if (this._state.loading) {
@@ -1610,6 +1612,7 @@ const searchOutputLeftPaneMethods = {
                 retrieveBtn.disabled = retrieveDisabled;
             }
         }
+        if (retrieveClipboardBtn) retrieveClipboardBtn.disabled = this._state.loading;
         if (retrieveInputEl) retrieveInputEl.disabled = this._state.loading;
         this._syncFieldClearButtons();
         this._syncLeftMessagesBar();
@@ -1862,6 +1865,8 @@ const searchOutputLeftPaneMethods = {
         }
         const clearBtn = this._q('#wf-dash-retrieve-clear');
         if (clearBtn) clearBtn.disabled = loading;
+        const clipboardBtn = this._q('#wf-dash-retrieve-clipboard');
+        if (clipboardBtn) clipboardBtn.disabled = loading;
         const input = this._q('#wf-dash-retrieve-input');
         if (input) input.disabled = loading;
     },
@@ -1872,6 +1877,47 @@ const searchOutputLeftPaneMethods = {
         if (input) input.value = '';
         this._setRetrieveError('');
         Logger.log('search-output: retrieve task input cleared');
+    },
+
+    async _submitRetrieveFromClipboard() {
+        const clipboardBtn = this._q('#wf-dash-retrieve-clipboard');
+        if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+            this._setRetrieveError('Clipboard read is not available in this browser.');
+            if (clipboardBtn && Context.buttonFeedback) {
+                Context.buttonFeedback.flashFailure(clipboardBtn);
+            }
+            Logger.warn('search-output: retrieve from clipboard skipped — clipboard API unavailable');
+            return;
+        }
+        let text = '';
+        try {
+            text = await navigator.clipboard.readText();
+        } catch (err) {
+            this._setRetrieveError('Could not read clipboard. Allow clipboard access and try again.');
+            if (clipboardBtn && Context.buttonFeedback) {
+                Context.buttonFeedback.flashFailure(clipboardBtn);
+            }
+            Logger.warn('search-output: retrieve from clipboard failed', err);
+            return;
+        }
+        const raw = String(text || '').trim();
+        if (!raw) {
+            this._setRetrieveError('Clipboard is empty.');
+            if (clipboardBtn && Context.buttonFeedback) {
+                Context.buttonFeedback.flashFailure(clipboardBtn);
+            }
+            Logger.log('search-output: retrieve from clipboard skipped — empty');
+            return;
+        }
+        this._state.retrieveInput = raw;
+        const input = this._q('#wf-dash-retrieve-input');
+        if (input) input.value = raw;
+        this._setRetrieveError('');
+        Logger.log('search-output: retrieve from clipboard — ' + raw.length + ' chars');
+        if (clipboardBtn && Context.buttonFeedback) {
+            Context.buttonFeedback.flashSuccess(clipboardBtn);
+        }
+        await this._submitRetrieveTask();
     },
 
     async _submitRetrieveTask() {
@@ -2829,7 +2875,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.6',
+    _version: '4.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
