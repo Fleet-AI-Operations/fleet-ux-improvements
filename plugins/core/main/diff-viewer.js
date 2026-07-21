@@ -106,12 +106,26 @@ function _dvIconBtnStyle() {
     return 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
 }
 
+function _dvDashCopyChipHtml(text) {
+    const dash = Context.dashboard;
+    if (dash && typeof dash.copyChipHtml === 'function') {
+        return dash.copyChipHtml(text);
+    }
+    const value = String(text == null ? '' : text).trim();
+    if (!value) {
+        return '<span style="display: inline-block; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>';
+    }
+    return '<button type="button" data-wf-dash-copy="' + _dvEscHtml(value) + '" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">'
+        + _dvEscHtml(value) + '</button>';
+}
+
 function _dvAuthorLineHtml(authorName, authorEmail) {
-    const display = authorName
-        ? _dvEscHtml(authorName) + (authorEmail ? ' · ' + _dvEscHtml(authorEmail) : '')
-        : _dvEscHtml(authorEmail || '—');
-    const title = _dvEscHtml(authorName || '') + (authorEmail ? ' · ' + _dvEscHtml(authorEmail) : '');
-    return `<div class="dv-slot-author" title="${title}">${display}</div>`;
+    const nameChip = authorName ? _dvDashCopyChipHtml(authorName) : '';
+    const emailChip = authorEmail ? _dvDashCopyChipHtml(authorEmail) : '';
+    if (!nameChip && !emailChip) {
+        return `<div class="dv-slot-author">${_dvDashCopyChipHtml('')}</div>`;
+    }
+    return `<div class="dv-slot-author">${nameChip}${emailChip}</div>`;
 }
 
 function _dvSyncSegPressed(modal, attr, stateValue) {
@@ -1116,7 +1130,7 @@ function _dvAttachDragListeners(modal) {
     const onPointerDown = (e) => {
         if (e.button !== 0) return;
         if (_dvState.drag.pending || _dvState.drag.active) return;
-        if (e.target.closest('[data-dv-copy],[data-dv-copy-prompt],[data-dv-minimize],[data-dv-remove],[data-dv-lens-up],[data-dv-lens-down]')) return;
+        if (e.target.closest('[data-dv-copy],[data-wf-dash-copy],[data-dv-copy-prompt],[data-dv-minimize],[data-dv-remove],[data-dv-lens-up],[data-dv-lens-down]')) return;
         const handle = e.target.closest('[data-dv-drag]');
         if (!handle || !modal.contains(handle)) return;
 
@@ -1364,9 +1378,7 @@ function _dvSplitPanelSection(dash, leftHtml, rightHtml) {
 // ── Slot card HTML ──
 
 function _dvKeyCopyHtml(key, taskId) {
-    const value = String(key || taskId || '').trim();
-    if (!value) return '<span class="dv-slot-key-copy dv-slot-key-copy--empty">—</span>';
-    return `<button type="button" class="dv-slot-key-copy dv-slot-key-copy--primary" data-dv-copy="${_dvEscHtml(value)}" title="Click to copy task key">${_dvEscHtml(value)}</button>`;
+    return _dvDashCopyChipHtml(key || taskId);
 }
 
 async function _dvCopyText(text) {
@@ -1660,7 +1672,7 @@ function _dvRenderSlotsArea(modal) {
 
 function _dvStashChipHtml(entry, idx, active) {
     const authorHtml = _dvAuthorLineHtml(entry.authorName, entry.authorEmail);
-    const keyLine = _dvEscHtml(entry.key || entry.taskId.slice(0, 12) + '…');
+    const keyHtml = _dvKeyCopyHtml(entry.key, entry.taskId);
     const createdHtml = entry.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', entry.createdAt)}</div>`
         : '';
@@ -1671,7 +1683,7 @@ function _dvStashChipHtml(entry, idx, active) {
     const removeBtnStyle = _dvIconBtnStyle() + 'background:transparent;color:var(--muted-foreground,#64748b);';
     return `<div class="dv-stash-chip${active ? ' dv-stash-chip--active' : ''}" data-dv-stash-chip="${idx}" title="Click to add slot">
         <div class="dv-stash-chip-main">
-            <div class="dv-stash-key">${keyLine}</div>
+            <div class="dv-stash-key">${keyHtml}</div>
             ${authorHtml}
             ${metaHtml}
         </div>
@@ -2328,7 +2340,8 @@ function _dvAttachListeners(modal) {
 
         // ── Stash chip click (add slot) ──
         const stashChip = e.target.closest('[data-dv-stash-chip]');
-        if (stashChip && modal.contains(stashChip) && !e.target.closest('[data-dv-stash-remove]')) {
+        if (stashChip && modal.contains(stashChip)
+            && !e.target.closest('[data-dv-stash-remove],[data-dv-copy],[data-wf-dash-copy]')) {
             const idx = parseInt(stashChip.getAttribute('data-dv-stash-chip'), 10);
             const entry = _dvState.stash[idx];
             if (entry) {
@@ -2658,12 +2671,13 @@ function _dvInjectStyles() {
         '  border: 1px solid var(--brand, #2563eb) !important;',
         '}',
         '#wf-dash-modal .dv-slot-author {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  flex-wrap: wrap;',
+        '  gap: 4px;',
         '  margin-top: 3px;',
-        '  font-size: 10px;',
-        '  color: var(--muted-foreground, #64748b);',
-        '  white-space: nowrap;',
-        '  overflow: hidden;',
-        '  text-overflow: ellipsis;',
+        '  min-width: 0;',
+        '  max-width: 100%;',
         '}',
         '#wf-dash-modal .dv-slot-meta {',
         '  display: flex;',
@@ -2713,15 +2727,11 @@ function _dvInjectStyles() {
         '  overflow: hidden;',
         '}',
         '#wf-dash-modal .dv-stash-key {',
-        '  font-size: 11px;',
-        '  font-weight: 600;',
-        '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
-        '  color: var(--foreground, #f8fafc);',
-        '  white-space: nowrap;',
+        '  min-width: 0;',
+        '  max-width: 100%;',
         '  overflow: hidden;',
-        '  text-overflow: ellipsis;',
         '}',
-        '#wf-dash-modal .dv-stash-chip--active .dv-stash-key {',
+        '#wf-dash-modal .dv-stash-chip--active .dv-stash-key [data-wf-dash-copy] {',
         '  color: #22c55e;',
         '}',
         '#wf-dash-modal .dv-slot-created {',
@@ -2790,35 +2800,6 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal #dv-right.dv-highlights-off .dv-rolling-overlay {',
         '  display: none !important;',
-        '}',
-        '#wf-dash-modal .dv-slot-key-copy {',
-        '  display: block;',
-        '  width: 100%;',
-        '  padding: 0;',
-        '  border: none;',
-        '  border-radius: 0;',
-        '  font-size: 11px;',
-        '  font-weight: 600;',
-        '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
-        '  color: var(--foreground, #f8fafc);',
-        '  background: transparent;',
-        '  text-align: left;',
-        '  overflow-wrap: anywhere;',
-        '  word-break: break-all;',
-        '  white-space: nowrap;',
-        '  overflow: hidden;',
-        '  text-overflow: ellipsis;',
-        '  cursor: pointer;',
-        '  box-sizing: border-box;',
-        '}',
-        '#wf-dash-modal .dv-slot-key-copy--empty {',
-        '  display: inline-block;',
-        '  font-size: 11px;',
-        '  font-weight: 600;',
-        '  color: var(--foreground, #f8fafc);',
-        '}',
-        '#wf-dash-modal .dv-slot-key-copy:hover {',
-        '  color: var(--brand, #2563eb);',
         '}',
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
@@ -3103,7 +3084,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
 

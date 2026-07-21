@@ -1,7 +1,7 @@
 {
   "version": "12.4.12",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.139",
+  "archetypesVersion": "14.140",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -224,8 +224,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "3.6",
-      "hash": "sha256-a61c579b9c6e2b6aea18443f6fda6f77edd716796ce91cbf8da7de1477ef4c8c",
+      "version": "3.7",
+      "hash": "sha256-0d7b33cb99448ea263cf7baa464959bfdbd8dc8b3b3bdad8036ccfdfe48d6cb9",
       "log": false
     },
     {
