@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.12',
+    _version: '11.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -554,6 +554,10 @@ const plugin = {
     },
 
     open() {
+        if (Context.isExternalInstanceHost) {
+            Logger.warn('dashboard: open blocked — Ops dashboard is not allowed on external env instances');
+            return;
+        }
         const doOpen = () => {
             try {
                 try {

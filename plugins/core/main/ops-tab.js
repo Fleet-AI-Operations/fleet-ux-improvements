@@ -241,7 +241,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.7',
+    _version: '9.8',
     phase: 'core',
     enabledByDefault: true,
 
@@ -309,6 +309,7 @@ const plugin = {
             isAccessConfigured: () => this._isOpsAccessConfigured(),
             isEnabled: () => this._getOpsTabEnabled(),
             isWanted: () => this._getOpsTabWanted(),
+            isDashboardAllowedOnHost: () => this._isOpsDashboardAllowedOnHost(),
             hasStoredPassword: () => this._hasOpsStoredPassword(),
             needsOpsDashboardRefresh: () => this._needsOpsDashboardRefresh(),
             shouldOpenDashboardOnSettings: () => this._shouldOpenDashboardOnSettings(),
@@ -461,7 +462,9 @@ const plugin = {
     },
 
     _shouldOpenDashboardOnSettings() {
-        return this._getOpsTabWanted() && this._getOpsDashboardOpenOnSettings();
+        return this._isOpsDashboardAllowedOnHost()
+            && this._getOpsTabWanted()
+            && this._getOpsDashboardOpenOnSettings();
     },
 
     _getOpsStoredPassword() {
@@ -808,8 +811,15 @@ const plugin = {
         return this._getOpsStoredPassword().length > 0;
     },
 
+    _isOpsDashboardAllowedOnHost() {
+        return Context.isExternalInstanceHost !== true;
+    },
+
     _getOpsTabEnabled() {
-        return this._getOpsTabWanted() && this._hasOpsStoredPassword() && this._isOpsAccessConfigured();
+        return this._isOpsDashboardAllowedOnHost()
+            && this._getOpsTabWanted()
+            && this._hasOpsStoredPassword()
+            && this._isOpsAccessConfigured();
     },
 
     _needsOpsDashboardRefresh() {
@@ -4825,13 +4835,19 @@ const plugin = {
     _renderOpsSettingsSection() {
         const opsWantsEnabled = this._getOpsTabWanted();
         const opsHasStoredPassword = this._hasOpsStoredPassword();
+        const hostAllowsDashboard = this._isOpsDashboardAllowedOnHost();
         const switchHTML = this._renderOpsSwitchHTML('wf-ops-tab-enabled', opsWantsEnabled);
         const openOnSettings = this._getOpsDashboardOpenOnSettings();
         const submoduleSwitchHTML = this._renderOpsSubSwitchHTML('wf-ops-dashboard-open-on-settings', openOnSettings);
         const enableCardDisplay = opsHasStoredPassword ? 'block' : 'none';
         const passwordPanelDisplay = opsHasStoredPassword ? 'none' : 'block';
-        const suboptionsDisplay = opsHasStoredPassword && opsWantsEnabled ? 'block' : 'none';
-        const openDashboardBtnDisplay = opsHasStoredPassword && opsWantsEnabled ? 'block' : 'none';
+        const suboptionsDisplay = opsHasStoredPassword && opsWantsEnabled && hostAllowsDashboard ? 'block' : 'none';
+        const openDashboardBtnDisplay = opsHasStoredPassword && opsWantsEnabled && hostAllowsDashboard ? 'block' : 'none';
+        const externalHostNotice = hostAllowsDashboard
+            ? ''
+            : `<div id="wf-ops-external-host-notice" style="margin-top: 10px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
+                    Ops Dashboard cannot open on external env instances. Open it from fleetai.com.
+                </div>`;
         return `
             <div style="margin-bottom: 20px;">
                 <div id="wf-ops-enable-wrap" style="display: ${enableCardDisplay};">
@@ -4840,6 +4856,7 @@ const plugin = {
                         <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Dashboard</div>
                         ${switchHTML}
                     </div>
+                    ${externalHostNotice}
                     <div id="wf-ops-dashboard-suboptions-wrap" style="display: ${suboptionsDisplay}; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0 4px 12px;">
                             <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; flex: 1; min-width: 0;">
@@ -4888,10 +4905,11 @@ const plugin = {
         const openBtn = this._opsQuery(modal, '#wf-ops-open-dashboard-btn', 'opsOpenDashboardBtn');
         const hasPassword = this._hasOpsStoredPassword();
         const wanted = this._getOpsTabWanted();
+        const hostAllows = this._isOpsDashboardAllowedOnHost();
         if (enableWrap) enableWrap.style.display = hasPassword ? 'block' : 'none';
         if (passwordPanel) passwordPanel.style.display = hasPassword ? 'none' : 'block';
-        if (wrap) wrap.style.display = hasPassword && wanted ? 'block' : 'none';
-        if (openBtn) openBtn.style.display = hasPassword && wanted ? 'block' : 'none';
+        if (wrap) wrap.style.display = hasPassword && wanted && hostAllows ? 'block' : 'none';
+        if (openBtn) openBtn.style.display = hasPassword && wanted && hostAllows ? 'block' : 'none';
         this._syncOpsDashboardIncompleteMessage(modal);
     },
 
@@ -5190,6 +5208,10 @@ const plugin = {
         if (!btn || btn.dataset.wfOpsOpenDashboardBound === '1') return;
         btn.dataset.wfOpsOpenDashboardBound = '1';
         btn.addEventListener('click', () => {
+            if (!this._isOpsDashboardAllowedOnHost()) {
+                Logger.warn('ops-tab: Open Dashboard skipped — not allowed on external env instances');
+                return;
+            }
             if (!this._getOpsTabWanted() || !this._hasOpsStoredPassword()) {
                 Logger.warn('ops-tab: Open Dashboard skipped — not unlocked');
                 return;
