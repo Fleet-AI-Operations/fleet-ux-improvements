@@ -1,7 +1,7 @@
 {
   "version": "12.4.13",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.148",
+  "archetypesVersion": "14.149",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -140,6 +140,12 @@
       "name": "vnc-helper.js",
       "version": "2.0",
       "hash": "sha256-62b6e3872580124ac37eeff55859edd76f74a471595707793e6b793901eb5f35",
+      "log": false
+    },
+    {
+      "name": "env-helper.js",
+      "version": "1.0",
+      "hash": "sha256-d9dc1f00088f0a042d97d18783d9a42a71e82070341a0a7510fca082aade3f88",
       "log": false
     }
   ],
@@ -941,13 +947,20 @@
       "urlPattern": "_novnc",
       "disambiguationSelectors": [],
       "libraries": [
-        "vnc-helper.js"
+        "vnc-helper.js",
+        "env-helper.js"
       ],
       "plugins": [
         {
           "name": "vnc-helper.js",
           "version": "1.8",
           "hash": "sha256-2776632629292b01207360bb41fdf3a1bd0c5b17538dcee0b0b4c8454bcefb5f",
+          "log": false
+        },
+        {
+          "name": "env-helper.js",
+          "version": "1.0",
+          "hash": "sha256-f2c73cbcfc04eab78c3b19bb799f236ba286a67d8cfa7c194292602c7b678e48",
           "log": false
         }
       ]
