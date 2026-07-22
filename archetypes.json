@@ -1,7 +1,7 @@
 {
   "version": "12.4.13",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.151",
+  "archetypesVersion": "14.152",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,14 +28,14 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.8",
-      "hash": "sha256-11e2cd7a2b33de9ca07418312653b0f39fa49af135570b57ea22c6b7a9739f45",
+      "version": "9.9",
+      "hash": "sha256-2db7a3dfa3ad2dbbf7dc6abec9442618b6e7aef0ecfd102f7ee43c8cf8d3380d",
       "log": false
     },
     {
       "name": "settings-ui.js",
-      "version": "10.12",
-      "hash": "sha256-fc66bcb8f375b068a9ed9a3b6867ddcfb9d62dc68f03598ced206853538415e4",
+      "version": "10.13",
+      "hash": "sha256-f91d06acdc5f94a8f237705e990d06e27a1e77e14fa7bf0cf47458e373bba47e",
       "log": false
     },
     {

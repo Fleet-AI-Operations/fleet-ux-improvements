@@ -241,7 +241,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.8',
+    _version: '9.9',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4851,7 +4851,7 @@ const plugin = {
         return `
             <div style="margin-bottom: 20px;">
                 <div id="wf-ops-enable-wrap" style="display: ${enableCardDisplay};">
-                <div style="padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                <div class="wf-su-card" style="padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
                         <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Dashboard</div>
                         ${switchHTML}
@@ -4875,17 +4875,16 @@ const plugin = {
                     </div>
                 </div>
                 </div>
-                <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                <div id="wf-ops-password-panel" class="wf-su-card" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
                     <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
                     <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" style="
+                        <input type="password" id="wf-ops-password-input" class="wf-su-fill-bg" autocomplete="current-password" style="
                             flex: 1;
                             min-width: 0;
                             padding: 8px 12px;
                             font-size: 13px;
                             border: 1px solid var(--border, #e5e5e5);
                             border-radius: 6px;
-                            background: var(--background, white);
                             color: var(--foreground, #333);
                             box-sizing: border-box;
                         ">

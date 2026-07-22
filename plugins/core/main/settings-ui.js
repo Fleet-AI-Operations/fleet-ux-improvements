@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.12',
+    _version: '10.13',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -142,6 +142,36 @@ const plugin = {
             #wf-settings-content {
                 position: relative;
                 z-index: 1;
+            }
+            /* Per-surface solid underlays (::before) for themed background: var(--*) that may be invalid */
+            #wf-settings-modal .wf-su-bg,
+            #wf-settings-modal .wf-su-card {
+                position: relative;
+                isolation: isolate;
+            }
+            #wf-settings-modal .wf-su-bg::before,
+            #wf-settings-modal .wf-su-card::before {
+                content: '';
+                position: absolute;
+                inset: 0;
+                z-index: -1;
+                pointer-events: none;
+                border-radius: inherit;
+            }
+            #wf-settings-modal .wf-su-bg::before {
+                background-color: #ffffff;
+            }
+            #wf-settings-modal .wf-su-card::before {
+                background-color: #fafafa;
+            }
+            /* Form controls cannot use ::before — opaque first layer, themed second */
+            #wf-settings-modal .wf-su-fill-bg {
+                background-color: #ffffff;
+                background-color: var(--background, #ffffff);
+            }
+            #wf-settings-modal .wf-su-fill-card {
+                background-color: #fafafa;
+                background-color: var(--card, #fafafa);
             }
             #wf-settings-modal::backdrop {
                 background: rgba(0, 0, 0, 0.45);
@@ -478,7 +508,7 @@ const plugin = {
             <div id="wf-settings-pane-dev" data-tab="dev" class="wf-settings-pane" style="display: none;">
             <!-- Dev Global Toggle -->
             <div style="margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                <div class="wf-su-card" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
                     <div>
                         <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Dev Plugins</div>
                         <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px;">
@@ -488,7 +518,7 @@ const plugin = {
                     ${this._createSwitchHTML('wf-dev-global-enabled', devGlobalEnabled)}
                 </div>
                 <div id="wf-all-dev-plugins-buttons" style="display: ${devGlobalEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
-                    <button id="wf-all-dev-plugins-on" style="
+                    <button id="wf-all-dev-plugins-on" class="wf-su-card" style="
                         flex: 1;
                         padding: 8px 12px;
                         font-size: 13px;
@@ -500,7 +530,7 @@ const plugin = {
                         cursor: pointer;
                         transition: all 0.2s;
                     ">All On</button>
-                    <button id="wf-all-dev-plugins-off" style="
+                    <button id="wf-all-dev-plugins-off" class="wf-su-card" style="
                         flex: 1;
                         padding: 8px 12px;
                         font-size: 13px;
@@ -536,7 +566,7 @@ const plugin = {
                     <div>
                         ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled, 'log')}
                         <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
-                            <button id="wf-all-module-logging-on" type="button" style="
+                            <button id="wf-all-module-logging-on" type="button" class="wf-su-card" style="
                                 flex: 1;
                                 padding: 6px 10px;
                                 font-size: 12px;
@@ -548,7 +578,7 @@ const plugin = {
                                 cursor: pointer;
                                 transition: all 0.2s;
                             ">All On</button>
-                            <button id="wf-all-module-logging-off" type="button" style="
+                            <button id="wf-all-module-logging-off" type="button" class="wf-su-card" style="
                                 flex: 1;
                                 padding: 6px 10px;
                                 font-size: 12px;
@@ -570,9 +600,9 @@ const plugin = {
 
         modal.innerHTML = `
             <div id="wf-settings-solid-underlay" aria-hidden="true"></div>
-            <div id="wf-settings-content" style="${contentStyle}">
+            <div id="wf-settings-content" class="wf-su-bg" style="${contentStyle}">
             <!-- Sticky Header -->
-            <div id="wf-settings-sticky-header" style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: var(--background, white); border-bottom: 1px solid var(--border, #e5e5e5); z-index: 1;">
+            <div id="wf-settings-sticky-header" class="wf-su-bg" style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: var(--background, white); border-bottom: 1px solid var(--border, #e5e5e5); z-index: 1;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                     <div>
                         <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0;">Fleet Enhancer Extension</h2>
@@ -610,7 +640,7 @@ const plugin = {
             <div id="wf-settings-pane-settings" data-tab="settings" class="wf-settings-pane" style="display: none;">
             <!-- Global Toggle -->
             <div style="margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
+                <div class="wf-su-card" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: var(--card, #fafafa);">
                     <div>
                         <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Plugins</div>
                         <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px;">
@@ -620,7 +650,7 @@ const plugin = {
                     ${this._createSwitchHTML('wf-global-enabled', globalEnabled)}
                 </div>
                 <div id="wf-all-plugins-buttons" style="display: ${globalEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
-                    <button id="wf-all-plugins-on" style="
+                    <button id="wf-all-plugins-on" class="wf-su-card" style="
                         flex: 1;
                         padding: 8px 12px;
                         font-size: 13px;
@@ -632,7 +662,7 @@ const plugin = {
                         cursor: pointer;
                         transition: all 0.2s;
                     ">All On</button>
-                    <button id="wf-all-plugins-off" style="
+                    <button id="wf-all-plugins-off" class="wf-su-card" style="
                         flex: 1;
                         padding: 8px 12px;
                         font-size: 13px;
@@ -693,26 +723,24 @@ const plugin = {
                 </p>
                 <div style="margin-bottom: 12px;">
                     <label for="wf-feedback-title" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Title</label>
-                    <input type="text" id="wf-feedback-title" placeholder="Short summary" maxlength="256" style="
+                    <input type="text" id="wf-feedback-title" class="wf-su-fill-bg" placeholder="Short summary" maxlength="256" style="
                         width: 100%;
                         padding: 8px 12px;
                         font-size: 13px;
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        background: var(--background, white);
                         color: var(--foreground, #333);
                         box-sizing: border-box;
                     ">
                 </div>
                 <div style="margin-bottom: 16px;">
                     <label for="wf-feedback-description" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Description</label>
-                    <textarea id="wf-feedback-description" placeholder="Describe your feedback, feature request, or bug in as much detail as you’d like." rows="5" style="
+                    <textarea id="wf-feedback-description" class="wf-su-fill-bg" placeholder="Describe your feedback, feature request, or bug in as much detail as you’d like." rows="5" style="
                         width: 100%;
                         padding: 8px 12px;
                         font-size: 13px;
                         border: 1px solid var(--border, #e5e5e5);
                         border-radius: 6px;
-                        background: var(--background, white);
                         color: var(--foreground, #333);
                         resize: vertical;
                         box-sizing: border-box;
@@ -777,7 +805,7 @@ const plugin = {
                 </div>
         ` : '';
         return `
-            <div class="wf-plugin-item" data-plugin-id="${plugin.id}" style="position: relative; display: flex; flex-direction: column; padding: 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; margin-bottom: 10px; background: var(--card, #fafafa); will-change: transform;">
+            <div class="wf-plugin-item wf-su-card" data-plugin-id="${plugin.id}" style="position: relative; display: flex; flex-direction: column; padding: 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; margin-bottom: 10px; background: var(--card, #fafafa); will-change: transform;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
                         <div class="wf-drag-handle" title="Drag to reorder" style="width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted-foreground, #888); user-select: none;">
@@ -845,7 +873,7 @@ const plugin = {
     
     _createToggleHTML(id, label, isEnabled, variant = 'main') {
         return `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--card, #fafafa);">
+            <div class="wf-su-card" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: var(--card, #fafafa);">
                 <label style="font-size: 13px; color: var(--foreground, #333);" for="${id}">${label}</label>
                 ${this._createSwitchHTML(id, isEnabled, null, false, { variant })}
             </div>
@@ -2003,6 +2031,7 @@ const plugin = {
             btn.style.color = isActive ? 'var(--foreground, #333)' : 'var(--muted-foreground, #666)';
             btn.style.background = isActive ? 'var(--card, #fafafa)' : 'transparent';
             btn.style.border = isActive ? '1px solid var(--border, #e5e5e5)' : '1px solid transparent';
+            btn.classList.toggle('wf-su-card', isActive);
         });
     },
 
@@ -2058,7 +2087,7 @@ const plugin = {
         const activeTab = activeTabId || this._getDefaultSettingsTabId();
         const buttons = tabs.map(t => {
             const isActive = t.id === activeTab;
-            return `<button type="button" class="wf-settings-tab" data-tab="${t.id}" style="
+            return `<button type="button" class="wf-settings-tab${isActive ? ' wf-su-card' : ''}" data-tab="${t.id}" style="
                 flex-shrink: 0;
                 white-space: nowrap;
                 padding: 6px 14px;
@@ -2213,7 +2242,7 @@ const plugin = {
         root.innerHTML = `
             <div style="margin: 8px 0 12px 0;">
                 <label for="wf-env-codenames-search" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--foreground, #333);">Search codenames or apps</label>
-                <input type="search" id="wf-env-codenames-search" autocomplete="off" placeholder="Type to filter…" style="width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; margin-bottom: 10px; background: var(--card, #fafafa); color: var(--foreground, #333);" />
+                <input type="search" id="wf-env-codenames-search" class="wf-su-fill-card" autocomplete="off" placeholder="Type to filter…" style="width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; margin-bottom: 10px; color: var(--foreground, #333);" />
                 <table style="${tableStyle}" aria-label="Environment codenames">
                     <thead>
                         <tr>
