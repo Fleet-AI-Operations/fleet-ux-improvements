@@ -6,8 +6,8 @@
 //   node dev/utils/encrypt-ops-secrets.mjs encrypt [--password 'secret']
 //   node dev/utils/encrypt-ops-secrets.mjs decrypt [--password 'secret']   # verify locally
 //
-// Prefer encrypt-ops-bundle.mjs (local/ops-bundle.json + local/PostgREST/password).
-// Plaintext (gitignored):  local/ops-bundle.json
+// Prefer encrypt-ops-bundle.mjs (local/secrets/ops-bundle.json + local/secrets/password).
+// Plaintext (gitignored):  local/secrets/ops-bundle.json
 // Committed ciphertext:    ops-secrets.enc.json
 //
 // Password: --password, OPS_PASSWORD env, or hidden prompt.
@@ -20,8 +20,8 @@ import { decryptWithPassword, encryptWithPassword, FORMAT_PREFIX } from './ops-p
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '../..');
-const BUNDLE_PATH = path.join(root, 'local', 'ops-bundle.json');
-const PASSWORD_PATH = path.join(root, 'local', 'PostgREST', 'password');
+const BUNDLE_PATH = path.join(root, 'local', 'secrets', 'ops-bundle.json');
+const PASSWORD_PATH = path.join(root, 'local', 'secrets', 'password');
 const ENCRYPTED_PATH = path.join(root, 'ops-secrets.enc.json');
 
 function usage() {
@@ -119,7 +119,7 @@ async function cmdEncrypt(password) {
     };
     fs.writeFileSync(ENCRYPTED_PATH, JSON.stringify(out, null, 2) + '\n', 'utf8');
     console.log('[info] Wrote ' + ENCRYPTED_PATH);
-    console.log('[info] Commit ops-secrets.enc.json; keep local/ops-bundle.json out of git.');
+    console.log('[info] Commit ops-secrets.enc.json; keep local/secrets/ops-bundle.json out of git.');
 }
 
 async function cmdDecrypt(password) {

@@ -17,7 +17,7 @@ fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$script_dir/../.." && pwd)"
-password_file="$root/local/PostgREST/password"
+password_file="$root/local/secrets/password"
 
 password="$1"
 if [[ -z "$password" && -f "$password_file" ]]; then

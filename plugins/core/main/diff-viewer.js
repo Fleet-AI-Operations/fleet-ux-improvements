@@ -10,7 +10,10 @@ const DV_GRANULARITY_KEY = 'fleet-ux:diff-viewer-granularity';
 const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_LINK_SPLITS_KEY = 'fleet-ux:diff-viewer-link-splits';
+const DV_PUNCTUATION_KEY = 'fleet-ux:diff-viewer-punctuation';
 const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
+const DV_HIGHLIGHT_LENGTH_MIN = 1;
+const DV_HIGHLIGHT_LENGTH_MAX = 50;
 const DV_MAX_SLOTS = 6;
 const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
@@ -37,12 +40,13 @@ let _dvLensSyncScheduled = false;
 const _dvState = {
     mode: 'tasks',       // 'tasks' | 'free-text'
     granularity: 'word', // 'word' | 'char'
+    punctuationMode: 'ignore', // 'ignore' | 'highlight'
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
     highlightModality: 'differences', // 'differences' | 'similarities'
     linkSplits: false, // similarities: bridge one-sided equal-run gaps as one both-or-none unit
-    highlightMinLength: null,   // null = use highlightLengthRange.min
-    highlightLengthRange: { min: 0, max: 0 },
+    highlightMinLength: DV_HIGHLIGHT_DEFAULT_MIN_WORDS, // user preference; fixed UI range 1–50
+    highlightLengthRange: { min: 0, max: 0 }, // diff metadata for subset % label only
     rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
@@ -104,12 +108,26 @@ function _dvIconBtnStyle() {
     return 'width:22px;height:22px;padding:0;border:none;border-radius:4px;cursor:pointer;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;';
 }
 
+function _dvDashCopyChipHtml(text) {
+    const dash = Context.dashboard;
+    if (dash && typeof dash.copyChipHtml === 'function') {
+        return dash.copyChipHtml(text);
+    }
+    const value = String(text == null ? '' : text).trim();
+    if (!value) {
+        return '<span style="display: inline-block; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--muted-foreground, #64748b); opacity: 0.6;">—</span>';
+    }
+    return '<button type="button" data-wf-dash-copy="' + _dvEscHtml(value) + '" title="Click to copy" style="display: inline-block; max-width: 100%; padding: 3px 8px; border: none; border-radius: 6px; font-size: 11px; color: var(--foreground, #0f172a); background: transparent; text-align: left; overflow-wrap: anywhere; cursor: pointer;">'
+        + _dvEscHtml(value) + '</button>';
+}
+
 function _dvAuthorLineHtml(authorName, authorEmail) {
-    const display = authorName
-        ? _dvEscHtml(authorName) + (authorEmail ? ' · ' + _dvEscHtml(authorEmail) : '')
-        : _dvEscHtml(authorEmail || '—');
-    const title = _dvEscHtml(authorName || '') + (authorEmail ? ' · ' + _dvEscHtml(authorEmail) : '');
-    return `<div class="dv-slot-author" title="${title}">${display}</div>`;
+    const nameChip = authorName ? _dvDashCopyChipHtml(authorName) : '';
+    const emailChip = authorEmail ? _dvDashCopyChipHtml(authorEmail) : '';
+    if (!nameChip && !emailChip) {
+        return `<div class="dv-slot-author">${_dvDashCopyChipHtml('')}</div>`;
+    }
+    return `<div class="dv-slot-author">${nameChip}${emailChip}</div>`;
 }
 
 function _dvSyncSegPressed(modal, attr, stateValue) {
@@ -129,20 +147,15 @@ function _dvPlainPromptHtml(text) {
     return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
 }
 
-function _dvModalityDefaultMinLength() {
-    return _dvState.granularity === 'word' ? DV_HIGHLIGHT_DEFAULT_MIN_WORDS : null;
-}
-
-function _dvApplyModalityHighlightMinDefault() {
-    const def = _dvModalityDefaultMinLength();
-    if (def != null) _dvState.highlightMinLength = def;
+function _dvClampHighlightMinLength(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DV_HIGHLIGHT_DEFAULT_MIN_WORDS;
+    return Math.max(DV_HIGHLIGHT_LENGTH_MIN, Math.min(DV_HIGHLIGHT_LENGTH_MAX, Math.round(n)));
 }
 
 function _dvEffectiveHighlightMinLength() {
     if (!_dvState.showHighlights) return 0;
-    const range = _dvState.highlightLengthRange;
-    if (!range || range.max === 0) return 0;
-    return _dvState.highlightMinLength != null ? _dvState.highlightMinLength : range.min;
+    return _dvClampHighlightMinLength(_dvState.highlightMinLength);
 }
 
 function _dvHighlightLengthUnitLabel() {
@@ -208,7 +221,6 @@ function _dvRefreshHighlightLengthRange(modal) {
     const eng = _dvEngine();
     if (!eng || !_dvState.showHighlights) {
         _dvState.highlightLengthRange = { min: 0, max: 0 };
-        _dvState.highlightMinLength = null;
         _dvSyncHighlightLengthUi(modal);
         return;
     }
@@ -219,7 +231,8 @@ function _dvRefreshHighlightLengthRange(modal) {
     const opts = {
         granularity: _dvState.granularity,
         highlightModality: _dvState.highlightModality,
-        linkSplits: _dvState.linkSplits
+        linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode
     };
     for (const pair of pairs) {
         const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
@@ -231,19 +244,8 @@ function _dvRefreshHighlightLengthRange(modal) {
     }
     if (!allLengths.length) {
         _dvState.highlightLengthRange = { min: 0, max: 0 };
-        _dvState.highlightMinLength = null;
     } else {
         _dvState.highlightLengthRange = { min: globalMin, max: globalMax };
-        if (_dvState.highlightMinLength == null) {
-            const modalityDefault = _dvModalityDefaultMinLength();
-            _dvState.highlightMinLength = modalityDefault != null
-                ? Math.max(modalityDefault, globalMin)
-                : globalMin;
-        } else if (_dvState.highlightMinLength < globalMin) {
-            _dvState.highlightMinLength = globalMin;
-        } else if (_dvState.highlightMinLength > globalMax) {
-            _dvState.highlightMinLength = globalMax;
-        }
     }
     _dvSyncHighlightLengthUi(modal);
 }
@@ -258,7 +260,8 @@ function _dvDiffPair(baseText, compareText, granularity) {
         showHighlights: _dvState.showHighlights,
         highlightModality: _dvState.highlightModality,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
-        linkSplits: _dvState.linkSplits
+        linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode
     });
 }
 
@@ -1131,7 +1134,7 @@ function _dvAttachDragListeners(modal) {
     const onPointerDown = (e) => {
         if (e.button !== 0) return;
         if (_dvState.drag.pending || _dvState.drag.active) return;
-        if (e.target.closest('[data-dv-copy],[data-dv-copy-prompt],[data-dv-minimize],[data-dv-remove],[data-dv-lens-up],[data-dv-lens-down]')) return;
+        if (e.target.closest('[data-dv-copy],[data-wf-dash-copy],[data-dv-copy-prompt],[data-dv-minimize],[data-dv-remove],[data-dv-lens-up],[data-dv-lens-down]')) return;
         const handle = e.target.closest('[data-dv-drag]');
         if (!handle || !modal.contains(handle)) return;
 
@@ -1263,6 +1266,7 @@ function _dvPanelHtml(dash) {
     const btnClass = (variant, size) => (dash.dashBtnClass ? dash.dashBtnClass(variant, size) : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
 
     const gran = _dvState.granularity;
+    const punctMode = _dvState.punctuationMode;
     const compMode = _dvState.compMode;
     const showHighlights = _dvState.showHighlights;
     const highlightModality = _dvState.highlightModality;
@@ -1276,6 +1280,7 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Type', `<div class="dv-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
             ${_dvToggleCell(label, 'Granularity', `<div class="dv-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
+            ${_dvToggleCell(label, 'Punctuation', `<div class="dv-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
             <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Link Splits</div>
                 <div class="dv-seg-group" role="group" aria-label="Link split similarity matches">
@@ -1286,8 +1291,8 @@ function _dvPanelHtml(dash) {
             <div id="dv-highlight-length-wrap" class="dv-highlight-length-wrap" style="display:${showHighlights ? 'flex' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Min Highlight Length</div>
                 <div class="dv-highlight-length-row">
-                    <input type="range" id="dv-highlight-length-slider" min="0" max="0" step="1" value="0"
-                           aria-label="Minimum highlight section length" disabled />
+                    <input type="range" id="dv-highlight-length-slider" min="1" max="50" step="1" value="3"
+                           aria-label="Minimum highlight section length" />
                     <span id="dv-highlight-length-readout" class="dv-highlight-length-readout"></span>
                 </div>
             </div>
@@ -1379,9 +1384,7 @@ function _dvSplitPanelSection(dash, leftHtml, rightHtml) {
 // ── Slot card HTML ──
 
 function _dvKeyCopyHtml(key, taskId) {
-    const value = String(key || taskId || '').trim();
-    if (!value) return '<span class="dv-slot-key-copy dv-slot-key-copy--empty">—</span>';
-    return `<button type="button" class="dv-slot-key-copy dv-slot-key-copy--primary" data-dv-copy="${_dvEscHtml(value)}" title="Click to copy task key">${_dvEscHtml(value)}</button>`;
+    return _dvDashCopyChipHtml(key || taskId);
 }
 
 async function _dvCopyText(text) {
@@ -1463,6 +1466,7 @@ function _dvAboveLabelInnerHtml() {
         showHighlights: _dvState.showHighlights,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
         linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode,
         lengthRange: _dvState.highlightLengthRange
     });
 }
@@ -1478,9 +1482,41 @@ function _dvSetAboveLabelEl(el, inner) {
     }
 }
 
+function _dvPositionAboveLabel(modal) {
+    const el = _dvQ(modal, 'dv-slots-above-label');
+    if (!el) return;
+    const clear = () => {
+        el.style.transform = '';
+    };
+    if (
+        !modal
+        || !_dvState.showHighlights
+        || _dvState.mode !== 'tasks'
+        || _dvState.compMode !== 'rolling'
+        || _dvState.slots.length < 2
+    ) {
+        clear();
+        return;
+    }
+    _dvClampRollingLeft();
+    const leftWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft);
+    const stack = el.parentElement;
+    if (!leftWrap || !stack) {
+        clear();
+        return;
+    }
+    const stackRect = stack.getBoundingClientRect();
+    const leftRect = leftWrap.getBoundingClientRect();
+    let offset = leftRect.left - stackRect.left;
+    const maxOffset = Math.max(0, stackRect.width - el.offsetWidth);
+    offset = Math.max(0, Math.min(offset, maxOffset));
+    el.style.transform = offset ? ('translateX(' + offset + 'px)') : '';
+}
+
 function _dvUpdateAboveLabels(modal) {
     if (!modal) return;
     _dvSetAboveLabelEl(_dvQ(modal, 'dv-slots-above-label'), _dvAboveLabelInnerHtml());
+    _dvPositionAboveLabel(modal);
 }
 
 function _dvSlotHtml(slot, slotIdx) {
@@ -1643,7 +1679,7 @@ function _dvRenderSlotsArea(modal) {
 
 function _dvStashChipHtml(entry, idx, active) {
     const authorHtml = _dvAuthorLineHtml(entry.authorName, entry.authorEmail);
-    const keyLine = _dvEscHtml(entry.key || entry.taskId.slice(0, 12) + '…');
+    const keyHtml = _dvKeyCopyHtml(entry.key, entry.taskId);
     const createdHtml = entry.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', entry.createdAt)}</div>`
         : '';
@@ -1654,7 +1690,7 @@ function _dvStashChipHtml(entry, idx, active) {
     const removeBtnStyle = _dvIconBtnStyle() + 'background:transparent;color:var(--muted-foreground,#64748b);';
     return `<div class="dv-stash-chip${active ? ' dv-stash-chip--active' : ''}" data-dv-stash-chip="${idx}" title="Click to add slot">
         <div class="dv-stash-chip-main">
-            <div class="dv-stash-key">${keyLine}</div>
+            <div class="dv-stash-key">${keyHtml}</div>
             ${authorHtml}
             ${metaHtml}
         </div>
@@ -1879,17 +1915,22 @@ function _dvRemoveRollingOverlay(modal) {
 function _dvUpdateRollingOverlay(modal) {
     if (!modal || !_dvState.showHighlights || _dvState.mode !== 'tasks' || _dvState.compMode !== 'rolling' || _dvState.slots.length < 2) {
         _dvRemoveRollingOverlay(modal);
+        _dvPositionAboveLabel(modal);
         return;
     }
 
     _dvClampRollingLeft();
     const slotsArea = _dvQ(modal, 'dv-slots-area');
-    if (!slotsArea) return;
+    if (!slotsArea) {
+        _dvPositionAboveLabel(modal);
+        return;
+    }
 
     const leftWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft);
     const rightWrap = _dvGetSlotWrap(modal, _dvState.rollingLeft + 1);
     if (!leftWrap || !rightWrap) {
         _dvRemoveRollingOverlay(modal);
+        _dvPositionAboveLabel(modal);
         return;
     }
 
@@ -1913,6 +1954,7 @@ function _dvUpdateRollingOverlay(modal) {
     overlay.style.top = top + 'px';
     overlay.style.width = Math.max(0, right - left) + 'px';
     overlay.style.height = Math.max(0, bottom - top) + 'px';
+    _dvPositionAboveLabel(modal);
 }
 
 function _dvScheduleReelLensSync(modal) {
@@ -2067,6 +2109,10 @@ function _dvSyncGranularityUi(modal) {
     _dvSyncSegPressed(modal, 'data-dv-seg', _dvState.granularity);
 }
 
+function _dvSyncPunctuationUi(modal) {
+    _dvSyncSegPressed(modal, 'data-dv-punctuation', _dvState.punctuationMode);
+}
+
 function _dvSyncHighlightModalityUi(modal) {
     if (!modal) return;
     _dvSyncSegPressed(modal, 'data-dv-highlight-modality', _dvState.highlightModality);
@@ -2105,21 +2151,13 @@ function _dvSyncHighlightLengthUi(modal) {
         return;
     }
     wrap.style.display = 'flex';
-    const range = _dvState.highlightLengthRange;
+    const current = _dvClampHighlightMinLength(_dvState.highlightMinLength);
+    _dvState.highlightMinLength = current;
     const unit = _dvHighlightLengthUnitLabel();
-    if (!range || range.max === 0) {
-        slider.disabled = true;
-        slider.min = '0';
-        slider.max = '0';
-        slider.value = '0';
-        if (readout) readout.textContent = 'No highlight sections';
-        return;
-    }
-    const current = _dvState.highlightMinLength != null ? _dvState.highlightMinLength : range.min;
-    slider.min = String(range.min);
-    slider.max = String(range.max);
+    slider.min = String(DV_HIGHLIGHT_LENGTH_MIN);
+    slider.max = String(DV_HIGHLIGHT_LENGTH_MAX);
     slider.value = String(current);
-    slider.disabled = range.min === range.max;
+    slider.disabled = false;
     if (readout) readout.textContent = '≥ ' + current + ' ' + unit;
 }
 
@@ -2201,13 +2239,28 @@ function _dvAttachListeners(modal) {
             return;
         }
 
+        // ── Punctuation toggle ──
+        const punctBtn = e.target.closest('[data-dv-punctuation]');
+        if (punctBtn && modal.contains(punctBtn)) {
+            const punctMode = punctBtn.getAttribute('data-dv-punctuation');
+            if (punctMode !== _dvState.punctuationMode) {
+                _dvState.punctuationMode = punctMode;
+                try { Storage.setData(DV_PUNCTUATION_KEY, punctMode); } catch (_e) { /* no-op */ }
+                _dvSyncPunctuationUi(modal);
+                _dvRenderDiffs(modal);
+                _dvUpdateAboveLabels(modal);
+                if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
+                Logger.log('diff-viewer: punctuation → ' + punctMode);
+            }
+            return;
+        }
+
         // ── Highlight modality toggle ──
         const modalityBtn = e.target.closest('[data-dv-highlight-modality]');
         if (modalityBtn && modal.contains(modalityBtn)) {
             const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
             if (modality !== _dvState.highlightModality) {
                 _dvState.highlightModality = modality;
-                _dvApplyModalityHighlightMinDefault();
                 try { Storage.setData(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
                 _dvSyncHighlightModalityUi(modal);
                 _dvRenderDiffs(modal);
@@ -2314,7 +2367,8 @@ function _dvAttachListeners(modal) {
 
         // ── Stash chip click (add slot) ──
         const stashChip = e.target.closest('[data-dv-stash-chip]');
-        if (stashChip && modal.contains(stashChip) && !e.target.closest('[data-dv-stash-remove]')) {
+        if (stashChip && modal.contains(stashChip)
+            && !e.target.closest('[data-dv-stash-remove],[data-dv-copy],[data-wf-dash-copy]')) {
             const idx = parseInt(stashChip.getAttribute('data-dv-stash-chip'), 10);
             const entry = _dvState.stash[idx];
             if (entry) {
@@ -2334,15 +2388,8 @@ function _dvAttachListeners(modal) {
         const stashClear = e.target.closest('[data-dv-stash-clear]');
         if (stashClear && modal.contains(stashClear)) {
             e.stopPropagation();
-            const stashCount = _dvState.stash.length;
-            if (stashCount === 0) return;
-            const slotCount = _dvState.slots.length;
-            let msg = 'Clear ' + stashCount + ' stashed task' + (stashCount === 1 ? '' : 's');
-            if (slotCount > 0) {
-                msg += ' and remove ' + slotCount + ' comparison slot' + (slotCount === 1 ? '' : 's');
-            }
-            msg += '?';
-            if (confirm(msg)) _dvClearStash(modal);
+            if (_dvState.stash.length === 0) return;
+            _dvClearStash(modal);
             return;
         }
 
@@ -2400,12 +2447,12 @@ function _dvAttachListeners(modal) {
         lengthSlider.addEventListener('input', () => {
             const val = parseInt(lengthSlider.value, 10);
             if (!Number.isFinite(val)) return;
-            _dvState.highlightMinLength = val;
+            _dvState.highlightMinLength = _dvClampHighlightMinLength(val);
             _dvSyncHighlightLengthUi(modal);
             _dvRenderDiffs(modal);
             _dvUpdateAboveLabels(modal);
             if (_dvState.mode === 'free-text') _dvRenderFreeTextDiff(modal);
-            Logger.log('diff-viewer: highlight min length → ' + val);
+            Logger.log('diff-viewer: highlight min length → ' + _dvState.highlightMinLength);
         });
     }
 
@@ -2574,6 +2621,7 @@ function _dvInjectStyles() {
         '  flex-wrap: wrap;',
         '  width: fit-content;',
         '  max-width: 100%;',
+        '  transition: transform 0.25s cubic-bezier(0.37, 0, 0.63, 1);',
         '}',
         '#wf-dash-modal .dv-slot-above-label-sim {',
         '  font-size: 9px;',
@@ -2650,12 +2698,13 @@ function _dvInjectStyles() {
         '  border: 1px solid var(--brand, #2563eb) !important;',
         '}',
         '#wf-dash-modal .dv-slot-author {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  flex-wrap: wrap;',
+        '  gap: 4px;',
         '  margin-top: 3px;',
-        '  font-size: 10px;',
-        '  color: var(--muted-foreground, #64748b);',
-        '  white-space: nowrap;',
-        '  overflow: hidden;',
-        '  text-overflow: ellipsis;',
+        '  min-width: 0;',
+        '  max-width: 100%;',
         '}',
         '#wf-dash-modal .dv-slot-meta {',
         '  display: flex;',
@@ -2705,15 +2754,11 @@ function _dvInjectStyles() {
         '  overflow: hidden;',
         '}',
         '#wf-dash-modal .dv-stash-key {',
-        '  font-size: 11px;',
-        '  font-weight: 600;',
-        '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
-        '  color: var(--foreground, #f8fafc);',
-        '  white-space: nowrap;',
+        '  min-width: 0;',
+        '  max-width: 100%;',
         '  overflow: hidden;',
-        '  text-overflow: ellipsis;',
         '}',
-        '#wf-dash-modal .dv-stash-chip--active .dv-stash-key {',
+        '#wf-dash-modal .dv-stash-chip--active .dv-stash-key [data-wf-dash-copy] {',
         '  color: #22c55e;',
         '}',
         '#wf-dash-modal .dv-slot-created {',
@@ -2782,35 +2827,6 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal #dv-right.dv-highlights-off .dv-rolling-overlay {',
         '  display: none !important;',
-        '}',
-        '#wf-dash-modal .dv-slot-key-copy {',
-        '  display: block;',
-        '  width: 100%;',
-        '  padding: 0;',
-        '  border: none;',
-        '  border-radius: 0;',
-        '  font-size: 11px;',
-        '  font-weight: 600;',
-        '  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;',
-        '  color: var(--foreground, #f8fafc);',
-        '  background: transparent;',
-        '  text-align: left;',
-        '  overflow-wrap: anywhere;',
-        '  word-break: break-all;',
-        '  white-space: nowrap;',
-        '  overflow: hidden;',
-        '  text-overflow: ellipsis;',
-        '  cursor: pointer;',
-        '  box-sizing: border-box;',
-        '}',
-        '#wf-dash-modal .dv-slot-key-copy--empty {',
-        '  display: inline-block;',
-        '  font-size: 11px;',
-        '  font-weight: 600;',
-        '  color: var(--foreground, #f8fafc);',
-        '}',
-        '#wf-dash-modal .dv-slot-key-copy:hover {',
-        '  color: var(--brand, #2563eb);',
         '}',
         '#wf-dash-modal .dv-reel {',
         '  display: grid;',
@@ -3095,7 +3111,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '3.3',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3124,6 +3140,14 @@ const plugin = {
         try {
             const stored = Storage.getData(DV_GRANULARITY_KEY, null);
             if (stored === 'char' || stored === 'word') _dvState.granularity = stored;
+        } catch (_e) { /* no-op */ }
+
+        // Restore persisted punctuation mode (default ignore)
+        try {
+            const storedPunct = Storage.getData(DV_PUNCTUATION_KEY, null);
+            if (storedPunct === 'ignore' || storedPunct === 'highlight') {
+                _dvState.punctuationMode = storedPunct;
+            }
         } catch (_e) { /* no-op */ }
 
         // Restore persisted comparison mode

@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.12
+// @version      12.4.13
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -26,10 +26,8 @@
 (function() {
     'use strict';
 
-    // noVNC / embedded env instances live on *.env.*.fleetai.com (also used before full bootstrap in iframes).
     const NOVNC_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 
-    // Exit immediately if inside a non-env iframe; env-subdomain iframes run minimal FOS clipboard bootstrap only.
     if (window.top != window.self) {
         if (!NOVNC_HOST_PATTERN.test(window.location.hostname)) {
             console.warn("[Fleet UX Enhancer] - iframe detected. Terminating duplicate script instance. This is normal.");
@@ -40,12 +38,11 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.12';
+    const VERSION = '12.4.13';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
     };
-    /** Extension-owned data keys (formerly page localStorage `fleet-ux:*`); stored in GM via Storage.getData/setData. */
     const SCRIPT_DATA_KEY_REGISTRY = [
         'fleet-ux:ops-team-search-next-action',
         'fleet-ux:ops-team-search-router-state',
@@ -84,7 +81,6 @@
         'fleet-ux:supabase-project-ref',
         'fleet-ux:supabase-access-token'
     ];
-    /** Page localStorage keys that must stay on the page (dev script handshake). Never migrated or cleared by us. */
     const DEV_HANDSHAKE_PAGE_LS_ALLOWLIST = new Set([
         'fleet-dev-branch-id',
         'fleet-dev-active-branch',
@@ -93,14 +89,10 @@
     ]);
     const LOG_PREFIX = '[Fleet UX Enhancer]';
     
-    // Base URL that matches the @match pattern (without trailing wildcard)
     const BASE_URL = 'https://www.fleetai.com/';
 
-    // noVNC instances run on a separate subdomain origin; return a synthetic path so
-    // the archetype detection pipeline can still match them via urlPattern.
     const NOVNC_SYNTHETIC_PATH = '_novnc';
     
-    // GitHub repository configuration
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
@@ -110,13 +102,10 @@
         devPath: 'dev',
         archetypesPath: 'archetypes.json'
     };
-    // Branches that behave like main: run immediately, no dev-ID check, no dev-only features (test-update simulates main for testing).
     const MAIN_LIKE_BRANCHES = ['main', 'test-update'];
     const DEV_SCRIPTS_ENABLED = !MAIN_LIKE_BRANCHES.includes(GITHUB_CONFIG.branch);
-    /** GM storage defaults when log keys are unset; dev builds default verbose on, main stays silent. */
     const DEFAULT_STORAGE_LOG_VERBOSE = DEV_SCRIPTS_ENABLED ? true : false;
     const DEFAULT_STORAGE_SUBMODULE_LOGGING = DEV_SCRIPTS_ENABLED;
-    /** When unset in storage: both off by default (site-native refresh UX; GitHub #78). */
     const DEFAULT_PAGE_REFRESH_CONFIRMATION = false;
     const DEFAULT_EXTENSION_REFRESH_CONFIRMATION = false;
 
@@ -131,12 +120,9 @@
         outdatedPlugins: [],
         isOutdated: false,
         latestVersion: null,
-        /** When true (from archetypes.json coreOnlyMode), skip archetype plugins and SPA full reload; core plugins (e.g. settings UI) still run. */
         coreOnlyMode: false,
         isDevBranch: DEV_SCRIPTS_ENABLED,
-        /** Default for `page-refresh-confirmation-enabled` when the key is unset (GM storage). */
         defaultPageRefreshConfirmation: DEFAULT_PAGE_REFRESH_CONFIRMATION,
-        /** Default for `extension-refresh-confirmation-enabled` when the key is unset (GM storage). */
         defaultExtensionRefreshConfirmation: DEFAULT_EXTENSION_REFRESH_CONFIRMATION,
         githubBranch: GITHUB_CONFIG.branch,
         githubOwner: GITHUB_CONFIG.owner,
@@ -146,15 +132,12 @@
         openInTab: (url, options) => GM_openInTab(url, options),
         storageKeys: SHARED_STORAGE_KEYS,
         settingsModalDocs: {},
-        /** From archetypes.json `logs` + per-plugin `log`; defaults until fetch completes. */
         remoteLogging: { debug: false, verbose: false, submodule: false },
-        /** Filenames (archetypes `name`) with `log: true` */
         remoteModuleLogByFile: {},
         opsAccess: null,
-        /** From archetypes.json `opsSecrets` (encrypted secrets file path). */
         opsSecrets: null,
-        /** True after ops dashboard plugins are fetched and initialized this session. */
         opsDashboardPluginsLoaded: false,
+        isExternalInstanceHost: NOVNC_HOST_PATTERN.test(window.location.hostname),
     };
 
     const RefreshGuard = {

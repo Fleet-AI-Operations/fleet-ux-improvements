@@ -236,6 +236,10 @@ function dashFleetTaskUrl(taskId) {
     const id = String(taskId || '').trim();
     return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/tasks/${encodeURIComponent(id)}` : '';
 }
+function dashFleetViewTaskUrl(taskId) {
+    const id = String(taskId || '').trim();
+    return id ? `${DASH_FLEET_ORIGIN}/work/problems/view-task/${encodeURIComponent(id)}` : '';
+}
 function dashFleetProjectUrl(projectId) {
     const id = String(projectId || '').trim();
     return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
@@ -332,10 +336,11 @@ const searchOutputResultsPaneMethods = {
                                 <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 1 auto;"></div>
                                 <div id="wf-dash-results-prefetch-banner" style="display: none; flex: 0 1 auto;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
-                                <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Diff Included Results</button>
+                                <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Diff Included Results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Export JSON</button>
+                                <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}">Retrieve Clipboard</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                             </div>
@@ -1313,7 +1318,8 @@ const searchOutputResultsPaneMethods = {
                 beforeLocal: committed.beforeLocal,
                 searchKinds: committed.searchKinds,
                 retrieveMode: committed.retrieveMode,
-                retrieveLabel: committed.retrieveLabel
+                retrieveLabel: committed.retrieveLabel,
+                retrieveCount: committed.retrieveCount
             },
             view: {
                 resultsKindTab: this._state.resultsKindTab || 'all',
@@ -1867,8 +1873,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _taskViewReferer(taskId) {
-        const tid = String(taskId || '').trim();
-        return DASH_FLEET_ORIGIN + '/work/problems/view-task/' + encodeURIComponent(tid);
+        return dashFleetViewTaskUrl(taskId);
     },
 
     async _fetchScreenshotViewUrls(taskId, s3Keys) {
@@ -3444,7 +3449,8 @@ const searchOutputResultsPaneMethods = {
         const key = String(task && task.key || '').trim();
         const inner = '<span class="wf-dash-card-key-tab-inner">'
             + this._cardKeyCopyHtml(key, highlightOpts || {})
-            + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
+            + this._taskOpenLinkHtml(task, itemId)
+            + this._taskPublicViewLinkHtml(task, { flushHorizontal: true })
             + '</span>';
         return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
             noHorizontalPadding: true,
@@ -5121,7 +5127,11 @@ const searchOutputResultsPaneMethods = {
             const committed = s.committed;
             const retrieving = committed && committed.retrieveMode;
             const detail = retrieving
-                ? ('task: ' + (committed.retrieveLabel || ''))
+                ? (() => {
+                    const count = Number(committed.retrieveCount) || 0;
+                    const prefix = count > 1 ? ('tasks (' + count + '): ') : 'task: ';
+                    return prefix + (committed.retrieveLabel || '');
+                })()
                 : this._searchStatusDetail(committed);
             const verb = retrieving ? 'Retrieving' : 'Searching';
             el.innerHTML = detail
@@ -5159,7 +5169,11 @@ const searchOutputResultsPaneMethods = {
                 const countLabel = s.filteredItems.length === scopeTotal
                     ? s.filteredItems.length + ' result(s)'
                     : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
-                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved task ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
+                const retrieveCount = Number(committed.retrieveCount) || 0;
+                const taskWord = retrieveCount === 1 || !retrieveCount
+                    ? 'task'
+                    : 'tasks';
+                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved ${taskWord} ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
                 return;
             }
             const authorLabel = committed.ratingsEveryone
@@ -5328,7 +5342,7 @@ const searchOutputResultsPaneMethods = {
         if (!taskId) return '';
         const teamId = String(task.teamId || '').trim();
         const ui = this._getTaskOpenUi(taskId);
-        const title = 'Open task in Fleet';
+        const title = 'Open task in back end';
         const flushStyle = opts.flushHorizontal
             ? ' border-radius: 0 6px 0 0; width: ' + DASH_CARD_TAB_HEIGHT + '; height: ' + DASH_CARD_TAB_HEIGHT + ';'
             : '';
@@ -5342,6 +5356,20 @@ const searchOutputResultsPaneMethods = {
         return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}" style="${flushStyle}">`
             + `${this._extLinkIconSvg(true)}`
             + `</button>`;
+    },
+
+    _taskPublicViewLinkHtml(task, options) {
+        const opts = options || {};
+        const taskId = String(task && task.id || '').trim();
+        const href = dashFleetViewTaskUrl(taskId);
+        if (!href) return '';
+        const title = 'Open public view task link';
+        const flushStyle = opts.flushHorizontal
+            ? ' border-radius: 0 6px 0 0; width: ' + DASH_CARD_TAB_HEIGHT + '; height: ' + DASH_CARD_TAB_HEIGHT + ';'
+            : '';
+        return `<a href="${dashEscHtml(href)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}" style="${flushStyle}">`
+            + `${this._extLinkIconSvg(true)}`
+            + `</a>`;
     },
 
     _labelSpan(text) {
@@ -6380,7 +6408,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.10',
+    _version: '5.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

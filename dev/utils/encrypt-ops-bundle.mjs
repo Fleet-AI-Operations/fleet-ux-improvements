@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 //
-// encrypt-ops-bundle.mjs — Encrypt local/ops-bundle.json → ops-secrets.enc.json
+// encrypt-ops-bundle.mjs — Encrypt local/secrets/ops-bundle.json → ops-secrets.enc.json
 //
-// Password (first match): --password, OPS_PASSWORD env, local/PostgREST/password, prompt
+// Password (first match): --password, OPS_PASSWORD env, local/secrets/password, prompt
 //
-// Plaintext (gitignored):  local/ops-bundle.json
+// Plaintext (gitignored):  local/secrets/ops-bundle.json
 // Committed ciphertext:    ops-secrets.enc.json
 
 import fs from 'fs';
@@ -15,8 +15,8 @@ import { decryptWithPassword, encryptWithPassword, FORMAT_PREFIX } from './ops-p
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '../..');
-const BUNDLE_PATH = path.join(root, 'local', 'ops-bundle.json');
-const PASSWORD_PATH = path.join(root, 'local', 'PostgREST', 'password');
+const BUNDLE_PATH = path.join(root, 'local', 'secrets', 'ops-bundle.json');
+const PASSWORD_PATH = path.join(root, 'local', 'secrets', 'password');
 const ENCRYPTED_PATH = path.join(root, 'ops-secrets.enc.json');
 
 function usage() {
