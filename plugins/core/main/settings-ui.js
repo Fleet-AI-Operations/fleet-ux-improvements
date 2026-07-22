@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.10',
+    _version: '10.11',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -128,16 +128,13 @@ const plugin = {
         style.textContent = `
             #wf-settings-modal {
                 margin: 0;
-                /* Isolate from host theme tokens (e.g. shadcn HSL components) so fills stay opaque */
-                --background: #ffffff;
-                --foreground: #333333;
-                --muted-foreground: #666666;
-                --border: #e5e5e5;
-                --card: #fafafa;
-                --hover: #f0f0f0;
-                --border-hover: #d1d5db;
-                --brand: #4f46e5;
-                --brand-hover: #4338ca;
+            }
+            /* Opaque theme-aware fills: HSL-component hosts, full-color hosts, or solid fallback */
+            #wf-settings-content,
+            #wf-settings-sticky-header {
+                background-color: #ffffff;
+                background-color: hsl(var(--background, 0 0% 100%));
+                background-color: var(--background, #ffffff);
             }
             #wf-settings-modal::backdrop {
                 background: rgba(0, 0, 0, 0.45);
@@ -405,7 +402,6 @@ const plugin = {
         `;
 
         const contentStyle = `
-            background: #ffffff;
             border: 1px solid var(--border, #e5e5e5);
             border-radius: 12px;
             padding: 24px;
@@ -567,7 +563,7 @@ const plugin = {
         modal.innerHTML = `
             <div id="wf-settings-content" style="${contentStyle}">
             <!-- Sticky Header -->
-            <div style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: #ffffff; border-bottom: 1px solid var(--border, #e5e5e5); z-index: 1;">
+            <div id="wf-settings-sticky-header" style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; border-bottom: 1px solid var(--border, #e5e5e5); z-index: 1;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                     <div>
                         <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0;">Fleet Enhancer Extension</h2>
