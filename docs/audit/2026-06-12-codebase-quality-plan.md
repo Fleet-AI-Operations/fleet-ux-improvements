@@ -143,7 +143,7 @@ Effort bands: **S** (<2 h) · **M** (half day) · **L** (multi-day) · **XL** (a
 - **Problem:** Both `_dashPostgrestListGet` (search-output 552) and `_opsPostgrestGet` (ops-tab 789–791) build the URL directly as `baseUrl + '/' + table` using a literal table-name string — bypassing `resolveTable`/`postgrestQuery` bundle keys. Project rules require all table access to go through those helpers so table names don't appear in committed plaintext.
 - **Evidence (verified at cited lines).**
 - **Fix:** Add query keys for `team_member.select_team_catalog` and `task_scenarios.select_by_id` to the ops bundle; route calls through `postgrestQuery`; delete the literal table strings. Re-encrypt bundle with `dev/utils/encrypt-ops-bundle.sh`.
-- **Files:** `search-output.js`, `ops-tab.js`, `local/ops-bundle.json` (→ `ops-secrets.enc.json`)
+- **Files:** `search-output.js`, `ops-tab.js`, `local/secrets/ops-bundle.json` (→ `ops-secrets.enc.json`)
 - **Verification:** Grep `plugins/core/main/` for `'team_member'`, `'task_scenarios'` → zero hits; ops flows work after unlock.
 - **Dependencies:** FINDING-009 (duplicate client uses the same pattern).
 

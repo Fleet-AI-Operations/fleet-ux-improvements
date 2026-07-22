@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# encrypt-ops-bundle.sh — Encrypt local/ops-bundle.json → ops-secrets.enc.json
+# encrypt-ops-bundle.sh — Encrypt local/secrets/ops-bundle.json → ops-secrets.enc.json
 #
-# Password: local/PostgREST/password (see local/PostgREST/OPS-ENCRYPT-INSTRUCTIONS.md)
+# Password: local/secrets/password (see local/secrets/OPS-ENCRYPT-INSTRUCTIONS.md)
 #
 # Usage:
 #   ./dev/utils/encrypt-ops-bundle.sh encrypt
