@@ -82,8 +82,7 @@ const searchOutputStatsPaneMethods = {
         return ''
             + '<div id="wf-dash-stats-warnings" style="display: none; flex-direction: column; gap: 6px; flex-shrink: 0;"></div>'
             + '<div id="wf-dash-stats-toolbar" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0;">'
-            + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;">'
-            + this._statsScopeToggleHtml()
+            + '<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px; min-width: 0; flex: 1 1 auto;">'
             + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 0 1 auto;"></div>'
             + '<div id="wf-dash-stats-dashboard-switcher" style="display: none; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;">'
             + '<select id="wf-dash-stats-dashboard-select" data-wf-dash-stats-dashboard-select="1" aria-label="Dashboard" style="max-width: 160px; min-width: 100px; box-sizing: border-box; padding: 2px 6px; font-size: 11px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);"></select>'
@@ -99,6 +98,7 @@ const searchOutputStatsPaneMethods = {
             + '<button type="button" data-wf-dash-stats-export-dashboard-image="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export image</button>'
             + '<button type="button" data-wf-dash-stats-import-json="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Import JSON</button>'
             + '<button type="button" data-wf-dash-stats-build="1" class="' + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;">Build Chart</button>'
+            + this._statsScopeToggleHtml()
             + '</div>'
             + '</div>'
             + '<div id="wf-dash-stats-empty" style="display: none; flex: 1; min-height: 0; align-items: center; justify-content: center; text-align: center; font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;"></div>'
@@ -6065,7 +6065,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.10',
+    _version: '12.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
