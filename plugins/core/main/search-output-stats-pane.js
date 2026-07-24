@@ -2943,34 +2943,31 @@ const searchOutputStatsPaneMethods = {
             document.head.appendChild(style);
         }
         style.textContent = ''
-            + '.wf-dash-stats-chart-card { display: flex; flex-direction: column; }'
-            + '.wf-dash-stats-chart-header { display: flex; flex-wrap: wrap; align-items: center; column-gap: 8px; row-gap: 6px; margin-bottom: 8px; }'
-            + '.wf-dash-stats-chart-header-title { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; max-width: 100%; }'
+            + '.wf-dash-stats-chart-card { display: flex; flex-direction: column; min-width: 0; }'
+            + '.wf-dash-stats-chart-header { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; max-width: 100%; }'
+            + '.wf-dash-stats-chart-header-title { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; }'
             + '.wf-dash-stats-chart-header-text { font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }'
             + '.wf-dash-stats-chart-move { display: inline-flex; flex-direction: row; align-items: center; gap: 2px; flex-shrink: 0; }'
             + '.wf-dash-stats-chart-move button:disabled { opacity: 0.35; cursor: not-allowed; }'
-            + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; flex: 0 0 auto; margin-left: auto; max-width: 100%; }'
-            + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: flex-end; margin-top: auto; max-width: 100%;'
+            + '.wf-dash-stats-chart-header-actions { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; justify-content: flex-end;'
+            + ' flex: 0 1 auto; margin-left: auto; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: hidden;'
+            + ' -webkit-overflow-scrolling: touch; }'
+            + '.wf-dash-stats-chart-header-actions > * { flex-shrink: 0; }'
+            + '.wf-dash-stats-chart-footer { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; justify-content: flex-end;'
+            + ' margin-top: auto; max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;'
+            + ' -webkit-overflow-scrolling: touch;'
             + ' position: sticky; bottom: 0; z-index: 3; padding: 8px 0 2px; background: var(--card, #fff); }'
+            + '.wf-dash-stats-chart-footer > * { flex-shrink: 0; }'
             + '.wf-dash-stats-chart-copy-select { cursor: pointer; }'
-            + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }'
-            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-title { flex: 1 1 100%; }'
-            + '.wf-dash-stats-chart-header.wf-dash-stats-chart-header--actions-wrap .wf-dash-stats-chart-header-actions { flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }';
+            + '.wf-dash-stats-chart-delete { border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 4px; flex-shrink: 0; }';
     },
 
     _syncStatsChartCardHeader(card) {
-        const header = card && card.querySelector('.wf-dash-stats-chart-header');
-        const titleRow = card && card.querySelector('.wf-dash-stats-chart-header-title');
-        const actions = card && card.querySelector('.wf-dash-stats-chart-header-actions');
-        if (!header || !titleRow || !actions) return;
-        header.classList.remove('wf-dash-stats-chart-header--actions-wrap', 'wf-dash-stats-chart-header--actions-stack');
-        let actionsNaturalWidth = 0;
-        actions.querySelectorAll('button').forEach((btn, index) => {
-            actionsNaturalWidth += btn.offsetWidth + (index > 0 ? 6 : 0);
-        });
-        const needsWrap = titleRow.scrollWidth + actionsNaturalWidth + 8 > header.clientWidth + 1;
-        if (needsWrap) {
-            header.classList.add('wf-dash-stats-chart-header--actions-wrap');
+        // Header/footer actions side-scroll when narrow; no wrap/stack class toggles.
+        if (!card) return;
+        const header = card.querySelector('.wf-dash-stats-chart-header');
+        if (header) {
+            header.classList.remove('wf-dash-stats-chart-header--actions-wrap', 'wf-dash-stats-chart-header--actions-stack');
         }
     },
 
@@ -6065,7 +6062,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.11',
+    _version: '12.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
