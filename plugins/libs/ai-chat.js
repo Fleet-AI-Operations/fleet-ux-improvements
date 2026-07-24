@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '4.1';
+const AI_CHAT_VERSION = '5.0';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -1557,14 +1557,43 @@ async function aiChatSendToolTurn(root, state, opts) {
     let forceFinalize = false;
     let forcedFinalizeAttempts = 0;
     const maxForcedFinalizeAttempts = 2;
+    let cumulativeToolResultBytes = 0;
+    let lastNonFinalToolNames = [];
 
     const notifyActivity = (payload) => {
+        const enriched = Object.assign({
+            maxRounds,
+            remainingRounds: Math.max(0, maxRounds - round),
+            cumulativeToolResultBytes,
+        }, payload || {});
         if (typeof o.onToolActivity === 'function') {
-            try { o.onToolActivity(payload); } catch (_e) { /* ignore */ }
+            try { o.onToolActivity(enriched); } catch (_e) { /* ignore */ }
         }
         if (typeof opts.onToolActivity === 'function' && opts.onToolActivity !== o.onToolActivity) {
-            try { opts.onToolActivity(payload); } catch (_e) { /* ignore */ }
+            try { opts.onToolActivity(enriched); } catch (_e) { /* ignore */ }
         }
+    };
+
+    const injectBudgetHint = (roundsUsed) => {
+        const remaining = Math.max(0, maxRounds - roundsUsed);
+        state.messages.push({
+            role: 'user',
+            content: '[Budget] Tool rounds used: ' + roundsUsed + '/' + maxRounds
+                + '. Remaining: ' + remaining
+                + '. Parallel tool calls in one model response share one round.'
+                + (remaining === 0
+                    ? ' No rounds left after this — call ' + finalizeName
+                        + '({ markdown }) NOW. If the analysis is incomplete, say so explicitly;'
+                        + ' do NOT invent exhaustive zero/none conclusions from partial samples.'
+                    : remaining <= 2
+                        ? ' Low budget. If remaining rounds cannot finish exhaustively, call '
+                            + finalizeName + ' now stating incompleteness and what remains'
+                            + ' (do not claim “none” from partial samples).'
+                        : ' If you will need more than ' + remaining
+                            + ' rounds to finish, call ' + finalizeName
+                            + ' now and ask the operator to raise Max tool rounds.'),
+            hideInUi: true,
+        });
     };
 
     const syncWorking = (label) => {
@@ -1814,6 +1843,7 @@ async function aiChatSendToolTurn(root, state, opts) {
                     resultStr = JSON.stringify({ error: errMsg });
                 }
                 const bytes = resultStr ? resultStr.length : 0;
+                cumulativeToolResultBytes += bytes;
                 notifyActivity({
                     round,
                     name: name || 'unknown',
@@ -1828,17 +1858,35 @@ async function aiChatSendToolTurn(root, state, opts) {
                     hideInUi: true,
                 });
             }
+            lastNonFinalToolNames = toolCalls.map((tc) =>
+                (tc && tc.function && tc.function.name) ? String(tc.function.name) : '?'
+            );
             state.streaming = true;
             if (round >= maxRounds) {
-                if (!queueForcedFinalize('exceeded max tool rounds without ' + finalizeName)) {
+                if (!queueForcedFinalize(
+                    'exceeded max tool rounds (' + maxRounds
+                        + ') without ' + finalizeName
+                        + '; last tools=[' + lastNonFinalToolNames.join(', ') + ']'
+                        + '. Call ' + finalizeName
+                        + ' with an INCOMPLETE-status answer — do not invent zero/none from partial work.'
+                )) {
                     break;
                 }
+            } else {
+                injectBudgetHint(round);
             }
         }
 
         Logger.warn(o.logTag + ': tool loop ended without ' + finalizeName + ' — soft fallback');
         return await deliverFinalAnswer(
-            'I reached the tool-round limit before finishing. Please try a narrower question.',
+            'I reached the tool-round limit (' + maxRounds
+                + ' rounds) before finishing an exhaustive answer.'
+                + (lastNonFinalToolNames.length
+                    ? ' Last tools: ' + lastNonFinalToolNames.join(', ') + '.'
+                    : '')
+                + ' Partial tool activity is listed in the Tool activity panel.'
+                + ' I am **not** claiming a complete zero/none result — raise Max tool rounds'
+                + ' or narrow the question and try again.',
             'soft-fallback'
         );
     } catch (err) {
@@ -1909,7 +1957,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '4.1',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
