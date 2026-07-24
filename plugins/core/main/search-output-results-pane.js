@@ -332,7 +332,8 @@ const searchOutputResultsPaneMethods = {
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
                                 <span id="wf-dash-results-status" style="${label} margin: 0; min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Set search parameters on the left, then press Search.</span>
                             </div>
-                            <div style="${this._resultsHeaderActionsScrollStyle()}">
+                            <div style="${this._resultsHScrollOuterStyle('flex: 1 1 0;')}">
+                                <div style="${this._resultsHScrollTrackStyle(8)}">
                                 <div id="wf-dash-results-hydrate-banner" style="display: none; flex-shrink: 0;"></div>
                                 <div id="wf-dash-results-prefetch-banner" style="display: none; flex-shrink: 0;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
@@ -343,10 +344,11 @@ const searchOutputResultsPaneMethods = {
                                 <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Retrieve Clipboard</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
+                                </div>
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
-                            <div id="wf-dash-results-pager-slot-kind" style="${this._resultsPagerSlotStyle()}">
+                            <div id="wf-dash-results-pager-slot-kind" style="${this._resultsHScrollOuterStyle()}">
                                 <div id="wf-dash-results-pager" style="${this._resultsPagerStyle()}">
                                     <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Version</span>
@@ -3782,28 +3784,26 @@ const searchOutputResultsPaneMethods = {
             + ' width: 100%; max-width: 100%; padding: 8px 0 0; min-width: 0; box-sizing: border-box;';
     },
 
-    _resultsHeaderActionsScrollStyle() {
-        return 'display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0;'
-            + ' flex-wrap: nowrap; justify-content: flex-end; overflow-x: auto; overflow-y: hidden;'
-            + ' -webkit-overflow-scrolling: touch;';
+    _resultsHScrollOuterStyle(extra) {
+        return 'min-width: 0; max-width: 100%; width: 100%; overflow-x: auto; overflow-y: hidden;'
+            + ' -webkit-overflow-scrolling: touch;' + (extra || '');
+    },
+
+    _resultsHScrollTrackStyle(gapPx) {
+        const gap = gapPx != null ? gapPx : 8;
+        return 'display: flex; flex-wrap: nowrap; align-items: center; gap: ' + gap + 'px;'
+            + ' width: max-content; min-width: 100%; justify-content: flex-end; box-sizing: border-box;';
     },
 
     _resultsToolbarRow2Style() {
-        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: flex-end; gap: 8px;'
-            + ' width: 100%; max-width: 100%; box-sizing: border-box;'
-            + ' flex-wrap: nowrap; min-width: 0; overflow-x: auto; overflow-y: hidden;'
-            + ' -webkit-overflow-scrolling: touch;';
-    },
-
-    _resultsPagerSlotStyle() {
-        return 'flex: 1 1 auto; min-width: 0; max-width: 100%; width: 100%; display: flex;'
-            + ' align-items: center; justify-content: flex-end; flex-wrap: nowrap;'
-            + ' overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;';
+        return 'display: none; padding: 4px 0 0; width: 100%; max-width: 100%; box-sizing: border-box;'
+            + ' min-width: 0;';
     },
 
     _resultsPagerStyle() {
-        return 'display: none; align-items: center; gap: 8px; flex-wrap: nowrap;'
-            + ' flex: 0 0 auto; flex-shrink: 0; width: max-content; min-width: max-content;';
+        const gap = 8;
+        return 'display: none; flex-wrap: nowrap; align-items: center; gap: ' + gap + 'px;'
+            + ' width: max-content; min-width: 100%; justify-content: flex-end; box-sizing: border-box;';
     },
 
     _getCardUi(taskId) {
@@ -6430,7 +6430,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.16',
+    _version: '5.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
