@@ -1,7 +1,7 @@
 {
-  "version": "12.4.13",
+  "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.154",
+  "archetypesVersion": "14.156",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -138,14 +138,14 @@
     },
     {
       "name": "vnc-helper.js",
-      "version": "2.0",
-      "hash": "sha256-62b6e3872580124ac37eeff55859edd76f74a471595707793e6b793901eb5f35",
+      "version": "2.1",
+      "hash": "sha256-c14de75946f1ea55c52fd1dde151e978add2e5bc58c9640ccfde93aea651da0d",
       "log": false
     },
     {
       "name": "env-helper.js",
-      "version": "1.0",
-      "hash": "sha256-d9dc1f00088f0a042d97d18783d9a42a71e82070341a0a7510fca082aade3f88",
+      "version": "1.1",
+      "hash": "sha256-4f86e891c93db18e6e396fcbcf8d91a7f2ba9b30751f168807e099b12f0c3b94",
       "log": false
     }
   ],
@@ -741,8 +741,8 @@
         },
         {
           "name": "vnc-prompt-writer.js",
-          "version": "1.1",
-          "hash": "sha256-8b82e09971b0ad322a19d49a397a022df242d7ff50a5e946338cc1651560274d",
+          "version": "1.3",
+          "hash": "sha256-0f6dc97705d8e1853ea06c51a1395f7bce57ec4fffc710a74206ce61e763e36e",
           "log": false
         }
       ]

@@ -10,6 +10,8 @@ const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
 const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
 const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
 const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
+/** 'qa' | 'non-qa' — host sets from last Fleet archetype; helpers only prefill when 'qa'. */
+const PROMPT_CONTEXT_STORAGE_KEY = 'vnc-helper-prompt-context';
 const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
 const LINE_HEIGHT_PX = 20;
 const DEFAULT_LINES = 2;
@@ -38,7 +40,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -176,6 +178,13 @@ const VncHelperApi = {
 
     readCachedPrompt() {
         try {
+            const context = Storage.get(PROMPT_CONTEXT_STORAGE_KEY, '');
+            if (context !== 'qa') {
+                Logger.log(
+                    `vncHelper: skipping cached prompt (context=${context || 'unset'}; last page was not QA)`
+                );
+                return '';
+            }
             const text = Storage.get(PROMPT_STORAGE_KEY, '');
             const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
             if (!text || !tsRaw) {
@@ -683,7 +692,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
