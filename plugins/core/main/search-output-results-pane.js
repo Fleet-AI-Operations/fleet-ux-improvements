@@ -346,11 +346,11 @@ const searchOutputResultsPaneMethods = {
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
-                            <div id="wf-dash-results-pager-slot-kind" style="flex: 1 1 auto; min-width: 0; display: flex; justify-content: flex-end; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-                                <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-wrap: nowrap; flex-shrink: 0; min-width: max-content;">
+                            <div id="wf-dash-results-pager-slot-kind" style="${this._resultsPagerSlotStyle()}">
+                                <div id="wf-dash-results-pager" style="${this._resultsPagerStyle()}">
                                     <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Version</span>
-                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 8.5rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 8.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="contributor_match">Contributor match</option>
                                             <option value="all_v1">All v1s</option>
                                             <option value="all_final">All final versions</option>
@@ -358,13 +358,13 @@ const searchOutputResultsPaneMethods = {
                                     </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Sort</span>
-                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             ${this._dashSortSelectOptionsHtml(dashSortDefault())}
                                         </select>
                                     </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Show</span>
-                                        <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-results-page-size" style="${input} width: auto; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="10">10</option>
                                             <option value="25">25</option>
                                             <option value="50">50</option>
@@ -3773,11 +3773,13 @@ const searchOutputResultsPaneMethods = {
     },
 
     _resultsHeaderBarStyle() {
-        return 'padding: 0 8px 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;';
+        return 'padding: 0 8px 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;'
+            + ' min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; overflow: hidden;';
     },
 
     _resultsHeaderRowStyle() {
-        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; width: 100%; padding: 8px 0 0; min-width: 0;';
+        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap;'
+            + ' width: 100%; max-width: 100%; padding: 8px 0 0; min-width: 0; box-sizing: border-box;';
     },
 
     _resultsHeaderActionsScrollStyle() {
@@ -3787,8 +3789,21 @@ const searchOutputResultsPaneMethods = {
     },
 
     _resultsToolbarRow2Style() {
-        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: flex-end; gap: 8px; width: 100%;'
-            + ' flex-wrap: nowrap; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;';
+        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: flex-end; gap: 8px;'
+            + ' width: 100%; max-width: 100%; box-sizing: border-box;'
+            + ' flex-wrap: nowrap; min-width: 0; overflow-x: auto; overflow-y: hidden;'
+            + ' -webkit-overflow-scrolling: touch;';
+    },
+
+    _resultsPagerSlotStyle() {
+        return 'flex: 1 1 auto; min-width: 0; max-width: 100%; width: 100%; display: flex;'
+            + ' align-items: center; justify-content: flex-end; flex-wrap: nowrap;'
+            + ' overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;';
+    },
+
+    _resultsPagerStyle() {
+        return 'display: none; align-items: center; gap: 8px; flex-wrap: nowrap;'
+            + ' flex: 0 0 auto; flex-shrink: 0; width: max-content; min-width: max-content;';
     },
 
     _getCardUi(taskId) {
@@ -6415,7 +6430,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.15',
+    _version: '5.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
