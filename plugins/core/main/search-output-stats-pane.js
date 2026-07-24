@@ -4913,22 +4913,26 @@ const searchOutputStatsPaneMethods = {
         const devExportBtn = Context.isDevBranch
             ? ('<button type="button" data-wf-dash-ratings-export-bulk="json" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export JSON</button>')
             : '';
-        return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">'
-            + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">'
+        return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; min-width: 0; width: 100%;">'
+            + '<div style="display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; width: 100%;">'
+            + '<div id="wf-dash-ratings-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>'
             + this._statsScopeToggleHtml()
+            + '</div>'
+            + '<div style="' + this._statsHScrollOuterStyle() + '">'
+            + '<div style="' + this._statsHScrollTrackStyle(8) + '">'
             + '<button type="button" data-wf-dash-ratings-generate="1" class="'
             + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;"'
             + ' title="Generate ratings cards for everyone in the current results">Generate cards</button>'
-            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;">'
+            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; white-space: nowrap; flex-shrink: 0;">'
             + '<input type="checkbox" data-wf-dash-ratings-hide-provisional="1" style="margin: 0;">'
             + 'Hide provisional</label>'
-            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap;">'
-            + 'Sort <select data-wf-dash-ratings-sort="1" style="' + inputStyle + ' cursor: pointer;"></select></label>'
-            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; flex: 1; min-width: 140px;">'
-            + 'Name <input type="text" data-wf-dash-ratings-name-filter="1" placeholder="Filter by name…" autocomplete="off" style="' + inputStyle + ' flex: 1; min-width: 100px;"></label>'
+            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; flex-shrink: 0;">'
+            + 'Sort <select data-wf-dash-ratings-sort="1" style="' + inputStyle + ' cursor: pointer; width: auto; min-width: 0;"></select></label>'
+            + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; flex-shrink: 0;">'
+            + 'Name <input type="text" data-wf-dash-ratings-name-filter="1" placeholder="Filter by name…" autocomplete="off" style="' + inputStyle + ' width: auto; min-width: 100px; max-width: 180px;"></label>'
             + devExportBtn
             + '</div>'
-            + '<div id="wf-dash-ratings-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b);"></div>'
+            + '</div>'
             + '</div>';
     },
 
@@ -6054,7 +6058,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.14',
+    _version: '12.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
