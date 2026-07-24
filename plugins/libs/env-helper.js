@@ -10,6 +10,8 @@ const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
 /** Shared with vnc-helper / vnc-prompt-writer so QA prompt cache fills Env Helper too. */
 const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
 const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
+/** 'qa' | 'non-qa' — host sets from last Fleet archetype; helpers only prefill when 'qa'. */
+const PROMPT_CONTEXT_STORAGE_KEY = 'vnc-helper-prompt-context';
 const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
 const LINE_HEIGHT_PX = 20;
 const DEFAULT_LINES = 2;
@@ -37,7 +39,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'Env Helper',
     description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -136,6 +138,13 @@ const EnvHelperApi = {
 
     readCachedPrompt() {
         try {
+            const context = Storage.get(PROMPT_CONTEXT_STORAGE_KEY, '');
+            if (context !== 'qa') {
+                Logger.log(
+                    `envHelper: skipping cached prompt (context=${context || 'unset'}; last page was not QA)`
+                );
+                return '';
+            }
             const text = Storage.get(PROMPT_STORAGE_KEY, '');
             const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
             if (!text || !tsRaw) {
@@ -564,7 +573,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'Env Helper (library)',
     description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

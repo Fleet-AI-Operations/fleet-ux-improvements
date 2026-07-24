@@ -1,7 +1,7 @@
 {
-  "version": "12.4.13",
+  "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.153",
+  "archetypesVersion": "14.167",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "4.1",
-      "hash": "sha256-8ff44b64b1c70d68c4550b850c7c4513941e352ebd8cebdae492acedb7154e81",
+      "version": "6.0",
+      "hash": "sha256-309534255cc6b4434722ea15aa35db43eb74535f2e441fe021e77f7e6eac4dfc",
       "log": false
     },
     {
@@ -138,14 +138,14 @@
     },
     {
       "name": "vnc-helper.js",
-      "version": "2.0",
-      "hash": "sha256-62b6e3872580124ac37eeff55859edd76f74a471595707793e6b793901eb5f35",
+      "version": "2.1",
+      "hash": "sha256-c14de75946f1ea55c52fd1dde151e978add2e5bc58c9640ccfde93aea651da0d",
       "log": false
     },
     {
       "name": "env-helper.js",
-      "version": "1.0",
-      "hash": "sha256-d9dc1f00088f0a042d97d18783d9a42a71e82070341a0a7510fca082aade3f88",
+      "version": "1.1",
+      "hash": "sha256-4f86e891c93db18e6e396fcbcf8d91a7f2ba9b30751f168807e099b12f0c3b94",
       "log": false
     }
   ],
@@ -200,8 +200,8 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "5.13",
-      "hash": "sha256-5d4803f99bb187c79c337f2be4368f667be8a07ab1475afdce1829994aadf5e9",
+      "version": "5.17",
+      "hash": "sha256-ca54e7f3ae9c8f40d0531c422dec78444cf71b1963579a07f10a3d5ff812a965",
       "log": false
     },
     {
@@ -212,20 +212,20 @@
     },
     {
       "name": "search-output-chat.js",
-      "version": "4.1",
-      "hash": "sha256-10bca5e1878f3be645325fe388f3fb0d0128868ec0596412dbbdea8044938caa",
+      "version": "5.2",
+      "hash": "sha256-05620ce8a9b60ac771174f26f826df58f5b35ffb82c6945ee1634c74c0ff6ce1",
       "log": false
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "12.8",
-      "hash": "sha256-3229634339c0bfb0544d121db5bcad13b1c3cae5579a1e5fbfdbbaf9e09d02c0",
+      "version": "12.15",
+      "hash": "sha256-a4bd75ee478c6bf2cd1bb5355fab1e8106dbcb38ba6d83f9cc977131ee181766",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "9.20",
-      "hash": "sha256-7c971a8d2bf203382f561d44d3c9f109b3ff816a192a0bd80709913a083f1394",
+      "version": "9.21",
+      "hash": "sha256-cd360089632b8795c16070a0edefae4c2f9d9494085d042fa7e0add482bef911",
       "log": false
     },
     {
@@ -741,8 +741,8 @@
         },
         {
           "name": "vnc-prompt-writer.js",
-          "version": "1.1",
-          "hash": "sha256-8b82e09971b0ad322a19d49a397a022df242d7ff50a5e946338cc1651560274d",
+          "version": "1.3",
+          "hash": "sha256-0f6dc97705d8e1853ea06c51a1395f7bce57ec4fffc710a74206ce61e763e36e",
           "log": false
         }
       ]

@@ -1,7 +1,7 @@
 // ============= vnc-prompt-writer.js =============
-// Archetype: qa-comp-use. Saves the task prompt to localStorage so the no-vnc VNC Helper
-// modal can pre-fill its Prompt section (2-hour TTL, read by vnc-helper.js).
-// Uses GM Storage (not localStorage) so the cache is shared across fleetai.com and noVNC subdomains.
+// Archetype: qa-comp-use. Saves the task prompt to GM Storage so the no-vnc VNC/Env Helper
+// modal can pre-fill its Prompt section (2-hour TTL, read by vnc-helper.js / env-helper.js).
+// Prefill is gated by host helper-prompt context (qa vs non-qa) from the last Fleet page.
 
 const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
 const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
@@ -10,7 +10,7 @@ const plugin = {
     id: 'vncPromptWriter',
     name: 'VNC Prompt Writer',
     description: 'Caches the QA task prompt for the VNC Helper modal on noVNC pages',
-    _version: '1.1',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

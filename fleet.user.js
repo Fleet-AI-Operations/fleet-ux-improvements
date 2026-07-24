@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.13
+// @version      12.4.14
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.13';
+    const VERSION = '12.4.14';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -4091,6 +4091,43 @@
         }
     }
     
+    /**
+     * Env/VNC Helper only prefills Prompt when the last Fleet page was QA.
+     * QA archetypes set context to 'qa'; create / task-creation pages set 'non-qa'.
+     * Other pages (incl. no-vnc env tabs) leave the last value unchanged.
+     */
+    const HELPER_PROMPT_CONTEXT_KEY = 'vnc-helper-prompt-context';
+
+    function syncHelperPromptContextFromArchetype(archetype) {
+        if (!archetype || !archetype.id) {
+            return;
+        }
+        const id = String(archetype.id);
+        let next = null;
+        if (id.startsWith('qa-')) {
+            next = 'qa';
+        } else if (
+            id.includes('task-creation') ||
+            id.startsWith('create-') ||
+            id === 'dashboard-create-instance'
+        ) {
+            next = 'non-qa';
+        }
+        if (!next) {
+            return;
+        }
+        try {
+            const prev = Storage.get(HELPER_PROMPT_CONTEXT_KEY, '');
+            if (prev === next) {
+                return;
+            }
+            Storage.set(HELPER_PROMPT_CONTEXT_KEY, next);
+            Logger.log(`Helper prompt context → ${next} (archetype ${id})`);
+        } catch (e) {
+            Logger.warn('Failed to sync helper prompt context', e);
+        }
+    }
+
     async function initializeForPage() {
         Logger.log('Initializing for current page...');
 
@@ -4125,6 +4162,8 @@
                 Logger.warn('No matching archetype found. No archetype plugins will load.');
                 return;
             }
+
+            syncHelperPromptContextFromArchetype(archetype);
 
             // Load shared libraries declared by this archetype before page plugins
             await ensureLibrariesLoaded(archetype.libraries);
