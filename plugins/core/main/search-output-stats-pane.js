@@ -70,12 +70,20 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _statsScopeToggleHtml() {
+        return '<div data-wf-dash-stats-scope-wrap="true" class="dv-seg-group" style="flex-shrink: 0;">'
+            + this._statsScopeSegBtn('filtered', 'Filtered', true, true)
+            + this._statsScopeSegBtn('all', 'All', false, false)
+            + '</div>';
+    },
+
     _statsChartsPanelContentHtml() {
         const btnStyle = 'padding: 2px 8px; font-size: 10px;';
         return ''
             + '<div id="wf-dash-stats-warnings" style="display: none; flex-direction: column; gap: 6px; flex-shrink: 0;"></div>'
             + '<div id="wf-dash-stats-toolbar" style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0;">'
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;">'
+            + this._statsScopeToggleHtml()
             + '<div id="wf-dash-stats-scope-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 0 1 auto;"></div>'
             + '<div id="wf-dash-stats-dashboard-switcher" style="display: none; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0;">'
             + '<select id="wf-dash-stats-dashboard-select" data-wf-dash-stats-dashboard-select="1" aria-label="Dashboard" style="max-width: 160px; min-width: 100px; box-sizing: border-box; padding: 2px 6px; font-size: 11px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);"></select>'
@@ -585,55 +593,10 @@ const searchOutputStatsPaneMethods = {
         return '<button type="button" data-wf-dash-stats-scope="' + dashEscHtml(scope) + '" class="dv-seg-btn' + divCls + '" aria-pressed="' + (active ? 'true' : 'false') + '">' + dashEscHtml(label) + '</button>';
     },
 
-    _ensureStatsScopeToggle(headerActions) {
-        if (!headerActions) return null;
-        let wrap = headerActions.querySelector('[data-wf-dash-stats-scope-wrap]');
-        if (!wrap) {
-            wrap = document.createElement('div');
-            wrap.setAttribute('data-wf-dash-stats-scope-wrap', 'true');
-            wrap.className = 'dv-seg-group';
-            wrap.style.cssText = 'margin-right: 8px;';
-            wrap.innerHTML = this._statsScopeSegBtn('filtered', 'Filtered', true, true)
-                + this._statsScopeSegBtn('all', 'All', false, false);
-            const genBtn = headerActions.querySelector('[data-wf-dash-ratings-generate]');
-            headerActions.insertBefore(wrap, genBtn ? genBtn.nextSibling : headerActions.firstChild);
-        }
-        return wrap;
-    },
-
-    _ensureRatingsGenerateButton(headerActions) {
-        if (!headerActions) return null;
-        let btn = headerActions.querySelector('[data-wf-dash-ratings-generate]');
-        if (!btn) {
-            btn = document.createElement('button');
-            btn.type = 'button';
-            btn.setAttribute('data-wf-dash-ratings-generate', '1');
-            btn.className = this._dashBtnClass('secondary', 'nav');
-            btn.style.marginRight = '8px';
-            btn.textContent = 'Generate cards';
-            btn.title = 'Generate ratings cards for everyone in the current results';
-            const scopeWrap = headerActions.querySelector('[data-wf-dash-stats-scope-wrap]');
-            headerActions.insertBefore(btn, scopeWrap || headerActions.firstChild);
-        } else {
-            const scopeWrap = headerActions.querySelector('[data-wf-dash-stats-scope-wrap]');
-            if (scopeWrap && btn.nextSibling !== scopeWrap) {
-                headerActions.insertBefore(btn, scopeWrap);
-            }
-        }
-        return btn;
-    },
-
     _syncRatingsGenerateButtonUi() {
-        const tab = this._state.statsTab || 'stats';
-        const statsCol = this._q('[data-wf-dash-stats-column]');
-        const headerActions = statsCol && statsCol.querySelector('[data-wf-dash-stats-header-actions]');
-        if (!headerActions) return;
-        const btn = this._ensureRatingsGenerateButton(headerActions);
+        const btn = this._q('[data-wf-dash-ratings-generate]');
         if (!btn) return;
-        const show = tab === 'ratings';
-        btn.style.display = show ? '' : 'none';
-        const canGenerate = show
-            && this._state.hasSearched
+        const canGenerate = this._state.hasSearched
             && Array.isArray(this._state.cachedItems)
             && this._state.cachedItems.length > 0;
         btn.disabled = !canGenerate;
@@ -643,18 +606,20 @@ const searchOutputStatsPaneMethods = {
         const tab = this._state.statsTab || 'stats';
         const useFiltered = this._state.statsUseFiltered !== false;
         const statsCol = this._q('[data-wf-dash-stats-column]');
-        const headerActions = statsCol && statsCol.querySelector('[data-wf-dash-stats-header-actions]');
-        if (!headerActions) return;
-        this._ensureRatingsGenerateButton(headerActions);
-        const wrap = this._ensureStatsScopeToggle(headerActions);
-        if (wrap) {
-            wrap.style.display = (tab === 'stats' || tab === 'ratings') ? 'inline-flex' : 'none';
+        if (!statsCol) return;
+        // Remove any legacy tab-bar mounts left from older builds.
+        const headerActions = statsCol.querySelector('[data-wf-dash-stats-header-actions]');
+        if (headerActions) {
+            headerActions.querySelectorAll('[data-wf-dash-stats-scope-wrap], [data-wf-dash-ratings-generate]')
+                .forEach((el) => el.remove());
+        }
+        statsCol.querySelectorAll('[data-wf-dash-stats-scope-wrap]').forEach((wrap) => {
             wrap.querySelectorAll('[data-wf-dash-stats-scope]').forEach((btn) => {
                 const scope = btn.getAttribute('data-wf-dash-stats-scope');
                 const active = scope === 'filtered' ? useFiltered : !useFiltered;
                 btn.setAttribute('aria-pressed', active ? 'true' : 'false');
             });
-        }
+        });
         this._syncRatingsGenerateButtonUi();
         const summaryEl = this._q('#wf-dash-stats-scope-summary');
         if (summaryEl && tab === 'stats') {
@@ -4961,6 +4926,10 @@ const searchOutputStatsPaneMethods = {
             : '';
         return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">'
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">'
+            + this._statsScopeToggleHtml()
+            + '<button type="button" data-wf-dash-ratings-generate="1" class="'
+            + this._dashBtnClass('secondary', 'nav') + '" style="flex-shrink: 0;"'
+            + ' title="Generate ratings cards for everyone in the current results">Generate cards</button>'
             + '<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; white-space: nowrap;">'
             + '<input type="checkbox" data-wf-dash-ratings-hide-provisional="1" style="margin: 0;">'
             + 'Hide provisional</label>'
@@ -6096,7 +6065,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.8',
+    _version: '12.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -328,11 +328,11 @@ const searchOutputResultsPaneMethods = {
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
                     <div style="${this._resultsHeaderBarStyle()}">
                         <div style="${this._resultsHeaderRowStyle()}">
-                            <div style="display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 200px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 200px; overflow: hidden;">
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
-                                <span id="wf-dash-results-status" style="${label} margin: 0; min-width: 0;">Set search parameters on the left, then press Search.</span>
+                                <span id="wf-dash-results-status" style="${label} margin: 0; min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Set search parameters on the left, then press Search.</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; justify-content: flex-end; overflow-x: auto;">
                                 <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 1 auto;"></div>
                                 <div id="wf-dash-results-prefetch-banner" style="display: none; flex: 0 1 auto;"></div>
                                 <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
@@ -3777,7 +3777,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _resultsHeaderRowStyle() {
-        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; width: 100%; padding: 8px 0 0;';
+        return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; width: 100%; padding: 8px 0 0; min-width: 0;';
     },
 
     _resultsToolbarRow2Style() {
@@ -5129,8 +5129,8 @@ const searchOutputResultsPaneMethods = {
             const detail = retrieving
                 ? (() => {
                     const count = Number(committed.retrieveCount) || 0;
-                    const prefix = count > 1 ? ('tasks (' + count + '): ') : 'task: ';
-                    return prefix + (committed.retrieveLabel || '');
+                    if (count <= 0) return 'task(s)';
+                    return count === 1 ? '1 task' : (count + ' tasks');
                 })()
                 : this._searchStatusDetail(committed);
             const verb = retrieving ? 'Retrieving' : 'Searching';
@@ -5170,10 +5170,10 @@ const searchOutputResultsPaneMethods = {
                     ? s.filteredItems.length + ' result(s)'
                     : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
                 const retrieveCount = Number(committed.retrieveCount) || 0;
-                const taskWord = retrieveCount === 1 || !retrieveCount
-                    ? 'task'
-                    : 'tasks';
-                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — retrieved ${taskWord} ${dashEscHtml(committed.retrieveLabel || '')} · fully hydrated</span>`;
+                const retrievedNote = retrieveCount === 1
+                    ? 'retrieved 1 task'
+                    : ('retrieved ' + (retrieveCount || s.filteredItems.length) + ' tasks');
+                el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(retrievedNote)} · fully hydrated</span>`;
                 return;
             }
             const authorLabel = committed.ratingsEveryone
@@ -6408,7 +6408,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.13',
+    _version: '5.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
