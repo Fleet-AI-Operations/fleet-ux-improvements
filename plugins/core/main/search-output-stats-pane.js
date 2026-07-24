@@ -93,7 +93,6 @@ const searchOutputStatsPaneMethods = {
             + '</div>'
             + '<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; flex: 1 1 auto; min-width: 0;">'
             + '<button type="button" data-wf-dash-stats-horizontal-stack="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;" title="Allow scorecards and circular charts to share a row">Stack horizontally: On</button>'
-            + '<button type="button" data-wf-dash-stats-reset-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Reset</button>'
             + '<button type="button" data-wf-dash-stats-export-dashboard="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export settings</button>'
             + '<button type="button" data-wf-dash-stats-export-dashboard-image="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export image</button>'
             + '<button type="button" data-wf-dash-stats-import-json="1" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Import JSON</button>'
@@ -510,7 +509,6 @@ const searchOutputStatsPaneMethods = {
         const tab = this._state.statsTab || 'stats';
         const toolbar = this._q('#wf-dash-stats-toolbar');
         const buildBtn = this._q('[data-wf-dash-stats-build]');
-        const resetDashBtn = this._q('[data-wf-dash-stats-reset-dashboard]');
         const stackBtn = this._q('[data-wf-dash-stats-horizontal-stack]');
         const exportDashBtn = this._q('[data-wf-dash-stats-export-dashboard]');
         const exportDashImageBtn = this._q('[data-wf-dash-stats-export-dashboard-image]');
@@ -534,9 +532,6 @@ const searchOutputStatsPaneMethods = {
                 ? 'Scorecards and circular charts may share a row'
                 : 'Each chart uses full width';
             stackBtn.setAttribute('aria-pressed', stackOn ? 'true' : 'false');
-        }
-        if (resetDashBtn) {
-            resetDashBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
         }
         if (exportDashBtn) {
             exportDashBtn.style.display = (tab === 'stats' && mode === 'dashboard') ? '' : 'none';
@@ -3033,29 +3028,6 @@ const searchOutputStatsPaneMethods = {
             this._modal.appendChild(input);
         }
         return input;
-    },
-
-    _resetStatsDashboard() {
-        const engine = Context.statsEngine;
-        if (!engine || typeof engine.resetDashboardCharts !== 'function') {
-            Logger.warn('search-output-stats-pane: dashboard reset skipped — stats engine unavailable');
-            return;
-        }
-        const active = this._activeStatsDashboard();
-        const confirmed = confirm(
-            'Reset dashboard "' + ((active && active.name) || 'Dashboard')
-            + '" to the default chart set? Custom charts on this dashboard will be removed. This cannot be undone.'
-        );
-        if (!confirmed) return;
-        this._state.statsLayout = engine.resetDashboardCharts(this._ensureStatsLayout(), active && active.id);
-        this._persistStatsLayout();
-        this._state.statsPanelDirty = false;
-        void this._renderStatsPanel();
-        const next = this._activeStatsDashboard();
-        Logger.log(
-            'search-output-stats-pane: dashboard reset to default — '
-            + ((next && next.charts) ? next.charts.length : 0) + ' chart(s)'
-        );
     },
 
     _exportStatsDashboard() {
@@ -6062,7 +6034,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.12',
+    _version: '12.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
