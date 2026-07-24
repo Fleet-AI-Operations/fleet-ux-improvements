@@ -3538,7 +3538,7 @@ const searchOutputStatsPaneMethods = {
                 + '<input type="checkbox" data-wf-dash-stats-draft="allowHorizontalStack"'
                 + (stackOn ? ' checked' : '') + '>'
                 + 'Allow horizontal stacking</label>',
-                { styles, hint: 'When on, this chart may share a row with adjacent scorecards or circular charts (also needs the dashboard Stack horizontally toggle).' })
+                { styles })
             : '';
         const chartSettingsCells = [chartTypeField, groupByField, heightField, horizontalStackField].filter(Boolean);
         const chartSettingsHtml = '<div style="' + styles.gridAuto + '">' + chartSettingsCells.join('') + '</div>';
@@ -6065,7 +6065,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.9',
+    _version: '12.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
