@@ -328,43 +328,43 @@ const searchOutputResultsPaneMethods = {
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
                     <div style="${this._resultsHeaderBarStyle()}">
                         <div style="${this._resultsHeaderRowStyle()}">
-                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 200px; overflow: hidden;">
+                            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 40%; max-width: 40%; overflow: hidden;">
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
                                 <span id="wf-dash-results-status" style="${label} margin: 0; min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Set search parameters on the left, then press Search.</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; justify-content: flex-end; overflow-x: auto;">
-                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex: 0 1 auto;"></div>
-                                <div id="wf-dash-results-prefetch-banner" style="display: none; flex: 0 1 auto;"></div>
-                                <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Hydrate results</button>
-                                <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none;">Diff Included Results</button>
-                                <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Included Results</button>
-                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Drop Excluded Results</button>
-                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none;">Export JSON</button>
-                                <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}">Retrieve Clipboard</button>
-                                <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}">Clear Results</button>
+                            <div style="${this._resultsHeaderActionsScrollStyle()}">
+                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex-shrink: 0;"></div>
+                                <div id="wf-dash-results-prefetch-banner" style="display: none; flex-shrink: 0;"></div>
+                                <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
+                                <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
+                                <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
+                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
+                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
+                                <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Retrieve Clipboard</button>
+                                <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                             </div>
                         </div>
                         <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
-                            <div id="wf-dash-results-pager-slot-kind" style="flex: 1 1 100%; min-width: 0; display: flex; justify-content: flex-end; flex-wrap: wrap;">
-                                <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; max-width: 100%;">
-                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex: 0 1 auto; flex-wrap: wrap;">
+                            <div id="wf-dash-results-pager-slot-kind" style="flex: 1 1 auto; min-width: 0; display: flex; justify-content: flex-end; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                                <div id="wf-dash-results-pager" style="display: none; align-items: center; gap: 8px; flex-wrap: nowrap; flex-shrink: 0; min-width: max-content;">
+                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Version</span>
-                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 8.5rem; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 8.5rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
                                             <option value="contributor_match">Contributor match</option>
                                             <option value="all_v1">All v1s</option>
                                             <option value="all_final">All final versions</option>
                                         </select>
                                     </label>
-                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex: 0 1 auto; flex-wrap: wrap;">
+                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Sort</span>
-                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; padding: 4px 8px; font-size: 11px; cursor: pointer;">
                                             ${this._dashSortSelectOptionsHtml(dashSortDefault())}
                                         </select>
                                     </label>
-                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex: 0 1 auto; flex-wrap: wrap;">
+                                    <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Show</span>
-                                        <select id="wf-dash-results-page-size" style="${input} width: auto; max-width: 100%; padding: 4px 8px; font-size: 11px; cursor: pointer;">
+                                        <select id="wf-dash-results-page-size" style="${input} width: auto; padding: 4px 8px; font-size: 11px; cursor: pointer;">
                                             <option value="10">10</option>
                                             <option value="25">25</option>
                                             <option value="50">50</option>
@@ -372,9 +372,9 @@ const searchOutputResultsPaneMethods = {
                                             <option value="all">All</option>
                                         </select>
                                     </label>
-                                    <span id="wf-dash-results-range-count" style="${label} white-space: nowrap;"></span>
-                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}">${this._pagerChevronSvg('prev')}</button>
-                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}">${this._pagerChevronSvg('next')}</button>
+                                    <span id="wf-dash-results-range-count" style="${label} white-space: nowrap; flex-shrink: 0;"></span>
+                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('prev')}</button>
+                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('next')}</button>
                                 </div>
                             </div>
                         </div>
@@ -3780,8 +3780,15 @@ const searchOutputResultsPaneMethods = {
         return 'display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; width: 100%; padding: 8px 0 0; min-width: 0;';
     },
 
+    _resultsHeaderActionsScrollStyle() {
+        return 'display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0;'
+            + ' flex-wrap: nowrap; justify-content: flex-end; overflow-x: auto; overflow-y: hidden;'
+            + ' -webkit-overflow-scrolling: touch;';
+    },
+
     _resultsToolbarRow2Style() {
-        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: flex-end; gap: 8px; width: 100%; flex-wrap: wrap;';
+        return 'display: none; padding: 4px 0 0; align-items: center; justify-content: flex-end; gap: 8px; width: 100%;'
+            + ' flex-wrap: nowrap; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;';
     },
 
     _getCardUi(taskId) {
@@ -6408,7 +6415,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.14',
+    _version: '5.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
