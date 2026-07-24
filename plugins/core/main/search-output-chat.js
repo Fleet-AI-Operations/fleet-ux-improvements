@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '5.0';
+const SEARCH_CHAT_VERSION = '5.2';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -2790,7 +2790,7 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'cluster_similar_prompts',
-            'EXHAUSTIVE same-worker clustering over the scoped results. Prefer this for “how many of this person’s tasks are ≥75% similar” / list clusters. Pass minSimilarityPercent:75 (0–100; preferred). Optional workerId. Returns complete:true/false, pairCount, taskCountInClusters, clusterCount, and paginated clusters of task_… IDs. Metric: alphanumeric token Jaccard on current prompts.',
+            'EXHAUSTIVE same-worker clustering over the scoped results. Prefer this for “how many of this person’s tasks are ≥75% similar” / list clusters. Pass minSimilarityPercent:75 (0–100; preferred). Optional workerId. Returns complete:true/false, pairCount, taskCountInClusters, clusterCount, and paginated clusters of task_… IDs. In respond(), include the count AND list every returned cluster’s taskIds in fenced code blocks (one taskId per line; do not wait for the operator to ask). Metric: alphanumeric token Jaccard on current prompts.',
             {
                 type: 'object',
                 properties: {
@@ -2970,11 +2970,14 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'respond',
-            'REQUIRED to finish. Pass the final markdown answer for the operator. Do not answer in free-form assistant text.',
+            'REQUIRED to finish. Pass the final markdown answer. Include useful tool payload details up front (counts plus taskId lists/clusters/rows in backticks or fenced code blocks) so the operator does not need a follow-up “please list them.” Do not answer in free-form assistant text.',
             {
                 type: 'object',
                 properties: {
-                    markdown: { type: 'string', description: 'Final answer in markdown' },
+                    markdown: {
+                        type: 'string',
+                        description: 'Final markdown. Put copyable IDs in `inline` backticks or ```fenced``` blocks; include full cluster/task lists from tools.',
+                    },
                 },
                 required: ['markdown'],
                 additionalProperties: false,
@@ -3435,6 +3438,16 @@ function searchChatBuildSystemPrompt(dash) {
         '- Rank candidates vs ONE source task/query: find_similar_prompts (requires taskId or query; not exhaustive).',
         '- Paginated pair inspection: find_near_duplicates (sameWorker / differentWorkers). Pair lists may be capped.',
         '- Thresholds: minSimilarityPercent is 0–100. minJaccard is 0–1 (0.75 = 75%). Never pass minJaccard:75.',
+        'PROACTIVE RESULTS: When a tool already returned the answer payload, put the useful details in the FIRST respond().',
+        'Do not answer with counts alone when clusters, taskId lists, pair lists, or ranked rows are in the tool result —',
+        'the operator should not need a follow-up like “please list them.” For cluster_similar_prompts: lead with',
+        'taskCountInClusters / clusterCount / pairCount, then list EVERY returned cluster as numbered groups of task_… IDs',
+        '(include maxSimilarityPercent per cluster). If nextCursor is set, list this page and note remaining clusters.',
+        'Same idea for other list/find tools: include the returned rows/ids in respond() unless the operator asked for a count only.',
+        'COPYABLE MARKDOWN (required for IDs the operator will copy):',
+        '- Single values (one taskId, email, workerId): wrap in inline backticks like `task_abc…` (UI is click-to-copy).',
+        '- Lists / clusters / multi-line dumps: use fenced code blocks (``` on their own lines). Prefer one fence per cluster',
+        '  with one taskId per line, or one fence listing all clusters clearly. Never leave copyable task IDs as bare prose only.',
         'EVIDENCE RULE: You may claim “none” / zero matches ONLY when an exhaustive tool returns complete:true AND a zero count',
         '(e.g. cluster_similar_prompts.taskCountInClusters=0). Sampling a few find_similar_prompts calls, first pages,',
         'truncatedCollection, or complete:false MUST be reported as incomplete — never invent an exhaustive zero.',
@@ -3900,7 +3913,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '5.0',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

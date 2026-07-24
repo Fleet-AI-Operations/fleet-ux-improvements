@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '5.0';
+const AI_CHAT_VERSION = '6.0';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -23,6 +23,52 @@ function aiChatCopyIconSvg() {
         + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
         + ' aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>'
         + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+}
+
+function aiChatEnsureUiLibStyles() {
+    const ui = Context.uiLib;
+    if (ui && typeof ui.ensureStyles === 'function') {
+        try { ui.ensureStyles(); } catch (_e) { /* ignore */ }
+    }
+}
+
+/** Copy text with color-only feedback (works in deep-chat shadow via auxiliaryStyle flash CSS). */
+async function aiChatCopyWithFeedback(el, text, logLabel) {
+    aiChatEnsureUiLibStyles();
+    const value = String(text == null ? '' : text);
+    if (!String(value).trim()) {
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+            Context.buttonFeedback.flashFailure(el);
+        } else {
+            aiChatFlashCopyButton(el, false);
+        }
+        Logger.warn(PLUGIN_ID + ': copy skipped (empty ' + (logLabel || 'payload') + ')');
+        return false;
+    }
+    try {
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.copyWithFeedback === 'function') {
+            const ok = await Context.buttonFeedback.copyWithFeedback(el, value, {
+                logLabel: logLabel || 'chat copy',
+            });
+            if (!ok) aiChatFlashCopyButton(el, false);
+            else aiChatFlashCopyButton(el, true);
+            return !!ok;
+        }
+        await navigator.clipboard.writeText(value);
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+            Context.buttonFeedback.flashSuccess(el);
+        }
+        aiChatFlashCopyButton(el, true);
+        Logger.log(PLUGIN_ID + ': copied ' + (logLabel || 'chat copy') + ' (' + value.length + ' chars)');
+        return true;
+    } catch (err) {
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+            Context.buttonFeedback.flashFailure(el);
+        }
+        aiChatFlashCopyButton(el, false);
+        Logger.error(PLUGIN_ID + ': failed to copy ' + (logLabel || 'chat copy'), err);
+        return false;
+    }
 }
 
 function aiChatHasKey() {
@@ -358,6 +404,72 @@ function aiChatApplyTheme(el, opts) {
         + '  font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;'
         + '  color: var(--foreground, #0f172a);'
         + '}'
+        // Code fences + inline code copy (markdown from remarkable)
+        + '.wf-chat-codeblock {'
+        + '  position: relative; display: block; margin: 8px 0; max-width: 100%;'
+        + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
+        + '  border-radius: 8px;'
+        + '  background: color-mix(in srgb, var(--muted, #f1f5f9) 55%, transparent);'
+        + '  overflow: hidden;'
+        + '}'
+        + '.wf-chat-codeblock > pre {'
+        + '  margin: 0 !important; padding: 30px 12px 10px !important;'
+        + '  max-width: 100%; overflow: auto; box-sizing: border-box;'
+        + '  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);'
+        + '  font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;'
+        + '  background: transparent !important; border: none !important;'
+        + '}'
+        + '.wf-chat-code-copy {'
+        + '  position: absolute; top: 4px; right: 4px; z-index: 2;'
+        + '  display: inline-flex; align-items: center; justify-content: center; gap: 4px;'
+        + '  min-width: 28px; height: 24px; padding: 0 8px; margin: 0;'
+        + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
+        + '  border-radius: 6px; cursor: pointer;'
+        + '  background: color-mix(in srgb, var(--background, #fff) 88%, transparent);'
+        + '  color: #94a3b8; font-size: 11px; font-weight: 600; line-height: 1;'
+        + '}'
+        + '.wf-chat-code-copy:hover {'
+        + '  color: #e2e8f0; background: color-mix(in srgb, #94a3b8 22%, transparent);'
+        + '}'
+        + '.wf-chat-code-copy.wf-chat-copy--ok,'
+        + '.wf-chat-code-copy.fleet-ui-flash--success { color: #16a34a !important; border-color: #16a34a !important; }'
+        + '.wf-chat-code-copy.wf-chat-copy--fail,'
+        + '.wf-chat-code-copy.fleet-ui-flash--failure { color: #dc2626 !important; border-color: #dc2626 !important; }'
+        + '.message-bubble code.wf-chat-inline-code {'
+        + '  cursor: pointer; border-radius: 4px; padding: 1px 4px;'
+        + '  border: 1px solid transparent;'
+        + '  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;'
+        + '}'
+        + '.message-bubble code.wf-chat-inline-code:hover {'
+        + '  background: color-mix(in srgb, #94a3b8 18%, transparent);'
+        + '}'
+        + '.message-bubble code.wf-chat-inline-code.wf-chat-copy--ok,'
+        + '.message-bubble code.wf-chat-inline-code.fleet-ui-flash--success {'
+        + '  color: #16a34a !important; border-color: #16a34a !important;'
+        + '}'
+        + '.message-bubble code.wf-chat-inline-code.wf-chat-copy--fail,'
+        + '.message-bubble code.wf-chat-inline-code.fleet-ui-flash--failure {'
+        + '  color: #dc2626 !important; border-color: #dc2626 !important;'
+        + '}'
+        // Mirror ui-lib flash keyframes inside shadow so buttonFeedback works here.
+        + '@keyframes fleet-ui-flash-success {'
+        + '  0% { background-color: transparent; color: inherit; border-color: inherit; }'
+        + '  12% { background-color: color-mix(in srgb, #16a34a 30%, transparent);'
+        + '    color: #16a34a !important; border-color: #16a34a !important; }'
+        + '  100% { background-color: transparent; color: inherit; border-color: inherit; }'
+        + '}'
+        + '@keyframes fleet-ui-flash-failure {'
+        + '  0% { background-color: transparent; color: inherit; border-color: inherit; }'
+        + '  12% { background-color: color-mix(in srgb, #dc2626 30%, transparent);'
+        + '    color: #dc2626 !important; border-color: #dc2626 !important; }'
+        + '  100% { background-color: transparent; color: inherit; border-color: inherit; }'
+        + '}'
+        + '.fleet-ui-flash--success {'
+        + '  animation: fleet-ui-flash-success 600ms cubic-bezier(0.22, 1, 0.36, 1) 1;'
+        + '}'
+        + '.fleet-ui-flash--failure {'
+        + '  animation: fleet-ui-flash-failure 600ms cubic-bezier(0.22, 1, 0.36, 1) 1;'
+        + '}'
         // The padded text input is taller than Deep Chat's assumed height, which
         // leaves the bottom-pinned send/stop button sitting low. Center it.
         + '#input .input-button {'
@@ -589,9 +701,7 @@ function aiChatInjectCopyButton(el, row, opts) {
                 }
             }
             if (!markdown) throw new Error('Message is empty');
-            await navigator.clipboard.writeText(markdown);
-            aiChatFlashCopyButton(btn, true);
-            Logger.log(o.logTag + ': copied chat message (' + markdown.length + ' chars)');
+            await aiChatCopyWithFeedback(btn, markdown, 'chat message');
         } catch (err) {
             aiChatFlashCopyButton(btn, false);
             Logger.error(o.logTag + ': failed to copy chat message', err);
@@ -607,6 +717,72 @@ function aiChatInjectCopyButton(el, row, opts) {
     }
 }
 
+function aiChatFenceText(pre) {
+    if (!pre) return '';
+    const code = pre.querySelector('code');
+    return String((code && code.textContent != null) ? code.textContent : (pre.textContent || ''));
+}
+
+function aiChatEnhanceCodeCopy(row, opts) {
+    const bubble = row && row.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    const pres = bubble.querySelectorAll('pre');
+    for (let i = 0; i < pres.length; i++) {
+        const pre = pres[i];
+        if (!pre || pre.getAttribute('data-wf-code-enhanced') === '1') continue;
+        if (pre.closest('[data-wf-codeblock="1"]')) {
+            pre.setAttribute('data-wf-code-enhanced', '1');
+            continue;
+        }
+        pre.setAttribute('data-wf-code-enhanced', '1');
+        const parent = pre.parentNode;
+        if (!parent) continue;
+        const wrap = document.createElement('div');
+        wrap.className = 'wf-chat-codeblock';
+        wrap.setAttribute('data-wf-codeblock', '1');
+        parent.insertBefore(wrap, pre);
+        wrap.appendChild(pre);
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'wf-chat-code-copy';
+        btn.setAttribute('data-wf-chat-code-copy', '1');
+        btn.title = 'Copy code block';
+        btn.setAttribute('aria-label', 'Copy code block');
+        btn.innerHTML = aiChatCopyIconSvg() + '<span>Copy</span>';
+        btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const text = aiChatFenceText(pre);
+            await aiChatCopyWithFeedback(btn, text, 'chat code fence');
+        });
+        wrap.insertBefore(btn, pre);
+    }
+
+    const codes = bubble.querySelectorAll('code');
+    for (let i = 0; i < codes.length; i++) {
+        const code = codes[i];
+        if (!code || code.closest('pre')) continue;
+        if (code.getAttribute('data-wf-inline-copy') === '1') continue;
+        code.setAttribute('data-wf-inline-copy', '1');
+        code.classList.add('wf-chat-inline-code');
+        code.title = 'Click to copy';
+        code.setAttribute('role', 'button');
+        code.tabIndex = 0;
+        const onCopy = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const text = String(code.textContent || '');
+            await aiChatCopyWithFeedback(code, text, 'chat inline code');
+        };
+        code.addEventListener('click', onCopy);
+        code.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') onCopy(e);
+        });
+    }
+}
+
 function aiChatSyncRowEnhancements(el, opts) {
     const shadow = el && el.shadowRoot;
     if (!shadow) return;
@@ -617,6 +793,7 @@ function aiChatSyncRowEnhancements(el, opts) {
         const msg = stateMsgs[i] || null;
         aiChatReconcileAttachment(row, msg && msg.displayAttachment);
         aiChatInjectCopyButton(el, row, opts);
+        aiChatEnhanceCodeCopy(row, opts);
     }
 }
 
@@ -1957,7 +2134,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '5.0',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
