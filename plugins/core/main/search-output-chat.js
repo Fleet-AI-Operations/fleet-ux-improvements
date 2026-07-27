@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '6.1';
+const SEARCH_CHAT_VERSION = '7.0';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -325,6 +325,55 @@ function searchChatAlnumTokenSet(text) {
     return new Set(parts);
 }
 
+/** Default alnum_jaccard (cluster-aligned). Optional metric: "token_jaccard". */
+function searchChatResolveJaccardMetric(args) {
+    const raw = String((args && args.metric) || 'alnum_jaccard').trim().toLowerCase();
+    if (raw === 'token_jaccard') {
+        return {
+            metric: 'token_jaccard',
+            metricNote: 'Lowercased tokens with stopwords removed; not LCS %.',
+            tokenSetFn: searchChatTokenSet,
+        };
+    }
+    return {
+        metric: 'alnum_jaccard',
+        metricNote: 'Lowercased [a-z0-9]+ token-set Jaccard (aligned with offline prompt-sim / cluster_similar_prompts); not LCS %.',
+        tokenSetFn: searchChatAlnumTokenSet,
+    };
+}
+
+function searchChatScopeMeta(dash) {
+    const state = dash && dash._state;
+    const scopeItems = searchChatGetScopeItems(dash);
+    const cached = state && Array.isArray(state.cachedItems) ? state.cachedItems : null;
+    return {
+        scopeCount: scopeItems.length,
+        cachedCount: cached ? cached.length : scopeItems.length,
+        usingFiltered: !!(state && Array.isArray(state.filteredItems)),
+    };
+}
+
+function searchChatHasExplicitSimilarityThreshold(args) {
+    const a = args || {};
+    return (a.minSimilarityPercent != null && String(a.minSimilarityPercent).trim() !== '')
+        || (a.minJaccard != null && String(a.minJaccard).trim() !== '');
+}
+
+function searchChatExcludeTaskIdSet(args) {
+    return new Set(
+        Array.isArray(args && args.excludeTaskIds)
+            ? args.excludeTaskIds.map((x) => String(x).trim()).filter(Boolean)
+            : []
+    );
+}
+
+function searchChatTaskIdExcluded(excludeSet, taskId, evalTaskId) {
+    if (!excludeSet || !excludeSet.size) return false;
+    if (taskId && excludeSet.has(String(taskId))) return true;
+    if (evalTaskId && excludeSet.has(String(evalTaskId))) return true;
+    return false;
+}
+
 /**
  * Resolve similarity threshold. Prefer minSimilarityPercent (0–100).
  * Also accepts minJaccard: values > 1 are treated as percent; otherwise 0–1.
@@ -622,6 +671,7 @@ function searchChatAnalyzePromptStats(dash, args, settings) {
 
 function searchChatFindSimilarPrompts(dash, args, settings) {
     const a = args || {};
+    const metricInfo = searchChatResolveJaccardMetric(a);
     const cursor = Math.max(0, Number(a.cursor) || 0);
     const limit = searchChatClampInt(a.limit, 1, settings.maxResultsPerCall, Math.min(15, settings.maxResultsPerCall));
     const minJaccard = Number.isFinite(Number(a.minJaccard)) ? Number(a.minJaccard) : 0;
@@ -643,7 +693,7 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
     } else {
         return { error: 'taskId or query is required' };
     }
-    const sourceSet = searchChatTokenSet(sourceText);
+    const sourceSet = metricInfo.tokenSetFn(sourceText);
     if (!sourceSet.size && !String(sourceText).trim()) {
         return { error: 'Source prompt/query is empty', results: [] };
     }
@@ -674,7 +724,7 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
         }
         const prompt = searchChatPromptTextForItem(it);
         if (!String(prompt).trim()) continue;
-        const jaccard = searchChatJaccard(sourceSet, searchChatTokenSet(prompt));
+        const jaccard = searchChatJaccard(sourceSet, metricInfo.tokenSetFn(prompt));
         if (jaccard < minJaccard) continue;
         if (maxJaccard != null && jaccard > maxJaccard) continue;
         const ref = searchChatTaskRef(task);
@@ -700,6 +750,8 @@ function searchChatFindSimilarPrompts(dash, args, settings) {
         sourceTaskId,
         sourceEvalTaskId,
         query: a.taskId ? null : String(a.query || '').slice(0, 120),
+        metric: metricInfo.metric,
+        metricNote: metricInfo.metricNote,
         minJaccard,
         maxJaccard,
         differentWorkers: !!a.differentWorkers,
@@ -729,6 +781,7 @@ function searchChatFindNearDuplicates(dash, args, settings) {
     if (a.differentWorkers && a.sameWorker) {
         return { error: 'differentWorkers and sameWorker are mutually exclusive' };
     }
+    const metricInfo = searchChatResolveJaccardMetric(a);
     const minJaccard = Number.isFinite(Number(a.minJaccard)) ? Number(a.minJaccard) : 0.85;
     const maxJaccard = Number.isFinite(Number(a.maxJaccard)) ? Number(a.maxJaccard) : null;
     const cursor = Math.max(0, Number(a.cursor) || 0);
@@ -737,11 +790,7 @@ function searchChatFindNearDuplicates(dash, args, settings) {
         ? String(a.workerId).trim()
         : '';
     const requireNamedWorkers = !!a.requireNamedWorkers;
-    const excludeTaskIds = new Set(
-        Array.isArray(a.excludeTaskIds)
-            ? a.excludeTaskIds.map((x) => String(x).trim()).filter(Boolean)
-            : []
-    );
+    const excludeTaskIds = searchChatExcludeTaskIdSet(a);
     const items = searchChatGetScopeItems(dash);
     const prepared = [];
     for (let i = 0; i < items.length; i++) {
@@ -760,7 +809,7 @@ function searchChatFindNearDuplicates(dash, args, settings) {
             workerId: w.workerId,
             workerHasProfile: w.workerHasProfile,
             identity: searchChatWorkerIdentityKey(w),
-            set: searchChatTokenSet(prompt),
+            set: metricInfo.tokenSetFn(prompt),
         });
     }
     const pairs = [];
@@ -770,9 +819,8 @@ function searchChatFindNearDuplicates(dash, args, settings) {
         for (let j = i + 1; j < prepared.length; j++) {
             const left = prepared[i];
             const right = prepared[j];
-            if (excludeTaskIds.has(String(left.taskId)) || excludeTaskIds.has(String(right.taskId))
-                || (left.evalTaskId && excludeTaskIds.has(String(left.evalTaskId)))
-                || (right.evalTaskId && excludeTaskIds.has(String(right.evalTaskId)))) continue;
+            if (searchChatTaskIdExcluded(excludeTaskIds, left.taskId, left.evalTaskId)
+                || searchChatTaskIdExcluded(excludeTaskIds, right.taskId, right.evalTaskId)) continue;
             if (requireWorkerId) {
                 if (String(left.workerId) !== requireWorkerId && String(right.workerId) !== requireWorkerId) {
                     continue;
@@ -814,6 +862,8 @@ function searchChatFindNearDuplicates(dash, args, settings) {
     truncatedCollection = truncatedCollection || matchCount > pairs.length;
     const page = searchChatPaginate(pairs, cursor, limit);
     return {
+        metric: metricInfo.metric,
+        metricNote: metricInfo.metricNote,
         minJaccard,
         maxJaccard,
         filters: {
@@ -840,74 +890,13 @@ function searchChatFindNearDuplicates(dash, args, settings) {
 }
 
 /**
- * Exhaustive same-worker prompt clustering over the current scoped results.
- * Uses alphanumeric token Jaccard (aligned with offline prompt-sim), current prompts only.
+ * Run same-worker connected-component clustering at a Jaccard threshold.
+ * @param {Map<string, object[]>} byIdentity
+ * @param {number} minJaccard
+ * @param {number} compareCap
+ * @param {boolean} includePairs
  */
-function searchChatClusterSimilarPrompts(dash, args, settings) {
-    const a = args || {};
-    const thresh = searchChatResolveSimilarityThreshold(a, 75);
-    if (thresh.error) return { error: thresh.error, complete: false };
-    const minJaccard = thresh.minJaccard;
-    const minSimilarityPercent = thresh.minSimilarityPercent;
-    const requireNamedWorkers = !!a.requireNamedWorkers;
-    const requireWorkerId = a.workerId != null && String(a.workerId).trim()
-        ? String(a.workerId).trim()
-        : '';
-    const includePairs = !!a.includePairs;
-    const cursor = Math.max(0, Number(a.cursor) || 0);
-    const limit = searchChatClampInt(
-        a.limit,
-        1,
-        settings.maxResultsPerCall,
-        Math.min(25, settings.maxResultsPerCall)
-    );
-    const compareCap = SEARCH_CHAT_CLUSTER_COMPARE_CAP;
-
-    const items = searchChatGetScopeItems(dash);
-    const byIdentity = new Map();
-    let scanned = 0;
-    let skippedEmpty = 0;
-    let skippedAnonymous = 0;
-    let skippedNoIdentity = 0;
-    let skippedWorkerFilter = 0;
-
-    for (let i = 0; i < items.length; i++) {
-        const it = items[i];
-        const task = it && it.task;
-        if (!task) continue;
-        scanned += 1;
-        const w = searchChatWorkerMeta(task);
-        if (requireNamedWorkers && !w.workerHasProfile) {
-            skippedAnonymous += 1;
-            continue;
-        }
-        if (requireWorkerId && String(w.workerId) !== requireWorkerId) {
-            skippedWorkerFilter += 1;
-            continue;
-        }
-        const identity = searchChatWorkerIdentityKey(w);
-        if (!identity) {
-            skippedNoIdentity += 1;
-            continue;
-        }
-        const prompt = searchChatPromptTextForItem(it);
-        if (!String(prompt).trim()) {
-            skippedEmpty += 1;
-            continue;
-        }
-        const ref = searchChatTaskRef(task);
-        const row = {
-            taskId: ref.taskId,
-            evalTaskId: ref.evalTaskId,
-            worker: w.worker,
-            workerId: w.workerId,
-            workerHasProfile: w.workerHasProfile,
-            set: searchChatAlnumTokenSet(prompt),
-        };
-        if (!byIdentity.has(identity)) byIdentity.set(identity, []);
-        byIdentity.get(identity).push(row);
-    }
-
+function searchChatRunSameWorkerClusters(byIdentity, minJaccard, compareCap, includePairs) {
     const parent = new Map();
     const rank = new Map();
     const find = (x) => {
@@ -995,7 +984,6 @@ function searchChatClusterSimilarPrompts(dash, args, settings) {
         }
     }
 
-    // Re-root edge/max maps after path compression
     const members = new Map();
     for (const taskId of parent.keys()) {
         const root = find(taskId);
@@ -1003,7 +991,6 @@ function searchChatClusterSimilarPrompts(dash, args, settings) {
         members.get(root).push(taskId);
     }
 
-    // Rebuild edge counts / max scores keyed by final roots
     const edgeByRoot = new Map();
     const maxByRoot = new Map();
     for (const [oldRoot, n] of edgeCount.entries()) {
@@ -1039,64 +1026,281 @@ function searchChatClusterSimilarPrompts(dash, args, settings) {
             workerHasProfile: !!sample.workerHasProfile,
         });
     }
-    clusters.sort((x, y) =>
-        y.nTasks - x.nTasks
-        || y.maxJaccard - x.maxJaccard
-        || String(x.taskIds[0]).localeCompare(String(y.taskIds[0]))
+
+    return {
+        clusters,
+        singletonCount,
+        eligibleTasks,
+        comparisons,
+        pairCount,
+        complete,
+        incompleteReason,
+        pairDetails,
+    };
+}
+
+function searchChatAutoThresholdForClusterCount(byIdentity, targetCount, compareCap) {
+    const target = Math.max(1, Math.floor(Number(targetCount) || 1));
+    let lo = 15;
+    let hi = 65;
+    let bestPct = 50;
+    let bestRun = searchChatRunSameWorkerClusters(byIdentity, bestPct / 100, compareCap, false);
+    let bestDist = Math.abs(bestRun.clusters.length - target);
+
+    for (let iter = 0; iter < 14; iter++) {
+        const mid = (lo + hi) / 2;
+        const run = searchChatRunSameWorkerClusters(byIdentity, mid / 100, compareCap, false);
+        const n = run.clusters.length;
+        const dist = Math.abs(n - target);
+        if (dist < bestDist
+            || (dist === bestDist && Math.abs(mid - 50) < Math.abs(bestPct - 50))) {
+            bestDist = dist;
+            bestPct = mid;
+            bestRun = run;
+        }
+        if (n === target) {
+            bestPct = mid;
+            bestRun = run;
+            break;
+        }
+        // Lower threshold → more edges → fewer/larger components; higher → more small clusters (or zero).
+        if (n > target) hi = mid;
+        else lo = mid;
+    }
+
+    return {
+        minSimilarityPercent: Math.round(bestPct * 100) / 100,
+        minJaccard: Math.round((bestPct / 100) * 10000) / 10000,
+        run: bestRun,
+        autoThreshold: true,
+        targetClusterCount: target,
+    };
+}
+
+/**
+ * Exhaustive same-worker prompt clustering over the current scoped results.
+ * Uses alphanumeric token Jaccard (aligned with offline prompt-sim), current prompts only.
+ */
+function searchChatClusterSimilarPrompts(dash, args, settings) {
+    const a = args || {};
+    const scopeMeta = searchChatScopeMeta(dash);
+    const excludeTaskIds = searchChatExcludeTaskIdSet(a);
+    const requireNamedWorkers = !!a.requireNamedWorkers;
+    const requireWorkerId = a.workerId != null && String(a.workerId).trim()
+        ? String(a.workerId).trim()
+        : '';
+    const includePairs = !!a.includePairs;
+    const cursor = Math.max(0, Number(a.cursor) || 0);
+    const limit = searchChatClampInt(
+        a.limit,
+        1,
+        settings.maxResultsPerCall,
+        Math.min(25, settings.maxResultsPerCall)
     );
+    const compareCap = SEARCH_CHAT_CLUSTER_COMPARE_CAP;
+    const topN = a.topN != null && String(a.topN).trim() !== ''
+        ? searchChatClampInt(a.topN, 1, 100, 0)
+        : 0;
+    const maxClusterSize = a.maxClusterSize != null && String(a.maxClusterSize).trim() !== ''
+        ? searchChatClampInt(a.maxClusterSize, 2, 100000, 0)
+        : 0;
+    const targetClusterCount = a.targetClusterCount != null && String(a.targetClusterCount).trim() !== ''
+        ? searchChatClampInt(a.targetClusterCount, 1, 100, 0)
+        : 0;
+    const explicitThreshold = searchChatHasExplicitSimilarityThreshold(a);
+    const wantsAuto = !explicitThreshold && (topN > 0 || targetClusterCount > 0);
+
+    if (explicitThreshold) {
+        const probe = searchChatResolveSimilarityThreshold(a, 75);
+        if (probe.error) return Object.assign({ complete: false }, scopeMeta, { error: probe.error });
+        if (probe.minJaccard === 0 || probe.minSimilarityPercent === 0) {
+            return Object.assign({
+                error: 'minSimilarityPercent/minJaccard of 0 connects nearly all tasks into one cluster',
+                hint: 'Use a positive threshold, or omit threshold and pass topN / targetClusterCount for auto threshold (15–65%).',
+                complete: false,
+            }, scopeMeta);
+        }
+    }
+
+    const items = searchChatGetScopeItems(dash);
+    const byIdentity = new Map();
+    let scanned = 0;
+    let skippedEmpty = 0;
+    let skippedAnonymous = 0;
+    let skippedNoIdentity = 0;
+    let skippedWorkerFilter = 0;
+    let skippedExcluded = 0;
+
+    for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const task = it && it.task;
+        if (!task) continue;
+        scanned += 1;
+        const w = searchChatWorkerMeta(task);
+        if (requireNamedWorkers && !w.workerHasProfile) {
+            skippedAnonymous += 1;
+            continue;
+        }
+        if (requireWorkerId && String(w.workerId) !== requireWorkerId) {
+            skippedWorkerFilter += 1;
+            continue;
+        }
+        const identity = searchChatWorkerIdentityKey(w);
+        if (!identity) {
+            skippedNoIdentity += 1;
+            continue;
+        }
+        const prompt = searchChatPromptTextForItem(it);
+        if (!String(prompt).trim()) {
+            skippedEmpty += 1;
+            continue;
+        }
+        const ref = searchChatTaskRef(task);
+        if (searchChatTaskIdExcluded(excludeTaskIds, ref.taskId, ref.evalTaskId)) {
+            skippedExcluded += 1;
+            continue;
+        }
+        const row = {
+            taskId: ref.taskId,
+            evalTaskId: ref.evalTaskId,
+            worker: w.worker,
+            workerId: w.workerId,
+            workerHasProfile: w.workerHasProfile,
+            set: searchChatAlnumTokenSet(prompt),
+        };
+        if (!byIdentity.has(identity)) byIdentity.set(identity, []);
+        byIdentity.get(identity).push(row);
+    }
+
+    let minSimilarityPercent;
+    let minJaccard;
+    let autoThreshold = false;
+    let autoTarget = null;
+    let run;
+
+    if (wantsAuto) {
+        const target = targetClusterCount > 0 ? targetClusterCount : topN;
+        const auto = searchChatAutoThresholdForClusterCount(byIdentity, target, compareCap);
+        minSimilarityPercent = auto.minSimilarityPercent;
+        minJaccard = auto.minJaccard;
+        autoThreshold = true;
+        autoTarget = auto.targetClusterCount;
+        run = includePairs
+            ? searchChatRunSameWorkerClusters(byIdentity, minJaccard, compareCap, true)
+            : auto.run;
+    } else {
+        const thresh = searchChatResolveSimilarityThreshold(a, 75);
+        if (thresh.error) return Object.assign({ complete: false }, scopeMeta, { error: thresh.error });
+        minSimilarityPercent = thresh.minSimilarityPercent;
+        minJaccard = thresh.minJaccard;
+        run = searchChatRunSameWorkerClusters(byIdentity, minJaccard, compareCap, includePairs);
+    }
+
+    let clusters = run.clusters.slice();
+    const omittedGiantSizes = [];
+    if (maxClusterSize > 0) {
+        const kept = [];
+        for (let i = 0; i < clusters.length; i++) {
+            if (clusters[i].nTasks > maxClusterSize) {
+                omittedGiantSizes.push(clusters[i].nTasks);
+            } else {
+                kept.push(clusters[i]);
+            }
+        }
+        clusters = kept;
+    }
+
+    const sortForTopN = topN > 0;
+    clusters.sort((x, y) => {
+        if (sortForTopN) {
+            return y.maxJaccard - x.maxJaccard
+                || y.nTasks - x.nTasks
+                || String(x.taskIds[0]).localeCompare(String(y.taskIds[0]));
+        }
+        return y.nTasks - x.nTasks
+            || y.maxJaccard - x.maxJaccard
+            || String(x.taskIds[0]).localeCompare(String(y.taskIds[0]));
+    });
+
+    const clusterCountBeforeTopN = clusters.length;
+    if (topN > 0 && clusters.length > topN) {
+        clusters = clusters.slice(0, topN);
+    }
 
     let taskCountInClusters = 0;
     for (let i = 0; i < clusters.length; i++) taskCountInClusters += clusters[i].nTasks;
 
     const page = searchChatPaginate(clusters, cursor, limit);
-    const out = {
-        complete,
-        incompleteReason,
+    const out = Object.assign({}, scopeMeta, {
+        complete: run.complete,
+        incompleteReason: run.incompleteReason,
         metric: 'token_jaccard_alnum',
         metricNote: 'Lowercased [a-z0-9]+ token-set Jaccard (aligned with offline prompt-sim); not LCS %.',
         promptScope: 'current',
         minSimilarityPercent,
         minJaccard: Math.round(minJaccard * 10000) / 10000,
+        autoThreshold,
+        targetClusterCount: autoTarget,
+        topN: topN > 0 ? topN : null,
+        maxClusterSize: maxClusterSize > 0 ? maxClusterSize : null,
+        omitGiantClusterCount: omittedGiantSizes.length,
+        omittedGiantClusterSizes: omittedGiantSizes.length ? omittedGiantSizes : undefined,
+        clusterCountBeforeTopN,
         workerId: requireWorkerId || null,
         requireNamedWorkers,
+        excludeTaskIds: excludeTaskIds.size ? Array.from(excludeTaskIds) : [],
         scannedTasks: scanned,
-        eligibleTasks,
+        eligibleTasks: run.eligibleTasks,
         skippedEmpty,
         skippedAnonymous,
         skippedNoIdentity,
         skippedWorkerFilter,
-        comparisons,
+        skippedExcluded,
+        comparisons: run.comparisons,
         comparisonCap: compareCap,
-        pairCount,
+        pairCount: run.pairCount,
         taskCountInClusters,
-        singletonCount,
-        clusterCount: clusters.length,
+        singletonCount: run.singletonCount,
+        clusterCount: clusterCountBeforeTopN,
+        returnedClusterCount: clusters.length,
         cursor: page.cursor,
         limit: page.limit,
         total: page.total,
         nextCursor: page.nextCursor,
         clusters: page.items,
-        evidenceRule: complete
-            ? 'complete:true — pairCount/taskCountInClusters/clusterCount are exhaustive for this scope.'
+        evidenceRule: run.complete
+            ? 'complete:true — pairCount/taskCountInClusters/clusterCount are exhaustive for this scope'
+                + (scopeMeta.usingFiltered && scopeMeta.scopeCount !== scopeMeta.cachedCount
+                    ? ' (WARNING: usingFiltered — scopeCount=' + scopeMeta.scopeCount
+                        + ' vs cachedCount=' + scopeMeta.cachedCount + ').'
+                    : '.')
             : 'complete:false — do NOT claim “none” or a final count; report incompleteness and raise limits or narrow scope.',
-    };
+        scopeWarning: scopeMeta.usingFiltered && scopeMeta.scopeCount !== scopeMeta.cachedCount
+            ? 'Results are filtered/tab-scoped (' + scopeMeta.scopeCount + ' of '
+                + scopeMeta.cachedCount + '). Clear filters for full-cache clusters.'
+            : null,
+    });
     if (includePairs) {
+        const pairDetails = (run.pairDetails || []).slice();
         pairDetails.sort((x, y) => y.jaccard - x.jaccard);
         out.pairDetails = pairDetails;
-        out.pairDetailsTruncated = pairCount > pairDetails.length;
+        out.pairDetailsTruncated = run.pairCount > pairDetails.length;
         out.pairDetailCap = SEARCH_CHAT_CLUSTER_PAIR_DETAIL_CAP;
     }
-    if (!complete) {
+    if (!run.complete) {
         out.partialClustersFromEdgesFound = true;
     }
     Logger.log(
-        PLUGIN_ID + ': cluster_similar_prompts complete=' + complete
-            + ' eligible=' + eligibleTasks
-            + ' pairs=' + pairCount
-            + ' clusters=' + clusters.length
+        PLUGIN_ID + ': cluster_similar_prompts complete=' + run.complete
+            + ' eligible=' + run.eligibleTasks
+            + ' pairs=' + run.pairCount
+            + ' clusters=' + clusterCountBeforeTopN
+            + ' returned=' + clusters.length
             + ' tasksInClusters=' + taskCountInClusters
-            + ' comparisons=' + comparisons
-            + (incompleteReason ? ' reason=' + incompleteReason : '')
+            + ' comparisons=' + run.comparisons
+            + ' thr=' + minSimilarityPercent
+            + (autoThreshold ? ' auto' : '')
+            + (run.incompleteReason ? ' reason=' + run.incompleteReason : '')
     );
     return out;
 }
@@ -1132,6 +1336,11 @@ function searchChatComparePrompts(dash, args, settings) {
         workerIdA: wA.workerId,
         workerB: wB.worker,
         workerIdB: wB.workerId,
+        jaccardAlnum: Math.round(searchChatJaccard(
+            searchChatAlnumTokenSet(textA),
+            searchChatAlnumTokenSet(textB)
+        ) * 10000) / 10000,
+        metricNote: 'summary.metrics.jaccard uses stopword token sets; jaccardAlnum matches cluster_similar_prompts; summary.metrics.lcsSimilarity is word LCS % (Diff Viewer).',
         summary,
     };
 }
@@ -1140,6 +1349,7 @@ function searchChatPromptOverlapMatrix(dash, args) {
     const ids = Array.isArray(args && args.taskIds) ? args.taskIds.map((x) => String(x).trim()).filter(Boolean) : [];
     if (ids.length < 2) return { error: 'taskIds requires at least 2 ids' };
     if (ids.length > 12) return { error: 'taskIds capped at 12; got ' + ids.length };
+    const metricInfo = searchChatResolveJaccardMetric(args);
     const prepared = [];
     for (let i = 0; i < ids.length; i++) {
         const it = searchChatFindItem(dash, ids[i]);
@@ -1154,17 +1364,24 @@ function searchChatPromptOverlapMatrix(dash, args) {
             evalTaskId: ref.evalTaskId,
             worker: w.worker,
             workerId: w.workerId,
-            set: searchChatTokenSet(prompt),
+            prompt,
+            set: metricInfo.tokenSetFn(prompt),
         });
     }
     const matrix = {};
+    const lcsMatrix = {};
     const pairs = [];
     for (let i = 0; i < prepared.length; i++) {
         matrix[prepared[i].taskId] = {};
+        lcsMatrix[prepared[i].taskId] = {};
         for (let j = 0; j < prepared.length; j++) {
             const jaccard = searchChatJaccard(prepared[i].set, prepared[j].set);
             const score = Math.round(jaccard * 10000) / 10000;
             matrix[prepared[i].taskId][prepared[j].taskId] = score;
+            const lcs = i === j
+                ? 100
+                : searchChatLcsSimilarity(prepared[i].prompt, prepared[j].prompt, 'word');
+            lcsMatrix[prepared[i].taskId][prepared[j].taskId] = lcs;
             if (j > i) {
                 pairs.push({
                     taskIdA: prepared[i].taskId,
@@ -1176,12 +1393,17 @@ function searchChatPromptOverlapMatrix(dash, args) {
                     workerB: prepared[j].worker,
                     workerIdB: prepared[j].workerId,
                     jaccard: score,
+                    similarityPercent: Math.round(score * 10000) / 100,
+                    lcsSimilarity: lcs,
                 });
             }
         }
     }
     pairs.sort((x, y) => y.jaccard - x.jaccard);
     return {
+        metric: metricInfo.metric,
+        metricNote: metricInfo.metricNote,
+        lcsNote: 'lcsSimilarity is word-level LCS % (Diff Viewer / compare_prompts); not the same as Jaccard.',
         tasks: prepared.map((p) => ({
             taskId: p.taskId,
             evalTaskId: p.evalTaskId,
@@ -1190,6 +1412,7 @@ function searchChatPromptOverlapMatrix(dash, args) {
         })),
         taskIds: prepared.map((p) => p.taskId),
         matrix,
+        lcsMatrix,
         rankedPairs: pairs,
     };
 }
@@ -2965,7 +3188,7 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'find_similar_prompts',
-            'Rank OTHER prompts vs ONE source taskId or query (not exhaustive). For “how many tasks ≥ N% similar” / clusters, use cluster_similar_prompts instead. minJaccard is 0–1 (use 0.75 for 75%). Paginated.',
+            'Rank OTHER prompts vs ONE source taskId or query (not exhaustive). For “how many tasks ≥ N% similar” / clusters, use cluster_similar_prompts instead. Default metric alnum_jaccard (same as clustering). minJaccard is 0–1 (use 0.75 for 75%). Paginated.',
             {
                 type: 'object',
                 properties: {
@@ -2975,6 +3198,11 @@ function searchChatGetToolDefinitions() {
                     limit: { type: 'integer' },
                     minJaccard: { type: 'number' },
                     maxJaccard: { type: 'number' },
+                    metric: {
+                        type: 'string',
+                        enum: ['alnum_jaccard', 'token_jaccard'],
+                        description: 'Default alnum_jaccard (cluster-aligned). token_jaccard drops stopwords.',
+                    },
                     refineWithLcs: { type: 'boolean' },
                     differentWorkers: { type: 'boolean' },
                     workerId: { type: 'string' },
@@ -2989,12 +3217,16 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'find_near_duplicates',
-            'Paginated ranked prompt pairs by Jaccard (default minJaccard 0.85 = 85%). Use sameWorker:true for self-copies; differentWorkers:true for cross-author. Pair list may be capped — for exhaustive cluster/task counts use cluster_similar_prompts.',
+            'Paginated ranked prompt pairs by Jaccard (default minJaccard 0.85 = 85%; default metric alnum_jaccard). Use sameWorker:true for self-copies; differentWorkers:true for cross-author. Pair list may be capped — for exhaustive cluster/task counts use cluster_similar_prompts.',
             {
                 type: 'object',
                 properties: {
                     minJaccard: { type: 'number' },
                     maxJaccard: { type: 'number' },
+                    metric: {
+                        type: 'string',
+                        enum: ['alnum_jaccard', 'token_jaccard'],
+                    },
                     cursor: { type: 'integer', minimum: 0 },
                     limit: { type: 'integer' },
                     differentWorkers: { type: 'boolean' },
@@ -3011,17 +3243,34 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'cluster_similar_prompts',
-            'EXHAUSTIVE same-worker clustering over the scoped results. Prefer this for “how many of this person’s tasks are ≥75% similar” / list clusters. Pass minSimilarityPercent:75 (0–100; preferred). Optional workerId. Returns complete:true/false, pairCount, taskCountInClusters, clusterCount, and paginated clusters of task_… IDs. In respond(), include the count AND list every returned cluster’s taskIds in fenced code blocks (one taskId per line; do not wait for the operator to ask). Metric: alphanumeric token Jaccard on current prompts.',
+            'EXHAUSTIVE same-worker clustering over scoped results (alnum Jaccard). For “how many ≥ N%”: pass minSimilarityPercent:N. For “top N most similar clusters”: pass topN (and optional targetClusterCount) WITHOUT threshold — auto-picks 15–65%. Never pass minSimilarityPercent:0. Use excludeTaskIds to drop known tasks; maxClusterSize to omit giant components. Returns scopeCount/cachedCount/usingFiltered — if scope shrank, say so. List every returned cluster’s taskIds in fenced blocks.',
             {
                 type: 'object',
                 properties: {
                     minSimilarityPercent: {
                         type: 'number',
-                        description: 'Threshold as percent 0–100 (e.g. 75 for 75%). Preferred over minJaccard.',
+                        description: 'Threshold as percent 0–100 (e.g. 75). Must be >0. Prefer omit when using topN/targetClusterCount.',
                     },
                     minJaccard: {
                         type: 'number',
                         description: 'Alternate threshold: 0–1 (0.75) or >1 treated as percent. Prefer minSimilarityPercent.',
+                    },
+                    topN: {
+                        type: 'integer',
+                        description: 'Return only the top N clusters ranked by maxJaccard then size. With no threshold, triggers auto-threshold.',
+                    },
+                    targetClusterCount: {
+                        type: 'integer',
+                        description: 'Auto-search a threshold (15–65%) aiming for about this many clusters. Use with or instead of topN when operator gives no threshold.',
+                    },
+                    maxClusterSize: {
+                        type: 'integer',
+                        description: 'Omit clusters larger than this (e.g. half of scopeCount) so a mega-component is not returned.',
+                    },
+                    excludeTaskIds: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Drop these task_… ids (or eval UUIDs) before clustering — e.g. exclude a prior cluster.',
                     },
                     workerId: {
                         type: 'string',
@@ -3040,7 +3289,7 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'compare_prompts',
-            'Compare two task prompts (optional version nos): Jaccard, LCS similarity, line counts, optional short hunk samples.',
+            'Compare two task prompts (optional version nos): stopword Jaccard, alnum Jaccard (jaccardAlnum), LCS similarity (word/line), line counts, optional short hunk samples. Use when the operator cites Diff Viewer / word-diff %.',
             {
                 type: 'object',
                 properties: {
@@ -3057,11 +3306,15 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'prompt_overlap_matrix',
-            'Pairwise Jaccard matrix for 2–12 taskIds plus ranked pairs (includes worker ids).',
+            'Pairwise alnum Jaccard matrix for 2–12 taskIds plus ranked pairs with jaccard and lcsSimilarity (word LCS %). Default metric matches clustering.',
             {
                 type: 'object',
                 properties: {
                     taskIds: { type: 'array', items: { type: 'string' } },
+                    metric: {
+                        type: 'string',
+                        enum: ['alnum_jaccard', 'token_jaccard'],
+                    },
                 },
                 required: ['taskIds'],
                 additionalProperties: false,
@@ -3675,14 +3928,25 @@ function searchChatBuildSystemPrompt(dash) {
         'SIMILARITY ROUTING:',
         '- Exhaustive “how many ≥ N% similar”, cluster membership, or same-worker near-dup counts: call cluster_similar_prompts',
         '  with minSimilarityPercent:N (e.g. 75). Optional workerId when scope has multiple workers.',
+        '- “Top N most similar clusters” / “most similar groups” with no threshold: cluster_similar_prompts with topN:N',
+        '  and targetClusterCount:N (omit minSimilarityPercent). Auto-picks a threshold in 15–65%. NEVER use minSimilarityPercent:0',
+        '  (that merges almost everything into one mega-cluster).',
+        '- “Exclude that cluster / these taskIds”: pass excludeTaskIds on cluster_similar_prompts (or find_near_duplicates).',
+        '- “Don’t return one giant cluster of all tasks”: pass maxClusterSize (e.g. Math.floor(scopeCount/2)) or raise the threshold.',
         '- Rank candidates vs ONE source task/query: find_similar_prompts (requires taskId or query; not exhaustive).',
         '- Paginated pair inspection: find_near_duplicates (sameWorker / differentWorkers). Pair lists may be capped.',
-        '- Thresholds: minSimilarityPercent is 0–100. minJaccard is 0–1 (0.75 = 75%). Never pass minJaccard:75.',
+        '- Thresholds: minSimilarityPercent is 0–100 and must be >0 when set. minJaccard is 0–1 (0.75 = 75%). Never pass minJaccard:75.',
+        '- Metrics: cluster / matrix / find_* default to alnum Jaccard (same as offline prompt-sim). Diff Viewer “word diff %” is LCS —',
+        '  use compare_prompts (lcsSimilarity / jaccardAlnum) or prompt_overlap_matrix rankedPairs.lcsSimilarity. Do NOT equate LCS % with Jaccard %.',
+        '- SCOPE: every cluster payload includes scannedTasks, scopeCount, cachedCount, usingFiltered. If scannedTasks or scopeCount',
+        '  is much smaller than Data overview resultCount/cachedCount, the Results list was filtered — say so and do not claim',
+        '  exhaustiveness over the full worker set; suggest clearing filters or re-check get_scope.',
         'PROACTIVE RESULTS: When a tool already returned the answer payload, put the useful details in the FIRST respond().',
         'Do not answer with counts alone when clusters, taskId lists, pair lists, or ranked rows are in the tool result —',
         'the operator should not need a follow-up like “please list them.” For cluster_similar_prompts: lead with',
-        'taskCountInClusters / clusterCount / pairCount, then list EVERY returned cluster as numbered groups of task_… IDs',
-        '(include maxSimilarityPercent per cluster). If nextCursor is set, list this page and note remaining clusters.',
+        'taskCountInClusters / clusterCount / pairCount / minSimilarityPercent (and autoThreshold if set), then list EVERY',
+        'returned cluster as numbered groups of task_… IDs (include maxSimilarityPercent per cluster). If nextCursor is set,',
+        'list this page and note remaining clusters.',
         'Same idea for other list/find tools: include the returned rows/ids in respond() unless the operator asked for a count only.',
         'COPYABLE MARKDOWN (required for IDs the operator will copy):',
         '- Single values (one taskId, email, workerId): wrap in inline backticks like `task_abc…` (UI is click-to-copy).',
@@ -4190,7 +4454,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '6.1',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
