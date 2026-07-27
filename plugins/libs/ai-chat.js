@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '6.2';
+const AI_CHAT_VERSION = '6.3';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -414,20 +414,20 @@ function aiChatApplyTheme(el, opts) {
         + '  overflow: hidden;'
         + '}'
         + '.wf-chat-codeblock > pre {'
-        + '  margin: 0 !important; padding: 30px 12px 10px !important;'
+        + '  margin: 0 !important; padding: 10px 36px 10px 12px !important;'
         + '  max-width: 100%; overflow: auto; box-sizing: border-box;'
         + '  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);'
         + '  font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;'
         + '  background: transparent !important; border: none !important;'
         + '}'
         + '.wf-chat-code-copy {'
-        + '  position: absolute; top: 4px; right: 4px; z-index: 2;'
-        + '  display: inline-flex; align-items: center; justify-content: center; gap: 4px;'
-        + '  min-width: 28px; height: 24px; padding: 0 8px; margin: 0;'
+        + '  position: absolute; top: 8px; right: 6px; z-index: 2;'
+        + '  display: inline-flex; align-items: center; justify-content: center;'
+        + '  width: 24px; height: 24px; min-width: 24px; padding: 0; margin: 0;'
         + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
         + '  border-radius: 6px; cursor: pointer;'
         + '  background: color-mix(in srgb, var(--background, #fff) 88%, transparent);'
-        + '  color: #94a3b8; font-size: 11px; font-weight: 600; line-height: 1;'
+        + '  color: #94a3b8; line-height: 0;'
         + '}'
         + '.wf-chat-code-copy:hover {'
         + '  color: #e2e8f0; background: color-mix(in srgb, #94a3b8 22%, transparent);'
@@ -753,7 +753,7 @@ function aiChatEnhanceCodeCopy(row, opts) {
         btn.setAttribute('data-wf-chat-code-copy', '1');
         btn.title = 'Copy code block';
         btn.setAttribute('aria-label', 'Copy code block');
-        btn.innerHTML = aiChatCopyIconSvg() + '<span>Copy</span>';
+        btn.innerHTML = aiChatCopyIconSvg();
         btn.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -2191,7 +2191,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
