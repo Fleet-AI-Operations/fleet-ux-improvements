@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.180",
+  "archetypesVersion": "14.182",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -122,6 +122,12 @@
       "name": "request-revisions-task-only.js",
       "version": "1.1",
       "hash": "sha256-8216a34a390a65cf7958f33c5262d00fb18cfdb18f4f25fd3e0ce10ce2f9f256",
+      "log": false
+    },
+    {
+      "name": "source-data-explorer.js",
+      "version": "5.0",
+      "hash": "sha256-771323ae1daa8101b5ebda990a3cd13e39c1f209f8d2bb68e8604a84a0c263b2",
       "log": false
     },
     {
@@ -314,6 +320,7 @@
       "disambiguationSelectors": [],
       "libraries": [
         "notes-resize-handle.js",
+        "source-data-explorer.js",
         "user-story-markdown.js"
       ],
       "plugins": [
@@ -325,8 +332,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "4.4",
-          "hash": "sha256-daeb3a7e511984477e5efa4cca155895a8fa699dacbcc37e0e70911f9fd175c8",
+          "version": "1.0",
+          "hash": "sha256-bef44446700fec4bae479eacc605175066fe9ad1bb72a17003ee1c9ce1945d8c",
           "log": false
         },
         {
@@ -402,6 +409,7 @@
       "disambiguationSelectors": [],
       "libraries": [
         "prompt-scratchpad.js",
+        "source-data-explorer.js",
         "user-story-markdown.js"
       ],
       "plugins": [
@@ -413,8 +421,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "4.4",
-          "hash": "sha256-daeb3a7e511984477e5efa4cca155895a8fa699dacbcc37e0e70911f9fd175c8",
+          "version": "1.0",
+          "hash": "sha256-bef44446700fec4bae479eacc605175066fe9ad1bb72a17003ee1c9ce1945d8c",
           "log": false
         },
         {

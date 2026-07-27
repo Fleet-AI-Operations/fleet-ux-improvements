@@ -293,7 +293,7 @@
     {
       "file": "source-data-explorer.js",
       "name": "Explore GUI",
-      "description": "Adds an Explore GUI control that opens the underlying environment in a new tab so you can inspect data without parsing JSON. Captures the MCP instance URL from network traffic; includes an acknowledgment modal before opening."
+      "description": "Adds an Explore GUI control that opens the underlying environment in a new tab so you can inspect data without parsing JSON. Captures the env root from /api/mcp-proxy subdomain (legacy direct /mcp fallback); includes an acknowledgment modal before opening."
     },
     {
       "file": "text-sanitizer.js",
