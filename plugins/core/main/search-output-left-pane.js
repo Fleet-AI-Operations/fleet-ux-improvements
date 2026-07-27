@@ -460,7 +460,7 @@ const searchOutputLeftPaneMethods = {
                                 <div id="wf-dash-manual-filter-wrap">
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Manual filters</div>
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
-                                        <span style="${hint} margin: 0;">Stage rows below, then press Apply. Default matches all conditions (AND).</span>
+                                        <span style="${hint} margin: 0;">Click Apply to update changes</span>
                                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
                                             <input type="checkbox" id="wf-dash-manual-andor" style="margin: 0;">
                                             <span>Match any (OR)</span>
@@ -2888,7 +2888,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.8',
+    _version: '4.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
