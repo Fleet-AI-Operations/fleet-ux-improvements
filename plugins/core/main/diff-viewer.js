@@ -14,7 +14,7 @@ const DV_PUNCTUATION_KEY = 'fleet-ux:diff-viewer-punctuation';
 const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
 const DV_HIGHLIGHT_LENGTH_MIN = 1;
 const DV_HIGHLIGHT_LENGTH_MAX = 50;
-const DV_MAX_SLOTS = 6;
+const DV_MAX_SLOTS = 10;
 const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
 const DV_SLOT_GAP = 12;
@@ -3111,7 +3111,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
 
