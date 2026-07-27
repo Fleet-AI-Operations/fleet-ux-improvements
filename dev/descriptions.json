@@ -173,7 +173,7 @@
     {
       "file": "sort-qa-environments-alphabetically.js",
       "name": "Sort QA Environments Alphabetically",
-      "description": "Sorts QA review environment cards A–Z by environment name"
+      "description": "Sorts QA review environment cards A\u2013Z by environment name"
     }
   ],
   "archetypes/qa-tool-use/main": [
@@ -264,7 +264,7 @@
     {
       "file": "sort-environments-alphabetically.js",
       "name": "Sort Environments Alphabetically",
-      "description": "Sorts environment cards A–Z by name on the task creation environment picker page."
+      "description": "Sorts environment cards A\u2013Z by name on the task creation environment picker page."
     }
   ],
   "archetypes/task-view/main": [
@@ -343,11 +343,6 @@
       "description": "Removes the gradient fade overlay from the prompt textarea"
     },
     {
-      "file": "task-instructions-dismiss.js",
-      "name": "Task Instructions Dismiss",
-      "description": "Adds a close control on the Task Instructions dialog so you can use the page during the countdown; after closing with X, clicks the acknowledge button once it enables"
-    },
-    {
       "file": "text-sanitizer.js",
       "name": "Text Sanitizer",
       "description": "Adds a text sanitizer utility for quickly cleaning and transforming text"
@@ -368,6 +363,11 @@
       "file": "source-data-explorer.js",
       "name": "Source Data Explorer",
       "description": "Add button that opens the underlying environment in a new tab. This is meant to be used as an additional way to explore the underlying data so you can build amazing prompts without having to parse the data in JSON format. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded."
+    },
+    {
+      "file": "task-instructions-dismiss.js",
+      "name": "Task Instructions Dismiss",
+      "description": "Adds a close control on the Task Instructions dialog so you can use the page during the countdown; after closing with X, clicks the acknowledge button once it enables"
     },
     {
       "file": "workflow-integrity-check.js",

@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.186",
+  "archetypesVersion": "14.187",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -334,12 +334,6 @@
           "name": "source-data-explorer.js",
           "version": "1.0",
           "hash": "sha256-bef44446700fec4bae479eacc605175066fe9ad1bb72a17003ee1c9ce1945d8c",
-          "log": false
-        },
-        {
-          "name": "task-instructions-dismiss.js",
-          "version": "1.2",
-          "hash": "sha256-92f5270de1e9a2366a567a3e9c78fd1dc4c57cf1b49d89601d47ba4e62ad6289",
           "log": false
         },
         {
@@ -1044,6 +1038,12 @@
           "name": "prompt-and-notes-areas.js",
           "version": "3.2",
           "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5",
+          "log": false
+        },
+        {
+          "name": "task-instructions-dismiss.js",
+          "version": "1.2",
+          "hash": "sha256-92f5270de1e9a2366a567a3e9c78fd1dc4c57cf1b49d89601d47ba4e62ad6289",
           "log": false
         }
       ]
