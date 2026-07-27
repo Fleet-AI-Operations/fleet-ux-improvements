@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.182",
+  "archetypesVersion": "14.183",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -126,8 +126,8 @@
     },
     {
       "name": "source-data-explorer.js",
-      "version": "5.0",
-      "hash": "sha256-771323ae1daa8101b5ebda990a3cd13e39c1f209f8d2bb68e8604a84a0c263b2",
+      "version": "5.1",
+      "hash": "sha256-ba57edbb187fd4a9f4bdfac6770dac4bc973cbc7b10503f3aef09c870449852c",
       "log": false
     },
     {

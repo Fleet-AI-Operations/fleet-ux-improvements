@@ -103,8 +103,12 @@ const SourceDataExplorerApi = {
 
     _instanceRootFromSubdomain(subdomain) {
         if (!subdomain || typeof subdomain !== 'string') return null;
-        const host = subdomain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+        let host = subdomain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
         if (!host) return null;
+        // mcp-proxy subdomain is the env label only; public host appends .fleetai.com
+        if (!/\.fleetai\.com$/i.test(host)) {
+            host = `${host}.fleetai.com`;
+        }
         return `https://${host}/`;
     },
 
@@ -412,7 +416,7 @@ const plugin = {
     id: 'sourceDataExplorerLib',
     name: 'Explore GUI (library)',
     description: 'Shared API: Explore GUI control that opens the tool environment from mcp-proxy subdomain (or legacy /mcp URL)',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
