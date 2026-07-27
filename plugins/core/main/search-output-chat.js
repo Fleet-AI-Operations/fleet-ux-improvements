@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '5.2';
+const SEARCH_CHAT_VERSION = '6.0';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -1503,22 +1503,125 @@ function searchChatItemMatchesPredicates(item, preds) {
     return true;
 }
 
-function searchChatGetTaskPayload(dash, taskId, sections, settings) {
+const SEARCH_CHAT_TASK_SECTIONS = [
+    'meta', 'prompt', 'versions', 'qa', 'disputes', 'flags', 'ratings'
+];
+
+function searchChatResolveTaskSections(sections) {
+    const raw = Array.isArray(sections) && sections.length
+        ? sections.map((s) => String(s))
+        : ['meta'];
+    if (raw.indexOf('all') >= 0) return new Set(SEARCH_CHAT_TASK_SECTIONS);
+    return new Set(raw);
+}
+
+function searchChatFeedbackPlainText(entryOrDisplay) {
+    if (!entryOrDisplay) return '';
+    const display = entryOrDisplay.display && typeof entryOrDisplay.display === 'object'
+        ? entryOrDisplay.display
+        : entryOrDisplay;
+    const blocks = Array.isArray(display.textBlocks) ? display.textBlocks : [];
+    const parts = [];
+    for (let i = 0; i < blocks.length; i++) {
+        const t = blocks[i] && blocks[i].text != null ? String(blocks[i].text) : '';
+        if (t) parts.push(t);
+    }
+    if (parts.length) return parts.join('\n\n');
+    return String(display.comment || display.text || '');
+}
+
+function searchChatSerializeQaEntry(entry, includeText, maxChars) {
+    const display = (entry && entry.display && typeof entry.display === 'object')
+        ? entry.display
+        : (entry || {});
+    const plain = searchChatFeedbackPlainText(entry);
+    const badges = (display.rejectionBadges || entry.rejectionBadges || []).slice(0, 20).map(String);
+    const linkedVersionNo = entry.linkedDisplayVersionNo != null
+        ? entry.linkedDisplayVersionNo
+        : (entry.linkedVersionNo != null
+            ? entry.linkedVersionNo
+            : (display.versionNo != null ? display.versionNo : null));
+    let reviewer = null;
+    if (entry.reviewer && typeof entry.reviewer === 'object') {
+        reviewer = {
+            id: String(entry.reviewer.id || ''),
+            name: String(entry.reviewer.name || ''),
+            email: String(entry.reviewer.email || ''),
+        };
+    } else if (display.qaReviewerId) {
+        reviewer = {
+            id: String(display.qaReviewerId || ''),
+            name: String(display.qaReviewerName || ''),
+            email: String(display.qaReviewerEmail || ''),
+        };
+    }
+    const row = {
+        id: String(entry.id || ''),
+        feedbackAt: String(entry.feedbackAt || display.feedbackAt || ''),
+        isPositive: Boolean(entry.isPositive != null ? entry.isPositive : display.isPositive),
+        isEscalated: Boolean(entry.isEscalated != null ? entry.isEscalated : display.isEscalated),
+        isFlaggedAsBugged: Boolean(
+            entry.isFlaggedAsBugged != null ? entry.isFlaggedAsBugged : display.isFlaggedAsBugged
+        ),
+        isSystemFeedback: Boolean(
+            entry.isSystemFeedback != null ? entry.isSystemFeedback : display.isSystemFeedback
+        ),
+        isVerifierFailure: Boolean(
+            entry.isVerifierFailure != null ? entry.isVerifierFailure : display.isVerifierFailure
+        ),
+        linkedVersionNo,
+        qualityRating: display.qualityRating || null,
+        badges,
+        reviewer,
+        textChars: plain.length,
+    };
+    if (includeText) {
+        const blocks = Array.isArray(display.textBlocks) ? display.textBlocks : [];
+        if (blocks.length) {
+            row.textBlocks = blocks.slice(0, 20).map((b) => {
+                const text = String((b && b.text) || '');
+                return {
+                    label: String((b && b.label) || ''),
+                    text: searchChatTruncate(text, maxChars),
+                    truncated: text.length > maxChars,
+                };
+            });
+        } else if (plain) {
+            row.text = searchChatTruncate(plain, maxChars);
+            row.truncated = plain.length > maxChars;
+        }
+    }
+    return row;
+}
+
+function searchChatGetTaskPayload(dash, taskId, sections, settings, options) {
+    const opts = options || {};
+    const includeText = Boolean(opts.includeText);
+    const versionNosFilter = Array.isArray(opts.versionNos) && opts.versionNos.length
+        ? new Set(opts.versionNos.map((n) => Number(n)).filter((n) => Number.isFinite(n)))
+        : null;
+    const feedbackIdsFilter = Array.isArray(opts.feedbackIds) && opts.feedbackIds.length
+        ? new Set(opts.feedbackIds.map((id) => String(id)))
+        : null;
     const item = searchChatFindItem(dash, taskId);
     if (!item || !item.task) {
         return { error: 'Task not found in current results', taskId: String(taskId || '') };
     }
-    const allow = new Set(
-        Array.isArray(sections) && sections.length
-            ? sections.map((s) => String(s))
-            : ['meta']
-    );
+    const allow = searchChatResolveTaskSections(sections);
     const task = item.task;
     const ref = searchChatTaskRef(task);
+    const hydrated = item.hydrated === true;
+    const maxChars = settings.maxPromptChars;
     const out = {
         taskId: ref.taskId,
         evalTaskId: ref.evalTaskId,
+        hydrated,
     };
+    const wantsTextBearing = allow.has('prompt') || allow.has('versions')
+        || allow.has('qa') || allow.has('disputes') || allow.has('flags');
+    if (!hydrated && wantsTextBearing) {
+        out.hint = 'Card not hydrated — text sections empty until hydrate';
+    }
     if (allow.has('meta')) {
         out.meta = {
             taskId: ref.taskId,
@@ -1533,55 +1636,131 @@ function searchChatGetTaskPayload(dash, taskId, sections, settings) {
             createdAt: task.createdAt || '',
             kind: item.kind || null,
             kinds: item.kinds || null,
-            hydrated: item.hydrated === true,
+            hydrated,
         };
     }
     if (allow.has('prompt')) {
-        const maxChars = settings.maxPromptChars;
-        out.prompt = {
-            current: searchChatTruncate(task.prompt || '', maxChars),
-            truncated: String(task.prompt || '').length > maxChars,
+        const pin = versionNosFilter && versionNosFilter.size === 1
+            ? [...versionNosFilter][0]
+            : (versionNosFilter && versionNosFilter.size > 1
+                ? [...versionNosFilter][0]
+                : null);
+        const full = searchChatPromptTextForItem(item, pin);
+        const promptOut = {
+            chars: full.length,
+            versionNo: pin,
         };
+        if (includeText) {
+            promptOut.text = searchChatTruncate(full, maxChars);
+            promptOut.truncated = full.length > maxChars;
+        }
+        out.prompt = promptOut;
     }
     if (allow.has('versions')) {
         const vers = Array.isArray(task.promptVersions) ? task.promptVersions : [];
-        out.versions = vers.slice(0, 20).map((v) => ({
-            versionNo: v.displayVersionNo != null ? v.displayVersionNo : v.versionNo,
-            envKey: v.envKey || v.env_key || '',
-            createdAt: v.createdAt || v.created_at || '',
-            promptChars: String(v.prompt || '').length,
-        }));
+        const mapped = [];
+        for (let i = 0; i < vers.length && mapped.length < 40; i++) {
+            const v = vers[i];
+            const versionNo = v.displayVersionNo != null ? v.displayVersionNo : v.versionNo;
+            if (versionNosFilter && !versionNosFilter.has(Number(versionNo))) continue;
+            const promptText = String(v.prompt || '');
+            const notes = String(v.resubmissionNotes || '');
+            const row = {
+                versionNo,
+                envKey: v.envKey || v.env_key || '',
+                createdAt: v.createdAt || v.created_at || '',
+                promptChars: promptText.length,
+                hasNotes: notes.length > 0,
+            };
+            if (includeText) {
+                row.prompt = searchChatTruncate(promptText, maxChars);
+                row.promptTruncated = promptText.length > maxChars;
+                if (notes) {
+                    row.resubmissionNotes = searchChatTruncate(notes, maxChars);
+                    row.notesTruncated = notes.length > maxChars;
+                }
+            }
+            mapped.push(row);
+        }
+        out.versions = mapped;
         out.versionCount = vers.length;
     }
     if (allow.has('qa')) {
-        const fb = item.qaFeedback;
-        out.qa = fb
-            ? {
-                isPositive: fb.isPositive,
-                badges: (fb.rejectionBadges || []).slice(0, 20),
-                comment: searchChatTruncate(fb.comment || fb.text || '', settings.maxPromptChars),
-            }
-            : null;
-        const all = Array.isArray(task.allFeedback) ? task.allFeedback : [];
+        let all = Array.isArray(task.allFeedback) ? task.allFeedback.slice() : [];
+        if (!all.length && item.qaFeedback) {
+            all = [{
+                id: item.selectedFeedbackId || '',
+                feedbackAt: item.qaFeedback.feedbackAt || '',
+                isPositive: item.qaFeedback.isPositive,
+                isEscalated: item.qaFeedback.isEscalated,
+                isFlaggedAsBugged: item.qaFeedback.isFlaggedAsBugged,
+                isSystemFeedback: item.qaFeedback.isSystemFeedback,
+                isVerifierFailure: item.qaFeedback.isVerifierFailure,
+                display: item.qaFeedback,
+            }];
+        }
+        const entries = [];
+        for (let i = 0; i < all.length && entries.length < 40; i++) {
+            const entry = all[i];
+            if (!entry) continue;
+            if (feedbackIdsFilter && !feedbackIdsFilter.has(String(entry.id || ''))) continue;
+            entries.push(searchChatSerializeQaEntry(entry, includeText, maxChars));
+        }
+        out.qa = { entryCount: all.length, entries };
         out.qaEntryCount = all.length;
     }
     if (allow.has('disputes')) {
         const rows = Array.isArray(item.disputes) ? item.disputes : [];
-        out.disputes = rows.slice(0, 20).map((d) => ({
-            id: d.id || d.disputeId || '',
-            status: d.status || '',
-            resolvedAt: d.resolvedAt || d.resolved_at || '',
-            summary: searchChatTruncate(d.summary || d.reason || d.notes || '', 400),
-        }));
+        out.disputes = rows.slice(0, 20).map((d) => {
+            const reason = String(d.reason || '');
+            const resolutionText = String(d.resolutionText || d.resolution_text || '');
+            const notes = String(d.notes || d.summary || '');
+            const summarySource = notes || reason || resolutionText;
+            const row = {
+                id: d.id || d.disputeId || '',
+                status: d.status || '',
+                resolvedAt: d.resolvedAt || d.resolved_at || '',
+                summaryChars: summarySource.length,
+            };
+            if (includeText) {
+                if (reason) {
+                    row.reason = searchChatTruncate(reason, Math.min(800, maxChars));
+                    row.reasonTruncated = reason.length > Math.min(800, maxChars);
+                }
+                if (resolutionText) {
+                    row.resolutionText = searchChatTruncate(resolutionText, Math.min(800, maxChars));
+                    row.resolutionTruncated = resolutionText.length > Math.min(800, maxChars);
+                }
+                if (notes && notes !== reason) {
+                    row.notes = searchChatTruncate(notes, Math.min(800, maxChars));
+                }
+            } else {
+                row.summary = searchChatTruncate(summarySource, 400);
+            }
+            return row;
+        });
         out.disputeCount = rows.length;
     }
     if (allow.has('flags')) {
         const flags = Array.isArray(item.flags) ? item.flags : [];
-        out.flags = flags.slice(0, 20).map((f) => ({
-            id: f.id || '',
-            status: f.status || '',
-            summary: searchChatTruncate(f.summary || f.reason || f.notes || '', 300),
-        }));
+        out.flags = flags.slice(0, 20).map((f) => {
+            const reason = String(f.reason || f.summary || f.notes || '');
+            const row = {
+                id: f.id || '',
+                status: f.status || '',
+                isConfirmed: Boolean(f.isConfirmed),
+                isDismissed: Boolean(f.isDismissed),
+                isPending: Boolean(f.isPending),
+                summaryChars: reason.length,
+            };
+            if (includeText) {
+                row.reason = searchChatTruncate(reason, Math.min(600, maxChars));
+                row.truncated = reason.length > Math.min(600, maxChars);
+            } else {
+                row.summary = searchChatTruncate(reason, 300);
+            }
+            return row;
+        });
         out.flagCount = flags.length;
     }
     if (allow.has('ratings')) {
@@ -1852,23 +2031,40 @@ function searchChatSearchQa(dash, args, limit, settings, cursor) {
     const q = String(a.query || '').trim().toLowerCase();
     const items = searchChatGetScopeItems(dash);
     const hits = [];
+    const excerptMax = Math.min(400, settings.maxPromptChars);
     for (let i = 0; i < items.length; i++) {
         const it = items[i];
-        const fb = it && it.qaFeedback;
-        if (!fb) continue;
-        if (typeof a.isPositive === 'boolean' && !!fb.isPositive !== a.isPositive) continue;
-        const badges = (fb.rejectionBadges || []).join(' ');
-        const comment = String(fb.comment || fb.text || '');
-        const hay = (comment + ' ' + badges).toLowerCase();
-        if (q && hay.indexOf(q) < 0) continue;
-        const ref = searchChatTaskRef(it.task);
-        hits.push({
-            taskId: ref.taskId,
-            evalTaskId: ref.evalTaskId,
-            isPositive: fb.isPositive,
-            badges: (fb.rejectionBadges || []).slice(0, 12),
-            comment: searchChatTruncate(comment, Math.min(400, settings.maxPromptChars)),
-        });
+        if (!it || !it.task) continue;
+        let entries = Array.isArray(it.task.allFeedback) ? it.task.allFeedback : [];
+        if (!entries.length && it.qaFeedback) {
+            entries = [{
+                id: it.selectedFeedbackId || '',
+                isPositive: it.qaFeedback.isPositive,
+                display: it.qaFeedback,
+            }];
+        }
+        for (let e = 0; e < entries.length; e++) {
+            const entry = entries[e];
+            if (!entry) continue;
+            const display = entry.display && typeof entry.display === 'object' ? entry.display : entry;
+            const isPositive = Boolean(
+                entry.isPositive != null ? entry.isPositive : display.isPositive
+            );
+            if (typeof a.isPositive === 'boolean' && isPositive !== a.isPositive) continue;
+            const badges = (display.rejectionBadges || []).slice(0, 12).map(String);
+            const plain = searchChatFeedbackPlainText(entry);
+            const hay = (plain + ' ' + badges.join(' ')).toLowerCase();
+            if (q && hay.indexOf(q) < 0) continue;
+            const ref = searchChatTaskRef(it.task);
+            hits.push({
+                taskId: ref.taskId,
+                evalTaskId: ref.evalTaskId,
+                feedbackId: String(entry.id || ''),
+                isPositive,
+                badges,
+                excerpt: searchChatTruncate(plain, excerptMax),
+            });
+        }
     }
     const page = searchChatPaginate(hits, cursor || 0, limit);
     return {
@@ -2631,7 +2827,13 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'get_task',
-            'Fetch allowlisted sections for one task id.',
+            'Fetch allowlisted sections for one task id from the in-memory card. '
+                + 'Default sections=["meta"] (cheap). Use sections=["all"] for every section. '
+                + 'includeText=false (default) returns counts/flags/sizes only — no prompt or QA bodies. '
+                + 'Set includeText=true only when you must analyze wording (prompt, QA textBlocks, dispute reasons). '
+                + 'Optional versionNos pins prompt/versions bodies; feedbackIds filters qa entries. '
+                + 'Prefer narrow sections + includeText on a single task over get_tasks_batch with includeText. '
+                + 'Unhydrated cards return empty text sections and a hint.',
             {
                 type: 'object',
                 properties: {
@@ -2640,8 +2842,22 @@ function searchChatGetToolDefinitions() {
                         type: 'array',
                         items: {
                             type: 'string',
-                            enum: ['meta', 'prompt', 'qa', 'disputes', 'versions', 'ratings', 'flags'],
+                            enum: ['meta', 'prompt', 'qa', 'disputes', 'versions', 'ratings', 'flags', 'all'],
                         },
+                    },
+                    includeText: {
+                        type: 'boolean',
+                        description: 'When true, include prompt/QA/dispute/flag text bodies (capped by maxPromptChars). Default false.',
+                    },
+                    versionNos: {
+                        type: 'array',
+                        items: { type: 'number' },
+                        description: 'Optional display version numbers to include for prompt/versions text.',
+                    },
+                    feedbackIds: {
+                        type: 'array',
+                        items: { type: 'string' },
+                        description: 'Optional QA feedback entry ids to include when sections includes qa.',
                     },
                 },
                 required: ['taskId'],
@@ -2650,7 +2866,9 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'get_tasks_batch',
-            'Fetch multiple tasks (meta by default). Paginate through taskIds with cursor; page size capped by maxResultsPerCall.',
+            'Fetch multiple tasks (meta by default). Same sections/includeText/versionNos/feedbackIds as get_task. '
+                + 'Paginate through taskIds with cursor; page size capped by maxResultsPerCall. '
+                + 'Avoid includeText=true on large batches — use get_task per task for deep reads (maxToolResultBytes).',
             {
                 type: 'object',
                 properties: Object.assign({
@@ -2659,9 +2877,12 @@ function searchChatGetToolDefinitions() {
                         type: 'array',
                         items: {
                             type: 'string',
-                            enum: ['meta', 'prompt', 'qa', 'disputes', 'versions', 'ratings', 'flags'],
+                            enum: ['meta', 'prompt', 'qa', 'disputes', 'versions', 'ratings', 'flags', 'all'],
                         },
                     },
+                    includeText: { type: 'boolean' },
+                    versionNos: { type: 'array', items: { type: 'number' } },
+                    feedbackIds: { type: 'array', items: { type: 'string' } },
                 }, pageProps),
                 required: ['taskIds'],
                 additionalProperties: false,
@@ -2683,7 +2904,7 @@ function searchChatGetToolDefinitions() {
         ),
         searchChatToolFn(
             'search_qa',
-            'Search QA comments/badges; optional isPositive filter. Paginated.',
+            'Search QA feedback on hydrated cards (allFeedback textBlocks + badges); optional isPositive filter. Paginated. Returns short excerpts — use get_task sections=["qa"] includeText=true for full entry bodies.',
             {
                 type: 'object',
                 properties: Object.assign({
@@ -3059,7 +3280,12 @@ function searchChatCreateExecutor(dash) {
                     dash,
                     args && args.taskId,
                     args && args.sections,
-                    settings
+                    settings,
+                    {
+                        includeText: args && args.includeText,
+                        versionNos: args && args.versionNos,
+                        feedbackIds: args && args.feedbackIds,
+                    }
                 );
                 break;
             case 'get_tasks_batch': {
@@ -3069,8 +3295,13 @@ function searchChatCreateExecutor(dash) {
                 const sections = (args && args.sections && args.sections.length)
                     ? args.sections
                     : ['meta'];
+                const taskOpts = {
+                    includeText: args && args.includeText,
+                    versionNos: args && args.versionNos,
+                    feedbackIds: args && args.feedbackIds,
+                };
                 const tasks = page.items.map((id) =>
-                    searchChatGetTaskPayload(dash, id, sections, settings)
+                    searchChatGetTaskPayload(dash, id, sections, settings, taskOpts)
                 );
                 payload = {
                     requested: ids.length,
@@ -3424,9 +3655,18 @@ function searchChatBuildSystemPrompt(dash) {
                 + ' (workerId=' + sole.id + ', ' + sole.count + ' scoped tasks). Do not ask who they are.')
             : 'SCOPE IDENTITY: see Data overview.workers. If uniqueWorkerCount>1, resolve “this person” via list_workers / email before clustering.',
         'Prompt revisions: each task has numbered prompt versions (versionNo: 1, 2, 3, …). Prefer versionNo in context',
-        '(e.g. "v1 vs v3", "submitted as version 2"). Use get_task / get_tasks_batch with sections including "versions"',
-        'to list versionNo/env/createdAt/size. Use compare_prompts versionA/versionB (numbers) to diff specific revisions.',
+        '(e.g. "v1 vs v3", "submitted as version 2"). Use get_task sections including "versions" (summary = sizes/dates;',
+        'includeText=true for bodies, optional versionNos). Use compare_prompts versionA/versionB to diff revisions.',
         'Default similarity tools use the current prompt; pin a version number when the operator cares about an older revision.',
+        'CARD CONTENT (get_task / get_tasks_batch):',
+        '- Default is cheap: sections=["meta"], includeText=false — no prompt/QA/dispute bodies.',
+        '- sections may include meta|prompt|versions|qa|disputes|flags|ratings or "all".',
+        '- Summary QA returns the full allFeedback timeline (flags, badges, linkedVersionNo, textChars) — not only selected qaFeedback.',
+        '- Set includeText=true only when you must read wording (prompt text, QA textBlocks, dispute reasons).',
+        '- Examples: “ignoring repeated feedback” → get_task sections=["qa"] includeText=true;',
+        '  “analyze the prompt” → sections=["prompt"] or ["versions"] includeText=true (or compare_prompts).',
+        '- Prefer one get_task with narrow sections for deep reads; avoid includeText on large get_tasks_batch (byte budget).',
+        '- If hydrated=false, timeline/text sections are empty until the card is hydrated — say so; do not invent content.',
         'Always finish by calling respond({ markdown }) with the operator-facing answer.',
         'Do not put the final answer in plain assistant content — only respond.',
         'Start with get_search_summary or get_scope when you need size/context; then dig with find/list/search tools.',
@@ -3463,10 +3703,10 @@ function searchChatBuildSystemPrompt(dash) {
         'If remaining rounds cannot finish an exhaustive task, call respond() immediately stating what is incomplete',
         'and that the operator should raise Max tool rounds / narrow the question — do not silently conclude “none”.',
         'Data shape (one result card): taskId (Fleet task_… key), evalTaskId (internal), worker {id,name,email}, status, env/project/team,',
-        'current prompt + promptVersions[] (each with versionNo), QA feedback, disputes[], flags[],',
+        'current prompt + promptVersions[] (each with versionNo), allFeedback[] QA timeline, disputes[], flags[],',
         'hydrated boolean, optional ratings if the operator already generated ratings this session.',
         'Discovery vs display: Task Creation / QA / Disputes are search methods that identified tasks;',
-        'a hydrated card still exposes the full timeline regardless of how it was found.',
+        'a hydrated card holds the full timeline in memory — fetch it via get_task sections (includeText when reading bodies).',
         'There is no live result dump in this prompt — use tools for all facts.',
         'Tools see only the scoped Results list (' + snapshot.resultCount
             + ' row(s)'
@@ -3913,7 +4153,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '5.2',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
