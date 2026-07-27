@@ -1,12 +1,12 @@
 // ============= task-instructions-dismiss.js =============
-// Task Instructions alertdialog: top-right X to hide early, auto-click ack when enabled.
+// Task Instructions alertdialog: top-right X to hide early; auto-click ack only after X hide.
 
 const plugin = {
     id: 'taskInstructionsDismiss',
     name: 'Task Instructions Dismiss',
     description:
-        'Adds a close control on the Task Instructions dialog so you can use the page during the countdown, then clicks I Understand once the button enables',
-    _version: '1.0',
+        'Adds a close control on the Task Instructions dialog so you can use the page during the countdown; after closing with X, clicks the acknowledge button once it enables',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -42,24 +42,28 @@ const plugin = {
         }
         state.dialogEl = dialog;
 
+        // Inject X even while countdown shows "Start in Ns" (ack label changes later).
+        this.ensureCloseButton(dialog, state);
+
+        if (!state.activationLogged) {
+            Logger.log('taskInstructionsDismiss: Task Instructions dialog ready (close control injected)');
+            state.activationLogged = true;
+        }
+
+        // Auto-ack only after the operator hid the modal with X.
+        if (!state.visuallyHidden || state.autoClicked) return;
+
         const ackBtn = this.findAckButton(dialog);
         if (!ackBtn) {
             if (!state.missingLogged) {
-                Logger.debug('taskInstructionsDismiss: ack button not found yet');
+                Logger.debug('taskInstructionsDismiss: ack/countdown button not found yet');
                 state.missingLogged = true;
             }
             return;
         }
         state.missingLogged = false;
 
-        this.ensureCloseButton(dialog, state);
         this.ensureButtonWatch(ackBtn, state);
-
-        if (!state.activationLogged) {
-            Logger.log('taskInstructionsDismiss: Task Instructions dialog ready (X + auto-ack watch)');
-            state.activationLogged = true;
-        }
-
         this.tryAutoClick(ackBtn, state);
     },
 
@@ -74,13 +78,19 @@ const plugin = {
         return null;
     },
 
+    /**
+     * Footer acknowledge control — during countdown label is "Start in N seconds"
+     * (capture may also show "Start in Ns"); then "I Understand - Start Working".
+     * Skip our injected close button.
+     */
     findAckButton(dialog) {
         const buttons = dialog.querySelectorAll('button');
         for (const btn of buttons) {
+            if (btn.getAttribute('data-fleet-plugin') === this.id) continue;
             const text = (btn.textContent || '').replace(/\s+/g, ' ').trim();
-            if (/I Understand/i.test(text) || /Start Working/i.test(text)) {
-                return btn;
-            }
+            if (/I Understand/i.test(text) || /Start Working/i.test(text)) return btn;
+            if (/^Start in\s+\d+\s*seconds?\b/i.test(text)) return btn;
+            if (/^Start in\s+\d+\s*s\b/i.test(text)) return btn;
         }
         return null;
     },
@@ -128,7 +138,7 @@ const plugin = {
             'position: absolute',
             'top: 12px',
             'right: 12px',
-            'z-index: 1',
+            'z-index: 20',
             'display: inline-flex',
             'align-items: center',
             'justify-content: center',
@@ -170,7 +180,13 @@ const plugin = {
         hide(dialog);
         hide(backdrop);
         state.visuallyHidden = true;
-        Logger.log('taskInstructionsDismiss: dialog hidden via X (page interactive; auto-ack still pending)');
+        Logger.log('taskInstructionsDismiss: dialog hidden via X (page interactive; auto-ack when enabled)');
+
+        const ackBtn = this.findAckButton(dialog);
+        if (ackBtn) {
+            this.ensureButtonWatch(ackBtn, state);
+            this.tryAutoClick(ackBtn, state);
+        }
     },
 
     ensureButtonWatch(ackBtn, state) {
@@ -183,9 +199,13 @@ const plugin = {
         const observer = new MutationObserver(() => {
             self.tryAutoClick(ackBtn, state);
         });
+        // Countdown updates label text; enable may flip disabled and/or rewrite children.
         observer.observe(ackBtn, {
             attributes: true,
-            attributeFilter: ['disabled', 'class', 'aria-disabled']
+            attributeFilter: ['disabled', 'class', 'aria-disabled'],
+            childList: true,
+            characterData: true,
+            subtree: true
         });
         state.buttonObserver = observer;
         if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerObserver) {
@@ -194,15 +214,20 @@ const plugin = {
     },
 
     tryAutoClick(ackBtn, state) {
+        if (!state.visuallyHidden) return;
         if (state.autoClicked || !ackBtn || !ackBtn.isConnected) return;
         if (ackBtn.disabled) return;
         if (ackBtn.getAttribute('aria-disabled') === 'true') return;
+
+        // Still on countdown label — wait until acknowledge copy.
+        const text = (ackBtn.textContent || '').replace(/\s+/g, ' ').trim();
+        if (/^Start in\s+\d+\s*(seconds?|s)\b/i.test(text)) return;
 
         state.autoClicked = true;
         this.teardownWatch(state);
         try {
             ackBtn.click();
-            Logger.log('taskInstructionsDismiss: auto-clicked I Understand - Start Working');
+            Logger.log('taskInstructionsDismiss: auto-clicked acknowledge after X hide:', text || '(empty)');
         } catch (e) {
             state.autoClicked = false;
             Logger.error('taskInstructionsDismiss: auto-click failed', e);

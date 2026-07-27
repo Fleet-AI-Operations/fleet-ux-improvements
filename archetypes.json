@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.184",
+  "archetypesVersion": "14.186",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -338,8 +338,8 @@
         },
         {
           "name": "task-instructions-dismiss.js",
-          "version": "1.0",
-          "hash": "sha256-bafee655be4f0d20ef953908f8be6b18bf3bd8358426dd283b8df38ebbe5518b",
+          "version": "1.2",
+          "hash": "sha256-92f5270de1e9a2366a567a3e9c78fd1dc4c57cf1b49d89601d47ba4e62ad6289",
           "log": false
         },
         {

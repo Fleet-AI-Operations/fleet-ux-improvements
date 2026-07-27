@@ -84,7 +84,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Tool Use Task Creation Page
 - **Explore GUI**: Opens the underlying tool environment in a new tab (captures env root from `/api/mcp-proxy` subdomain, with legacy `/mcp` fallback; acknowledgment modal before opening)
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
-- **Task Instructions Dismiss**: Adds a close control on the Task Instructions dialog so you can use the page during the countdown, then clicks I Understand once the button enables
+- **Task Instructions Dismiss**: Adds a close control on the Task Instructions dialog so you can use the page during the countdown; after closing with X, clicks the acknowledge button once it enables
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas

@@ -345,7 +345,7 @@
     {
       "file": "task-instructions-dismiss.js",
       "name": "Task Instructions Dismiss",
-      "description": "Adds a close control on the Task Instructions dialog so you can use the page during the countdown, then clicks I Understand once the button enables"
+      "description": "Adds a close control on the Task Instructions dialog so you can use the page during the countdown; after closing with X, clicks the acknowledge button once it enables"
     },
     {
       "file": "text-sanitizer.js",
