@@ -1925,6 +1925,19 @@ const searchOutputLeftPaneMethods = {
         this._state.retrieveInput = raw;
         const input = this._q('#wf-dash-retrieve-input');
         if (input) input.value = raw;
+        const { parsed, invalid } = this._parseRetrieveInputList(raw);
+        if (!parsed.length) {
+            this._setRetrieveError(
+                invalid.length
+                    ? 'Enter a valid task ID, version ID, task key, or Fleet URL (comma-separated lists are supported).'
+                    : 'Enter a valid task ID, version ID, task key, or Fleet URL.'
+            );
+            if (clipboardBtn && Context.buttonFeedback) {
+                Context.buttonFeedback.flashFailure(clipboardBtn);
+            }
+            Logger.log('search-output: retrieve from clipboard skipped — no valid task IDs');
+            return;
+        }
         this._setRetrieveError('');
         Logger.log('search-output: retrieve from clipboard — ' + raw.length + ' chars');
         if (clipboardBtn && Context.buttonFeedback) {
@@ -2888,7 +2901,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '4.9',
+    _version: '4.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
