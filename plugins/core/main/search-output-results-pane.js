@@ -3866,8 +3866,8 @@ const searchOutputResultsPaneMethods = {
         const eng = Context.diffEngine;
         if (!eng) return '';
         return eng.similarityLabelHtml({
-            leftText,
-            rightText,
+            leftText: this._dashPromptDiffText(leftText),
+            rightText: this._dashPromptDiffText(rightText),
             granularity: 'word',
             highlightModality: rollingUi.highlightModality,
             showHighlights: rollingUi.showHighlights
@@ -3940,21 +3940,24 @@ const searchOutputResultsPaneMethods = {
     },
 
     _rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi) {
-        const text = this._dashQuotedText(version.prompt);
-        if (!text) return '—';
         const eng = Context.diffEngine;
         const leftIdx = rollingUi.rollingLeft;
         const rightIdx = leftIdx + 1;
         if (!eng || !rollingUi.showHighlights) {
-            return dashEscHtml(text);
-        }
-        if (versionIdx < leftIdx || versionIdx > rightIdx) {
+            const text = this._dashQuotedText(version.prompt);
+            if (!text) return '—';
             return dashEscHtml(text);
         }
         const leftVersion = renderedVersions[leftIdx];
         const rightVersion = renderedVersions[rightIdx];
-        const leftText = this._dashQuotedText(leftVersion && leftVersion.prompt);
-        const rightText = this._dashQuotedText(rightVersion && rightVersion.prompt);
+        const leftText = this._dashPromptDiffText(leftVersion && leftVersion.prompt);
+        const rightText = this._dashPromptDiffText(rightVersion && rightVersion.prompt);
+        if (versionIdx < leftIdx || versionIdx > rightIdx) {
+            const text = this._dashPromptDiffText(version.prompt);
+            if (!text) return '—';
+            return dashEscHtml(text);
+        }
+        if (!leftText && !rightText && !this._dashPromptDiffText(version.prompt)) return '—';
         const pair = eng.diffPair(leftText, rightText, {
             granularity: 'word',
             showHighlights: rollingUi.showHighlights,
@@ -4174,8 +4177,8 @@ const searchOutputResultsPaneMethods = {
             const leftVersion = renderedVersions[rollingUi.rollingLeft];
             const rightVersion = renderedVersions[rollingUi.rollingLeft + 1];
             const simBadge = this._rollingSimilarityBadgeHtml(
-                (leftVersion && leftVersion.prompt) || '',
-                (rightVersion && rightVersion.prompt) || '',
+                this._dashPromptDiffText(leftVersion && leftVersion.prompt),
+                this._dashPromptDiffText(rightVersion && rightVersion.prompt),
                 rollingUi
             );
             if (simBadge) rightHeader += simBadge;
@@ -5510,6 +5513,11 @@ const searchOutputResultsPaneMethods = {
         return String(text ?? '').trim();
     },
 
+    /** Raw prompt for rolling/Diff scoring and highlight render (no trim). */
+    _dashPromptDiffText(text) {
+        return String(text ?? '');
+    },
+
     _dashQuotedHighlightedHtml(text, query, caseSensitive, fuzzy, regex) {
         return this._dashHighlightedHtml(this._dashQuotedText(text), query, caseSensitive, fuzzy, regex);
     },
@@ -6142,8 +6150,8 @@ const searchOutputResultsPaneMethods = {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
             const rightVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft + 1];
             const simBadge = this._rollingSimilarityBadgeHtml(
-                (leftVersion && leftVersion.prompt) || '',
-                (rightVersion && rightVersion.prompt) || '',
+                this._dashPromptDiffText(leftVersion && leftVersion.prompt),
+                this._dashPromptDiffText(rightVersion && rightVersion.prompt),
                 rollingUi
             );
             if (simBadge) rightHeader += simBadge;
@@ -6430,7 +6438,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.17',
+    _version: '5.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
