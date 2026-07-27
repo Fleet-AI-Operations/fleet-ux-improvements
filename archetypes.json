@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.183",
+  "archetypesVersion": "14.184",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -334,6 +334,12 @@
           "name": "source-data-explorer.js",
           "version": "1.0",
           "hash": "sha256-bef44446700fec4bae479eacc605175066fe9ad1bb72a17003ee1c9ce1945d8c",
+          "log": false
+        },
+        {
+          "name": "task-instructions-dismiss.js",
+          "version": "1.0",
+          "hash": "sha256-bafee655be4f0d20ef953908f8be6b18bf3bd8358426dd283b8df38ebbe5518b",
           "log": false
         },
         {
