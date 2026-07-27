@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '6.0';
+const SEARCH_CHAT_VERSION = '6.1';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -3732,6 +3732,8 @@ function searchChatPanelHtml() {
         + '<div data-wf-dash-search-chat-badge style="font-size: 11px; color: var(--muted-foreground, #64748b);'
         + ' min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></div>'
         + '<div style="display: flex; gap: 6px; flex-shrink: 0;">'
+        + '<button type="button" data-wf-dash-search-chat-stop class="' + btn + '"'
+        + ' style="display: none;">Stop</button>'
         + '<button type="button" data-wf-dash-search-chat-clear class="' + btn + '">New chat</button>'
         + '<button type="button" data-wf-dash-search-chat-export class="' + btn + '">Export</button>'
         + '</div></div>'
@@ -3772,6 +3774,22 @@ function searchChatSetStatus(panel, message, isError) {
     el.style.display = '';
     el.textContent = text;
     el.style.color = isError ? 'var(--destructive, #b91c1c)' : 'var(--muted-foreground, #64748b)';
+}
+
+function searchChatSetStopVisible(panel, visible) {
+    const el = panel && panel.querySelector('[data-wf-dash-search-chat-stop]');
+    if (!el) return;
+    el.style.display = visible ? '' : 'none';
+    el.disabled = !visible;
+}
+
+function searchChatStopTurn(panel) {
+    const chat = Context.aiChat;
+    const state = searchChatUi.chatState;
+    if (!chat || !state) return;
+    chat.stopStream(state, searchChatChatOpts());
+    searchChatSetStatus(panel, 'Stopped.', false);
+    Logger.log(PLUGIN_ID + ': stop requested');
 }
 
 function searchChatRenderActivity(panel) {
@@ -3837,15 +3855,13 @@ function searchChatResetChat(panel, dash) {
     searchChatUi.resultsFingerprint = searchChatResultsFingerprint(dash);
     searchChatRenderActivity(panel);
     searchChatSetStatus(panel, '', false);
+    searchChatSetStopVisible(panel, false);
     searchChatUpdateBadge(panel, dash);
     if (chat && panel) {
         chat.wireComposer(panel, searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
             onSend: (value) => searchChatSend(panel, dash, value),
             onStop: () => {
-                const state = searchChatUi.chatState;
-                if (!state || !chat) return;
-                chat.stopStream(state, searchChatChatOpts());
-                searchChatSetStatus(panel, 'Stopped.', false);
+                searchChatStopTurn(panel);
             },
             onExport: () => {
                 const state = searchChatUi.chatState;
@@ -3909,6 +3925,7 @@ async function searchChatSend(panel, dash, userText) {
     const executeTool = searchChatCreateExecutor(dash);
     searchChatUi.panel = panel;
     searchChatUi.sendInFlight = true;
+    searchChatSetStopVisible(panel, true);
     searchChatSetStatus(panel, 'Working…', false);
 
     try {
@@ -3943,16 +3960,28 @@ async function searchChatSend(panel, dash, userText) {
             },
             onTurnDone: (turn) => {
                 searchChatRecordTurn(state, turn);
-                searchChatSetStatus(panel, '', false);
+                if (!(state && state.stopRequested)) {
+                    searchChatSetStatus(panel, '', false);
+                }
                 void searchChatRenderChartsUi(panel);
             },
         }));
-        Logger.log(PLUGIN_ID + ': turn complete');
+        if (state && state.stopRequested) {
+            searchChatSetStatus(panel, 'Stopped.', false);
+            Logger.log(PLUGIN_ID + ': turn stopped');
+        } else {
+            Logger.log(PLUGIN_ID + ': turn complete');
+        }
     } catch (err) {
-        searchChatSetStatus(panel, (err && err.message) || String(err), true);
+        if (state && state.stopRequested) {
+            searchChatSetStatus(panel, 'Stopped.', false);
+        } else {
+            searchChatSetStatus(panel, (err && err.message) || String(err), true);
+        }
         Logger.error(PLUGIN_ID + ': turn failed', err);
     } finally {
         searchChatUi.sendInFlight = false;
+        searchChatSetStopVisible(panel, false);
     }
 }
 
@@ -3971,6 +4000,14 @@ function searchChatWirePanel(panel, dash) {
                 e.stopPropagation();
                 searchChatClearCharts(panel);
                 Logger.log(PLUGIN_ID + ': charts cleared');
+                return;
+            }
+            const stopBtn = e.target.closest('[data-wf-dash-search-chat-stop]');
+            if (stopBtn && panel.contains(stopBtn)) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!searchChatUi.sendInFlight) return;
+                searchChatStopTurn(panel);
                 return;
             }
             const clearBtn = e.target.closest('[data-wf-dash-search-chat-clear]');
@@ -4008,8 +4045,7 @@ function searchChatWirePanel(panel, dash) {
             chat.wireComposer(panel, searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
                 onSend: (value) => searchChatSend(panel, dash, value),
                 onStop: () => {
-                    chat.stopStream(searchChatUi.chatState, searchChatChatOpts());
-                    searchChatSetStatus(panel, 'Stopped.', false);
+                    searchChatStopTurn(panel);
                 },
                 onExport: () => {
                     if (!searchChatHasAiKey()) return;
@@ -4021,6 +4057,7 @@ function searchChatWirePanel(panel, dash) {
                 },
             }));
             chat.renderMessages(panel, searchChatUi.chatState, searchChatChatOpts());
+            searchChatSetStopVisible(panel, searchChatUi.sendInFlight);
             if (typeof chat.setKeyGate === 'function') {
                 chat.setKeyGate(panel, {
                     mountSelector: '[data-wf-dash-search-chat-mount]',
@@ -4153,7 +4190,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
