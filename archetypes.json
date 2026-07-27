@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.175",
+  "archetypesVersion": "14.176",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -883,8 +883,8 @@
       "plugins": [
         {
           "name": "activity-identity-reveal.js",
-          "version": "1.2",
-          "hash": "sha256-b8e25f71aab92c2aa7f0006c64ceb398eff2b8f2a20d4a5263182b342f1049d5",
+          "version": "1.3",
+          "hash": "sha256-265f0fba006053d6bfe7a9f78c541159dfd02ac9f7252fe5a5a3085618db7e70",
           "log": false
         }
       ]
