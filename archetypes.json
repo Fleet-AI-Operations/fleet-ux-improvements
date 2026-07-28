@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.211",
+  "archetypesVersion": "14.212",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -855,12 +855,6 @@
           "log": false
         },
         {
-          "name": "flag-as-bug-modal-improvements.js",
-          "version": "2.2",
-          "log": false,
-          "hash": "sha256-e67d8ce6569bac931716086afa76f418edb69d04257ccd8bfe7d30f9a1010bc6"
-        },
-        {
           "name": "dispute-resolution-snippets.js",
           "version": "1.1",
           "hash": "sha256-80f2eb4f294e5eb5159a451e55cb22fd026b71567b54b88361d7eda4b54e7476",
@@ -936,12 +930,6 @@
           "version": "1.9",
           "hash": "sha256-74828fd82db3fc86702312127965c39b6cffac32eb5e8169590a4cbaa5647034",
           "log": false
-        },
-        {
-          "name": "flag-as-bug-modal-improvements.js",
-          "version": "2.2",
-          "log": false,
-          "hash": "sha256-9bba8137aa6cf94c43f97c971d97dd7ca6391a0e2c61eb73cd3d32c35c86ba8b"
         },
         {
           "name": "dispute-resolution-snippets.js",
@@ -1251,6 +1239,27 @@
           "version": "3.2",
           "hash": "sha256-4be4922a61174e06e13a16e0840d38f53e8e2861199cf7d256c8f08ff926ef3e",
           "log": false
+        },
+        {
+          "name": "flag-as-bug-modal-improvements.js",
+          "version": "2.2",
+          "log": false,
+          "hash": "sha256-e67d8ce6569bac931716086afa76f418edb69d04257ccd8bfe7d30f9a1010bc6"
+        }
+      ]
+    },
+    {
+      "id": "dispute-detail",
+      "name": "Dispute Detail Page",
+      "description": "Page for reviewing a single writer dispute",
+      "urlPattern": "work/problems/disputes/*",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "flag-as-bug-modal-improvements.js",
+          "version": "2.2",
+          "log": false,
+          "hash": "sha256-9bba8137aa6cf94c43f97c971d97dd7ca6391a0e2c61eb73cd3d32c35c86ba8b"
         }
       ]
     },
