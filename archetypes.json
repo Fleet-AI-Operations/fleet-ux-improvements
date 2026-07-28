@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.210",
+  "archetypesVersion": "14.211",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -844,8 +844,8 @@
         },
         {
           "name": "dispute-list-filters.js",
-          "version": "1.4",
-          "hash": "sha256-f91292f95444625c38ea0a2ae8b2481e1fa5ba3e97eeee668437edfabcd8e8fb",
+          "version": "1.5",
+          "hash": "sha256-fdf89e11d8314a3fb68accf98ad8c67ebe6663422603eeb2eae2fd3581341ad3",
           "log": false
         },
         {

@@ -13,7 +13,7 @@ const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
     description: 'Filter visible disputes by environment and date submitted',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -493,10 +493,8 @@ const plugin = {
         const selected = state.selectedEnvs || new Set();
         for (const env of options) {
             const row = document.createElement('label');
-            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;cursor:pointer;padding:2px 0;';
+            row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:2px 0;';
 
-            const left = document.createElement('span');
-            left.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
             const cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.value = env;
@@ -508,15 +506,17 @@ const plugin = {
                 this.updateEnvButtonLabel(state, toolbar);
                 this.applyFilters(state);
             });
-            left.appendChild(cb);
-            left.appendChild(document.createTextNode(env));
 
             const countEl = document.createElement('span');
-            countEl.style.cssText = 'color:var(--muted-foreground,#6b7280);font-variant-numeric:tabular-nums;';
+            countEl.style.cssText = 'min-width:1.25rem;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted-foreground,#6b7280);';
             countEl.textContent = String(counts[env] || 0);
 
-            row.appendChild(left);
+            const nameEl = document.createElement('span');
+            nameEl.textContent = env;
+
+            row.appendChild(cb);
             row.appendChild(countEl);
+            row.appendChild(nameEl);
             panel.appendChild(row);
         }
     },
