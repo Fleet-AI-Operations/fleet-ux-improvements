@@ -86,6 +86,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Tool Use Task Creation Page (OpenClaw / Special Projects)
@@ -97,22 +98,26 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Tool Use Task Revision Page
 - **Explore GUI**: Opens the underlying tool environment in a new tab (captures env root from `/api/mcp-proxy` subdomain, with legacy `/mcp` fallback; acknowledgment modal before opening)
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
+- **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Computer Use Task Creation Page
 - **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
+- **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Computer Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
+- **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### QA Tool Use Review Page
@@ -126,6 +131,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Useful Link Buttons**: Add useful link buttons to the page
+- **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### QA Computer Use Review Page
@@ -136,6 +142,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
 - **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
+- **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Dispute Detail Page

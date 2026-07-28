@@ -48,6 +48,11 @@
       "file": "remove-textarea-gradient.js",
       "name": "Remove Textarea Gradient",
       "description": "Removes the gradient fade overlay from the prompt textarea"
+    },
+    {
+      "file": "user-story-collapse.js",
+      "name": "User Story Collapse",
+      "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
     }
   ],
   "archetypes/comp-use-task-creation/main": [
@@ -80,6 +85,11 @@
       "file": "remove-textarea-gradient.js",
       "name": "Remove Textarea Gradient",
       "description": "Removes the gradient fade overlay from the prompt textarea"
+    },
+    {
+      "file": "user-story-collapse.js",
+      "name": "User Story Collapse",
+      "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
     }
   ],
   "archetypes/dashboard/main": [
@@ -156,6 +166,11 @@
       "file": "toggle-main-panels.js",
       "name": "Toggle Main Panels",
       "description": "Hide or unhide either main pane (task detail or environment); the other pane expands to full width"
+    },
+    {
+      "file": "user-story-collapse.js",
+      "name": "User Story Collapse",
+      "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
     }
   ],
   "archetypes/qa-comp-use/dev": [],
@@ -236,6 +251,11 @@
       "file": "workflow-cache.js",
       "name": "Workflow Cache",
       "description": "Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded"
+    },
+    {
+      "file": "user-story-collapse.js",
+      "name": "User Story Collapse",
+      "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
     }
   ],
   "archetypes/qa-tool-use/dev": [
@@ -319,6 +339,11 @@
       "file": "workflow-cache.js",
       "name": "Workflow Cache",
       "description": "Adds the ability to restore the previous workflow when it has been cleared or the page has been reloaded"
+    },
+    {
+      "file": "user-story-collapse.js",
+      "name": "User Story Collapse",
+      "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
     }
   ],
   "archetypes/tool-use-task-creation/main": [
@@ -361,6 +386,11 @@
       "file": "tool-results-resize-handle.js",
       "name": "Tool Results Resize Handle",
       "description": "Adds a resize handle to tool result boxes so their height can be adjusted by dragging"
+    },
+    {
+      "file": "user-story-collapse.js",
+      "name": "User Story Collapse",
+      "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
     }
   ],
   "archetypes/tool-use-task-creation/dev": [

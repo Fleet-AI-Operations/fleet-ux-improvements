@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.199",
+  "archetypesVersion": "14.200",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -140,6 +140,12 @@
       "name": "user-story-markdown.js",
       "version": "1.5",
       "hash": "sha256-def4c5ee04c5bd3c40e3f1155ddbb3e229179f482ab14e5bfc600210f85afda5",
+      "log": false
+    },
+    {
+      "name": "user-story-collapse.js",
+      "version": "1.0",
+      "hash": "sha256-3924b82f8c8d71a6aa80f1629adee602aeef57dbf60a6276b0136382d1fd02d4",
       "log": false
     },
     {
@@ -321,7 +327,8 @@
       "libraries": [
         "notes-resize-handle.js",
         "source-data-explorer.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -353,6 +360,12 @@
           "version": "1.0",
           "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
           "log": false
+        },
+        {
+          "name": "user-story-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
+          "log": false
         }
       ]
     },
@@ -366,7 +379,8 @@
       ],
       "libraries": [
         "notes-resize-handle.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -398,6 +412,12 @@
           "version": "1.0",
           "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
           "log": false
+        },
+        {
+          "name": "user-story-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
+          "log": false
         }
       ]
     },
@@ -410,7 +430,8 @@
       "libraries": [
         "prompt-scratchpad.js",
         "source-data-explorer.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -435,6 +456,12 @@
           "name": "user-story-markdown.js",
           "version": "1.0",
           "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
+        },
+        {
+          "name": "user-story-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
           "log": false
         }
       ]
@@ -472,7 +499,8 @@
         "notes-resize-handle.js",
         "embedded-urlbar-fit.js",
         "action-counter.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -504,6 +532,12 @@
           "version": "1.0",
           "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
           "log": false
+        },
+        {
+          "name": "user-story-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
+          "log": false
         }
       ]
     },
@@ -517,7 +551,8 @@
         "embedded-urlbar-fit.js",
         "prompt-scratchpad.js",
         "action-counter.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -543,6 +578,12 @@
           "version": "1.0",
           "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
           "log": false
+        },
+        {
+          "name": "user-story-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
+          "log": false
         }
       ]
     },
@@ -559,7 +600,8 @@
         "request-revisions-task-only.js",
         "source-data-explorer.js",
         "top-nav-horizontal-scroll.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -627,6 +669,12 @@
           "version": "1.0",
           "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
           "log": false
+        },
+        {
+          "name": "user-story-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
+          "log": false
         }
       ]
     },
@@ -668,7 +716,8 @@
         "request-revisions-screenshot-upload-improvement.js",
         "request-revisions-task-only.js",
         "top-nav-horizontal-scroll.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -753,6 +802,12 @@
           "name": "user-story-markdown.js",
           "version": "1.0",
           "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "log": false
+        },
+        {
+          "name": "user-story-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
           "log": false
         },
         {
