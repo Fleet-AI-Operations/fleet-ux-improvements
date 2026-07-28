@@ -40,7 +40,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -48,7 +48,7 @@ const VncHelperApi = {
         bridgeStarted: false,
         waitObserverAttached: false,
         waitObserver: null,
-        minimized: false
+        minimized: true
     },
 
     isPanelEnabled() {
@@ -649,8 +649,9 @@ const VncHelperApi = {
         };
 
         if (showPanel) {
-            Logger.log('vncHelper: modal and keyboard shortcuts active');
-            toast('VNC Helper ready — drag title bar, resize corner. ⌘C/⌘V, Ctrl+Shift+C/F.');
+            minimizeModal();
+            Logger.log('vncHelper: modal and keyboard shortcuts active (starts minimized)');
+            toast('VNC Helper ready — open from the tab. ⌘C/⌘V, Ctrl+Shift+C/F.');
         } else {
             Logger.log('vncHelper: keyboard shortcuts active (panel hidden via settings)');
             toast('VNC Helper ready — ⌘C/⌘V, Ctrl+Shift+C/F. Panel is hidden in settings.');
@@ -692,7 +693,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

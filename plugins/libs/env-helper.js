@@ -39,7 +39,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'Env Helper',
     description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -47,7 +47,7 @@ const EnvHelperApi = {
         panelStarted: false,
         waitObserverAttached: false,
         waitObserver: null,
-        minimized: false
+        minimized: true
     },
 
     isPanelEnabled() {
@@ -531,8 +531,9 @@ const EnvHelperApi = {
         };
 
         if (showPanel) {
-            Logger.log('envHelper: modal active');
-            toast('Env Helper ready — drag title bar, resize corner.');
+            minimizeModal();
+            Logger.log('envHelper: modal active (starts minimized)');
+            toast('Env Helper ready — open from the tab.');
         } else {
             Logger.log('envHelper: panel hidden via settings');
         }
@@ -573,7 +574,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'Env Helper (library)',
     description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
