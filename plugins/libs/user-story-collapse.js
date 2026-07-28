@@ -1,10 +1,12 @@
 // ============= user-story-collapse.js (library) =============
-// Hide/Show User Story (or creation scenario) body from a right-aligned toggle on the label row.
+// Hide/Show User Story (or creation scenario) body from a right-aligned toggle on the label.
 
 const SCOPE = '[data-fleet-user-story-collapse="1"]';
-const SECTION_ATTR = 'data-fleet-user-story-collapse';
+const CONTAINER_ATTR = 'data-fleet-user-story-collapse';
 const TOGGLE_SLOT = 'user-story-collapse-toggle';
 const HIDDEN_ATTR = 'data-fleet-user-story-section-hidden';
+const SAVED_DISPLAY_ATTR = 'data-fleet-user-story-saved-display';
+const OLD_HEADER_ATTR = 'data-fleet-user-story-header';
 const LABEL_TEXT = 'User Story';
 const SCENARIO_INTRO_RE = /Write a problem inspired by the following scenario/i;
 const ORIGINAL_MARKER = 'data-fleet-user-story-original';
@@ -12,120 +14,137 @@ const REPLICA_MARKER = 'data-fleet-user-story-replica';
 
 const UserStoryCollapseApi = {
     id: 'userStoryCollapse',
+
     normalizeLabelText(text) {
         return String(text || '').replace(/\s+/g, ' ').trim();
     },
 
     isUserStoryLabel(el) {
         if (!el) return false;
-        // Exact label text only (ignore our injected button text if already present)
         const clone = el.cloneNode(true);
         clone.querySelectorAll('[data-slot="' + TOGGLE_SLOT + '"]').forEach((n) => n.remove());
         return this.normalizeLabelText(clone.textContent) === LABEL_TEXT;
     },
 
-    collectBodiesAfter(headerEl) {
+    isScenarioIntro(el) {
+        if (!el || el.tagName !== 'P') return false;
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('[data-slot="' + TOGGLE_SLOT + '"]').forEach((n) => n.remove());
+        return SCENARIO_INTRO_RE.test(this.normalizeLabelText(clone.textContent));
+    },
+
+    isStoryBody(el) {
+        if (!el || !el.getAttribute) return false;
+        if (el.getAttribute(ORIGINAL_MARKER) === 'true') return true;
+        if (el.getAttribute(REPLICA_MARKER) === 'true') return true;
+        if (el.classList && el.classList.contains('whitespace-pre-wrap')) return true;
+        return false;
+    },
+
+    collectBodiesInContainer(container, headerEl) {
         const bodies = [];
-        let sibling = headerEl.nextElementSibling;
-        while (sibling) {
-            if (sibling.getAttribute && sibling.getAttribute('data-fleet-user-story-header') === '1') {
-                break;
+        if (!container) return bodies;
+        for (const child of container.children) {
+            if (child === headerEl) continue;
+            if (child.querySelector && child.querySelector('[data-slot="' + TOGGLE_SLOT + '"]') && !this.isStoryBody(child)) {
+                // skip leftover empty header wrappers
+                if (child.getAttribute(OLD_HEADER_ATTR) === '1') continue;
             }
-            const isOriginal = sibling.getAttribute && sibling.getAttribute(ORIGINAL_MARKER) === 'true';
-            const isReplica = sibling.getAttribute && sibling.getAttribute(REPLICA_MARKER) === 'true';
-            const isStory =
-                isOriginal ||
-                isReplica ||
-                (sibling.classList && sibling.classList.contains('whitespace-pre-wrap'));
-            if (isStory) bodies.push(sibling);
-            sibling = sibling.nextElementSibling;
+            if (child.getAttribute && child.getAttribute(OLD_HEADER_ATTR) === '1') continue;
+            if (this.isStoryBody(child)) bodies.push(child);
         }
         return bodies;
     },
 
-    findLabelSections() {
+    findSections() {
+        const seenParents = new Set();
         const sections = [];
+
         const labels = document.querySelectorAll('label, span');
         for (const label of labels) {
             if (!this.isUserStoryLabel(label)) continue;
-            const anchor =
-                label.closest('[data-fleet-user-story-header="1"]') || label;
-            const bodies = this.collectBodiesAfter(anchor);
+            // Skip labels still stuck inside obsolete wrapper rows
+            const parent = label.parentElement;
+            if (!parent) continue;
+            const container =
+                parent.getAttribute && parent.getAttribute(OLD_HEADER_ATTR) === '1'
+                    ? parent.parentElement
+                    : parent;
+            if (!container || seenParents.has(container)) continue;
+            const bodies = this.collectBodiesInContainer(container, label);
             if (bodies.length === 0) continue;
-            sections.push({ kind: 'label', headerEl: label, bodies });
+            seenParents.add(container);
+            sections.push({ kind: 'label', headerEl: label, container, bodies });
         }
-        return sections;
-    },
 
-    findCreationScenarioSections() {
-        const sections = [];
         const intros = document.querySelectorAll('p');
         for (const intro of intros) {
-            if (!SCENARIO_INTRO_RE.test(this.normalizeLabelText(intro.textContent))) continue;
-            const bodies = this.collectBodiesForHeader(intro, 'scenario');
+            if (!this.isScenarioIntro(intro)) continue;
+            const parent = intro.parentElement;
+            if (!parent) continue;
+            const container =
+                parent.getAttribute && parent.getAttribute(OLD_HEADER_ATTR) === '1'
+                    ? parent.parentElement
+                    : parent;
+            if (!container || seenParents.has(container)) continue;
+            const bodies = this.collectBodiesInContainer(container, intro);
             if (bodies.length === 0) continue;
-            sections.push({ kind: 'scenario', headerEl: intro, bodies });
+            seenParents.add(container);
+            sections.push({ kind: 'scenario', headerEl: intro, container, bodies });
         }
+
         return sections;
     },
 
-    findSections() {
-        return this.findLabelSections().concat(this.findCreationScenarioSections());
+    cleanupOrphanHeaders(container) {
+        if (!container) return;
+        const orphans = container.querySelectorAll('[' + OLD_HEADER_ATTR + '="1"]');
+        for (const row of orphans) {
+            // Move any real label/intro back out, then remove the wrapper
+            const keep = [];
+            for (const child of Array.from(row.children)) {
+                if (child.getAttribute && child.getAttribute('data-slot') === TOGGLE_SLOT) {
+                    child.remove();
+                    continue;
+                }
+                keep.push(child);
+            }
+            for (const child of keep) {
+                container.insertBefore(child, row);
+            }
+            row.remove();
+        }
     },
 
     isSectionHidden(bodies) {
         return bodies.some(
-            (b) =>
-                b.getAttribute(HIDDEN_ATTR) === '1' ||
-                b.style.display === 'none'
+            (b) => b.getAttribute(HIDDEN_ATTR) === '1' || b.style.display === 'none'
         );
     },
 
     setBodiesHidden(bodies, hidden) {
         for (const body of bodies) {
             if (hidden) {
-                if (!body.hasAttribute('data-fleet-user-story-saved-display')) {
-                    body.setAttribute(
-                        'data-fleet-user-story-saved-display',
-                        body.style.display || ''
-                    );
+                if (!body.hasAttribute(SAVED_DISPLAY_ATTR)) {
+                    body.setAttribute(SAVED_DISPLAY_ATTR, body.style.display || '');
                 }
                 body.style.display = 'none';
                 body.setAttribute(HIDDEN_ATTR, '1');
             } else {
-                const saved = body.getAttribute('data-fleet-user-story-saved-display');
+                const saved = body.getAttribute(SAVED_DISPLAY_ATTR);
                 body.style.display = saved != null ? saved : '';
-                body.removeAttribute('data-fleet-user-story-saved-display');
+                body.removeAttribute(SAVED_DISPLAY_ATTR);
                 body.removeAttribute(HIDDEN_ATTR);
             }
         }
     },
 
-    ensureHeaderRow(section) {
-        const { headerEl, kind } = section;
-        const parent = headerEl.parentElement;
-        if (!parent) return null;
-
-        let row = parent.querySelector(':scope > [data-fleet-user-story-header="1"]');
-        if (row && row.contains(headerEl)) return row;
-
-        row = document.createElement('div');
-        row.setAttribute('data-fleet-user-story-header', '1');
-        row.setAttribute(SECTION_ATTR, '1');
-        row.className = 'flex items-center justify-between gap-2 w-full';
-        if (kind === 'label') {
-            row.classList.add('mb-2');
-            headerEl.classList.remove('mb-2');
-            headerEl.style.marginBottom = '0';
-        } else {
-            row.classList.add('mb-0');
-        }
-        parent.insertBefore(row, headerEl);
-        row.appendChild(headerEl);
-        if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
-            CleanupRegistry.registerElement(row);
-        }
-        return row;
+    applyHeaderLayout(headerEl) {
+        headerEl.style.display = 'flex';
+        headerEl.style.alignItems = 'center';
+        headerEl.style.justifyContent = 'space-between';
+        headerEl.style.width = '100%';
+        headerEl.style.gap = '8px';
     },
 
     applyToggleChrome(btn) {
@@ -137,6 +156,9 @@ const UserStoryCollapseApi = {
         }
         btn.style.flexShrink = '0';
         btn.style.marginLeft = 'auto';
+        btn.style.pointerEvents = 'auto';
+        btn.style.position = 'relative';
+        btn.style.zIndex = '2';
     },
 
     syncToggleLabel(btn, hidden) {
@@ -146,91 +168,94 @@ const UserStoryCollapseApi = {
         btn.title = btn.getAttribute('aria-label');
     },
 
-    ensureToggle(section, state, logTag) {
-        const row = this.ensureHeaderRow(section);
-        if (!row) return;
+    findToggleInContainer(container, logTag) {
+        return (
+            container.querySelector(
+                '[data-fleet-plugin="' + logTag + '"][data-slot="' + TOGGLE_SLOT + '"]'
+            ) || container.querySelector('[data-slot="' + TOGGLE_SLOT + '"]')
+        );
+    },
+
+    ensureToggle(section, logTag) {
+        const { headerEl, container } = section;
+        if (!headerEl || !container) return;
+
+        this.cleanupOrphanHeaders(container);
+        container.setAttribute(CONTAINER_ATTR, '1');
 
         if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
             Context.uiLib.ensureButtonStyles(SCOPE);
         }
 
-        let btn = row.querySelector(
-            '[data-fleet-plugin="' +
-                logTag +
-                '"][data-slot="' +
-                TOGGLE_SLOT +
-                '"]'
-        );
-        const hidden = this.isSectionHidden(section.bodies);
+        // Re-resolve header if cleanup moved nodes
+        let header = headerEl;
+        if (!header.isConnected || !container.contains(header)) {
+            header =
+                Array.from(container.children).find(
+                    (el) => this.isUserStoryLabel(el) || this.isScenarioIntro(el)
+                ) || headerEl;
+        }
 
-        if (!btn) {
-            btn = document.createElement('button');
-            btn.type = 'button';
-            btn.setAttribute('data-fleet-plugin', logTag);
-            btn.setAttribute('data-slot', TOGGLE_SLOT);
-            this.applyToggleChrome(btn);
+        this.applyHeaderLayout(header);
 
-            const self = this;
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const liveBodies = self.collectBodiesForHeader(section.headerEl, section.kind);
-                const nowHidden = self.isSectionHidden(liveBodies);
-                self.setBodiesHidden(liveBodies, !nowHidden);
-                self.syncToggleLabel(btn, !nowHidden);
-                self.applyToggleChrome(btn);
-                Logger.log(
-                    logTag +
-                        ': User Story ' +
-                        (!nowHidden ? 'hidden' : 'shown') +
-                        ' (' +
-                        liveBodies.length +
-                        ' nodes)'
-                );
-            });
+        let btn = this.findToggleInContainer(container, logTag);
+        const bodies = this.collectBodiesInContainer(container, header);
+        const hidden = this.isSectionHidden(bodies);
 
-            row.appendChild(btn);
-            if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
-                CleanupRegistry.registerElement(btn);
+        if (btn) {
+            // Prefer button living on the live header
+            if (btn.parentElement !== header && header.isConnected) {
+                header.appendChild(btn);
             }
-            Logger.log(logTag + ': Hide/Show control ready on User Story row');
+            this.applyToggleChrome(btn);
+            this.syncToggleLabel(btn, hidden);
+            if (hidden) this.setBodiesHidden(bodies, true);
+            return;
         }
 
-        // Re-apply collapse if markdown replica appeared while hidden
-        if (hidden) {
-            this.setBodiesHidden(section.bodies, true);
-        }
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-fleet-plugin', logTag);
+        btn.setAttribute('data-slot', TOGGLE_SLOT);
         this.applyToggleChrome(btn);
         this.syncToggleLabel(btn, hidden);
-    },
 
-    collectBodiesForHeader(headerEl, kind) {
-        if (kind === 'scenario') {
-            const parent = headerEl.parentElement;
-            if (!parent) return [];
-            // header may now sit inside the header row
-            const scopeParent =
-                headerEl.closest('[data-fleet-user-story-header="1"]')?.parentElement || parent;
-            const bodies = [];
-            for (const child of scopeParent.children) {
-                if (child.getAttribute && child.getAttribute('data-fleet-user-story-header') === '1') {
-                    continue;
-                }
-                const isOriginal = child.getAttribute && child.getAttribute(ORIGINAL_MARKER) === 'true';
-                const isReplica = child.getAttribute && child.getAttribute(REPLICA_MARKER) === 'true';
-                const isStory =
-                    isOriginal ||
-                    isReplica ||
-                    (child.classList && child.classList.contains('whitespace-pre-wrap'));
-                if (isStory) bodies.push(child);
+        const self = this;
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const liveContainer =
+                btn.closest('[' + CONTAINER_ATTR + '="1"]') || container;
+            const liveHeader =
+                Array.from(liveContainer.children).find(
+                    (el) => self.isUserStoryLabel(el) || self.isScenarioIntro(el)
+                ) || btn.parentElement;
+            const liveBodies = self.collectBodiesInContainer(liveContainer, liveHeader);
+            if (liveBodies.length === 0) {
+                Logger.warn(logTag + ': click — no User Story bodies found in container');
+                return;
             }
-            return bodies;
-        }
+            const nowHidden = self.isSectionHidden(liveBodies);
+            self.setBodiesHidden(liveBodies, !nowHidden);
+            self.syncToggleLabel(btn, !nowHidden);
+            self.applyToggleChrome(btn);
+            Logger.log(
+                logTag +
+                    ': User Story ' +
+                    (!nowHidden ? 'hidden' : 'shown') +
+                    ' (' +
+                    liveBodies.length +
+                    ' nodes)'
+            );
+        });
 
-        // label: bodies are siblings after the header row (or after label if not wrapped)
-        const row = headerEl.closest('[data-fleet-user-story-header="1"]');
-        const anchor = row || headerEl;
-        return this.collectBodiesAfter(anchor);
+        header.appendChild(btn);
+        if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
+            CleanupRegistry.registerElement(btn);
+        }
+        Logger.log(logTag + ': Hide/Show control ready on User Story row');
+
+        if (hidden) this.setBodiesHidden(bodies, true);
     },
 
     run(state, options) {
@@ -251,10 +276,7 @@ const UserStoryCollapseApi = {
 
         state.missingLogged = false;
         for (const section of sections) {
-            // Refresh bodies relative to current header placement
-            section.bodies = this.collectBodiesForHeader(section.headerEl, section.kind);
-            if (section.bodies.length === 0) continue;
-            this.ensureToggle(section, state, logTag);
+            this.ensureToggle(section, logTag);
         }
 
         if (!state.activationLogged) {
@@ -268,7 +290,7 @@ const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
     description: 'Shared API to hide/show User Story bodies from the label row',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

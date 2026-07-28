@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.200",
+  "archetypesVersion": "14.201",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -144,8 +144,8 @@
     },
     {
       "name": "user-story-collapse.js",
-      "version": "1.0",
-      "hash": "sha256-3924b82f8c8d71a6aa80f1629adee602aeef57dbf60a6276b0136382d1fd02d4",
+      "version": "1.1",
+      "hash": "sha256-b737dfd89a62222ecdffd845c10687c222ca8bf17aa15c686581c0b2800d836f",
       "log": false
     },
     {
