@@ -13,7 +13,7 @@ const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
     description: 'Filter visible disputes by environment and date submitted',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -28,6 +28,7 @@ const plugin = {
         fallbackAttempts: 0,
         selectedEnvs: null,
         envOptions: [],
+        envCounts: {},
         _prevEnvOptions: [],
         afterDate: '',
         beforeDate: '',
@@ -396,13 +397,14 @@ const plugin = {
 
     refreshEnvOptions(state) {
         const cards = this.getLeafDisputeCards();
-        const set = new Set();
+        const counts = {};
         for (const card of cards) {
             const env = this.getEnvFromCard(card);
-            if (env) set.add(env);
+            if (!env) continue;
+            counts[env] = (counts[env] || 0) + 1;
         }
-        const options = Array.from(set).sort((a, b) => a.localeCompare(b));
-        const key = options.join('\0');
+        const options = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+        const key = options.map(env => env + ':' + counts[env]).join('\0');
         const cardCount = cards.length;
 
         if (key === state.lastEnvKey && cardCount === state.lastCardCount) {
@@ -416,6 +418,7 @@ const plugin = {
         state.lastEnvKey = key;
         state.lastCardCount = cardCount;
         state.envOptions = options;
+        state.envCounts = counts;
 
         if (prevSelected == null) {
             state.selectedEnvs = new Set(options);
@@ -445,6 +448,7 @@ const plugin = {
 
         panel.textContent = '';
         const options = state.envOptions || [];
+        const counts = state.envCounts || {};
 
         const actions = document.createElement('div');
         actions.style.cssText = 'display:flex;gap:6px;margin-bottom:4px;';
@@ -490,7 +494,10 @@ const plugin = {
         const selected = state.selectedEnvs || new Set();
         for (const env of options) {
             const row = document.createElement('label');
-            row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:2px 0;';
+            row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;cursor:pointer;padding:2px 0;';
+
+            const left = document.createElement('span');
+            left.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
             const cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.value = env;
@@ -502,8 +509,15 @@ const plugin = {
                 this.updateEnvButtonLabel(state, toolbar);
                 this.applyFilters(state);
             });
-            row.appendChild(cb);
-            row.appendChild(document.createTextNode(env));
+            left.appendChild(cb);
+            left.appendChild(document.createTextNode(env));
+
+            const countEl = document.createElement('span');
+            countEl.style.cssText = 'color:var(--muted-foreground,#6b7280);font-variant-numeric:tabular-nums;';
+            countEl.textContent = String(counts[env] || 0);
+
+            row.appendChild(left);
+            row.appendChild(countEl);
             panel.appendChild(row);
         }
     },
