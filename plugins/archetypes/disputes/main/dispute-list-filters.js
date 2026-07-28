@@ -13,7 +13,7 @@ const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
     description: 'Filter visible disputes by environment and date submitted',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -317,9 +317,8 @@ const plugin = {
         controls.appendChild(envWrap);
         controls.appendChild(afterLabel);
         controls.appendChild(beforeLabel);
-        controls.appendChild(clearBtn);
 
-        // Filters left, native search right — same row
+        // Filters left, search grows, Clear far right — same row
         mountAnchor.parentNode.insertBefore(toolbar, mountAnchor);
         toolbar.appendChild(controls);
         mountAnchor.classList.remove('mt-3', 'max-w-sm');
@@ -328,6 +327,8 @@ const plugin = {
         mountAnchor.style.maxWidth = 'none';
         mountAnchor.style.marginTop = '0';
         toolbar.appendChild(mountAnchor);
+        clearBtn.style.flexShrink = '0';
+        toolbar.appendChild(clearBtn);
 
         const self = this;
         envBtn.addEventListener('click', (ev) => {
