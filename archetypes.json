@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.198",
+  "archetypesVersion": "14.199",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -576,8 +576,8 @@
         },
         {
           "name": "hide-verifier-output.js",
-          "version": "1.4",
-          "hash": "sha256-d3a68a0fcca98c0087f0ef51b2a095084edf76b1f61d9e4341e97049949a7847",
+          "version": "1.5",
+          "hash": "sha256-00d273a24b6526a0a68e685b37e471fe405f6597c130d96ef24f3e2785fbf3f8",
           "log": false
         },
         {

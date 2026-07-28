@@ -18,7 +18,7 @@ const plugin = {
     name: 'Hide Verifier Output',
     description:
         'Adds Hide/Show Verifier on the Verifier Output header; hides the output body and collapses the bottom panel until shown or Run Verifier starts',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -27,6 +27,7 @@ const plugin = {
         hidden: false,
         runBtn: null,
         runObserver: null,
+        runClickHandler: null,
         wasRunDisabled: false,
         bodyEl: null,
         panelEl: null,
@@ -461,11 +462,18 @@ const plugin = {
     },
 
     ensureRunWatch(runBtn, state) {
-        if (state.runBtn === runBtn && state.runObserver) return;
+        if (state.runBtn === runBtn && state.runObserver) {
+            this.syncFromRunButton(runBtn, state);
+            return;
+        }
 
+        // React often remounts Run Verifier already disabled — compare against prior node state
+        const prevDisabled = state.wasRunDisabled;
         this.teardownRunWatch(state);
         state.runBtn = runBtn;
-        state.wasRunDisabled = Boolean(runBtn.disabled);
+
+        const disabled = this.isRunButtonDisabled(runBtn);
+        state.wasRunDisabled = disabled;
 
         const self = this;
         const observer = new MutationObserver(() => {
@@ -479,19 +487,33 @@ const plugin = {
         if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerObserver) {
             CleanupRegistry.registerObserver(observer);
         }
+
+        // Capture click as well: show immediately when the operator starts a run
+        const onRunClick = () => {
+            self.autoShowIfHidden(state, 'run-verifier-click');
+        };
+        runBtn.addEventListener('click', onRunClick, true);
+        state.runClickHandler = onRunClick;
+        if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerEventListener) {
+            CleanupRegistry.registerEventListener(runBtn, 'click', onRunClick, true);
+        }
+
+        if (disabled && !prevDisabled) {
+            this.autoShowIfHidden(state, 'run-verifier-disabled');
+        }
     },
 
-    syncFromRunButton(runBtn, state) {
-        if (!runBtn || !runBtn.isConnected) return;
-        const disabled = Boolean(runBtn.disabled) || runBtn.getAttribute('aria-disabled') === 'true';
-        const becameDisabled = disabled && !state.wasRunDisabled;
-        state.wasRunDisabled = disabled;
+    isRunButtonDisabled(runBtn) {
+        if (!runBtn) return false;
+        return Boolean(runBtn.disabled) || runBtn.getAttribute('aria-disabled') === 'true';
+    },
 
+    autoShowIfHidden(state, reason) {
         const hidden =
             state.hidden ||
             this.isBodyHidden(state.bodyEl) ||
             (state.panelEl && state.panelEl.getAttribute(COLLAPSED_PANEL_ATTR) === '1');
-        if (!becameDisabled || !hidden) return;
+        if (!hidden) return;
 
         const ctx =
             (this.isSafeBodyRef(state.bodyEl, state.panelEl)
@@ -507,10 +529,20 @@ const plugin = {
                   }
                 : null) || this.findVerifierContext();
         if (!ctx || !ctx.body) {
-            Logger.warn('hideVerifierOutput: auto-show failed — could not resolve verifier body');
+            Logger.warn(`hideVerifierOutput: auto-show failed — could not resolve verifier body (${reason})`);
             return;
         }
-        this.showVerifier(ctx, state, 'run-verifier-disabled');
+        this.showVerifier(ctx, state, reason);
+    },
+
+    syncFromRunButton(runBtn, state) {
+        if (!runBtn || !runBtn.isConnected) return;
+        const disabled = this.isRunButtonDisabled(runBtn);
+        const becameDisabled = disabled && !state.wasRunDisabled;
+        state.wasRunDisabled = disabled;
+
+        if (!becameDisabled) return;
+        this.autoShowIfHidden(state, 'run-verifier-disabled');
     },
 
     teardownRunWatch(state) {
@@ -522,6 +554,14 @@ const plugin = {
             }
             state.runObserver = null;
         }
+        if (state.runBtn && state.runClickHandler) {
+            try {
+                state.runBtn.removeEventListener('click', state.runClickHandler, true);
+            } catch (e) {
+                /* ignore */
+            }
+        }
+        state.runClickHandler = null;
         state.runBtn = null;
     }
 };
