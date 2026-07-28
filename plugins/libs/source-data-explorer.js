@@ -1,12 +1,25 @@
 // ============= source-data-explorer.js (library) =============
-// Shared Explore GUI: capture env root from mcp-proxy (or legacy /mcp) and inject the button.
+// Shared Explore GUI: mcp-proxy capture, ack modal, button chrome. Placement lives in archetype wrappers.
 
 const SourceDataExplorerApi = {
     PLUGIN_ID: 'sourceDataExplorer',
 
+    /**
+     * @param {object} state
+     * @param {object} context
+     * @param {object} options
+     * @param {string} [options.pluginId]
+     * @param {string} [options.logTag]
+     * @param {Element} options.buttonContainer — found by the archetype module
+     * @param {function(HTMLElement, Element): void} options.mountButton — archetype inserts the new button
+     */
     run(state, context, options) {
-        const logTag = (options && options.logTag) || this.PLUGIN_ID;
-        const pluginId = (options && options.pluginId) || this.PLUGIN_ID;
+        const opts = options || {};
+        const logTag = opts.logTag || this.PLUGIN_ID;
+        const pluginId = opts.pluginId || this.PLUGIN_ID;
+        const buttonContainer = opts.buttonContainer;
+        const mountButton = opts.mountButton;
+
         const impl = Object.create(this);
         impl.id = pluginId;
         impl._logTag = logTag;
@@ -15,45 +28,7 @@ const SourceDataExplorerApi = {
             impl.installNetworkInterception(context, state);
         }
 
-        let buttonContainer = null;
-        const workflowEditor = document.querySelector('[data-ui="workflow-editor"]');
-        const headerScope = workflowEditor?.previousElementSibling || document;
-
-        const candidates = headerScope.querySelectorAll('div.flex.gap-1.ml-auto.items-center');
-        buttonContainer = Array.from(candidates).find(el =>
-            el.classList.contains('mr-0') ||
-            (el.classList.contains('flex') &&
-             el.classList.contains('gap-1') &&
-             el.classList.contains('items-center') &&
-             getComputedStyle(el).marginLeft === 'auto')
-        );
-
-        if (!buttonContainer) {
-            const buttons = Array.from(headerScope.querySelectorAll('button'));
-            const resetBtn = buttons.find(btn => {
-                const text = btn.textContent.trim();
-                return text === 'Reset Instance' || text.includes('Reset Instance');
-            });
-            if (resetBtn) {
-                buttonContainer = resetBtn.closest('div.flex.gap-1');
-            }
-        }
-
-        if (!buttonContainer) {
-            const buttons = Array.from(headerScope.querySelectorAll('button'));
-            const saveBtn = buttons.find(btn => {
-                const text = btn.textContent.trim();
-                return text === 'Save';
-            });
-            if (saveBtn) {
-                const parent = saveBtn.parentElement;
-                if (parent && parent.classList.contains('flex') && parent.classList.contains('gap-1')) {
-                    buttonContainer = parent;
-                }
-            }
-        }
-
-        if (!buttonContainer) {
+        if (!buttonContainer || typeof mountButton !== 'function') {
             if (!state.missingLogged) {
                 Logger.debug(logTag + ': Button container not found for Explore GUI button');
                 state.missingLogged = true;
@@ -63,7 +38,7 @@ const SourceDataExplorerApi = {
 
         state.missingLogged = false;
 
-        const button = impl.ensureSourceButton(buttonContainer, context);
+        const button = impl.ensureSourceButton(buttonContainer, context, { mountButton, logTag });
         if (button) {
             impl.updateSourceButton(button, context);
         }
@@ -371,8 +346,10 @@ const SourceDataExplorerApi = {
         Logger.log('sourceDataExplorer: Explore GUI acknowledgment modal shown');
     },
 
-    ensureSourceButton(buttonContainer, context) {
+    ensureSourceButton(buttonContainer, context, options) {
         const pluginId = this.id || this.PLUGIN_ID;
+        const mountButton = options && options.mountButton;
+        const logTag = (options && options.logTag) || pluginId;
         const existing = buttonContainer.querySelector(
             '[data-fleet-plugin="sourceDataExplorer"][data-slot="source-data-button"]'
         );
@@ -398,8 +375,12 @@ const SourceDataExplorerApi = {
             self.showExploreGuiAckModal(pageWindow, context);
         });
 
-        buttonContainer.insertBefore(button, buttonContainer.firstChild);
-        Logger.log('sourceDataExplorer: ✓ Explore GUI button added');
+        if (typeof mountButton === 'function') {
+            mountButton(button, buttonContainer);
+        } else {
+            buttonContainer.insertBefore(button, buttonContainer.firstChild);
+        }
+        Logger.log(logTag + ': ✓ Explore GUI button added');
         return button;
     },
 
@@ -415,8 +396,8 @@ const SourceDataExplorerApi = {
 const plugin = {
     id: 'sourceDataExplorerLib',
     name: 'Explore GUI (library)',
-    description: 'Shared API: Explore GUI control that opens the tool environment from mcp-proxy subdomain (or legacy /mcp URL)',
-    _version: '5.1',
+    description: 'Shared Explore GUI API: mcp-proxy capture, acknowledgment modal, and button chrome (archetype modules supply placement)',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -425,7 +406,11 @@ const plugin = {
         Context.sourceDataExplorer = {
             run: (s, ctx, options) => SourceDataExplorerApi.run(s, ctx, options),
             installNetworkInterception: (ctx, s) =>
-                SourceDataExplorerApi.installNetworkInterception(ctx, s)
+                SourceDataExplorerApi.installNetworkInterception(ctx, s),
+            ensureSourceButton: (container, ctx, options) =>
+                SourceDataExplorerApi.ensureSourceButton(container, ctx, options),
+            updateSourceButton: (button, ctx) =>
+                SourceDataExplorerApi.updateSourceButton(button, ctx)
         };
         if (!state.registered) {
             Logger.log('sourceDataExplorerLib: module registered (Context.sourceDataExplorer)');

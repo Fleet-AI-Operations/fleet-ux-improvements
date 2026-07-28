@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.187",
+  "archetypesVersion": "14.190",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -126,8 +126,8 @@
     },
     {
       "name": "source-data-explorer.js",
-      "version": "5.1",
-      "hash": "sha256-ba57edbb187fd4a9f4bdfac6770dac4bc973cbc7b10503f3aef09c870449852c",
+      "version": "6.0",
+      "hash": "sha256-423bac12ae4bb6a6223df25d8d649ed8c62727ff8c85ec5074990170bd388786",
       "log": false
     },
     {
@@ -332,8 +332,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "1.0",
-          "hash": "sha256-bef44446700fec4bae479eacc605175066fe9ad1bb72a17003ee1c9ce1945d8c",
+          "version": "2.0",
+          "hash": "sha256-6a41cf5660629ed5895d6c2e14ef7fa5105610b27277caf056fec160e37fdf62",
           "log": false
         },
         {
@@ -421,8 +421,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "1.0",
-          "hash": "sha256-bef44446700fec4bae479eacc605175066fe9ad1bb72a17003ee1c9ce1945d8c",
+          "version": "2.0",
+          "hash": "sha256-99300983d547085735de2c1fc8d1fdf00d30c1b479306f72624715256e98829e",
           "log": false
         },
         {
@@ -554,9 +554,10 @@
       "disambiguationSelectors": [],
       "libraries": [
         "accept-task-modal-improvements.js",
+        "copy-verifier-output.js",
         "request-revisions-screenshot-upload-improvement.js",
         "request-revisions-task-only.js",
-        "copy-verifier-output.js",
+        "source-data-explorer.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js"
       ],
@@ -1088,8 +1089,8 @@
       "plugins": [
         {
           "name": "source-data-explorer.js",
-          "version": "1.6",
-          "hash": "sha256-31e86494667aa9cfe9eea1b113ab639579277963ac73c58eb62cea1ec8bdf1e2",
+          "version": "3.0",
+          "hash": "sha256-14398ad2d7e58e844b3e748351ef47fffd430f9c364ab0edc886d2e3f46f5914",
           "log": false
         },
         {
