@@ -13,7 +13,7 @@ const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
     description: 'Filter visible disputes by environment (empty selection = all); toggle sort by submitted date',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -32,6 +32,7 @@ const plugin = {
         _prevEnvOptions: [],
         sortDesc: false,
         hasReordered: false,
+        sorting: false,
         panelOpen: false,
         docListenersBound: false,
         lastEnvKey: '',
@@ -40,6 +41,7 @@ const plugin = {
     },
 
     onMutation(state) {
+        if (state.sorting) return;
         this.ensureSubscription(state);
         this.ensureStyles();
 
@@ -112,8 +114,8 @@ const plugin = {
         return (badge.textContent || '').trim();
     },
 
-    resolveDisputeForCard(card, disputes, index) {
-        if (!Array.isArray(disputes) || disputes.length === 0) return null;
+    resolveDisputeForCard(card, disputes) {
+        if (!card || !Array.isArray(disputes) || disputes.length === 0) return null;
 
         const link = card.querySelector('a[href*="/work/problems/view-task/"]');
         const href = link && link.getAttribute('href');
@@ -143,11 +145,38 @@ const plugin = {
             if (byBadge) return byBadge;
         }
 
-        return disputes[index] || null;
+        // No index fallback — unstable after DOM reorder and causes sort ratcheting.
+        return null;
     },
 
-    getCardCreatedMs(card, disputes, index) {
-        const dispute = this.resolveDisputeForCard(card, disputes, index);
+    /** Stable identity for signature / logging (task UUID or dispute id). */
+    resolveCardSortId(card, disputes) {
+        const dispute = this.resolveDisputeForCard(card, disputes);
+        if (dispute && dispute.id != null) return 'd:' + String(dispute.id);
+        if (dispute && dispute.eval_task_id) return 't:' + String(dispute.eval_task_id);
+
+        const link = card.querySelector('a[href*="/work/problems/view-task/"]');
+        const href = link && link.getAttribute('href');
+        if (href) {
+            const match = href.match(TASK_HREF_RE);
+            if (match) return 't:' + match[1];
+        }
+        const reviewLink = card.querySelector('a[href*="/work/problems/disputes/"]');
+        if (reviewLink) {
+            const reviewHref = reviewLink.getAttribute('href') || '';
+            const idMatch = reviewHref.match(/\/work\/problems\/disputes\/(\d+)/);
+            if (idMatch) return 'd:' + idMatch[1];
+        }
+        const idBadge = card.querySelector('[data-fleet-dispute-id]');
+        if (idBadge) {
+            const id = idBadge.getAttribute('data-fleet-dispute-id');
+            if (id) return 'd:' + String(id);
+        }
+        return '';
+    },
+
+    getCardCreatedMs(card, disputes) {
+        const dispute = this.resolveDisputeForCard(card, disputes);
         if (!dispute || !dispute.created_at) return NaN;
         return Date.parse(dispute.created_at);
     },
@@ -592,47 +621,62 @@ const plugin = {
 
         const cards = this.getLeafDisputeCards();
         const dir = state.sortDesc ? 'd' : 'a';
-        const idKey = cards.map((card, index) => {
-            const d = this.resolveDisputeForCard(card, disputes, index);
-            return d && d.id != null ? String(d.id) : 'x' + index;
-        }).join('|');
-        const signature = dir + ':' + idKey;
+        const ids = [];
+        for (const card of cards) {
+            const id = this.resolveCardSortId(card, disputes);
+            if (id) ids.push(id);
+        }
+        ids.sort();
+        // Order-independent: surviving a DOM reorder must not invalidate the signature.
+        const signature = dir + ':' + cards.length + ':' + ids.join('|');
         if (signature === state.lastSortSignature) return;
 
         const byParent = new Map();
-        cards.forEach((card, index) => {
+        cards.forEach((card, siblingIndex) => {
             const parent = card.parentElement;
             if (!parent) return;
             if (!byParent.has(parent)) byParent.set(parent, []);
-            byParent.get(parent).push({ card, index });
+            byParent.get(parent).push({ card, siblingIndex });
         });
 
         let moved = 0;
-        for (const [parent, items] of byParent) {
-            if (items.length < 2) continue;
+        state.sorting = true;
+        try {
+            for (const [parent, items] of byParent) {
+                if (items.length < 2) continue;
 
-            const sorted = items.slice().sort((a, b) => {
-                const da = this.getCardCreatedMs(a.card, disputes, a.index);
-                const db = this.getCardCreatedMs(b.card, disputes, b.index);
-                if (Number.isNaN(da) && Number.isNaN(db)) return 0;
-                if (Number.isNaN(da)) return 1;
-                if (Number.isNaN(db)) return -1;
-                return state.sortDesc ? (db - da) : (da - db);
-            });
+                const sorted = items.slice().sort((a, b) => {
+                    const da = this.getCardCreatedMs(a.card, disputes);
+                    const db = this.getCardCreatedMs(b.card, disputes);
+                    if (Number.isNaN(da) && Number.isNaN(db)) {
+                        return a.siblingIndex - b.siblingIndex;
+                    }
+                    if (Number.isNaN(da)) return 1;
+                    if (Number.isNaN(db)) return -1;
+                    if (da !== db) {
+                        return state.sortDesc ? (db - da) : (da - db);
+                    }
+                    return a.siblingIndex - b.siblingIndex;
+                });
 
-            let needsMove = false;
-            for (let i = 0; i < sorted.length; i++) {
-                if (sorted[i].card !== items[i].card) {
-                    needsMove = true;
-                    break;
+                let needsMove = false;
+                for (let i = 0; i < sorted.length; i++) {
+                    if (sorted[i].card !== items[i].card) {
+                        needsMove = true;
+                        break;
+                    }
                 }
-            }
-            if (!needsMove) continue;
+                if (!needsMove) continue;
 
-            for (const item of sorted) {
-                parent.appendChild(item.card);
-                moved++;
+                const frag = document.createDocumentFragment();
+                for (const item of sorted) {
+                    frag.appendChild(item.card);
+                    moved++;
+                }
+                parent.appendChild(frag);
             }
+        } finally {
+            state.sorting = false;
         }
 
         state.lastSortSignature = signature;

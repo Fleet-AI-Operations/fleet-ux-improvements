@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.215",
+  "archetypesVersion": "14.217",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -188,8 +188,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "11.14",
-      "hash": "sha256-465896b90fe39a3f58748f86dbb9e355482512fa18268b558a9ce0af1e20e3ef",
+      "version": "11.15",
+      "hash": "sha256-3b93b08017619e4b17a11fe7e1c7d474858e25ab57dca8b8a80bfb6896fee3b2",
       "log": false
     },
     {
@@ -844,8 +844,8 @@
         },
         {
           "name": "dispute-list-filters.js",
-          "version": "1.7",
-          "hash": "sha256-597a92cb3b046099350c645595f71776b042213ac1a2d564f9b84571990fd3ec",
+          "version": "1.8",
+          "hash": "sha256-774afb3b1bf1931c024caeee00d6a86403b12fddee42406ddd927a0a462bab1c",
           "log": false
         },
         {

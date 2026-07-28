@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.14',
+    _version: '11.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -129,6 +129,8 @@ const plugin = {
     _splitResizeAttached: false,
     _flyoutResizeTimer: null,
     _activeTabFallbackLogged: false,
+    /** In-memory only: last active dashboard tab when the modal was closed (not persisted). */
+    _sessionActiveTabId: null,
 
     init(state) {
         if (state && state.loaderRegistered) {
@@ -587,8 +589,19 @@ const plugin = {
                 } catch (e) {
                     Logger.debug('dashboard: could not close settings modal', e);
                 }
-                this._state.activeTab = this._readDefaultTabId();
-                this._setActiveTab(this._resolveActiveTabId(this._state.activeTab));
+                const sessionTab = String(this._sessionActiveTabId || '').trim();
+                const openTabId = sessionTab
+                    ? this._resolveActiveTabId(sessionTab)
+                    : this._resolveActiveTabId(this._readDefaultTabId());
+                this._state.activeTab = openTabId;
+                this._setActiveTab(openTabId);
+                if (sessionTab && openTabId === sessionTab) {
+                    Logger.debug('dashboard: restored session tab — ' + openTabId);
+                } else if (sessionTab && openTabId !== sessionTab) {
+                    Logger.debug(
+                        'dashboard: session tab ' + sessionTab + ' unavailable — opening ' + openTabId
+                    );
+                }
                 const defaultStatsTab = this._readDefaultStatsTabId();
                 if (typeof this._setStatsTab === 'function') {
                     this._setStatsTab(defaultStatsTab);
@@ -636,6 +649,11 @@ const plugin = {
     close() {
         if (!this._overlay) return;
         if (this._modal) {
+            const active = String((this._state && this._state.activeTab) || '').trim();
+            if (active) {
+                this._sessionActiveTabId = active;
+                Logger.debug('dashboard: remembered session tab on close — ' + active);
+            }
             if (Context.dashboard && typeof Context.dashboard.captureTabState === 'function') {
                 Context.dashboard.captureTabState(this._modal);
             }
