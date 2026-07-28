@@ -121,6 +121,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
+- **Hide Verifier Output**: Adds Hide/Show Verifier before Run Verifier; hides the output body and collapses the bottom panel until shown or a verifier run starts
 - **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
 - **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging

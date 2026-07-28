@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.191",
+  "archetypesVersion": "14.192",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -572,6 +572,12 @@
           "name": "copy-verifier-output.js",
           "version": "4.1",
           "hash": "sha256-f1c1c2347b110c25bbe15d4106108f7e737fa012203bc33c8863693a91dfe347",
+          "log": false
+        },
+        {
+          "name": "hide-verifier-output.js",
+          "version": "1.0",
+          "hash": "sha256-1c8df81e09ab24a64e704799214c5687ba6ecf476a2866c569b746f76554a596",
           "log": false
         },
         {

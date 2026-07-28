@@ -198,6 +198,11 @@
       "description": "Add a copy button after to the Verifier Output panel. Click copies the verifier output to the clipboard"
     },
     {
+      "file": "hide-verifier-output.js",
+      "name": "Hide Verifier Output",
+      "description": "Adds Hide/Show Verifier before Run Verifier; hides the output body and collapses the bottom panel until shown or a verifier run starts"
+    },
+    {
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
