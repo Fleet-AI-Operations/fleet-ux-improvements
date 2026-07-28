@@ -21,7 +21,7 @@ const plugin = {
     name: 'Workflow Verifier Tab',
     description:
         'Adds Workflow | Verifier tabs on the QA workflow panel and shows searchable verifier source for the current task',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -40,7 +40,6 @@ const plugin = {
         toolbarEl: null,
         statusEl: null,
         versionSelect: null,
-        refreshBtn: null,
         searchInput: null,
         searchClearBtn: null,
         searchPrevBtn: null,
@@ -587,21 +586,6 @@ const plugin = {
         state.versionSelect = versionSelect;
         toolbar.appendChild(versionSelect);
 
-        const refreshBtn = document.createElement('button');
-        refreshBtn.type = 'button';
-        refreshBtn.textContent = 'Refresh';
-        refreshBtn.className =
-            Context.uiLib && typeof Context.uiLib.btnClass === 'function'
-                ? Context.uiLib.btnClass('basic', 'compact')
-                : '';
-        refreshBtn.addEventListener('click', (event) => {
-            event.preventDefault();
-            Logger.log('workflowVerifierTab: Refresh clicked');
-            void this.fetchVerifier(state, { force: true });
-        });
-        state.refreshBtn = refreshBtn;
-        toolbar.appendChild(refreshBtn);
-
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.textContent = 'Copy';
@@ -856,7 +840,6 @@ const plugin = {
         if (state.fetchInFlight) return;
         state.fetchInFlight = true;
         if (prefetch) state.prefetchAttemptedFor = taskKey;
-        if (state.refreshBtn) state.refreshBtn.disabled = true;
         this.setStatus(state, quiet ? 'Prefetching verifier…' : 'Loading verifier…');
         Logger.log(
             'workflowVerifierTab: ' +
@@ -925,7 +908,6 @@ const plugin = {
             this.setStatus(state, 'Fetch error');
         } finally {
             state.fetchInFlight = false;
-            if (state.refreshBtn) state.refreshBtn.disabled = false;
         }
     },
 

@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.203",
+  "archetypesVersion": "14.204",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -624,8 +624,8 @@
         },
         {
           "name": "workflow-verifier-tab.js",
-          "version": "1.1",
-          "hash": "sha256-bbd554e41d58871c981cecdc4f7a053788142e1bc36af4c6cf08a2ef0d02703b",
+          "version": "1.2",
+          "hash": "sha256-b2c0b9acfa0579e1be3f41e7cb97c45f2aeea23c2f18244e61b12c189d16e49c",
           "log": false
         },
         {
