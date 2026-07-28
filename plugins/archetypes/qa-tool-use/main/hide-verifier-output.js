@@ -5,13 +5,19 @@ const SCOPE = '[data-fleet-hide-verifier="1"]';
 const TOOLBAR_ATTR = 'data-fleet-hide-verifier';
 const HIDDEN_BODY_ATTR = 'data-fleet-verifier-body-hidden';
 const SAVED_FLEX_ATTR = 'data-fleet-verifier-saved-flex';
+const SAVED_PANEL_MAX_ATTR = 'data-fleet-verifier-saved-panel-max';
+const SAVED_PANEL_MIN_ATTR = 'data-fleet-verifier-saved-panel-min';
+const SAVED_CARD_HEIGHT_ATTR = 'data-fleet-verifier-saved-card-height';
+const SAVED_CARD_MAX_ATTR = 'data-fleet-verifier-saved-card-max';
+const SAVED_CARD_MIN_ATTR = 'data-fleet-verifier-saved-card-min';
+const DEFAULT_HEADER_PX = 36;
 
 const plugin = {
     id: 'hideVerifierOutput',
     name: 'Hide Verifier Output',
     description:
         'Adds Hide/Show Verifier on the Verifier Output header; hides the output body and collapses the bottom panel until shown or Run Verifier starts',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -23,7 +29,9 @@ const plugin = {
         wasRunDisabled: false,
         bodyEl: null,
         panelEl: null,
-        toolbarEl: null
+        toolbarEl: null,
+        cardEl: null,
+        headerRowEl: null
     },
 
     onMutation(state) {
@@ -61,12 +69,16 @@ const plugin = {
         state.bodyEl = null;
         state.panelEl = null;
         state.toolbarEl = null;
+        state.cardEl = null;
+        state.headerRowEl = null;
     },
 
     storeCtxRefs(ctx, state) {
         state.bodyEl = ctx.body;
         state.panelEl = ctx.panel;
         state.toolbarEl = ctx.toolbar;
+        state.cardEl = ctx.card || null;
+        state.headerRowEl = ctx.headerRow || null;
     },
 
     isRunVerifierButton(btn) {
@@ -178,8 +190,11 @@ const plugin = {
                 toolbar,
                 body,
                 panel,
-                headerRow: null,
-                card: null
+                headerRow:
+                    state.headerRowEl && state.headerRowEl.isConnected
+                        ? state.headerRowEl
+                        : null,
+                card: state.cardEl && state.cardEl.isConnected ? state.cardEl : body.parentElement
             };
         }
 
@@ -261,6 +276,84 @@ const plugin = {
         btn.title = label;
     },
 
+    measureHeaderPx(ctx) {
+        const header = ctx.headerRow;
+        if (header && header.isConnected && header.offsetHeight > 0) {
+            return header.offsetHeight;
+        }
+        return DEFAULT_HEADER_PX;
+    },
+
+    collapsePanel(ctx, headerPx) {
+        const panel = ctx.panel;
+        const card = ctx.card || (ctx.body && ctx.body.parentElement);
+        if (!panel) return;
+
+        if (!panel.hasAttribute(SAVED_FLEX_ATTR)) {
+            panel.setAttribute(SAVED_FLEX_ATTR, panel.style.flex || '');
+        }
+        if (!panel.hasAttribute(SAVED_PANEL_MAX_ATTR)) {
+            panel.setAttribute(SAVED_PANEL_MAX_ATTR, panel.style.maxHeight || '');
+        }
+        if (!panel.hasAttribute(SAVED_PANEL_MIN_ATTR)) {
+            panel.setAttribute(SAVED_PANEL_MIN_ATTR, panel.style.minHeight || '');
+        }
+
+        panel.style.flex = `0 0 ${headerPx}px`;
+        panel.style.maxHeight = `${headerPx}px`;
+        panel.style.minHeight = '0';
+        panel.style.overflow = 'hidden';
+
+        if (!card) return;
+
+        if (!card.hasAttribute(SAVED_CARD_HEIGHT_ATTR)) {
+            card.setAttribute(SAVED_CARD_HEIGHT_ATTR, card.style.height || '');
+        }
+        if (!card.hasAttribute(SAVED_CARD_MAX_ATTR)) {
+            card.setAttribute(SAVED_CARD_MAX_ATTR, card.style.maxHeight || '');
+        }
+        if (!card.hasAttribute(SAVED_CARD_MIN_ATTR)) {
+            card.setAttribute(SAVED_CARD_MIN_ATTR, card.style.minHeight || '');
+        }
+        card.style.height = 'auto';
+        card.style.maxHeight = `${headerPx}px`;
+        card.style.minHeight = '0';
+    },
+
+    restorePanel(ctx) {
+        const panel = ctx.panel;
+        const card =
+            ctx.card ||
+            (ctx.body && ctx.body.parentElement) ||
+            null;
+
+        if (panel && panel.hasAttribute(SAVED_FLEX_ATTR)) {
+            panel.style.flex = panel.getAttribute(SAVED_FLEX_ATTR) || '';
+            panel.removeAttribute(SAVED_FLEX_ATTR);
+        }
+        if (panel && panel.hasAttribute(SAVED_PANEL_MAX_ATTR)) {
+            panel.style.maxHeight = panel.getAttribute(SAVED_PANEL_MAX_ATTR) || '';
+            panel.removeAttribute(SAVED_PANEL_MAX_ATTR);
+        }
+        if (panel && panel.hasAttribute(SAVED_PANEL_MIN_ATTR)) {
+            panel.style.minHeight = panel.getAttribute(SAVED_PANEL_MIN_ATTR) || '';
+            panel.removeAttribute(SAVED_PANEL_MIN_ATTR);
+        }
+
+        if (card && card.hasAttribute(SAVED_CARD_HEIGHT_ATTR)) {
+            card.style.height = card.getAttribute(SAVED_CARD_HEIGHT_ATTR) || '';
+            card.removeAttribute(SAVED_CARD_HEIGHT_ATTR);
+        }
+        if (card && card.hasAttribute(SAVED_CARD_MAX_ATTR)) {
+            card.style.maxHeight = card.getAttribute(SAVED_CARD_MAX_ATTR) || '';
+            card.removeAttribute(SAVED_CARD_MAX_ATTR);
+        }
+        if (card && card.hasAttribute(SAVED_CARD_MIN_ATTR)) {
+            card.style.minHeight = card.getAttribute(SAVED_CARD_MIN_ATTR) || '';
+            card.removeAttribute(SAVED_CARD_MIN_ATTR);
+        }
+    },
+
     hideVerifier(ctx, state, reason) {
         if (state.hidden) {
             Logger.debug(`hideVerifierOutput: hide skipped — already hidden (${reason})`);
@@ -271,19 +364,21 @@ const plugin = {
             return;
         }
 
+        const headerPx = this.measureHeaderPx(ctx);
+        const card = ctx.card || ctx.body.parentElement;
+        if (card && !ctx.card) ctx.card = card;
+
         ctx.body.style.display = 'none';
         ctx.body.setAttribute(HIDDEN_BODY_ATTR, '1');
 
-        if (ctx.panel) {
-            if (!ctx.panel.hasAttribute(SAVED_FLEX_ATTR)) {
-                ctx.panel.setAttribute(SAVED_FLEX_ATTR, ctx.panel.style.flex || '');
-            }
-            ctx.panel.style.flex = '0 0 auto';
-            ctx.panel.style.overflow = 'hidden';
-        }
+        this.collapsePanel(ctx, headerPx);
 
         state.hidden = true;
-        Logger.log(`hideVerifierOutput: hidden (${reason})`);
+        const bodyClass = (ctx.body.className || '').toString().slice(0, 80);
+        const panelId = (ctx.panel && (ctx.panel.id || ctx.panel.getAttribute('data-panel-id'))) || '?';
+        Logger.log(
+            `hideVerifierOutput: hidden (${reason}) body=.${bodyClass.replace(/\s+/g, '.')} panel=${panelId} headerPx=${headerPx}`
+        );
     },
 
     showVerifier(ctx, state, reason) {
@@ -300,11 +395,12 @@ const plugin = {
         ctx.body.style.display = '';
         ctx.body.removeAttribute(HIDDEN_BODY_ATTR);
 
-        if (ctx.panel && ctx.panel.hasAttribute(SAVED_FLEX_ATTR)) {
-            const saved = ctx.panel.getAttribute(SAVED_FLEX_ATTR);
-            ctx.panel.style.flex = saved || '';
-            ctx.panel.removeAttribute(SAVED_FLEX_ATTR);
+        if (!ctx.card) {
+            ctx.card =
+                (state.cardEl && state.cardEl.isConnected ? state.cardEl : null) ||
+                ctx.body.parentElement;
         }
+        this.restorePanel(ctx);
 
         state.hidden = false;
         const toolbar = ctx.toolbar || state.toolbarEl;
@@ -351,7 +447,12 @@ const plugin = {
                 ? {
                       body: state.bodyEl,
                       panel: state.panelEl,
-                      toolbar: state.toolbarEl
+                      toolbar: state.toolbarEl,
+                      card: state.cardEl && state.cardEl.isConnected ? state.cardEl : null,
+                      headerRow:
+                          state.headerRowEl && state.headerRowEl.isConnected
+                              ? state.headerRowEl
+                              : null
                   }
                 : null) || this.findVerifierContext();
         if (!ctx || !ctx.body) {
