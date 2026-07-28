@@ -13,7 +13,7 @@ const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
     description: 'Filter visible disputes by environment and date submitted',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -51,8 +51,10 @@ const plugin = {
         }
         state.missingLogged = false;
 
-        let toolbar = document.querySelector(SCOPE_SEL);
-        if (!toolbar || !document.contains(toolbar)) {
+        let toolbar = mountAnchor.closest(SCOPE_SEL);
+        if (!toolbar) {
+            const orphan = document.querySelector(SCOPE_SEL);
+            if (orphan) orphan.remove();
             toolbar = this.mountToolbar(state, mountAnchor);
             if (!toolbar) return;
         }
@@ -235,8 +237,8 @@ const plugin = {
     mountToolbar(state, mountAnchor) {
         if (!mountAnchor || !mountAnchor.parentNode) return null;
 
-        const existing = mountAnchor.parentNode.querySelector(SCOPE_SEL);
-        if (existing) return existing;
+        const already = mountAnchor.closest(SCOPE_SEL);
+        if (already) return already;
 
         const ui = Context.uiLib;
         if (ui && typeof ui.ensureButtonStyles === 'function') {
@@ -246,7 +248,11 @@ const plugin = {
         const toolbar = document.createElement('div');
         toolbar.setAttribute(TOOLBAR_ATTR, '1');
         toolbar.setAttribute('data-fleet-plugin', this.id);
-        toolbar.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;';
+        toolbar.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:0.75rem;width:100%;';
+
+        const controls = document.createElement('div');
+        controls.setAttribute('data-fleet-dlf-controls', '1');
+        controls.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex-shrink:0;';
 
         const envWrap = document.createElement('div');
         envWrap.setAttribute('data-fleet-dlf-env-wrap', '1');
@@ -308,12 +314,20 @@ const plugin = {
         clearBtn.className = (ui && ui.btnClass) ? ui.btnClass('secondary', 'compact') : 'wf-dash-btn';
         clearBtn.textContent = 'Clear';
 
-        toolbar.appendChild(envWrap);
-        toolbar.appendChild(afterLabel);
-        toolbar.appendChild(beforeLabel);
-        toolbar.appendChild(clearBtn);
+        controls.appendChild(envWrap);
+        controls.appendChild(afterLabel);
+        controls.appendChild(beforeLabel);
+        controls.appendChild(clearBtn);
 
-        mountAnchor.insertAdjacentElement('afterend', toolbar);
+        // Filters left, native search right — same row
+        mountAnchor.parentNode.insertBefore(toolbar, mountAnchor);
+        toolbar.appendChild(controls);
+        mountAnchor.classList.remove('mt-3', 'max-w-sm');
+        mountAnchor.style.flex = '1 1 14rem';
+        mountAnchor.style.minWidth = '12rem';
+        mountAnchor.style.maxWidth = 'none';
+        mountAnchor.style.marginTop = '0';
+        toolbar.appendChild(mountAnchor);
 
         const self = this;
         envBtn.addEventListener('click', (ev) => {
