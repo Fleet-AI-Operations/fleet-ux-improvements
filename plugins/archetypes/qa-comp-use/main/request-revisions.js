@@ -28,7 +28,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '6.1',
+    _version: '6.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -37,37 +37,31 @@ const plugin = {
         {
             id: COPY_PROMPT_SUBOPTION_ID,
             name: 'Copy Prompt button',
-            description: 'Show a button in Request Revisions that copies the task prompt to the clipboard (paste into Task feedback manually if needed)',
             enabledByDefault: true
         },
         {
             id: COPY_VERIFIER_SUBOPTION_ID,
             name: 'Copy Verifier Output button',
-            description: 'Show a button in Request Revisions that copies verifier output to the clipboard (paste into Grading manually if needed)',
             enabledByDefault: true
         },
         {
             id: 'copy-link-general-guidelines',
             name: 'General Guidelines',
-            description: 'Show a button under "Where are the issues?" that opens Fleet General guidelines in a new tab',
             enabledByDefault: true
         },
         {
             id: 'copy-link-tool-use-guidelines',
             name: 'Tool Use Guidelines',
-            description: 'Show a button under "Where are the issues?" that opens Fleet Tool Use guidelines in a new tab',
             enabledByDefault: true
         },
         {
             id: 'copy-link-qa-guidelines',
             name: 'QA Guidelines',
-            description: 'Show a button under "Where are the issues?" that opens Fleet QA guidelines in a new tab',
             enabledByDefault: true
         },
         {
             id: 'copy-link-time-submission-guidelines',
             name: 'Time Submission Guidelines',
-            description: 'Show a button under "Where are the issues?" that opens Fleet Time Submission guidelines in a new tab',
             enabledByDefault: true
         }
     ],
