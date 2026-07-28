@@ -1,23 +1,24 @@
 // ============= hide-verifier-output.js =============
 // Hide/Show Verifier body on QA Tool Use; auto-show when Run Verifier goes disabled.
 
-const SCOPE = '[data-fleet-hide-verifier="1"]';
-const TOOLBAR_ATTR = 'data-fleet-hide-verifier';
+const SCOPE = '#instance-bottom';
 const HIDDEN_BODY_ATTR = 'data-fleet-verifier-body-hidden';
+const COLLAPSED_PANEL_ATTR = 'data-fleet-verifier-collapsed';
 const SAVED_FLEX_ATTR = 'data-fleet-verifier-saved-flex';
 const SAVED_PANEL_MAX_ATTR = 'data-fleet-verifier-saved-panel-max';
 const SAVED_PANEL_MIN_ATTR = 'data-fleet-verifier-saved-panel-min';
+const SAVED_PANEL_OVERFLOW_ATTR = 'data-fleet-verifier-saved-panel-overflow';
 const SAVED_CARD_HEIGHT_ATTR = 'data-fleet-verifier-saved-card-height';
 const SAVED_CARD_MAX_ATTR = 'data-fleet-verifier-saved-card-max';
 const SAVED_CARD_MIN_ATTR = 'data-fleet-verifier-saved-card-min';
-const DEFAULT_HEADER_PX = 36;
+const DEFAULT_HEADER_PX = 40;
 
 const plugin = {
     id: 'hideVerifierOutput',
     name: 'Hide Verifier Output',
     description:
         'Adds Hide/Show Verifier on the Verifier Output header; hides the output body and collapses the bottom panel until shown or Run Verifier starts',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -42,6 +43,8 @@ const plugin = {
         }
 
         state.missingLogged = false;
+        // DOM is source of truth after collapse / React remounts
+        state.hidden = this.isBodyHidden(ctx.body);
         this.storeCtxRefs(ctx, state);
         this.ensureToggle(ctx, state);
         this.ensureRunWatch(ctx.runBtn, state);
@@ -56,9 +59,6 @@ const plugin = {
 
     resetPane(state) {
         this.teardownRunWatch(state);
-        if (state.toolbarEl && state.toolbarEl.isConnected) {
-            state.toolbarEl.removeAttribute(TOOLBAR_ATTR);
-        }
         if (state.activationLogged || state.hidden) {
             Logger.debug('hideVerifierOutput: Verifier Output pane gone — reset');
         }
@@ -79,6 +79,14 @@ const plugin = {
         state.toolbarEl = ctx.toolbar;
         state.cardEl = ctx.card || null;
         state.headerRowEl = ctx.headerRow || null;
+    },
+
+    isBodyHidden(body) {
+        if (!body) return false;
+        return (
+            body.getAttribute(HIDDEN_BODY_ATTR) === '1' ||
+            body.style.display === 'none'
+        );
     },
 
     isRunVerifierButton(btn) {
@@ -140,9 +148,7 @@ const plugin = {
         if (!body) body = headerRow.nextElementSibling;
 
         if (!body || !panel.contains(body)) return null;
-        // Must be a sibling region, not an ancestor wrapping the header/toolbar
         if (body.contains(headerRow) || body.contains(toolbar)) return null;
-        // Never hide the workflow pane or page chrome
         if (body.id === 'instance-top' || body.querySelector('#instance-top, [data-ui="qa-header"]')) {
             return null;
         }
@@ -210,9 +216,20 @@ const plugin = {
         return { runBtn, toolbar, ...resolved };
     },
 
-    ensureToggle(ctx, state) {
-        ctx.toolbar.setAttribute(TOOLBAR_ATTR, '1');
+    applyToggleChrome(btn) {
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            btn.className = Context.uiLib.btnClass('basic', 'compact');
+        } else if (!btn.className) {
+            btn.className =
+                'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
+        }
+        btn.style.flexShrink = '0';
+        btn.style.pointerEvents = 'auto';
+        btn.style.position = 'relative';
+        btn.style.zIndex = '2';
+    },
 
+    ensureToggle(ctx, state) {
         if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
             Context.uiLib.ensureButtonStyles(SCOPE);
         }
@@ -221,6 +238,7 @@ const plugin = {
             '[data-fleet-plugin="hideVerifierOutput"][data-slot="hide-verifier-toggle"]'
         );
         if (existing) {
+            this.applyToggleChrome(existing);
             this.syncToggleLabel(existing, state.hidden);
             return existing;
         }
@@ -229,13 +247,7 @@ const plugin = {
         btn.type = 'button';
         btn.setAttribute('data-fleet-plugin', this.id);
         btn.setAttribute('data-slot', 'hide-verifier-toggle');
-        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            btn.className = Context.uiLib.btnClass('basic', 'compact');
-        } else {
-            btn.className =
-                'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
-        }
-        btn.style.flexShrink = '0';
+        this.applyToggleChrome(btn);
         this.syncToggleLabel(btn, state.hidden);
 
         btn.addEventListener('click', (e) => {
@@ -261,12 +273,14 @@ const plugin = {
 
         this.storeCtxRefs(live, state);
 
-        if (state.hidden) {
+        const hidden = this.isBodyHidden(live.body) || state.hidden;
+        if (hidden) {
             this.showVerifier(live, state, 'click');
         } else {
             this.hideVerifier(live, state, 'click');
         }
         this.syncToggleLabel(btn, state.hidden);
+        this.applyToggleChrome(btn);
     },
 
     syncToggleLabel(btn, hidden) {
@@ -278,8 +292,11 @@ const plugin = {
 
     measureHeaderPx(ctx) {
         const header = ctx.headerRow;
-        if (header && header.isConnected && header.offsetHeight > 0) {
-            return header.offsetHeight;
+        if (header && header.isConnected) {
+            const rect = header.getBoundingClientRect();
+            // Include toolbar mb-1 overhang so controls are not clipped
+            const h = Math.ceil(Math.max(header.scrollHeight, rect.height, header.offsetHeight) + 4);
+            if (h > 0) return h;
         }
         return DEFAULT_HEADER_PX;
     },
@@ -298,11 +315,20 @@ const plugin = {
         if (!panel.hasAttribute(SAVED_PANEL_MIN_ATTR)) {
             panel.setAttribute(SAVED_PANEL_MIN_ATTR, panel.style.minHeight || '');
         }
+        if (!panel.hasAttribute(SAVED_PANEL_OVERFLOW_ATTR)) {
+            panel.setAttribute(SAVED_PANEL_OVERFLOW_ATTR, panel.style.overflow || '');
+        }
 
+        panel.setAttribute(COLLAPSED_PANEL_ATTR, '1');
+        // Explicit basis + minHeight; overflow visible so Show stays clickable
         panel.style.flex = `0 0 ${headerPx}px`;
-        panel.style.maxHeight = `${headerPx}px`;
-        panel.style.minHeight = '0';
-        panel.style.overflow = 'hidden';
+        panel.style.minHeight = `${headerPx}px`;
+        panel.style.maxHeight = '';
+        panel.style.overflow = 'visible';
+
+        if (ctx.headerRow) {
+            ctx.headerRow.style.flexShrink = '0';
+        }
 
         if (!card) return;
 
@@ -316,8 +342,9 @@ const plugin = {
             card.setAttribute(SAVED_CARD_MIN_ATTR, card.style.minHeight || '');
         }
         card.style.height = 'auto';
-        card.style.maxHeight = `${headerPx}px`;
+        card.style.maxHeight = 'none';
         card.style.minHeight = '0';
+        card.style.overflow = 'visible';
     },
 
     restorePanel(ctx) {
@@ -327,17 +354,24 @@ const plugin = {
             (ctx.body && ctx.body.parentElement) ||
             null;
 
-        if (panel && panel.hasAttribute(SAVED_FLEX_ATTR)) {
-            panel.style.flex = panel.getAttribute(SAVED_FLEX_ATTR) || '';
-            panel.removeAttribute(SAVED_FLEX_ATTR);
-        }
-        if (panel && panel.hasAttribute(SAVED_PANEL_MAX_ATTR)) {
-            panel.style.maxHeight = panel.getAttribute(SAVED_PANEL_MAX_ATTR) || '';
-            panel.removeAttribute(SAVED_PANEL_MAX_ATTR);
-        }
-        if (panel && panel.hasAttribute(SAVED_PANEL_MIN_ATTR)) {
-            panel.style.minHeight = panel.getAttribute(SAVED_PANEL_MIN_ATTR) || '';
-            panel.removeAttribute(SAVED_PANEL_MIN_ATTR);
+        if (panel) {
+            panel.removeAttribute(COLLAPSED_PANEL_ATTR);
+            if (panel.hasAttribute(SAVED_FLEX_ATTR)) {
+                panel.style.flex = panel.getAttribute(SAVED_FLEX_ATTR) || '';
+                panel.removeAttribute(SAVED_FLEX_ATTR);
+            }
+            if (panel.hasAttribute(SAVED_PANEL_MAX_ATTR)) {
+                panel.style.maxHeight = panel.getAttribute(SAVED_PANEL_MAX_ATTR) || '';
+                panel.removeAttribute(SAVED_PANEL_MAX_ATTR);
+            }
+            if (panel.hasAttribute(SAVED_PANEL_MIN_ATTR)) {
+                panel.style.minHeight = panel.getAttribute(SAVED_PANEL_MIN_ATTR) || '';
+                panel.removeAttribute(SAVED_PANEL_MIN_ATTR);
+            }
+            if (panel.hasAttribute(SAVED_PANEL_OVERFLOW_ATTR)) {
+                panel.style.overflow = panel.getAttribute(SAVED_PANEL_OVERFLOW_ATTR) || '';
+                panel.removeAttribute(SAVED_PANEL_OVERFLOW_ATTR);
+            }
         }
 
         if (card && card.hasAttribute(SAVED_CARD_HEIGHT_ATTR)) {
@@ -352,15 +386,21 @@ const plugin = {
             card.style.minHeight = card.getAttribute(SAVED_CARD_MIN_ATTR) || '';
             card.removeAttribute(SAVED_CARD_MIN_ATTR);
         }
+        if (card) {
+            card.style.overflow = '';
+        }
+        if (ctx.headerRow) {
+            ctx.headerRow.style.flexShrink = '';
+        }
     },
 
     hideVerifier(ctx, state, reason) {
-        if (state.hidden) {
-            Logger.debug(`hideVerifierOutput: hide skipped — already hidden (${reason})`);
-            return;
-        }
         if (!ctx.body) {
             Logger.warn(`hideVerifierOutput: hide failed — no body (${reason})`);
+            return;
+        }
+        if (this.isBodyHidden(ctx.body) && state.hidden) {
+            Logger.debug(`hideVerifierOutput: hide skipped — already hidden (${reason})`);
             return;
         }
 
@@ -387,7 +427,8 @@ const plugin = {
             return;
         }
 
-        if (!state.hidden && ctx.body.style.display !== 'none') {
+        const wasHidden = this.isBodyHidden(ctx.body) || state.hidden;
+        if (!wasHidden) {
             Logger.debug(`hideVerifierOutput: show skipped — already visible (${reason})`);
             return;
         }
@@ -400,6 +441,9 @@ const plugin = {
                 (state.cardEl && state.cardEl.isConnected ? state.cardEl : null) ||
                 ctx.body.parentElement;
         }
+        if (!ctx.headerRow && state.headerRowEl && state.headerRowEl.isConnected) {
+            ctx.headerRow = state.headerRowEl;
+        }
         this.restorePanel(ctx);
 
         state.hidden = false;
@@ -409,7 +453,10 @@ const plugin = {
             toolbar.querySelector(
                 '[data-fleet-plugin="hideVerifierOutput"][data-slot="hide-verifier-toggle"]'
             );
-        if (toggle) this.syncToggleLabel(toggle, false);
+        if (toggle) {
+            this.syncToggleLabel(toggle, false);
+            this.applyToggleChrome(toggle);
+        }
         Logger.log(`hideVerifierOutput: shown (${reason})`);
     },
 
@@ -440,7 +487,11 @@ const plugin = {
         const becameDisabled = disabled && !state.wasRunDisabled;
         state.wasRunDisabled = disabled;
 
-        if (!becameDisabled || !state.hidden) return;
+        const hidden =
+            state.hidden ||
+            this.isBodyHidden(state.bodyEl) ||
+            (state.panelEl && state.panelEl.getAttribute(COLLAPSED_PANEL_ATTR) === '1');
+        if (!becameDisabled || !hidden) return;
 
         const ctx =
             (this.isSafeBodyRef(state.bodyEl, state.panelEl)
