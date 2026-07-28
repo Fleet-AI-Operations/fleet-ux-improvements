@@ -12,8 +12,8 @@ const SCOPE_SEL = '[data-fleet-dispute-list-filters="1"]';
 const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
-    description: 'Filter visible disputes by environment; toggle sort by submitted date',
-    _version: '1.6',
+    description: 'Filter visible disputes by environment (empty selection = all); toggle sort by submitted date',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -443,8 +443,6 @@ const plugin = {
             return;
         }
 
-        const prevOptions = state._prevEnvOptions || state.envOptions || [];
-        const prevOptionSet = new Set(prevOptions);
         const prevSelected = state.selectedEnvs;
 
         state.lastEnvKey = key;
@@ -452,16 +450,13 @@ const plugin = {
         state.envOptions = options;
         state.envCounts = counts;
 
+        // Default: nothing picked (none = show all). Preserve only still-present picks.
         if (prevSelected == null) {
-            state.selectedEnvs = new Set(options);
+            state.selectedEnvs = new Set();
         } else {
             const next = new Set();
             for (const env of options) {
-                if (!prevOptionSet.has(env)) {
-                    next.add(env);
-                } else if (prevSelected.has(env)) {
-                    next.add(env);
-                }
+                if (prevSelected.has(env)) next.add(env);
             }
             state.selectedEnvs = next;
         }
@@ -559,7 +554,8 @@ const plugin = {
         if (!btn) return;
         const total = (state.envOptions || []).length;
         const selected = state.selectedEnvs ? state.selectedEnvs.size : 0;
-        if (total === 0) {
+        // Nothing picked (= all) or no options: plain label
+        if (total === 0 || selected === 0) {
             btn.textContent = 'Environment';
         } else if (selected === total) {
             btn.textContent = `Environment (${total})`;
@@ -569,25 +565,19 @@ const plugin = {
     },
 
     clearFilters(state, toolbar) {
-        state.selectedEnvs = new Set(state.envOptions || []);
+        state.selectedEnvs = new Set();
         this.renderEnvPanel(state, toolbar);
         this.updateEnvButtonLabel(state, toolbar);
         this.applyFilters(state);
         Logger.log(`${this.id}: filters cleared`);
     },
 
-    cardMatches(state, card, allEnvsSelected) {
-        const env = this.getEnvFromCard(card);
+    // Empty selection means show all environments.
+    cardMatches(state, card) {
         const selected = state.selectedEnvs || new Set();
-
-        if (selected.size === 0 && (state.envOptions || []).length > 0) {
-            return false;
-        }
-        if (!allEnvsSelected) {
-            if (!env || !selected.has(env)) return false;
-        }
-
-        return true;
+        if (selected.size === 0) return true;
+        const env = this.getEnvFromCard(card);
+        return Boolean(env && selected.has(env));
     },
 
     applySort(state) {
@@ -655,13 +645,14 @@ const plugin = {
         const quiet = opts && opts.quiet;
         const cards = this.getLeafDisputeCards();
         const options = state.envOptions || [];
-        const selected = state.selectedEnvs || new Set(options);
-        const allEnvsSelected = options.length === 0 || selected.size === options.length;
+        const selected = state.selectedEnvs || new Set();
+        // Nothing picked (= all) is not an active filter.
+        const filtering = selected.size > 0 && selected.size < options.length;
 
         let shown = 0;
         let hidden = 0;
         cards.forEach((card) => {
-            const match = this.cardMatches(state, card, allEnvsSelected);
+            const match = this.cardMatches(state, card);
             if (match) {
                 if (card.getAttribute(FILTERED_ATTR) === '1') {
                     card.removeAttribute(FILTERED_ATTR);
@@ -675,7 +666,6 @@ const plugin = {
 
         this.applySort(state);
 
-        const filtering = (!allEnvsSelected) || (selected.size === 0 && options.length > 0);
         if (!quiet && filtering) {
             Logger.log(`${this.id}: filter applied — shown ${shown}, hidden ${hidden}`);
         } else if (!quiet && !filtering) {
