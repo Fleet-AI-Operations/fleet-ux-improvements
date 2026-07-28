@@ -218,6 +218,11 @@
       "description": "Adds Hide/Show Verifier before Run Verifier; hides the output body and collapses the bottom panel until shown or a verifier run starts"
     },
     {
+      "file": "workflow-verifier-tab.js",
+      "name": "Workflow Verifier Tab",
+      "description": "Adds Workflow | Verifier tabs on the QA workflow panel and shows searchable verifier source for the current task"
+    },
+    {
       "file": "favorites.js",
       "name": "Tool Favorites",
       "description": "Add favorite stars to tools list"
