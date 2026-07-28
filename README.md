@@ -146,6 +146,9 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
+### Dispute Review Page
+- **Dispute List Filters**: Environment checkbox dropdown (with per-environment counts) and submitted-date after/before filters on the same toolbar row as native search; Clear resets filters; non-matching cards are hidden in place
+
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
