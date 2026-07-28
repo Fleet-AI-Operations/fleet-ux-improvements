@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '6.3';
+const AI_CHAT_VERSION = '6.4';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -653,19 +653,38 @@ function aiChatReconcileAttachment(row, attachment) {
     const bodyEl = details.querySelector('[data-wf-chat-attach-body="1"]');
     if (idBtn) {
         if (taskId) {
-            idBtn.textContent = taskId;
-            idBtn.setAttribute('data-wf-copy', taskId);
-            idBtn.title = 'Click to copy task ID';
-            idBtn.setAttribute('aria-label', 'Copy task ID ' + taskId);
-            idBtn.classList.remove('wf-chat-attach-id--empty');
-            idBtn.disabled = false;
+            if (idBtn.textContent !== taskId) idBtn.textContent = taskId;
+            if (idBtn.getAttribute('data-wf-copy') !== taskId) {
+                idBtn.setAttribute('data-wf-copy', taskId);
+            }
+            if (idBtn.title !== 'Click to copy task ID') {
+                idBtn.title = 'Click to copy task ID';
+            }
+            const aria = 'Copy task ID ' + taskId;
+            if (idBtn.getAttribute('aria-label') !== aria) {
+                idBtn.setAttribute('aria-label', aria);
+            }
+            if (idBtn.classList.contains('wf-chat-attach-id--empty')) {
+                idBtn.classList.remove('wf-chat-attach-id--empty');
+            }
+            if (idBtn.disabled) idBtn.disabled = false;
         } else {
-            idBtn.textContent = '(no task ID)';
-            idBtn.removeAttribute('data-wf-copy');
-            idBtn.title = 'No task ID for this verifier';
-            idBtn.setAttribute('aria-label', 'No task ID');
-            idBtn.classList.add('wf-chat-attach-id--empty');
-            idBtn.disabled = true;
+            if (idBtn.textContent !== '(no task ID)') {
+                idBtn.textContent = '(no task ID)';
+            }
+            if (idBtn.hasAttribute('data-wf-copy')) {
+                idBtn.removeAttribute('data-wf-copy');
+            }
+            if (idBtn.title !== 'No task ID for this verifier') {
+                idBtn.title = 'No task ID for this verifier';
+            }
+            if (idBtn.getAttribute('aria-label') !== 'No task ID') {
+                idBtn.setAttribute('aria-label', 'No task ID');
+            }
+            if (!idBtn.classList.contains('wf-chat-attach-id--empty')) {
+                idBtn.classList.add('wf-chat-attach-id--empty');
+            }
+            if (!idBtn.disabled) idBtn.disabled = true;
         }
     }
     if (bodyEl && bodyEl.textContent !== att.source) {
@@ -809,8 +828,19 @@ function aiChatSetupCopyButtons(el, opts) {
             try { el._wfCopyObserver.disconnect(); } catch (_e) { /* ignore */ }
             el._wfCopyObserver = null;
         }
-        const sync = () => { aiChatSyncRowEnhancements(el, opts); };
         const observer = new MutationObserver(() => { sync(); });
+        const sync = () => {
+            // Disconnect while we mutate so our own DOM writes cannot re-enter
+            // sync (unconditional textContent writes used to freeze the page).
+            try { observer.disconnect(); } catch (_e) { /* ignore */ }
+            try {
+                aiChatSyncRowEnhancements(el, opts);
+            } finally {
+                try {
+                    observer.observe(shadow, { childList: true, subtree: true });
+                } catch (_e2) { /* ignore */ }
+            }
+        };
         observer.observe(shadow, { childList: true, subtree: true });
         el._wfCopyObserver = observer;
         el._wfCopyButtonsWired = '1';
@@ -2191,7 +2221,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '6.3',
+    _version: '6.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
