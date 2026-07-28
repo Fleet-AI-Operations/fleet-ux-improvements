@@ -11,7 +11,7 @@ const plugin = {
     name: 'Hide Verifier Output',
     description:
         'Adds Hide/Show Verifier on the Verifier Output header; hides the output body and collapses the bottom panel until shown or Run Verifier starts',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -83,55 +83,57 @@ const plugin = {
         return null;
     },
 
+    findInstanceBottom(fromEl) {
+        if (!fromEl || !fromEl.closest) return null;
+        return (
+            fromEl.closest('#instance-bottom') ||
+            fromEl.closest('[data-panel-id="instance-bottom"]') ||
+            null
+        );
+    },
+
+    /**
+     * Body must be the flex-1 sibling under the Verifier Output card inside
+     * #instance-bottom — never a page-level flex-1 (e.g. #instance-top).
+     */
     resolveHeaderAndBody(toolbar) {
+        const panel = this.findInstanceBottom(toolbar);
+        if (!panel) return null;
+
         let headerRow = toolbar.closest('.h-9.border-b');
+        if (!headerRow || !panel.contains(headerRow)) {
+            headerRow = null;
+            const candidates = panel.querySelectorAll('.border-b');
+            for (const el of candidates) {
+                if (!el.contains(toolbar)) continue;
+                if (!/Verifier Output/i.test(el.textContent || '')) continue;
+                headerRow = el;
+                break;
+            }
+        }
+        if (!headerRow || !panel.contains(headerRow)) return null;
+        if (!/Verifier Output/i.test(headerRow.textContent || '')) return null;
+
+        const card = headerRow.parentElement;
+        if (!card || !panel.contains(card)) return null;
+
         let body = null;
-        let card = null;
-
-        if (headerRow) {
-            card = headerRow.parentElement;
-            if (card) {
-                for (const child of card.children) {
-                    if (child === headerRow) continue;
-                    if (child.classList && child.classList.contains('flex-1')) {
-                        body = child;
-                        break;
-                    }
-                }
-                if (!body) body = headerRow.nextElementSibling;
+        for (const child of card.children) {
+            if (child === headerRow) continue;
+            if (child.classList && child.classList.contains('flex-1')) {
+                body = child;
+                break;
             }
         }
+        if (!body) body = headerRow.nextElementSibling;
 
-        if (!body) {
-            let el = toolbar.parentElement;
-            while (el && el !== document.body) {
-                const parent = el.parentElement;
-                if (!parent) break;
-                for (const child of parent.children) {
-                    if (child === el) continue;
-                    if (child.classList && child.classList.contains('flex-1')) {
-                        headerRow = el;
-                        card = parent;
-                        body = child;
-                        break;
-                    }
-                }
-                if (body) break;
-                el = parent;
-            }
+        if (!body || !panel.contains(body)) return null;
+        // Must be a sibling region, not an ancestor wrapping the header/toolbar
+        if (body.contains(headerRow) || body.contains(toolbar)) return null;
+        // Never hide the workflow pane or page chrome
+        if (body.id === 'instance-top' || body.querySelector('#instance-top, [data-ui="qa-header"]')) {
+            return null;
         }
-
-        if (!headerRow || !body) return null;
-        if (!card) card = headerRow.parentElement;
-        if (!card) return null;
-
-        const headerText = (headerRow.textContent || '') + (card.textContent || '');
-        if (!/Verifier Output/i.test(headerText)) return null;
-
-        const panel =
-            card.closest('#instance-bottom') ||
-            card.closest('[data-panel-id="instance-bottom"]') ||
-            null;
 
         return { headerRow, card, body, panel };
     },
@@ -149,10 +151,26 @@ const plugin = {
         return { runBtn, toolbar, ...resolved };
     },
 
+    isSafeBodyRef(body, panel) {
+        return Boolean(
+            body &&
+                body.isConnected &&
+                panel &&
+                panel.isConnected &&
+                panel.contains(body) &&
+                body.id !== 'instance-top' &&
+                !body.querySelector('#instance-top, [data-ui="qa-header"]')
+        );
+    },
+
     contextFromToggle(btn, state) {
         const toolbar = btn.parentElement || state.toolbarEl;
-        let body = state.bodyEl && state.bodyEl.isConnected ? state.bodyEl : null;
-        let panel = state.panelEl && state.panelEl.isConnected ? state.panelEl : null;
+        const panel =
+            (state.panelEl && state.panelEl.isConnected
+                ? state.panelEl
+                : null) || this.findInstanceBottom(toolbar || btn);
+        const body =
+            this.isSafeBodyRef(state.bodyEl, panel) ? state.bodyEl : null;
 
         if (body && toolbar) {
             return {
@@ -329,10 +347,10 @@ const plugin = {
         if (!becameDisabled || !state.hidden) return;
 
         const ctx =
-            (state.bodyEl && state.bodyEl.isConnected
+            (this.isSafeBodyRef(state.bodyEl, state.panelEl)
                 ? {
                       body: state.bodyEl,
-                      panel: state.panelEl && state.panelEl.isConnected ? state.panelEl : null,
+                      panel: state.panelEl,
                       toolbar: state.toolbarEl
                   }
                 : null) || this.findVerifierContext();
