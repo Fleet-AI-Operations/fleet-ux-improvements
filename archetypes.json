@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.190",
+  "archetypesVersion": "14.191",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -54,8 +54,8 @@
     },
     {
       "name": "action-counter.js",
-      "version": "2.0",
-      "hash": "sha256-d4a350ba60137188f7f50cd70f98e9147e22184bf431577595801e293f4f2f06",
+      "version": "3.0",
+      "hash": "sha256-f9c59cf1b798eea7bcaf000643acb402c91ae7809e0938a22e411c52c8382c4a",
       "log": false
     },
     {
@@ -477,9 +477,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.6",
+          "version": "2.0",
           "log": false,
-          "hash": "sha256-6f8586045843cb62a9787340c7c7ab02f4747e4508fa3c260e0eb2862a326922"
+          "hash": "sha256-3bddc220956caa7fff3d54182daf7b48d86b3623070331d21dc41a1a347e6e02"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -522,9 +522,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "1.6",
+          "version": "2.0",
           "log": false,
-          "hash": "sha256-6f8586045843cb62a9787340c7c7ab02f4747e4508fa3c260e0eb2862a326922"
+          "hash": "sha256-6368e0dc0ffaf27da9d926be77763e1ddd2e882ce44fae7ca203ec8466c9883f"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -656,10 +656,11 @@
       "disambiguationSelectors": [],
       "libraries": [
         "accept-task-modal-improvements.js",
-        "request-revisions-screenshot-upload-improvement.js",
-        "request-revisions-task-only.js",
+        "action-counter.js",
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
+        "request-revisions-screenshot-upload-improvement.js",
+        "request-revisions-task-only.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js"
       ],
@@ -672,9 +673,9 @@
         },
         {
           "name": "action-counter.js",
-          "version": "1.3",
+          "version": "2.0",
           "log": false,
-          "hash": "sha256-08bedda86319d3f68ad6f4f7ab8ce2349ea76de93acd9462c3fc113eb87127bd"
+          "hash": "sha256-6a6176eaecaf186bf4f49e3575636c8082efd4b2e416e5388f3f993ae22cdb4e"
         },
         {
           "name": "auto-start-recording.js",

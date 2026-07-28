@@ -1,118 +1,49 @@
-// ============= action-counter.js ============= (library)
-// Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value.
+// ============= action-counter.js (library) =============
+// Shared +/- counter chrome and storage. Archetype wrappers supply find/mount.
 
 const COUNTER_MARKER = 'data-fleet-action-counter';
 const LEGACY_STORAGE_KEY = 'fleetai_qa_action_counter';
 
 const ActionCounterApi = {
     id: 'compUseActionCounter',
-    name: 'Action Counter',
-    description: 'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
-    _version: '2.0',
-    enabledByDefault: true,
-    phase: 'mutation',
+    COUNTER_MARKER,
 
     storageKeys: {
         count: 'comp-use-action-counter'
     },
 
-    initialState: {
-        anchorMissingLogged: false,
-        tabBarMissingLogged: false,
-        activationLogged: false,
-        hadAnchor: false,
-        migratedLegacy: false
-    },
+    /**
+     * @param {object} state
+     * @param {object} options
+     * @param {string} [options.pluginId]
+     * @param {string} [options.logTag]
+     * @param {function(): boolean} options.alreadyMounted
+     * @param {function(HTMLElement): void} options.mountCounter
+     * @param {string} [options.activationDetail] — logged once on first inject
+     */
+    run(state, options) {
+        const opts = options || {};
+        const logTag = opts.logTag || this.id;
+        const alreadyMounted = opts.alreadyMounted;
+        const mountCounter = opts.mountCounter;
 
-    run(state) {
-        const anchor = this.findContentAnchor();
-        if (!anchor) {
-            if (state.hadAnchor) {
-                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
-                state.hadAnchor = false;
-                state.activationLogged = false;
-            }
-            if (!state.anchorMissingLogged) {
-                Logger.debug(`${this.id}: content anchor not found yet`);
-                state.anchorMissingLogged = true;
-            }
-            state.tabBarMissingLogged = false;
+        if (typeof alreadyMounted !== 'function' || typeof mountCounter !== 'function') {
             return;
         }
 
-        state.anchorMissingLogged = false;
-
-        const tabBar = this.findTaskNotesTabBar(anchor);
-        if (!tabBar) {
-            if (state.hadAnchor) {
-                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
-                state.hadAnchor = false;
-                state.activationLogged = false;
-            }
-            if (!state.tabBarMissingLogged) {
-                Logger.debug(`${this.id}: Task/Notes tab bar not found yet (anchor present)`);
-                state.tabBarMissingLogged = true;
-            }
-            return;
-        }
-
-        state.tabBarMissingLogged = false;
-        state.hadAnchor = true;
-
-        if (tabBar.querySelector(`[${COUNTER_MARKER}="true"]`)) {
+        if (alreadyMounted()) {
             return;
         }
 
         document.querySelectorAll(`[${COUNTER_MARKER}="true"]`).forEach((el) => el.remove());
         const counter = this.buildCounter(state);
-        counter.style.marginLeft = 'auto';
-        tabBar.appendChild(counter);
+        mountCounter(counter);
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: counter injected in Task/Notes tab bar (count=${this.getCount()})`);
+            const detail = opts.activationDetail || 'counter injected';
+            Logger.log(`${logTag}: ${detail} (count=${this.getCount()})`);
             state.activationLogged = true;
         }
-    },
-
-    findContentAnchor() {
-        return (
-            document.getElementById('prompt-editor') ||
-            document.getElementById('problem-form') ||
-            document.querySelector('[data-ui="qa-task-detail-panel"]')
-        );
-    },
-
-    isTaskNotesTabBar(el) {
-        if (!el || el.tagName !== 'DIV') return false;
-
-        const buttons = el.querySelectorAll(':scope > button');
-        if (buttons.length < 2) return false;
-
-        const labels = [...buttons].map((btn) => (btn.textContent || '').trim().toLowerCase());
-        return labels.some((label) => label.includes('task')) && labels.some((label) => label.includes('notes'));
-    },
-
-    findTaskNotesTabBar(anchor) {
-        if (!anchor) return null;
-
-        let node = anchor;
-        while (node && node !== document.body) {
-            const parent = node.parentElement;
-            if (!parent) break;
-
-            for (const child of parent.children) {
-                if (!this.isTaskNotesTabBar(child)) continue;
-
-                const contentSibling = [...parent.children].some(
-                    (sibling) => sibling !== child && sibling.contains(anchor)
-                );
-                if (contentSibling) return child;
-            }
-
-            node = parent;
-        }
-
-        return null;
     },
 
     migrateLegacyCount(state) {
@@ -297,25 +228,32 @@ const ActionCounterApi = {
     }
 };
 
-
 const plugin = {
     id: 'actionCounterLib',
     name: 'Action Counter (library)',
-    description: 'Shared API for Task/Notes tab bar action counter',
-    _version: '2.0',
+    description:
+        'Shared API for action counter chrome and storage (archetype modules supply find/mount)',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         Context.actionCounter = {
+            COUNTER_MARKER,
             run: (s, options) => {
                 const impl = Object.create(ActionCounterApi);
                 if (options && options.pluginId) {
                     impl.id = options.pluginId;
                 }
-
                 return ActionCounterApi.run.call(impl, s, options);
+            },
+            buildCounter: (s, options) => {
+                const impl = Object.create(ActionCounterApi);
+                if (options && options.pluginId) {
+                    impl.id = options.pluginId;
+                }
+                return ActionCounterApi.buildCounter.call(impl, s);
             }
         };
         if (!state.registered) {
