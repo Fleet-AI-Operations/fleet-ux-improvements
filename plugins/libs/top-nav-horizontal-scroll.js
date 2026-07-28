@@ -10,7 +10,7 @@ const TopNavHorizontalScrollApi = {
     name: 'Top nav horizontal scroll',
     description:
         'Allows horizontal scrolling on the QA header ([data-ui="qa-header"]) when action buttons exceed the viewport width',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -18,7 +18,9 @@ const TopNavHorizontalScrollApi = {
         missingLogged: false,
         activationLogged: false,
         hadHeader: false,
-        styleInjected: false
+        styleInjected: false,
+        noInnerLogged: false,
+        noCenterLogged: false
     },
 
     findQaHeader() {
@@ -99,6 +101,8 @@ const TopNavHorizontalScrollApi = {
                 Logger.debug(`${this.id}: [data-ui="qa-header"] left DOM — scroll inactive`);
                 state.hadHeader = false;
                 state.activationLogged = false;
+                state.noInnerLogged = false;
+                state.noCenterLogged = false;
             }
             if (!state.missingLogged) {
                 Logger.debug(`${this.id}: QA header not found yet`);
@@ -111,15 +115,23 @@ const TopNavHorizontalScrollApi = {
 
         const innerRow = this.findHeaderInnerRow(header);
         if (!innerRow) {
-            Logger.warn(`${this.id}: QA header found but inner flex row missing`);
+            if (!state.noInnerLogged) {
+                Logger.warn(`${this.id}: QA header found but inner flex row missing`);
+                state.noInnerLogged = true;
+            }
             return;
         }
+        state.noInnerLogged = false;
 
         const center = this.findCenterCluster(innerRow);
         if (!center) {
-            Logger.warn(`${this.id}: QA header inner row has no flex-1 center cluster`);
+            if (!state.noCenterLogged) {
+                Logger.warn(`${this.id}: QA header inner row has no flex-1 center cluster`);
+                state.noCenterLogged = true;
+            }
             return;
         }
+        state.noCenterLogged = false;
 
         this.applyWrap(header, innerRow, center, state);
 
@@ -135,7 +147,7 @@ const plugin = {
     id: 'topNavHorizontalScrollLib',
     name: 'Top Nav Horizontal Scroll (library)',
     description: 'Shared API for QA header horizontal scroll',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

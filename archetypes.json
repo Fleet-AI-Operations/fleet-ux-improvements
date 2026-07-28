@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.192",
+  "archetypesVersion": "14.193",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -132,8 +132,8 @@
     },
     {
       "name": "top-nav-horizontal-scroll.js",
-      "version": "2.0",
-      "hash": "sha256-cf245176446dd7877960b41be0ac65b9ffeae62ded936cb8c7af5662cbbb7e58",
+      "version": "2.1",
+      "hash": "sha256-43f51b9a9546664005a00d5519eb3a51391836753a234c192d539c28f4cce365",
       "log": false
     },
     {
@@ -576,8 +576,8 @@
         },
         {
           "name": "hide-verifier-output.js",
-          "version": "1.0",
-          "hash": "sha256-1c8df81e09ab24a64e704799214c5687ba6ecf476a2866c569b746f76554a596",
+          "version": "1.1",
+          "hash": "sha256-be0c31eefb90388c9f791a1e3c3620676de9f063356ca585046ff84885974c80",
           "log": false
         },
         {
