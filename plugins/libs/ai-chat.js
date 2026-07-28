@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '6.0';
+const AI_CHAT_VERSION = '6.3';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -174,6 +174,7 @@ function aiChatCreateState(extra) {
         streaming: false,
         streamAbort: null,
         streamGen: 0,
+        stopRequested: false,
         _deepChat: null,
         _wireOpts: null,
         _pendingTurn: null,
@@ -413,20 +414,20 @@ function aiChatApplyTheme(el, opts) {
         + '  overflow: hidden;'
         + '}'
         + '.wf-chat-codeblock > pre {'
-        + '  margin: 0 !important; padding: 30px 12px 10px !important;'
+        + '  margin: 0 !important; padding: 10px 36px 10px 12px !important;'
         + '  max-width: 100%; overflow: auto; box-sizing: border-box;'
         + '  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);'
         + '  font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;'
         + '  background: transparent !important; border: none !important;'
         + '}'
         + '.wf-chat-code-copy {'
-        + '  position: absolute; top: 4px; right: 4px; z-index: 2;'
-        + '  display: inline-flex; align-items: center; justify-content: center; gap: 4px;'
-        + '  min-width: 28px; height: 24px; padding: 0 8px; margin: 0;'
+        + '  position: absolute; top: 8px; right: 6px; z-index: 2;'
+        + '  display: inline-flex; align-items: center; justify-content: center;'
+        + '  width: 24px; height: 24px; min-width: 24px; padding: 0; margin: 0;'
         + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
         + '  border-radius: 6px; cursor: pointer;'
         + '  background: color-mix(in srgb, var(--background, #fff) 88%, transparent);'
-        + '  color: #94a3b8; font-size: 11px; font-weight: 600; line-height: 1;'
+        + '  color: #94a3b8; line-height: 0;'
         + '}'
         + '.wf-chat-code-copy:hover {'
         + '  color: #e2e8f0; background: color-mix(in srgb, #94a3b8 22%, transparent);'
@@ -471,9 +472,11 @@ function aiChatApplyTheme(el, opts) {
         + '  animation: fleet-ui-flash-failure 600ms cubic-bezier(0.22, 1, 0.36, 1) 1;'
         + '}'
         // The padded text input is taller than Deep Chat's assumed height, which
-        // leaves the bottom-pinned send/stop button sitting low. Center it.
+        // leaves the bottom-pinned send/stop button sitting low. Center it and
+        // keep a little inset from the rounded input edge.
         + '#input .input-button {'
         + '  top: 50% !important; bottom: auto !important;'
+        + '  right: 10px !important;'
         + '  transform: translateY(-50%) !important;'
         + '}'
         + (o.floatingInput
@@ -750,7 +753,7 @@ function aiChatEnhanceCodeCopy(row, opts) {
         btn.setAttribute('data-wf-chat-code-copy', '1');
         btn.title = 'Copy code block';
         btn.setAttribute('aria-label', 'Copy code block');
-        btn.innerHTML = aiChatCopyIconSvg() + '<span>Copy</span>';
+        btn.innerHTML = aiChatCopyIconSvg();
         btn.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -894,6 +897,7 @@ function aiChatBuildApiMessages(state, opts) {
 function aiChatStopStream(state, opts) {
     const o = aiChatResolveOpts(opts || (state && state._wireOpts));
     if (!state) return;
+    state.stopRequested = true;
     state.streamGen += 1;
     if (state.streamAbort && typeof state.streamAbort.abort === 'function') {
         try { state.streamAbort.abort(); } catch (_e) { /* ignore */ }
@@ -949,7 +953,10 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
 
     signals.stopClicked.listener = () => {
         aiChatStopStream(state, o);
-        try { signals.onClose(); } catch (_e) { /* ignore */ }
+        // keepStreamingFlag tool turns close Deep Chat once when the loop exits.
+        if (!(opts && opts.keepStreamingFlag)) {
+            try { signals.onClose(); } catch (_e) { /* ignore */ }
+        }
     };
 
     const enqueueResponse = (payload) => {
@@ -967,7 +974,10 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
         settled = true;
         // Keep streamAbort until caller aborts/replaces; clearing without abort
         // left GM streams open between tool rounds.
-        try { signals.onClose(); } catch (_e) { /* ignore */ }
+        // Tool turns keep Deep Chat in "streaming" until the full loop ends.
+        if (!(opts && opts.keepStreamingFlag)) {
+            try { signals.onClose(); } catch (_e) { /* ignore */ }
+        }
         if (!opts || !opts.keepStreamingFlag) {
             state.streaming = false;
         }
@@ -1718,6 +1728,7 @@ async function aiChatSendToolTurn(root, state, opts) {
         });
     }
 
+    state.stopRequested = false;
     state.streaming = true;
     const useLiveSignals = !!(fromHandler && signals);
 
@@ -1736,6 +1747,17 @@ async function aiChatSendToolTurn(root, state, opts) {
     const maxForcedFinalizeAttempts = 2;
     let cumulativeToolResultBytes = 0;
     let lastNonFinalToolNames = [];
+    let liveClosed = false;
+
+    const closeLiveSignals = () => {
+        if (!useLiveSignals || liveClosed || !signals) return;
+        liveClosed = true;
+        try { signals.onClose(); } catch (_e) { /* ignore */ }
+    };
+
+    if (useLiveSignals && signals) {
+        try { signals.onOpen(); } catch (_e) { /* ignore */ }
+    }
 
     const notifyActivity = (payload) => {
         const enriched = Object.assign({
@@ -1803,7 +1825,7 @@ async function aiChatSendToolTurn(root, state, opts) {
                     text: text,
                     overwrite: true,
                 }));
-                try { signals.onClose(); } catch (_e) { /* ignore */ }
+                closeLiveSignals();
             } else if (state._deepChat) {
                 aiChatSyncHistory(state._deepChat, state);
             }
@@ -1828,6 +1850,13 @@ async function aiChatSendToolTurn(root, state, opts) {
         return text;
     };
 
+    const deliverStopped = async () => {
+        abortPriorStream();
+        state.streaming = false;
+        Logger.log(o.logTag + ': tool turn stopped by operator');
+        return await deliverFinalAnswer('(stopped)', 'stopped');
+    };
+
     const queueForcedFinalize = (reason) => {
         if (forcedFinalizeAttempts >= maxForcedFinalizeAttempts) return false;
         forcedFinalizeAttempts += 1;
@@ -1846,6 +1875,9 @@ async function aiChatSendToolTurn(root, state, opts) {
 
     try {
         while (round < maxRounds + maxForcedFinalizeAttempts) {
+            if (state.stopRequested) {
+                return await deliverStopped();
+            }
             round += 1;
             syncWorking('Working… (round ' + round + ')');
             state.streaming = true;
@@ -1895,11 +1927,21 @@ async function aiChatSendToolTurn(root, state, opts) {
                 );
             } catch (streamErr) {
                 abortPriorStream();
+                if (state.stopRequested) {
+                    return await deliverStopped();
+                }
                 throw streamErr;
+            }
+
+            if (state.stopRequested) {
+                return await deliverStopped();
             }
 
             if (roundError) {
                 abortPriorStream();
+                if (state.stopRequested) {
+                    return await deliverStopped();
+                }
                 throw new Error(roundError);
             }
 
@@ -2002,6 +2044,9 @@ async function aiChatSendToolTurn(root, state, opts) {
             }
 
             for (let ti = 0; ti < toolCalls.length; ti++) {
+                if (state.stopRequested) {
+                    return await deliverStopped();
+                }
                 const tc = toolCalls[ti];
                 const name = tc && tc.function
                     ? String(tc.function.name || '').trim()
@@ -2034,6 +2079,9 @@ async function aiChatSendToolTurn(root, state, opts) {
                     content: resultStr,
                     hideInUi: true,
                 });
+            }
+            if (state.stopRequested) {
+                return await deliverStopped();
             }
             lastNonFinalToolNames = toolCalls.map((tc) =>
                 (tc && tc.function && tc.function.name) ? String(tc.function.name) : '?'
@@ -2069,6 +2117,14 @@ async function aiChatSendToolTurn(root, state, opts) {
     } catch (err) {
         abortPriorStream();
         state.streaming = false;
+        if (state.stopRequested) {
+            try {
+                return await deliverStopped();
+            } catch (_e) {
+                closeLiveSignals();
+                throw err;
+            }
+        }
         const msg = (err && err.message) || String(err);
         const last = state.messages[state.messages.length - 1];
         if (!last || last.role !== 'assistant' || !String(last.content || '').startsWith('Error:')) {
@@ -2080,7 +2136,7 @@ async function aiChatSendToolTurn(root, state, opts) {
         try {
             if (useLiveSignals && signals) {
                 await Promise.resolve(signals.onResponse({ error: msg }));
-                try { signals.onClose(); } catch (_e) { /* ignore */ }
+                closeLiveSignals();
             } else if (state._deepChat) {
                 aiChatSyncHistory(state._deepChat, state);
             }
@@ -2088,6 +2144,7 @@ async function aiChatSendToolTurn(root, state, opts) {
         Logger.error(o.logTag + ': tool turn failed: ' + msg);
         throw err;
     } finally {
+        closeLiveSignals();
         if (fromHandler && root) {
             root._wfAiChatFromHandler = false;
             root._wfAiChatSignals = null;
@@ -2134,7 +2191,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '6.0',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

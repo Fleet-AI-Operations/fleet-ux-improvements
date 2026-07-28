@@ -553,7 +553,11 @@ function _deRenderHighlightGroupHtml(group, highlightStyle, text, effectiveGranu
     }
     if (effectiveGranularity === 'word') {
         const { lead, core, trail } = _deSplitWordHighlightEdges(text);
-        if (!core) return _deEqualSpanHtml(text);
+        // Whitespace-only (or empty-core) diffs still affect LCS % — paint them.
+        if (!core) {
+            if (!text) return '';
+            return `<span style="${highlightStyle}">${_deEscHtml(text)}</span>`;
+        }
         let html = '';
         if (lead) html += _deEqualSpanHtml(lead);
         html += `<span style="${highlightStyle}">${_deEscHtml(core)}</span>`;
@@ -698,7 +702,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

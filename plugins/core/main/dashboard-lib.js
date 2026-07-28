@@ -36,12 +36,13 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     sessions: 'Sessions'
 };
 const DASH_LIB_PROMPT_HISTORY_ORDER = [
-    'accepted', 'returned', 'notes_to_qa', 'qa_edited', 'disputed',
+    'accepted', 'returned', 'received_system_feedback', 'notes_to_qa', 'qa_edited', 'disputed',
     'flagged', 'senior_review_flagged', 'escalated', 'session_qa_performed', 'screenshots'
 ];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
     accepted: 'Accepted',
     returned: 'Returned',
+    received_system_feedback: 'Received system feedback',
     notes_to_qa: 'Submitted with Notes to QA',
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
@@ -800,7 +801,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.0',
+    _version: '8.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1373,6 +1374,9 @@ const plugin = {
     _itemPromptHistory(item, sessionQaUi) {
         const flags = new Set();
         for (const entry of item.task.allFeedback || []) {
+            if (entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback)) {
+                flags.add('received_system_feedback');
+            }
             const rt = this._returnTypeOf(entry);
             if (rt === 'accepted') flags.add('accepted');
             else if (rt === 'returned') flags.add('returned');

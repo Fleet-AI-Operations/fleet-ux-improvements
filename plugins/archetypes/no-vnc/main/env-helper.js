@@ -13,7 +13,7 @@ const plugin = {
     id: 'envHelper',
     name: 'Env Helper',
     description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -21,7 +21,7 @@ const plugin = {
         panelStarted: false,
         waitObserverAttached: false,
         waitObserver: null,
-        minimized: false
+        minimized: true
     },
 
     onMutation(state) {

@@ -23,7 +23,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
     description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -521,6 +521,56 @@ const plugin = {
         }
     },
 
+    _copyChipStyle() {
+        return 'display: inline-block; max-width: 100%; padding: 3px 8px; border: none;'
+            + ' border-radius: 6px; background: transparent; text-align: left;'
+            + ' overflow-wrap: anywhere; cursor: pointer;';
+    },
+
+    _createCopyChip(text, className, logLabel) {
+        const value = String(text == null ? '' : text).trim();
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-fleet-identity-copy', logLabel || '1');
+        btn.className = className || '';
+        btn.textContent = value;
+        btn.title = 'Click to copy';
+        btn.setAttribute('aria-label', 'Copy ' + (logLabel || 'value') + ': ' + value);
+        btn.style.cssText = this._copyChipStyle();
+        const self = this;
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            void self._copyChipValue(btn, value, logLabel);
+        });
+        return btn;
+    },
+
+    async _copyChipValue(el, value, logLabel) {
+        const label = PLUGIN_ID + ':' + (logLabel || 'value');
+        const ui = Context.uiLib;
+        if (ui && typeof ui.copyWithFeedback === 'function') {
+            await ui.copyWithFeedback(el, value, { logLabel: label });
+            return;
+        }
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(value);
+                if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+                    Context.buttonFeedback.flashSuccess(el);
+                }
+                Logger.log(label + ': copied ' + value.length + ' chars');
+                return;
+            }
+        } catch (err) {
+            Logger.error(PLUGIN_ID + ': copy failed', err);
+        }
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+            Context.buttonFeedback.flashFailure(el);
+        }
+        Logger.warn(PLUGIN_ID + ': copy ' + (logLabel || 'value') + ' failed');
+    },
+
     _replaceNameSpan(span, userId, profile) {
         const wrapper = document.createElement('span');
         wrapper.className = 'inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 align-middle';
@@ -536,16 +586,18 @@ const plugin = {
             wrapper.appendChild(dismissed);
         } else {
             if (name) {
-                const nameEl = document.createElement('span');
-                nameEl.className = span.className || 'font-medium';
-                nameEl.textContent = name;
-                wrapper.appendChild(nameEl);
+                wrapper.appendChild(this._createCopyChip(
+                    name,
+                    span.className || 'font-medium',
+                    'name'
+                ));
             }
             if (email) {
-                const emailEl = document.createElement('span');
-                emailEl.className = 'text-muted-foreground text-xs';
-                emailEl.textContent = email;
-                wrapper.appendChild(emailEl);
+                wrapper.appendChild(this._createCopyChip(
+                    email,
+                    'text-muted-foreground text-xs',
+                    'email'
+                ));
             }
         }
 

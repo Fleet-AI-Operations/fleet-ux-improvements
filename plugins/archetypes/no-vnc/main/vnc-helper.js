@@ -14,7 +14,7 @@ const plugin = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -22,7 +22,7 @@ const plugin = {
         bridgeStarted: false,
         waitObserverAttached: false,
         waitObserver: null,
-        minimized: false
+        minimized: true
     },
 
     onMutation(state) {
