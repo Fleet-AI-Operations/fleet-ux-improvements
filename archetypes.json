@@ -1,7 +1,7 @@
 {
   "version": "12.4.14",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.205",
+  "archetypesVersion": "14.206",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -840,6 +840,12 @@
           "name": "dispute-id-display.js",
           "version": "1.0",
           "hash": "sha256-21a34807f347f2e96ecd942cc7a1f3ee83c740934f0bf845528a22d67d0d6dd3",
+          "log": false
+        },
+        {
+          "name": "dispute-list-filters.js",
+          "version": "1.0",
+          "hash": "sha256-ab155cc8aa1eceb11546d21c7520270025d594f761f0bc1c32c88eabbcab56f6",
           "log": false
         },
         {
