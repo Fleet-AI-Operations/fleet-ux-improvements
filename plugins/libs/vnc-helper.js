@@ -40,7 +40,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.2',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -462,10 +462,14 @@ const VncHelperApi = {
                 b.style.cssText =
                     'flex:1;margin:0;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#f2f2f2;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
                 b.onmouseenter = () => {
-                    b.style.background = 'rgba(255,255,255,0.14)';
+                    if (!b._fleetClipFlashTimeout) {
+                        b.style.background = 'rgba(255,255,255,0.14)';
+                    }
                 };
                 b.onmouseleave = () => {
-                    b.style.background = 'rgba(255,255,255,0.08)';
+                    if (!b._fleetClipFlashTimeout) {
+                        b.style.background = 'rgba(255,255,255,0.08)';
+                    }
                 };
                 return b;
             }
@@ -497,11 +501,32 @@ const VncHelperApi = {
 
             bExtract.addEventListener('click', () => {
                 clipQueue = clipQueue
-                    .then(() => extractVmTextToOs())
-                    .catch(() => {});
+                    .then(async () => {
+                        const ok = await extractVmTextToOs();
+                        if (ok) flashClipBtnSuccess(bExtract);
+                        else flashClipBtnFailure(bExtract);
+                    })
+                    .catch(() => {
+                        flashClipBtnFailure(bExtract);
+                    });
             });
             bOverwrite.addEventListener('click', () => {
-                clipQueue = clipQueue.then(runOverwriteFromShortcut).catch(() => {});
+                clipQueue = clipQueue
+                    .then(async () => {
+                        try {
+                            const t = await readClipboardText();
+                            const ok = await pushOsTextToVmClipboard(typeof t === 'string' ? t : '');
+                            if (ok) flashClipBtnSuccess(bOverwrite);
+                            else flashClipBtnFailure(bOverwrite);
+                        } catch (_eOw) {
+                            toast('Overwrite failed: could not read system clipboard.');
+                            flashClipBtnFailure(bOverwrite);
+                            focusVncTarget();
+                        }
+                    })
+                    .catch(() => {
+                        flashClipBtnFailure(bOverwrite);
+                    });
             });
 
             minimizeBtn.addEventListener('click', (ev) => {
@@ -693,7 +718,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.2',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -724,6 +749,41 @@ const plugin = {
 
 // ---- Clipboard / noVNC helpers (declarations hoisted; used by plugin methods above) ----
 
+const CLIP_BTN_FLASH_MS = 600;
+const CLIP_BTN_BG = 'rgba(255,255,255,0.08)';
+
+function flashClipBtnSuccess(btn) {
+    if (!btn) return;
+    // Solid inline flash: these dark panel buttons use `background` shorthand, so
+    // ui-lib CSS pulse (background-color) is too subtle / unreliable here.
+    if (btn._fleetClipFlashTimeout) clearTimeout(btn._fleetClipFlashTimeout);
+    btn.style.transition = '';
+    btn.style.background = 'rgb(34, 197, 94)';
+    btn.style.color = '#ffffff';
+    btn._fleetClipFlashTimeout = setTimeout(() => {
+        btn._fleetClipFlashTimeout = null;
+        btn.style.background = CLIP_BTN_BG;
+        btn.style.color = '#f2f2f2';
+    }, CLIP_BTN_FLASH_MS);
+}
+
+function flashClipBtnFailure(btn) {
+    if (!btn) return;
+    if (btn._fleetClipFlashTimeout) clearTimeout(btn._fleetClipFlashTimeout);
+    const prevT = btn.style.transition;
+    btn.style.transition = 'none';
+    btn.style.background = 'rgb(239, 68, 68)';
+    btn.style.color = '#ffffff';
+    void btn.offsetHeight;
+    btn.style.transition =
+        'background-color ' + CLIP_BTN_FLASH_MS + 'ms ease-out, color ' + CLIP_BTN_FLASH_MS + 'ms ease-out';
+    btn.style.background = CLIP_BTN_BG;
+    btn.style.color = '#f2f2f2';
+    btn._fleetClipFlashTimeout = setTimeout(() => {
+        btn.style.transition = prevT || '';
+        btn._fleetClipFlashTimeout = null;
+    }, CLIP_BTN_FLASH_MS);
+}
 function clipEl() {
     return document.getElementById(NOVNC_CLIPBOARD_ID);
 }
@@ -963,7 +1023,7 @@ async function pushOsTextToVmClipboard(text) {
     if (!el) {
         toast('Overwrite failed: noVNC clipboard field (#noVNC_clipboard_text) not found.');
         focusVncTarget();
-        return;
+        return false;
     }
     const merged = text;
     const rfb = getRfb();
@@ -983,6 +1043,7 @@ async function pushOsTextToVmClipboard(text) {
     }
     focusVncTarget();
     toast(`Virtual machine clipboard updated from this computer.\n\u2192 ${truncPreview(merged)}`);
+    return true;
 }
 
 async function extractVmTextToOs() {
@@ -990,20 +1051,22 @@ async function extractVmTextToOs() {
     if (!el) {
         toast('Extract failed: noVNC clipboard field not found.');
         focusVncTarget();
-        return;
+        return false;
     }
     const v = el.value || '';
     if (!v) {
         toast('Nothing to extract yet. Copy inside the virtual machine first, then try again.');
         focusVncTarget();
-        return;
+        return false;
     }
     try {
         await navigator.clipboard.writeText(v);
         toast(`Copied virtual machine clipboard to this computer.\n\u2192 ${truncPreview(v)}`);
         focusVncTarget();
+        return true;
     } catch (e3) {
         toast('Extract failed: could not write to system clipboard.');
         focusVncTarget();
+        return false;
     }
 }
