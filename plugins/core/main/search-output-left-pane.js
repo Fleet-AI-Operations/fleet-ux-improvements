@@ -28,7 +28,8 @@ const DASH_HELPFULNESS_BATCH_CHUNK = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 3;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
-const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
+const DASH_FLEET_ORIGIN_FALLBACK = 'https://www.fleetai.com';
+const DASH_FLEET_HOSTS = new Set(['www.fleetai.com', 'fleetai.com']);
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DASH_EVERYONE_AUTHOR_TOKEN_ID = '__everyone__';
 const DASH_EVERYONE_AUTHOR_LABEL = '@everyone';
@@ -41,7 +42,6 @@ const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
 const DASH_QA_SCREENSHOT_VIEW_URLS_PATH = '/orchestrator-private/v1/qa-feedback/screenshots/view-urls';
-const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
 const DASH_FLAG_CREATE_REASON_KEYS = [
     'ai_generated',
     'poor_feedback_from_previous_qa',
@@ -84,11 +84,25 @@ const DASH_AUTO_GROW_TEXTAREA_ATTR = 'data-wf-dash-auto-grow';
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
-const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
 const DASH_FLEET_INTERNAL_API = 'https://api.internal.fleet-platform.fleetai.com/v1';
 const DASH_DISPUTE_REVIEWS_HISTORY_PAGE_SIZE = 50;
 const DASH_DISPUTE_REVIEWS_HISTORY_MAX_PAGES = 3;
 const SO_ROLLING_OVERLAY_OUTSET = 6;
+
+/** Same-site Fleet web origin (apex or www). Avoids cross-origin API calls when the page is on fleetai.com. */
+function dashFleetOrigin() {
+    try {
+        let win = null;
+        if (typeof Context !== 'undefined' && typeof Context.getPageWindow === 'function') {
+            win = Context.getPageWindow();
+        }
+        if (!win) win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const host = win && win.location && win.location.hostname;
+        const origin = win && win.location && win.location.origin;
+        if (origin && host && DASH_FLEET_HOSTS.has(host)) return origin;
+    } catch (e) { /* ignore */ }
+    return DASH_FLEET_ORIGIN_FALLBACK;
+}
 
 const DASH_OUTPUT_KIND_CONFIG = {
     task_creation: {
@@ -232,19 +246,19 @@ function dashQaTextBlockLabel(label, isPositive) {
 
 function dashFleetExpertUrl(profileId) {
     const id = String(profileId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/experts/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/experts/${encodeURIComponent(id)}` : '';
 }
 function dashFleetTaskUrl(taskId) {
     const id = String(taskId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/tasks/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/tasks/${encodeURIComponent(id)}` : '';
 }
 function dashFleetProjectUrl(projectId) {
     const id = String(projectId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
 }
 function dashFleetDisputeUrl(disputeId) {
     const id = String(disputeId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/work/problems/disputes/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/work/problems/disputes/${encodeURIComponent(id)}` : '';
 }
 
 // ── Formatting ──
@@ -1184,7 +1198,7 @@ const searchOutputLeftPaneMethods = {
             '</div>',
             '</div>',
             '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">',
-            '<a href="', dashEscHtml(DASH_FLEET_ORIGIN), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload" style="',
+            '<a href="', dashEscHtml(dashFleetOrigin()), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload" style="',
             'display: inline-block;padding: 8px 14px;font-size: 12px;font-weight: 600;',
             'color: #991b1b;background: #fef2f2;border: 1px solid #dc2626;border-radius: 6px;',
             'cursor: pointer;text-decoration: none;">Reload Fleet</a>',
@@ -1711,7 +1725,7 @@ const searchOutputLeftPaneMethods = {
 
         if (/^https?:\/\//i.test(text) || text.startsWith('/')) {
             try {
-                const url = new URL(text, DASH_FLEET_ORIGIN);
+                const url = new URL(text, dashFleetOrigin());
                 const segments = url.pathname.split('/').filter(Boolean).concat([...url.searchParams.values()]);
                 for (const seg of segments) {
                     const parsed = classifySegment(seg);
@@ -2438,7 +2452,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

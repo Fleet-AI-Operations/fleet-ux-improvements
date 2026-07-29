@@ -28,7 +28,8 @@ const DASH_HELPFULNESS_BATCH_CHUNK = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 3;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
-const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
+const DASH_FLEET_ORIGIN_FALLBACK = 'https://www.fleetai.com';
+const DASH_FLEET_HOSTS = new Set(['www.fleetai.com', 'fleetai.com']);
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
@@ -39,7 +40,6 @@ const DASH_DISPUTES_MAX_PAGES = 100;
 const DASH_DISPUTES_TASK_FETCH_CONCURRENCY = 5;
 const DASH_FLEET_FLAGS_PATH = '/task-flags';
 const DASH_QA_SCREENSHOT_VIEW_URLS_PATH = '/orchestrator-private/v1/qa-feedback/screenshots/view-urls';
-const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
 const DASH_FLAG_CREATE_REASON_KEYS = [
     'ai_generated',
     'poor_feedback_from_previous_qa',
@@ -82,11 +82,29 @@ const DASH_AUTO_GROW_TEXTAREA_ATTR = 'data-wf-dash-auto-grow';
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
-const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
 const DASH_FLEET_INTERNAL_API = 'https://api.internal.fleet-platform.fleetai.com/v1';
 const DASH_DISPUTE_REVIEWS_HISTORY_PAGE_SIZE = 50;
 const DASH_DISPUTE_REVIEWS_HISTORY_MAX_PAGES = 3;
 const SO_ROLLING_OVERLAY_OUTSET = 6;
+
+/** Same-site Fleet web origin (apex or www). Avoids cross-origin API calls when the page is on fleetai.com. */
+function dashFleetOrigin() {
+    try {
+        let win = null;
+        if (typeof Context !== 'undefined' && typeof Context.getPageWindow === 'function') {
+            win = Context.getPageWindow();
+        }
+        if (!win) win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const host = win && win.location && win.location.hostname;
+        const origin = win && win.location && win.location.origin;
+        if (origin && host && DASH_FLEET_HOSTS.has(host)) return origin;
+    } catch (e) { /* ignore */ }
+    return DASH_FLEET_ORIGIN_FALLBACK;
+}
+
+function dashFleetSeniorReviewReferer() {
+    return dashFleetOrigin() + '/work/problems/senior-review';
+}
 
 const DASH_OUTPUT_KIND_CONFIG = {
     task_creation: {
@@ -230,27 +248,27 @@ function dashQaTextBlockLabel(label, isPositive) {
 
 function dashFleetExpertUrl(profileId) {
     const id = String(profileId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/experts/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/experts/${encodeURIComponent(id)}` : '';
 }
 function dashFleetTaskUrl(taskId) {
     const id = String(taskId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/tasks/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/tasks/${encodeURIComponent(id)}` : '';
 }
 function dashFleetViewTaskUrl(taskId) {
     const id = String(taskId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/work/problems/view-task/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/work/problems/view-task/${encodeURIComponent(id)}` : '';
 }
 function dashFleetProjectUrl(projectId) {
     const id = String(projectId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
 }
 function dashFleetDisputeUrl(disputeId) {
     const id = String(disputeId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/work/problems/disputes/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/work/problems/disputes/${encodeURIComponent(id)}` : '';
 }
 function dashFleetQaSessionUrl(sessionId) {
     const id = String(sessionId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/work/problems/qa-session/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/work/problems/qa-session/${encodeURIComponent(id)}` : '';
 }
 
 // ── Formatting ──
@@ -871,7 +889,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _dashFleetQaReferer(taskId) {
-        return DASH_FLEET_ORIGIN + '/work/problems/qa/' + encodeURIComponent(String(taskId || '').trim());
+        return dashFleetOrigin() + '/work/problems/qa/' + encodeURIComponent(String(taskId || '').trim());
     },
 
     _getFlagCreateUi(itemId) {
@@ -1111,7 +1129,7 @@ const searchOutputResultsPaneMethods = {
                     resolution,
                     note: String(ui.localNote || '').trim()
                 },
-                referer: DASH_FLEET_SENIOR_REVIEW_REFERER
+                referer: dashFleetSeniorReviewReferer()
             });
             Logger.log('search-output: flag ' + resolution + ' — flag ' + fid);
             delete this._state.flagResolutionUi[fid];
@@ -6438,7 +6456,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.18',
+    _version: '5.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
