@@ -425,7 +425,7 @@ const searchOutputLeftPaneMethods = {
                             <div id="wf-dash-section-retrieve" style="${section}">
                                 <div style="${label} font-weight: 600;">Retrieve Task</div>
                                 <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, task key, or list of such items. URLs also accepted</p>
-                                <input type="text" id="wf-dash-retrieve-input" value="${retrieveInputVal}" autocomplete="off" placeholder="Task ID(s), key(s), URL(s), or pasted JSON list" style="${input}">
+                                <textarea id="wf-dash-retrieve-input" rows="2" autocomplete="off" placeholder="Task ID(s), key(s), URL(s), or list" style="${input} resize: vertical; min-height: 36px; line-height: 1.4;">${retrieveInputVal}</textarea>
                                 <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                 ${this._resultsModeToggleHtml('retrieve')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
@@ -1746,17 +1746,39 @@ const searchOutputLeftPaneMethods = {
         return null;
     },
 
-    _parseRetrieveInputList(raw) {
-        // Strip JSON array chrome ([ ] " ') and turn newlines into commas so pasted
-        // lists like ["uuid-a", "uuid-b"] or multiline task_ids arrays work. Those
-        // characters never appear in UUIDs, task keys, or Fleet URLs.
-        const normalized = String(raw || '')
-            .replace(/[\[\]"']/g, '')
-            .replace(/[\r\n]+/g, ',');
-        const tokens = normalized
-            .split(',')
+    _tokenizeRetrieveInput(raw) {
+        // Strip JSON array chrome ([ ] " ') — never appears in UUIDs, task keys, or URLs.
+        const normalized = String(raw || '').replace(/[\[\]"']/g, '');
+        const primary = normalized
+            .split(/[,\r\n]+/)
             .map((t) => t.trim())
             .filter(Boolean);
+        const tokens = [];
+        for (const chunk of primary) {
+            if (/^https?:\/\//i.test(chunk)) {
+                tokens.push(chunk);
+                continue;
+            }
+            // Whitespace (text inputs / pasted blobs) and concatenated task_… keys.
+            const pieces = chunk.split(/\s+/).filter(Boolean);
+            for (const piece of pieces) {
+                if (/^https?:\/\//i.test(piece)) {
+                    tokens.push(piece);
+                    continue;
+                }
+                const taskHits = piece.match(/task_/g);
+                if (taskHits && taskHits.length > 1) {
+                    tokens.push(...piece.split(/(?=task_)/).map((s) => s.trim()).filter(Boolean));
+                } else {
+                    tokens.push(piece);
+                }
+            }
+        }
+        return tokens;
+    },
+
+    _parseRetrieveInputList(raw) {
+        const tokens = this._tokenizeRetrieveInput(raw);
         const parsed = [];
         const invalid = [];
         for (const token of tokens) {
@@ -1909,8 +1931,7 @@ const searchOutputLeftPaneMethods = {
         if (!parsed.length) {
             this._setRetrieveError(
                 invalid.length
-                    ? 'Enter a valid task ID, version ID, task key, or Fleet URL (comma-separated lists are supported).'
-                    : 'Enter a valid task ID, version ID, task key, or Fleet URL.'
+                    'Enter a valid task ID, version ID, task key, or Fleet URL.'
             );
             if (clipboardBtn && Context.buttonFeedback) {
                 Context.buttonFeedback.flashFailure(clipboardBtn);
@@ -1934,9 +1955,7 @@ const searchOutputLeftPaneMethods = {
         if (!parsed.length) {
             this._logDashApiSkip('retrieve-task', 'invalid input');
             this._setRetrieveError(
-                invalid.length
-                    ? 'Enter a valid task ID, version ID, task key, or Fleet URL (comma-separated lists are supported).'
-                    : 'Enter a valid task ID, version ID, task key, or Fleet URL.'
+                'Enter a valid task ID, version ID, task key, or Fleet URL.'
             );
             return;
         }
@@ -2452,7 +2471,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

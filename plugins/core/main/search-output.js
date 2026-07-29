@@ -5176,7 +5176,7 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._validateRangeUi();
             });
             retrieveInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     void dash._submitRetrieveTask();
                 }
@@ -5890,7 +5890,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.23',
+    _version: '9.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
