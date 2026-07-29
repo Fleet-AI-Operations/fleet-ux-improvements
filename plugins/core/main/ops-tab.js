@@ -4,8 +4,6 @@
 // Dashboard tab UI lives in search-output.js, team-members.js, verifier-fetcher.js,
 // dashboard-settings.js; settings-ui.js hosts enable/password toggles only.
 
-const OPS_TASK_URL_PREFIX = 'https://www.fleetai.com/dashboard/data/tasks/';
-const OPS_GRADE_ASSESSMENTS_URL = 'https://www.fleetai.com/work/assessments/grade/';
 const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
 const OPS_TASK_KEY_RE = /task_[A-Za-z0-9_]+/;
 const OPS_VERIFIER_KEY_RE = /verifier-task_[A-Za-z0-9_.-]+/;
@@ -23,8 +21,8 @@ const OPS_CRYPTO_IV_BYTES = 12;
 /** Must match dev/utils/ops-password-crypto.mjs AES_GCM_TAG_LENGTH */
 const OPS_CRYPTO_AES_GCM_TAG_LENGTH = 128;
 
-const OPS_FLEET_ORIGIN = 'https://www.fleetai.com';
-const OPS_TEAM_SEARCH_URL = OPS_FLEET_ORIGIN + '/dashboard/team';
+const OPS_FLEET_ORIGIN_FALLBACK = 'https://www.fleetai.com';
+const OPS_FLEET_HOSTS = new Set(['www.fleetai.com', 'fleetai.com']);
 const OPS_SESSION_REFRESH_USER_MESSAGE =
     'Fleet session token not yet captured. Navigate to a Fleet data page (e.g. dashboard/team), then press Refresh catalogs.';
 const OPS_TEAM_SEARCH_PAGE_LIMIT = 25;
@@ -69,8 +67,6 @@ const OPS_BUNDLE_READY_DEFAULT_TIMEOUT_MS = 30000;
 const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 /** Matches `"user":{"id":"<uuid>"` in Next.js RSC flight payloads */
 const OPS_NEXT_F_USER_ID_RE = /"user"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
-const OPS_TEAM_BULK_REMOVE_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/members/bulk-remove';
-const OPS_TEAM_USER_PERMISSIONS_URL = 'https://www.fleetai.com/api/orchestrator-private/v1/team/users/permissions';
 /** Fleet API prefix for teams included in dashboard / ops team search. */
 const OPS_TASK_DESIGNERS_TEAM_PREFIX = 'Task Designers - ';
 /** Display labels that alone do not qualify a member for the UI badge. */
@@ -80,6 +76,41 @@ const OPS_TEAM_VERTICALS_ONLY_LABEL = 'Fellows - SMB Banking Project';
 const OPS_TEAM_EPIC_EXPERTS_LABEL = 'Fleet: Epic Experts';
 const OPS_TEAM_EPIC_TRYOUTS_LABEL = 'Fleet: Epic Tryouts';
 const OPS_TEAM_EPIC_LABELS = new Set([OPS_TEAM_EPIC_EXPERTS_LABEL, OPS_TEAM_EPIC_TRYOUTS_LABEL]);
+
+/** Same-site Fleet web origin (apex or www). Avoids cross-origin API calls when the page is on fleetai.com. */
+function opsFleetOrigin() {
+    try {
+        let win = null;
+        if (typeof Context !== 'undefined' && typeof Context.getPageWindow === 'function') {
+            win = Context.getPageWindow();
+        }
+        if (!win) win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const host = win && win.location && win.location.hostname;
+        const origin = win && win.location && win.location.origin;
+        if (origin && host && OPS_FLEET_HOSTS.has(host)) return origin;
+    } catch (e) { /* ignore */ }
+    return OPS_FLEET_ORIGIN_FALLBACK;
+}
+
+function opsTaskUrlPrefix() {
+    return opsFleetOrigin() + '/dashboard/data/tasks/';
+}
+
+function opsGradeAssessmentsUrl() {
+    return opsFleetOrigin() + '/work/assessments/grade/';
+}
+
+function opsTeamSearchUrl() {
+    return opsFleetOrigin() + '/dashboard/team';
+}
+
+function opsTeamBulkRemoveUrl() {
+    return opsFleetOrigin() + '/api/orchestrator-private/v1/team/members/bulk-remove';
+}
+
+function opsTeamUserPermissionsUrl() {
+    return opsFleetOrigin() + '/api/orchestrator-private/v1/team/users/permissions';
+}
 
 function opsIsTaskDesignersTeamName(name) {
     return String(name || '').startsWith(OPS_TASK_DESIGNERS_TEAM_PREFIX);
@@ -241,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.10',
+    _version: '9.11',
     phase: 'core',
     enabledByDefault: true,
 
@@ -858,7 +889,7 @@ const plugin = {
         const id = this._extractOpsTaskIdentifier(raw);
         if (!id) return null;
         if (/^task_/i.test(id) || OPS_UUID_RE.test(id)) {
-            return OPS_TASK_URL_PREFIX + id;
+            return opsTaskUrlPrefix() + id;
         }
         return null;
     },
@@ -1797,7 +1828,7 @@ const plugin = {
         const requestFetch = pageWindow.fetch || fetch;
         const deploymentId = this._getOpsNextDeploymentId(pageWindow);
         const { nextAction, routerState } = actionCache;
-        const url = OPS_FLEET_ORIGIN + '/dashboard/data/experts/' + encodeURIComponent(id);
+        const url = opsFleetOrigin() + '/dashboard/data/experts/' + encodeURIComponent(id);
 
         const headers = {
             accept: 'text/x-component',
@@ -1914,7 +1945,7 @@ const plugin = {
     _opsExpertProfileUrl(expertId, credRefresh) {
         const id = String(expertId || '').trim();
         if (!id) return '';
-        let url = OPS_FLEET_ORIGIN + '/dashboard/data/experts/' + encodeURIComponent(id);
+        let url = opsFleetOrigin() + '/dashboard/data/experts/' + encodeURIComponent(id);
         if (credRefresh) url += '?' + OPS_EXPERT_CRED_REFRESH_QUERY + '=1';
         return url;
     },
@@ -2264,7 +2295,7 @@ const plugin = {
     _openOpsTeamPageForCredRefresh(modal) {
         this._clearOpsTeamCredRefreshPending();
         const pageWindow = this._getOpsPageWindow();
-        const url = OPS_TEAM_SEARCH_URL + '?' + OPS_TEAM_CRED_REFRESH_QUERY + '=1';
+        const url = opsTeamSearchUrl() + '?' + OPS_TEAM_CRED_REFRESH_QUERY + '=1';
         const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
         if (!opened) {
             if (modal) {
@@ -2500,7 +2531,7 @@ const plugin = {
         const requestFetch = pageWindow.fetch || fetch;
         const deploymentId = this._getOpsNextDeploymentId(pageWindow);
         const { nextAction, routerState } = this._opsTaskDataActionCache;
-        const url = OPS_FLEET_ORIGIN + '/dashboard/data/tasks/' + encodeURIComponent(key);
+        const url = opsFleetOrigin() + '/dashboard/data/tasks/' + encodeURIComponent(key);
 
         const headers = {
             accept: 'text/x-component',
@@ -2789,7 +2820,7 @@ const plugin = {
             hasDeploymentId: !!deploymentId
         });
 
-        const res = await requestFetch.call(pageWindow, OPS_TEAM_SEARCH_URL, {
+        const res = await requestFetch.call(pageWindow, opsTeamSearchUrl(), {
             method: 'POST',
             headers,
             body,
@@ -2837,7 +2868,7 @@ const plugin = {
             hasDeploymentId: !!deploymentId
         });
 
-        const res = await requestFetch.call(pageWindow, OPS_TEAM_SEARCH_URL, {
+        const res = await requestFetch.call(pageWindow, opsTeamSearchUrl(), {
             method: 'POST',
             headers,
             body,
@@ -3497,7 +3528,7 @@ const plugin = {
 
     async _opsRemoveMemberFromTeam(teamId, email) {
         if (!teamId || !email) throw new Error('Missing team or email for bulk remove');
-        await this._opsPostOrchestratorPrivate(OPS_TEAM_BULK_REMOVE_URL, {
+        await this._opsPostOrchestratorPrivate(opsTeamBulkRemoveUrl(), {
             team_id: teamId,
             emails: [email]
         });
@@ -3508,7 +3539,7 @@ const plugin = {
         if (!profileId || !permission || !action) {
             throw new Error('Missing profile, permission, or action');
         }
-        await this._opsPostOrchestratorPrivate(OPS_TEAM_USER_PERMISSIONS_URL, {
+        await this._opsPostOrchestratorPrivate(opsTeamUserPermissionsUrl(), {
             profile_id: profileId,
             permission,
             action
@@ -3556,7 +3587,7 @@ const plugin = {
         if (teamAdds.length && !this._opsTeamAddMemberActionCache.nextAction) {
             this._setOpsTeamSearchStatus(modal,
                 'Cannot add to team: add-member credentials missing. Open ' +
-                '<a href="' + this._opsEscapeAttr(OPS_TEAM_SEARCH_URL) + '" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">' +
+                '<a href="' + this._opsEscapeAttr(opsTeamSearchUrl()) + '" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">' +
                 'Fleet /dashboard/team</a> and add a member once, then retry.',
                 true, true, true);
             return;
@@ -3815,7 +3846,7 @@ const plugin = {
         }
         const name = this._opsEscapeHtml(member.full_name || 'Unknown');
         const email = this._opsEscapeHtml(member.email || '');
-        const profileUrl = 'https://www.fleetai.com/dashboard/data/experts/' + encodeURIComponent(memberId);
+        const profileUrl = opsFleetOrigin() + '/dashboard/data/experts/' + encodeURIComponent(memberId);
         const idChip = memberId && dash && typeof dash.copyChipHtml === 'function'
             ? dash.copyChipHtml(memberId)
             : (memberId ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(memberId) + '</span>' : '');
@@ -5014,7 +5045,7 @@ const plugin = {
 
 
     _renderGradeAssessmentsHeaderLink() {
-        return '<a href="' + this._opsEscapeAttr(OPS_GRADE_ASSESSMENTS_URL) + '" target="_blank" rel="noopener noreferrer" '
+        return '<a href="' + this._opsEscapeAttr(opsGradeAssessmentsUrl()) + '" target="_blank" rel="noopener noreferrer" '
             + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn ' + this._opsDashBtnClass('basic', 'nav') + ' wf-ops-grade-header-link">Grade Assessments</a>';
     },
 

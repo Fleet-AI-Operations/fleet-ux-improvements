@@ -28,7 +28,8 @@ const DASH_HELPFULNESS_BATCH_CHUNK = 100;
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_BOOTSTRAP_VERSION = 3;
 const DASH_BOOTSTRAP_TTL_MS = 24 * 60 * 60 * 1000;
-const DASH_FLEET_ORIGIN = 'https://www.fleetai.com';
+const DASH_FLEET_ORIGIN_FALLBACK = 'https://www.fleetai.com';
+const DASH_FLEET_HOSTS = new Set(['www.fleetai.com', 'fleetai.com']);
 const DASH_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Fleet eval_tasks.key shape, e.g. task_iyasykc1wvkn_1781012033021_oyzfvsbk0 */
 const DASH_TASK_KEY_RE = /^task_[A-Za-z0-9_]+$/;
@@ -43,7 +44,6 @@ const DASH_QA_SCREENSHOT_VIEW_URLS_PATH = '/orchestrator-private/v1/qa-feedback/
 const DASH_RESCUE_LEASE_MS = 2 * 60 * 60 * 1000;
 const DASH_RESCUE_DISCARD_TEXT =
     'Rescuing and returning this task to the task writer for them to attempt to fix based on the previous QA or system feedback, or to get another pass at verifier generation if the task never made it to staging.';
-const DASH_FLEET_SENIOR_REVIEW_REFERER = DASH_FLEET_ORIGIN + '/work/problems/senior-review';
 const DASH_FLAG_CREATE_REASON_KEYS = [
     'ai_generated',
     'poor_feedback_from_previous_qa',
@@ -86,11 +86,25 @@ const DASH_AUTO_GROW_TEXTAREA_ATTR = 'data-wf-dash-auto-grow';
 const DASH_PREFETCH_KINDS = ['openDisputes', 'resolvedDisputes', 'pendingFlags', 'resolvedFlags'];
 /** Stop disputes bulk pagination after this many pages with zero date-filter matches (client-side filter). */
 const DASH_DISPUTES_DATE_FILTER_MAX_EMPTY_PAGES = 3;
-const DASH_FLEET_WEB_API = DASH_FLEET_ORIGIN + '/api';
 const DASH_FLEET_INTERNAL_API = 'https://api.internal.fleet-platform.fleetai.com/v1';
 const DASH_DISPUTE_REVIEWS_HISTORY_PAGE_SIZE = 50;
 const DASH_DISPUTE_REVIEWS_HISTORY_MAX_PAGES = 3;
 const SO_ROLLING_OVERLAY_OUTSET = 6;
+
+/** Same-site Fleet web origin (apex or www). Avoids cross-origin API calls when the page is on fleetai.com. */
+function dashFleetOrigin() {
+    try {
+        let win = null;
+        if (typeof Context !== 'undefined' && typeof Context.getPageWindow === 'function') {
+            win = Context.getPageWindow();
+        }
+        if (!win) win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const host = win && win.location && win.location.hostname;
+        const origin = win && win.location && win.location.origin;
+        if (origin && host && DASH_FLEET_HOSTS.has(host)) return origin;
+    } catch (e) { /* ignore */ }
+    return DASH_FLEET_ORIGIN_FALLBACK;
+}
 
 const DASH_OUTPUT_KIND_CONFIG = {
     task_creation: {
@@ -234,19 +248,19 @@ function dashQaTextBlockLabel(label, isPositive) {
 
 function dashFleetExpertUrl(profileId) {
     const id = String(profileId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/experts/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/experts/${encodeURIComponent(id)}` : '';
 }
 function dashFleetTaskUrl(taskId) {
     const id = String(taskId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/tasks/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/tasks/${encodeURIComponent(id)}` : '';
 }
 function dashFleetProjectUrl(projectId) {
     const id = String(projectId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/dashboard/data/projects/${encodeURIComponent(id)}` : '';
 }
 function dashFleetDisputeUrl(disputeId) {
     const id = String(disputeId || '').trim();
-    return id ? `${DASH_FLEET_ORIGIN}/work/problems/disputes/${encodeURIComponent(id)}` : '';
+    return id ? `${dashFleetOrigin()}/work/problems/disputes/${encodeURIComponent(id)}` : '';
 }
 
 // ── Formatting ──
@@ -471,7 +485,8 @@ const searchOutputCoreMethods = {
             Logger.warn('dashboard: blocked Fleet web API call outside search/hydrate — ' + path);
             throw new Error('Fleet web API call blocked: data is cached until a new search.');
         }
-        const url = path.startsWith('http') ? path : DASH_FLEET_WEB_API + path;
+        const origin = dashFleetOrigin();
+        const url = path.startsWith('http') ? path : (origin + '/api' + path);
         const pageWindow = this._pageWindow();
         const requestFetch = pageWindow.fetch || fetch;
         const res = await requestFetch.call(pageWindow, url, {
@@ -479,7 +494,7 @@ const searchOutputCoreMethods = {
             credentials: 'include',
             headers: {
                 accept: 'application/json',
-                referer: DASH_FLEET_ORIGIN + '/'
+                referer: origin + '/'
             }
         });
         if (res.status === 404) return null;
@@ -500,12 +515,13 @@ const searchOutputCoreMethods = {
 
     async _fleetWebPost(path, options) {
         const opts = options || {};
-        const url = path.startsWith('http') ? path : DASH_FLEET_WEB_API + path;
+        const origin = dashFleetOrigin();
+        const url = path.startsWith('http') ? path : (origin + '/api' + path);
         const pageWindow = this._pageWindow();
         const requestFetch = pageWindow.fetch || fetch;
         const headers = {
             accept: '*/*',
-            referer: opts.referer || (DASH_FLEET_ORIGIN + '/work/problems/disputes')
+            referer: opts.referer || (origin + '/work/problems/disputes')
         };
         if (opts.body != null) {
             headers['content-type'] = 'application/json';
@@ -553,6 +569,7 @@ const searchOutputCoreMethods = {
             if (value != null && value !== '') url.searchParams.set(key, String(value));
         });
         const requestFetch = pageWindow.fetch || fetch;
+        const fleetOrigin = dashFleetOrigin();
         const res = await requestFetch.call(pageWindow, url.toString(), {
             method: 'GET',
             credentials: 'omit',
@@ -561,8 +578,8 @@ const searchOutputCoreMethods = {
                 'content-type': 'application/json',
                 'x-jwt-token': jwt,
                 'x-team-id': team,
-                origin: DASH_FLEET_ORIGIN,
-                referer: DASH_FLEET_ORIGIN + '/'
+                origin: fleetOrigin,
+                referer: fleetOrigin + '/'
             }
         });
         if (!res.ok) {
@@ -777,9 +794,10 @@ const searchOutputCoreMethods = {
 
     _disputeResolveReferer(disputeId) {
         const id = String(disputeId || '').trim();
+        const origin = dashFleetOrigin();
         return id
-            ? (DASH_FLEET_ORIGIN + '/work/problems/disputes/' + encodeURIComponent(id))
-            : (DASH_FLEET_ORIGIN + '/work/problems/disputes');
+            ? (origin + '/work/problems/disputes/' + encodeURIComponent(id))
+            : (origin + '/work/problems/disputes');
     },
 
     _dashGetCookie(name) {
@@ -1128,7 +1146,7 @@ const searchOutputCoreMethods = {
         }
         const json = await this._fleetWebPost(this._qaDiscardApiPath(tid), {
             body: this._buildRescueDiscardBody(),
-            referer: DASH_FLEET_ORIGIN + '/work/problems/qa/' + encodeURIComponent(tid),
+            referer: dashFleetOrigin() + '/work/problems/qa/' + encodeURIComponent(tid),
             headers: {
                 'x-jwt-token': jwt,
                 'x-team-id': teamId
@@ -5872,7 +5890,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.22',
+    _version: '9.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

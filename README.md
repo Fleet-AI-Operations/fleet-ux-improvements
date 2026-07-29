@@ -147,7 +147,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Dispute Review Page
-- **Dispute List Filters**: Environment checkbox dropdown (with per-environment counts) and submitted-date after/before filters on the same toolbar row as native search; Clear resets filters; non-matching cards are hidden in place
+- **Dispute List Filters**: Environment checkbox dropdown (with per-environment counts; nothing selected = all) and a Sort by Date (Descending/Ascending) toggle on the same toolbar row as native search; Clear resets environment filters; non-matching cards are hidden in place
 
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text

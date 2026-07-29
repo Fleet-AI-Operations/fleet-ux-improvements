@@ -1,6 +1,6 @@
 // ============= dispute-list-filters.js =============
 // Filter Dispute Review cards by environment (checkbox dropdown from visible
-// card badges) and by submitted date (after/before via GET /api/disputes).
+// card badges) and toggle sort by submitted date (native list is ascending).
 
 const TOOLBAR_ATTR = 'data-fleet-dispute-list-filters';
 const FILTERED_ATTR = 'data-fleet-dispute-filtered';
@@ -12,8 +12,8 @@ const SCOPE_SEL = '[data-fleet-dispute-list-filters="1"]';
 const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
-    description: 'Filter visible disputes by environment and date submitted',
-    _version: '1.5',
+    description: 'Filter visible disputes by environment (empty selection = all); toggle sort by submitted date',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -30,15 +30,18 @@ const plugin = {
         envOptions: [],
         envCounts: {},
         _prevEnvOptions: [],
-        afterDate: '',
-        beforeDate: '',
+        sortDesc: false,
+        hasReordered: false,
+        sorting: false,
         panelOpen: false,
         docListenersBound: false,
         lastEnvKey: '',
-        lastCardCount: -1
+        lastCardCount: -1,
+        lastSortSignature: ''
     },
 
     onMutation(state) {
+        if (state.sorting) return;
         this.ensureSubscription(state);
         this.ensureStyles();
 
@@ -58,6 +61,8 @@ const plugin = {
             if (orphan) orphan.remove();
             toolbar = this.mountToolbar(state, mountAnchor);
             if (!toolbar) return;
+        } else {
+            this.ensureToolbarControls(state, toolbar);
         }
 
         if (!(Array.isArray(state.disputes) && state.disputes.length > 0)) {
@@ -109,8 +114,8 @@ const plugin = {
         return (badge.textContent || '').trim();
     },
 
-    resolveDisputeForCard(card, disputes, index) {
-        if (!Array.isArray(disputes) || disputes.length === 0) return null;
+    resolveDisputeForCard(card, disputes) {
+        if (!card || !Array.isArray(disputes) || disputes.length === 0) return null;
 
         const link = card.querySelector('a[href*="/work/problems/view-task/"]');
         const href = link && link.getAttribute('href');
@@ -140,7 +145,40 @@ const plugin = {
             if (byBadge) return byBadge;
         }
 
-        return disputes[index] || null;
+        // No index fallback — unstable after DOM reorder and causes sort ratcheting.
+        return null;
+    },
+
+    /** Stable identity for signature / logging (task UUID or dispute id). */
+    resolveCardSortId(card, disputes) {
+        const dispute = this.resolveDisputeForCard(card, disputes);
+        if (dispute && dispute.id != null) return 'd:' + String(dispute.id);
+        if (dispute && dispute.eval_task_id) return 't:' + String(dispute.eval_task_id);
+
+        const link = card.querySelector('a[href*="/work/problems/view-task/"]');
+        const href = link && link.getAttribute('href');
+        if (href) {
+            const match = href.match(TASK_HREF_RE);
+            if (match) return 't:' + match[1];
+        }
+        const reviewLink = card.querySelector('a[href*="/work/problems/disputes/"]');
+        if (reviewLink) {
+            const reviewHref = reviewLink.getAttribute('href') || '';
+            const idMatch = reviewHref.match(/\/work\/problems\/disputes\/(\d+)/);
+            if (idMatch) return 'd:' + idMatch[1];
+        }
+        const idBadge = card.querySelector('[data-fleet-dispute-id]');
+        if (idBadge) {
+            const id = idBadge.getAttribute('data-fleet-dispute-id');
+            if (id) return 'd:' + String(id);
+        }
+        return '';
+    },
+
+    getCardCreatedMs(card, disputes) {
+        const dispute = this.resolveDisputeForCard(card, disputes);
+        if (!dispute || !dispute.created_at) return NaN;
+        return Date.parse(dispute.created_at);
     },
 
     ensureSubscription(state) {
@@ -235,6 +273,56 @@ const plugin = {
             });
     },
 
+    createSortButton(state, ui) {
+        const sortBtn = document.createElement('button');
+        sortBtn.type = 'button';
+        sortBtn.setAttribute('data-fleet-dlf-sort', '1');
+        sortBtn.className = (ui && ui.btnClass) ? ui.btnClass('basic', 'compact') : 'wf-dash-btn';
+        this.syncSortButtonLabel(state, sortBtn);
+        const self = this;
+        sortBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            state.sortDesc = !state.sortDesc;
+            state.hasReordered = true;
+            self.syncSortButtonLabel(state, sortBtn);
+            self.applySort(state);
+            Logger.log(`${self.id}: sort ${state.sortDesc ? 'descending' : 'ascending'}`);
+        });
+        return sortBtn;
+    },
+
+    syncSortButtonLabel(state, btn) {
+        if (!btn) return;
+        // Label shows the next action: native default is ascending.
+        btn.textContent = state.sortDesc
+            ? 'Sort by Date (Ascending)'
+            : 'Sort by Date (Descending)';
+    },
+
+    ensureToolbarControls(state, toolbar) {
+        const controls = toolbar.querySelector('[data-fleet-dlf-controls="1"]');
+        if (!controls) return;
+
+        // Remove legacy after/before date pickers if still present.
+        for (const sel of ['[data-fleet-dlf-after="1"]', '[data-fleet-dlf-before="1"]']) {
+            const input = controls.querySelector(sel);
+            if (!input) continue;
+            const label = input.closest('label') || input;
+            label.remove();
+        }
+
+        if (!controls.querySelector('[data-fleet-dlf-sort="1"]')) {
+            const ui = Context.uiLib;
+            const sortBtn = this.createSortButton(state, ui);
+            const clearBtn = controls.querySelector('[data-fleet-dlf-clear="1"]');
+            if (clearBtn) controls.insertBefore(sortBtn, clearBtn);
+            else controls.appendChild(sortBtn);
+            Logger.log(`${this.id}: sort toggle injected into existing toolbar`);
+        } else {
+            this.syncSortButtonLabel(state, controls.querySelector('[data-fleet-dlf-sort="1"]'));
+        }
+    },
+
     mountToolbar(state, mountAnchor) {
         if (!mountAnchor || !mountAnchor.parentNode) return null;
 
@@ -291,23 +379,7 @@ const plugin = {
         envWrap.appendChild(envBtn);
         envWrap.appendChild(panel);
 
-        const afterLabel = document.createElement('label');
-        afterLabel.style.cssText = 'display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-foreground,#6b7280);';
-        afterLabel.appendChild(document.createTextNode('After'));
-        const afterInput = document.createElement('input');
-        afterInput.type = 'date';
-        afterInput.setAttribute('data-fleet-dlf-after', '1');
-        afterInput.style.cssText = 'height:28px;font-size:12px;padding:2px 6px;border:1px solid var(--input,#e5e7eb);border-radius:6px;background:transparent;';
-        afterLabel.appendChild(afterInput);
-
-        const beforeLabel = document.createElement('label');
-        beforeLabel.style.cssText = 'display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-foreground,#6b7280);';
-        beforeLabel.appendChild(document.createTextNode('Before'));
-        const beforeInput = document.createElement('input');
-        beforeInput.type = 'date';
-        beforeInput.setAttribute('data-fleet-dlf-before', '1');
-        beforeInput.style.cssText = 'height:28px;font-size:12px;padding:2px 6px;border:1px solid var(--input,#e5e7eb);border-radius:6px;background:transparent;';
-        beforeLabel.appendChild(beforeInput);
+        const sortBtn = this.createSortButton(state, ui);
 
         const clearBtn = document.createElement('button');
         clearBtn.type = 'button';
@@ -316,8 +388,7 @@ const plugin = {
         clearBtn.textContent = 'Clear';
 
         controls.appendChild(envWrap);
-        controls.appendChild(afterLabel);
-        controls.appendChild(beforeLabel);
+        controls.appendChild(sortBtn);
         controls.appendChild(clearBtn);
 
         // Search left, filters + Clear on the right — same row
@@ -336,15 +407,6 @@ const plugin = {
             ev.stopPropagation();
             state.panelOpen = !state.panelOpen;
             self.syncPanelOpen(state, toolbar);
-        });
-
-        afterInput.addEventListener('change', () => {
-            state.afterDate = afterInput.value || '';
-            self.applyFilters(state);
-        });
-        beforeInput.addEventListener('change', () => {
-            state.beforeDate = beforeInput.value || '';
-            self.applyFilters(state);
         });
 
         clearBtn.addEventListener('click', (ev) => {
@@ -410,8 +472,6 @@ const plugin = {
             return;
         }
 
-        const prevOptions = state._prevEnvOptions || state.envOptions || [];
-        const prevOptionSet = new Set(prevOptions);
         const prevSelected = state.selectedEnvs;
 
         state.lastEnvKey = key;
@@ -419,16 +479,13 @@ const plugin = {
         state.envOptions = options;
         state.envCounts = counts;
 
+        // Default: nothing picked (none = show all). Preserve only still-present picks.
         if (prevSelected == null) {
-            state.selectedEnvs = new Set(options);
+            state.selectedEnvs = new Set();
         } else {
             const next = new Set();
             for (const env of options) {
-                if (!prevOptionSet.has(env)) {
-                    next.add(env);
-                } else if (prevSelected.has(env)) {
-                    next.add(env);
-                }
+                if (prevSelected.has(env)) next.add(env);
             }
             state.selectedEnvs = next;
         }
@@ -526,7 +583,8 @@ const plugin = {
         if (!btn) return;
         const total = (state.envOptions || []).length;
         const selected = state.selectedEnvs ? state.selectedEnvs.size : 0;
-        if (total === 0) {
+        // Nothing picked (= all) or no options: plain label
+        if (total === 0 || selected === 0) {
             btn.textContent = 'Environment';
         } else if (selected === total) {
             btn.textContent = `Environment (${total})`;
@@ -536,72 +594,109 @@ const plugin = {
     },
 
     clearFilters(state, toolbar) {
-        state.selectedEnvs = new Set(state.envOptions || []);
-        state.afterDate = '';
-        state.beforeDate = '';
-        const afterInput = toolbar.querySelector('[data-fleet-dlf-after="1"]');
-        const beforeInput = toolbar.querySelector('[data-fleet-dlf-before="1"]');
-        if (afterInput) afterInput.value = '';
-        if (beforeInput) beforeInput.value = '';
+        state.selectedEnvs = new Set();
         this.renderEnvPanel(state, toolbar);
         this.updateEnvButtonLabel(state, toolbar);
         this.applyFilters(state);
         Logger.log(`${this.id}: filters cleared`);
     },
 
-    parseDayBounds(afterStr, beforeStr) {
-        let afterMs = null;
-        let beforeMs = null;
-        if (afterStr) {
-            const d = new Date(afterStr + 'T00:00:00');
-            if (!Number.isNaN(d.getTime())) afterMs = d.getTime();
-        }
-        if (beforeStr) {
-            const d = new Date(beforeStr + 'T23:59:59.999');
-            if (!Number.isNaN(d.getTime())) beforeMs = d.getTime();
-        }
-        return { afterMs, beforeMs };
+    // Empty selection means show all environments.
+    cardMatches(state, card) {
+        const selected = state.selectedEnvs || new Set();
+        if (selected.size === 0) return true;
+        const env = this.getEnvFromCard(card);
+        return Boolean(env && selected.has(env));
     },
 
-    cardMatches(state, card, index, bounds, allEnvsSelected) {
-        const env = this.getEnvFromCard(card);
-        const selected = state.selectedEnvs || new Set();
-
-        if (selected.size === 0 && (state.envOptions || []).length > 0) {
-            return false;
-        }
-        if (!allEnvsSelected) {
-            if (!env || !selected.has(env)) return false;
+    applySort(state) {
+        // Native list is already ascending — leave alone until the user toggles.
+        if (!state.sortDesc && !state.hasReordered) {
+            state.lastSortSignature = 'native-asc';
+            return;
         }
 
-        const { afterMs, beforeMs } = bounds;
-        const dateActive = afterMs != null || beforeMs != null;
-        if (dateActive) {
-            if (!Array.isArray(state.disputes) || state.disputes.length === 0) {
-                return true;
+        const disputes = state.disputes;
+        if (!Array.isArray(disputes) || disputes.length === 0) return;
+
+        const cards = this.getLeafDisputeCards();
+        const dir = state.sortDesc ? 'd' : 'a';
+        const ids = [];
+        for (const card of cards) {
+            const id = this.resolveCardSortId(card, disputes);
+            if (id) ids.push(id);
+        }
+        ids.sort();
+        // Order-independent: surviving a DOM reorder must not invalidate the signature.
+        const signature = dir + ':' + cards.length + ':' + ids.join('|');
+        if (signature === state.lastSortSignature) return;
+
+        const byParent = new Map();
+        cards.forEach((card, siblingIndex) => {
+            const parent = card.parentElement;
+            if (!parent) return;
+            if (!byParent.has(parent)) byParent.set(parent, []);
+            byParent.get(parent).push({ card, siblingIndex });
+        });
+
+        let moved = 0;
+        state.sorting = true;
+        try {
+            for (const [parent, items] of byParent) {
+                if (items.length < 2) continue;
+
+                const sorted = items.slice().sort((a, b) => {
+                    const da = this.getCardCreatedMs(a.card, disputes);
+                    const db = this.getCardCreatedMs(b.card, disputes);
+                    if (Number.isNaN(da) && Number.isNaN(db)) {
+                        return a.siblingIndex - b.siblingIndex;
+                    }
+                    if (Number.isNaN(da)) return 1;
+                    if (Number.isNaN(db)) return -1;
+                    if (da !== db) {
+                        return state.sortDesc ? (db - da) : (da - db);
+                    }
+                    return a.siblingIndex - b.siblingIndex;
+                });
+
+                let needsMove = false;
+                for (let i = 0; i < sorted.length; i++) {
+                    if (sorted[i].card !== items[i].card) {
+                        needsMove = true;
+                        break;
+                    }
+                }
+                if (!needsMove) continue;
+
+                const frag = document.createDocumentFragment();
+                for (const item of sorted) {
+                    frag.appendChild(item.card);
+                    moved++;
+                }
+                parent.appendChild(frag);
             }
-            const dispute = this.resolveDisputeForCard(card, state.disputes, index);
-            const created = dispute && dispute.created_at ? Date.parse(dispute.created_at) : NaN;
-            if (Number.isNaN(created)) return false;
-            if (afterMs != null && created < afterMs) return false;
-            if (beforeMs != null && created > beforeMs) return false;
+        } finally {
+            state.sorting = false;
         }
 
-        return true;
+        state.lastSortSignature = signature;
+        if (moved > 0) {
+            Logger.debug(`${this.id}: reordered ${moved} card(s) ${state.sortDesc ? 'descending' : 'ascending'}`);
+        }
     },
 
     applyFilters(state, opts) {
         const quiet = opts && opts.quiet;
         const cards = this.getLeafDisputeCards();
         const options = state.envOptions || [];
-        const selected = state.selectedEnvs || new Set(options);
-        const allEnvsSelected = options.length === 0 || selected.size === options.length;
-        const bounds = this.parseDayBounds(state.afterDate, state.beforeDate);
+        const selected = state.selectedEnvs || new Set();
+        // Nothing picked (= all) is not an active filter.
+        const filtering = selected.size > 0 && selected.size < options.length;
 
         let shown = 0;
         let hidden = 0;
-        cards.forEach((card, index) => {
-            const match = this.cardMatches(state, card, index, bounds, allEnvsSelected);
+        cards.forEach((card) => {
+            const match = this.cardMatches(state, card);
             if (match) {
                 if (card.getAttribute(FILTERED_ATTR) === '1') {
                     card.removeAttribute(FILTERED_ATTR);
@@ -613,8 +708,8 @@ const plugin = {
             }
         });
 
-        const dateActive = bounds.afterMs != null || bounds.beforeMs != null;
-        const filtering = (!allEnvsSelected) || dateActive || (selected.size === 0 && options.length > 0);
+        this.applySort(state);
+
         if (!quiet && filtering) {
             Logger.log(`${this.id}: filter applied — shown ${shown}, hidden ${hidden}`);
         } else if (!quiet && !filtering) {
