@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.14
+// @version      12.4.15
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.14';
+    const VERSION = '12.4.15';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -593,35 +593,34 @@
             }
         }
 
+        // Solid inline flash only — this iframe bootstrap returns before Context/ui-lib
+        // exist, and these buttons use the `background` shorthand (not background-color).
+        const CLIP_BTN_BG = 'rgba(255,255,255,0.08)';
+
         function flashSuccess(btn) {
-            if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
-                Context.buttonFeedback.flashSuccess(btn);
-                return;
-            }
+            if (!btn) return;
             if (btn._fosClipResetTimeout) clearTimeout(btn._fosClipResetTimeout);
             btn.style.transition = '';
-            btn.style.backgroundColor = 'rgb(34, 197, 94)';
+            btn.style.background = 'rgb(34, 197, 94)';
             btn.style.color = '#ffffff';
             btn._fosClipResetTimeout = setTimeout(() => {
                 btn._fosClipResetTimeout = null;
-                btn.style.backgroundColor = 'rgba(255,255,255,0.08)';
+                btn.style.background = CLIP_BTN_BG;
                 btn.style.color = '#f2f2f2';
             }, COPY_SUCCESS_MS);
         }
 
         function flashFailure(btn) {
-            if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
-                Context.buttonFeedback.flashFailure(btn);
-                return;
-            }
+            if (!btn) return;
             if (btn._fosClipResetTimeout) clearTimeout(btn._fosClipResetTimeout);
             const prevT = btn.style.transition;
             btn.style.transition = 'none';
-            btn.style.backgroundColor = 'rgb(239, 68, 68)';
+            btn.style.background = 'rgb(239, 68, 68)';
             btn.style.color = '#ffffff';
             void btn.offsetHeight;
-            btn.style.transition = 'background-color ' + COPY_FAIL_MS + 'ms ease-out, color ' + COPY_FAIL_MS + 'ms ease-out';
-            btn.style.backgroundColor = 'rgba(255,255,255,0.08)';
+            btn.style.transition =
+                'background ' + COPY_FAIL_MS + 'ms ease-out, color ' + COPY_FAIL_MS + 'ms ease-out';
+            btn.style.background = CLIP_BTN_BG;
             btn.style.color = '#f2f2f2';
             btn._fosClipResetTimeout = setTimeout(() => {
                 btn.style.transition = prevT || '';

@@ -1,7 +1,7 @@
 {
-  "version": "12.4.14",
+  "version": "12.4.15",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.220",
+  "archetypesVersion": "14.222",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -150,8 +150,8 @@
     },
     {
       "name": "vnc-helper.js",
-      "version": "2.3",
-      "hash": "sha256-2ecf941a82b97a179bd49849dccc48ee17aadb4c1f604197dd5cfa3d5a0ab547",
+      "version": "2.4",
+      "hash": "sha256-d45c8606a217dc156339723c376bd7bc83863e080eaa2480d03ecba7d6fd4f8b",
       "log": false
     },
     {
