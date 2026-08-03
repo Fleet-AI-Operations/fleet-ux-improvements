@@ -1930,8 +1930,7 @@ const searchOutputLeftPaneMethods = {
         const { parsed, invalid } = this._parseRetrieveInputList(raw);
         if (!parsed.length) {
             this._setRetrieveError(
-                invalid.length
-                    'Enter a valid task ID, version ID, task key, or Fleet URL.'
+                'Enter a valid task ID, version ID, task key, or Fleet URL.'
             );
             if (clipboardBtn && Context.buttonFeedback) {
                 Context.buttonFeedback.flashFailure(clipboardBtn);
@@ -2471,7 +2470,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.3',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
