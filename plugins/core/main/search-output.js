@@ -5388,6 +5388,11 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._exportFilteredTasksJson();
                 return;
             }
+            const userStoriesExportBtn = e.target.closest('#wf-dash-export-user-stories');
+            if (userStoriesExportBtn && modal.contains(userStoriesExportBtn)) {
+                void dash._exportFilteredUserStories();
+                return;
+            }
             const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
             if (stopSearchBtn && modal.contains(stopSearchBtn)) {
                 dash._requestStopSearchFetches();
@@ -5890,7 +5895,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.24',
+    _version: '9.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
