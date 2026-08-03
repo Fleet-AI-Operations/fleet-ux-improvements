@@ -1566,6 +1566,7 @@ const searchOutputResultsPaneMethods = {
 
         try {
             await this._runConcurrentWorkers(items, concurrency, async (item) => {
+                const taskKey = String(item && item.task && item.task.key || '').trim();
                 const taskId = String(item && item.task && item.task.id || '').trim();
                 try {
                     const fields = await this._fetchUserStoryFieldsForExportCached(item, runCache, opsTab);
@@ -1590,18 +1591,18 @@ const searchOutputResultsPaneMethods = {
                             scenarioTitle: scenarioTitle,
                             userStory: userStory,
                             humanAnnotatorInstructions: annotator,
-                            taskIds: []
+                            taskKeys: []
                         };
                         byFingerprint.set(fp, entry);
                     }
-                    if (taskId && entry.taskIds.indexOf(taskId) === -1) {
-                        entry.taskIds.push(taskId);
+                    if (taskKey && entry.taskKeys.indexOf(taskKey) === -1) {
+                        entry.taskKeys.push(taskKey);
                     }
                 } catch (err) {
                     stats.failed++;
                     Logger.warn(
                         'search-output-results-pane: user story export fetch failed — '
-                        + (taskId ? taskId.slice(0, 8) + '…' : '(no id)'),
+                        + (taskKey || (taskId ? taskId.slice(0, 8) + '…' : '(no key)')),
                         err
                     );
                 } finally {
@@ -1611,7 +1612,7 @@ const searchOutputResultsPaneMethods = {
             });
 
             const stories = Array.from(byFingerprint.values()).map((entry) => {
-                entry.taskIds.sort();
+                entry.taskKeys.sort();
                 return entry;
             });
             stories.sort((a, b) => {
@@ -6738,7 +6739,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
