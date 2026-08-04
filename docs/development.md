@@ -196,7 +196,7 @@ Scripts in `dev/utils/` automate branch creation, `fleet.user.js` sync, version 
 |--------|---------|
 | **checkout.sh** | Create a feature branch and sync `fleet.user.js` for that branch. Use when **starting** work on a feature. |
 | **push.sh** | Version-aware commit and push: bump versions for changed files if needed, run `update-versions.sh` and `compute-hashes.sh`, then commit and push. Use for **committing** on a branch. |
-| **test.sh** | Create a test branch and sync `fleet.user.js` for that branch. Use to **simulate** how main userscript users would experience an update before releasing. |
+| **test.sh** | Create a test branch and sync `fleet.user.js`. Default: simulate a main userscript update. `--from-head` / `-f`: faithful copy of the current branch (preserve `fleet.user.js`). |
 | **update-versions.sh** | Sync `archetypes.json` and `fleet.user.js` with plugin `_version` values; normalize fleet `@version`/const `VERSION`; bump `archetypesVersion`. Used by `push.sh`; can be run standalone. |
 | **compute-hashes.sh** | Compute SHA-256 hashes for all plugin files listed in `archetypes.json` and write them back. Run after `update-versions.sh`. |
 | **sync-branch-config.sh** | Align `fleet.user.js` with the current git branch. Used by `checkout.sh` and `test.sh`; safe to run by hand after switching branches. |
@@ -241,11 +241,12 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 - Runs `./dev/utils/update-versions.sh` and `./dev/utils/compute-hashes.sh` to sync archetypes and fleet, then `git add -A`, `git commit`, `git push` (only if there is something to commit). Default message: "push.sh auto commit at <date/time>".
 - Requires `jq`. Use for normal commits on a branch to keep versions in sync automatically.
 
-**test.sh** — `./dev/utils/test.sh [--dry-run] <new_branch_name>`
+**test.sh** — `./dev/utils/test.sh [--dry-run] [--from-head|-f] <new_branch_name>`
 
 - Requires clean working tree. Branch name must not be `main` and must not exist. Depends on `sync-branch-config.sh` in the same directory. `--dry-run` prints planned changes without modifying anything.
-- Fetches `origin/main`, creates a new branch from the **current** branch (so non-fleet files stay as on your branch), replaces `fleet.user.js` with `origin/main`'s copy, runs `sync-branch-config.sh` to update `fleet.user.js` for the new branch name, commits and pushes.
-- `test-update` is a **main-like branch**: hash verification is enforced, dev plugins are not loaded, and non-dev redirect is not shown. Use to validate an upcoming main release: install the test-branch script, use it as normal, then merge to main when satisfied.
+- **Default:** Fetches `origin/main`, creates a new branch from the **current** branch (so non-fleet files stay as on your branch), replaces `fleet.user.js` with `origin/main`'s copy, runs `sync-branch-config.sh` to update `fleet.user.js` for the new branch name, commits and pushes.
+- **`--from-head` / `-f`:** Creates a new branch from the current branch and keeps the current `fleet.user.js` (version and host logic). Only remaps branch-bound fields via `sync-branch-config.sh`, then commits and pushes. Prints both DEV-ID and branch install URLs. Use for a temporary copy of a feature branch.
+- `test-update` is a **main-like branch**: hash verification is enforced, dev plugins are not loaded, and non-dev redirect is not shown. Use (default mode) to validate an upcoming main release: install the test-branch script, use it as normal, then merge to main when satisfied.
 
 **update-versions.sh** — `./dev/utils/update-versions.sh [--dry-run] [options]`
 
