@@ -37,6 +37,10 @@ const DECODE_SYSTEM_PROMPT =
     + 'may be grouped into one bullet point for better synthesis. No restating of code. If the '
     + 'output does not match the code, simply state that there seems to be a mismatch. Do not '
     + 'acknowledge checks that passed. If there are no failures, state that there is nothing to analyze. '
+    + 'Match the certainty of what the verifier establishes: when the source and output make a '
+    + 'fact certain, state it as fact — do not hedge with words like "likely", "suggests", '
+    + '"might", or "appears". Reserve uncertainty language only when the code or output '
+    + 'genuinely leave something undetermined. '
     + 'In this current scenario, the only thing that the reviewer can do to attempt to fix the errors '
     + 'is to attempt the task while completing different actions. The reviewer cannot modify the verifier code. '
     + 'Therefore, do not suggest modifications to the code ever; only changes in how the task is '
@@ -346,8 +350,10 @@ async function sendVerifierChatMessage(modal, userText) {
             userContent,
             displayContent: text,
             displayAttachment: attachment,
+            systemContent: DECODE_SYSTEM_PROMPT,
             onTurnDone: (turn) => verifierRecordTurn(modal, turn),
         }));
+
     } catch (_err) {
         // sendTurn already logged and finalized the error bubble
     }
@@ -431,13 +437,17 @@ function wireVerifierChatComposer(modal) {
     chat.wireComposer(modal, getVerifierChatState(modal), Object.assign({}, verifierChatOpts(), {
         onSend: (value) => sendVerifierChatMessage(modal, value),
         onStop: () => stopVerifierChatStream(modal),
-        onExport: () => chat.exportConversation(
-            getVerifierChatState(modal),
-            Object.assign({}, verifierChatOpts(), {
-                exportFilename: 'verifier-chat-' + new Date().toISOString().slice(0, 10) + '.json',
-                exportMetadata: { feature: 'verifier-fetcher' },
-            })
-        ),
+        onExport: () => {
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            chat.exportConversation(
+                getVerifierChatState(modal),
+                Object.assign({}, verifierChatOpts(), {
+                    exportFilename: 'verifier-chat-' + stamp + '.json',
+                    exportMetadata: { feature: 'verifier-fetcher' },
+                })
+            );
+        },
+
     }));
 }
 
@@ -974,7 +984,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.3',
+    _version: '7.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
