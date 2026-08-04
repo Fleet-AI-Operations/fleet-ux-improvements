@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.15
+// @version      12.4.16
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.15';
+    const VERSION = '12.4.16';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -694,9 +694,9 @@
             }
         }
 
-        async function runOverwrite(btn) {
+        async function runOverwrite(btn, readPromise) {
             try {
-                const t = await navigator.clipboard.readText();
+                const t = await (readPromise || navigator.clipboard.readText());
                 const ok = await pushOsTextToVmClipboard(typeof t === 'string' ? t : '');
                 if (ok) {
                     flashSuccess(btn);
@@ -706,7 +706,18 @@
                 }
             } catch (e) {
                 flashFailure(btn);
-                console.warn(EMBED_LOG + ': overwrite failed — could not read system clipboard', e);
+                const name = e && e.name ? String(e.name) : '';
+                if (name === 'NotAllowedError') {
+                    console.warn(
+                        EMBED_LOG +
+                            ': overwrite failed — clipboard read blocked (NotAllowedError). ' +
+                            'Cross-origin env iframes need clipboard-read on the iframe allow attribute, ' +
+                            'and the click must keep user activation.',
+                        e
+                    );
+                } else {
+                    console.warn(EMBED_LOG + ': overwrite failed — could not read system clipboard', e);
+                }
             }
         }
 
@@ -836,7 +847,16 @@
                 clipQueue = clipQueue.then(() => runExtract(bExtract)).catch(() => {});
             });
             bOverwrite.addEventListener('click', () => {
-                clipQueue = clipQueue.then(() => runOverwrite(bOverwrite)).catch(() => {});
+                // Start read under the user gesture; only serialize the VM push via clipQueue.
+                let readPromise;
+                try {
+                    readPromise = navigator.clipboard.readText();
+                } catch (eSync) {
+                    readPromise = Promise.reject(eSync);
+                }
+                clipQueue = clipQueue
+                    .then(() => runOverwrite(bOverwrite, readPromise))
+                    .catch(() => {});
             });
 
             btnRow.appendChild(bExtract);
