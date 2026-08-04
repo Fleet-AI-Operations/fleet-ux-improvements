@@ -41,7 +41,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'Env Helper',
     description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.4',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -325,8 +325,6 @@ const EnvHelperApi = {
         let onUp = () => {};
         let onResizeMove = () => {};
         let onResizeUp = () => {};
-
-        const self = this;
 
         /** Persistent tab: stays mounted while the modal is open or minimized. */
         const ensureRestoreTab = () => {
@@ -628,7 +626,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'Env Helper (library)',
     description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

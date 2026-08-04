@@ -1,7 +1,7 @@
 {
   "version": "12.4.16",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.231",
+  "archetypesVersion": "14.232",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -156,8 +156,8 @@
     },
     {
       "name": "env-helper.js",
-      "version": "1.4",
-      "hash": "sha256-2d0be39619f5d5cf7549d94c8d001ecc9ab26b3e46083d8d4ad0a4d4fb85fce5",
+      "version": "1.5",
+      "hash": "sha256-04632a0df4356fa48ce7852cadb176189facca889a2b5097fe25c58556df1b05",
       "log": false
     }
   ],
