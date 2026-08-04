@@ -7,7 +7,7 @@
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
 
-const AI_CHAT_VERSION = '6.4';
+const AI_CHAT_VERSION = '6.5';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -865,6 +865,19 @@ function aiChatSetupCopyButtons(el, opts) {
     setTimeout(poll, 0);
 }
 
+/**
+ * Whether it is safe to reset Deep Chat's `history` from state.
+ * Skip while a programmatic/connect turn is in flight — assigning history
+ * races the just-painted user bubble and can wipe the live stream UI.
+ */
+function aiChatShouldSyncHistory(root, state) {
+    if (!state) return false;
+    if (state.streaming) return false;
+    if (state._pendingTurn) return false;
+    if (root && root._wfAiChatFromHandler) return false;
+    return true;
+}
+
 function aiChatSyncHistory(el, state) {
     if (!el) return;
     try {
@@ -1320,9 +1333,7 @@ function aiChatRenderMessages(root, state, opts) {
     const run = async () => {
         try {
             const el = await aiChatEnsureMounted(root, state, o);
-            // Do not reset Deep Chat history while a live connect/stream turn is
-            // in flight — that races the just-painted user bubble and wipes it.
-            if (!state.streaming && !root._wfAiChatFromHandler) {
+            if (aiChatShouldSyncHistory(root, state)) {
                 aiChatSyncHistory(el, state);
             }
             aiChatSetKeyGate(root, {
@@ -1373,7 +1384,9 @@ function aiChatWireComposer(root, stateOrOpts, maybeOpts) {
     }
 
     void aiChatEnsureMounted(root, state, o).then((el) => {
-        if (el) aiChatSyncHistory(el, state);
+        if (el && aiChatShouldSyncHistory(root, state)) {
+            aiChatSyncHistory(el, state);
+        }
         aiChatSetKeyGate(root, {
             mountSelector: o.mountSelector,
             state,
@@ -2221,7 +2234,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '6.4',
+    _version: '6.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

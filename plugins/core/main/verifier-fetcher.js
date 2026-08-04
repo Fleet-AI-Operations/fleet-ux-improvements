@@ -318,6 +318,14 @@ async function sendVerifierChatMessage(modal, userText) {
     }
 
     ensureVerifierChatPaneOpen(modal);
+    if (typeof chat.ensureMounted === 'function') {
+        try {
+            await chat.ensureMounted(modal, state, verifierChatOpts());
+        } catch (err) {
+            Logger.error('verifier-fetcher: chat mount failed before send', err);
+            return;
+        }
+    }
 
     const attachment = takeVerifierAttachmentForTurn(modal, state);
     const userContent = attachment
@@ -371,6 +379,15 @@ async function decodeVerifierOutput(modal) {
     }
 
     ensureVerifierChatPaneOpen(modal);
+    if (typeof chat.ensureMounted === 'function') {
+        try {
+            await chat.ensureMounted(modal, state, verifierChatOpts());
+        } catch (err) {
+            Logger.error('verifier-fetcher: chat mount failed before Diagnose', err);
+            if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+            return;
+        }
+    }
     if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
 
     const attachment = takeVerifierAttachmentForTurn(modal, state);
@@ -564,8 +581,10 @@ function restoreVerifierScratchpadState(modal) {
 
 function syncVerifierOutputToolbar(modal) {
     if (!modal) return;
+    // Layout only — do not remount/sync AI chat here. Ops calls this after every
+    // content-search UI refresh (including late highlight after Fetch), which
+    // would race Diagnose/send and wipe the live Deep Chat turn.
     applyVerifierScratchpadLayout(modal);
-    syncVerifierAiUi(modal);
 }
 
 function captureVerifierScratchpadTabState(modal) {
@@ -947,7 +966,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.0',
+    _version: '7.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -981,6 +1000,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v7.0');
+        Logger.log('verifier-fetcher: tab registered v7.1');
     }
 };
