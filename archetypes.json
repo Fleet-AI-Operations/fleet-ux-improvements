@@ -1,7 +1,7 @@
 {
-  "version": "12.4.14",
+  "version": "12.4.15",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.218",
+  "archetypesVersion": "14.228",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "6.4",
-      "hash": "sha256-b24a0fa8fa5489df587ace183f69becc9945d7052fff4296a1f6a9b473234c54",
+      "version": "7.1",
+      "hash": "sha256-26235dad8bdb53c8f5ec50fd0301a8c412b53402646c49dfe085ac620a0d5e09",
       "log": false
     },
     {
@@ -150,8 +150,8 @@
     },
     {
       "name": "vnc-helper.js",
-      "version": "2.3",
-      "hash": "sha256-2ecf941a82b97a179bd49849dccc48ee17aadb4c1f604197dd5cfa3d5a0ab547",
+      "version": "2.4",
+      "hash": "sha256-d45c8606a217dc156339723c376bd7bc83863e080eaa2480d03ecba7d6fd4f8b",
       "log": false
     },
     {
@@ -206,14 +206,14 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "5.1",
-      "hash": "sha256-c793af80ed4ae44df48f840de03cae56e0977a1bbbd4fa8af27fdb74a29b586f",
+      "version": "5.4",
+      "hash": "sha256-e29a3b94dbb93970ea7558a41319ed1fcbaa697d3283a871846849b0b06bb556",
       "log": false
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "5.19",
-      "hash": "sha256-af73a676ea0d28c718b5bd00c4822cbe8268128752d810b9bc666188089a60c1",
+      "version": "6.1",
+      "hash": "sha256-cbefb045d6f14a7c2a4a7d14d96f27f4a2f67a922565702539aba61f36a5b981",
       "log": false
     },
     {
@@ -236,8 +236,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "9.23",
-      "hash": "sha256-99d0ee1cacc676b560b81d01eac6653a55c4e9c28a3ca12cf6a3f87b48ba8ae9",
+      "version": "9.25",
+      "hash": "sha256-05bd00c19eb5478d2fb87f19751119d3e632cd242fe9eaf77e127057824c1808",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "7.0",
-      "hash": "sha256-37e60bc2d80797d5724d50919b1650055a94c195a23cda157e000bf7226468c3",
+      "version": "7.3",
+      "hash": "sha256-b74dc437e15d3947190d12cc6fb5c130560cbce41a31c36d162d463330c5694a",
       "log": false
     },
     {

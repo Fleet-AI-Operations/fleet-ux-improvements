@@ -359,6 +359,7 @@ const searchOutputResultsPaneMethods = {
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
                                 <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
+                                <button type="button" id="wf-dash-export-user-stories" title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
                                 <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Retrieve Clipboard</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
@@ -1357,10 +1358,19 @@ const searchOutputResultsPaneMethods = {
     },
 
     _syncTaskExportUi() {
-        const btn = this._q('#wf-dash-export-tasks-json');
-        if (!btn) return;
+        const jsonBtn = this._q('#wf-dash-export-tasks-json');
+        const storiesBtn = this._q('#wf-dash-export-user-stories');
         if (!Context.isDevBranch) {
-            btn.style.display = 'none';
+            if (jsonBtn) jsonBtn.style.display = 'none';
+            if (storiesBtn) {
+                storiesBtn.style.display = 'none';
+                storiesBtn.disabled = true;
+                storiesBtn.removeAttribute('aria-busy');
+                if (storiesBtn.getAttribute('data-idle-label') == null) {
+                    storiesBtn.setAttribute('data-idle-label', 'Export User Stories');
+                }
+                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'Export User Stories';
+            }
             return;
         }
         const viewItems = this._getViewItems();
@@ -1369,8 +1379,281 @@ const searchOutputResultsPaneMethods = {
             && viewItems
             && viewItems.length > 0
             && !this._state.loading;
-        btn.style.display = show ? '' : 'none';
-        btn.disabled = !show;
+        if (jsonBtn) {
+            jsonBtn.style.display = show ? '' : 'none';
+            jsonBtn.disabled = !show;
+        }
+        if (storiesBtn) {
+            if (storiesBtn.getAttribute('data-idle-label') == null) {
+                storiesBtn.setAttribute('data-idle-label', 'Export User Stories');
+            }
+            const exporting = Boolean(this._state.userStoryExportRunning);
+            storiesBtn.style.display = show || exporting ? '' : 'none';
+            storiesBtn.disabled = !show || exporting;
+            if (exporting) {
+                storiesBtn.setAttribute('aria-busy', 'true');
+            } else {
+                storiesBtn.removeAttribute('aria-busy');
+                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'Export User Stories';
+            }
+        }
+    },
+
+    _setUserStoryExportProgress(done, total) {
+        const btn = this._q('#wf-dash-export-user-stories');
+        if (!btn) return;
+        if (btn.getAttribute('data-idle-label') == null) {
+            btn.setAttribute('data-idle-label', 'Export User Stories');
+        }
+        if (total > 0) {
+            btn.textContent = 'Exporting… ' + done + '/' + total;
+        } else {
+            btn.textContent = 'Exporting…';
+        }
+        btn.setAttribute('aria-busy', 'true');
+        btn.disabled = true;
+    },
+
+    _userStoryExportOmitAnnotator(userStory, annotator) {
+        const story = userStory != null ? String(userStory).trim() : '';
+        const instructions = annotator != null ? String(annotator).trim() : '';
+        if (!instructions) return null;
+        if (!story) return instructions;
+        if (instructions === story) return null;
+        if (story.indexOf(instructions) !== -1) return null;
+        return instructions;
+    },
+
+    _userStoryExportFingerprint(scenarioTitle, userStory, annotator) {
+        return [
+            scenarioTitle != null ? String(scenarioTitle) : '',
+            userStory != null ? String(userStory) : '',
+            annotator != null ? String(annotator) : ''
+        ].join('\u0000');
+    },
+
+    _userStoryExportHasContent(fields) {
+        if (!fields) return false;
+        return Boolean(
+            (fields.scenarioTitle && String(fields.scenarioTitle).trim())
+            || (fields.userStory && String(fields.userStory).trim())
+            || (fields.humanAnnotatorInstructions && String(fields.humanAnnotatorInstructions).trim())
+        );
+    },
+
+    _resolveUserStoryFieldsFromCache(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (ui.status !== 'loaded' || !this._userStoryHasContent(ui)) return null;
+        return {
+            scenarioTitle: ui.scenarioTitle != null ? String(ui.scenarioTitle).trim() || null : null,
+            humanAnnotatorInstructions: ui.humanAnnotatorInstructions != null
+                ? String(ui.humanAnnotatorInstructions).trim() || null
+                : null,
+            userStory: ui.userStory != null ? String(ui.userStory).trim() || null : null,
+            taskScenarioId: null,
+            fromCache: true
+        };
+    },
+
+    _normalizeFetchedUserStoryResult(result) {
+        const scenarioTitle = result && result.scenarioTitle != null
+            ? String(result.scenarioTitle).trim() || null
+            : null;
+        const humanAnnotatorInstructions = result && result.humanAnnotatorInstructions != null
+            ? String(result.humanAnnotatorInstructions).trim() || null
+            : null;
+        const userStory = result && result.userStory != null
+            ? String(result.userStory).trim() || null
+            : null;
+        const taskScenarioId = result && result.taskScenarioId != null
+            ? result.taskScenarioId
+            : null;
+        return {
+            scenarioTitle,
+            humanAnnotatorInstructions,
+            userStory,
+            taskScenarioId,
+            fromCache: false
+        };
+    },
+
+    async _fetchUserStoryFieldsForExportCached(item, runCache, opsTab) {
+        const itemId = String(item && item.id || '').trim();
+        const taskKey = String(item && item.task && item.task.key || '').trim();
+        const taskId = String(item && item.task && item.task.id || '').trim();
+        const taskCacheKey = taskId ? 'id:' + taskId : (taskKey ? 'key:' + taskKey : '');
+
+        if (taskCacheKey && runCache.byTask.has(taskCacheKey)) {
+            return runCache.byTask.get(taskCacheKey);
+        }
+
+        const cachedUi = itemId ? this._resolveUserStoryFieldsFromCache(itemId) : null;
+        if (cachedUi) {
+            if (taskCacheKey) runCache.byTask.set(taskCacheKey, cachedUi);
+            return cachedUi;
+        }
+
+        if (!taskKey && !taskId) {
+            const missing = { empty: true, reason: 'missing_task' };
+            if (taskCacheKey) runCache.byTask.set(taskCacheKey, missing);
+            return missing;
+        }
+
+        const result = await opsTab.fetchTaskUserStory({ taskKey, taskId });
+        const fields = this._normalizeFetchedUserStoryResult(result);
+        if (!this._userStoryExportHasContent(fields)) {
+            const empty = {
+                empty: true,
+                reason: result && result.reason ? result.reason : 'empty',
+                taskScenarioId: fields.taskScenarioId
+            };
+            if (taskCacheKey) runCache.byTask.set(taskCacheKey, empty);
+            return empty;
+        }
+        if (taskCacheKey) runCache.byTask.set(taskCacheKey, fields);
+        return fields;
+    },
+
+    _buildUserStoriesExportPayload(items, stories, stats) {
+        const identityPayload = this._buildTaskCardsExportPayload(items);
+        return {
+            schemaVersion: 1,
+            exportedAt: new Date().toISOString(),
+            source: {
+                filteredCount: items.length,
+                uniqueStories: stories.length,
+                fetched: stats.fetched,
+                skippedEmpty: stats.skippedEmpty,
+                failed: stats.failed,
+                fromCache: stats.fromCache
+            },
+            search: identityPayload.search,
+            view: identityPayload.view,
+            stories
+        };
+    },
+
+    async _exportFilteredUserStories() {
+        if (!Context.isDevBranch) {
+            Logger.warn('search-output-results-pane: user story export skipped — not a dev build');
+            return;
+        }
+        if (this._state.userStoryExportRunning) {
+            Logger.debug('search-output-results-pane: user story export already running');
+            return;
+        }
+        const items = this._getViewItems();
+        if (!items || items.length === 0) {
+            Logger.warn('search-output-results-pane: user story export skipped — no filtered items');
+            return;
+        }
+        const opsTab = Context.opsTab;
+        if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
+            Logger.warn('search-output-results-pane: user story export skipped — ops module missing');
+            return;
+        }
+
+        this._state.userStoryExportRunning = true;
+        this._syncTaskExportUi();
+        const total = items.length;
+        let done = 0;
+        this._setUserStoryExportProgress(done, total);
+
+        const runCache = { byTask: new Map() };
+        const byFingerprint = new Map();
+        const stats = { fetched: 0, skippedEmpty: 0, failed: 0, fromCache: 0 };
+        const concurrency = Math.min(5, items.length);
+
+        try {
+            await this._runConcurrentWorkers(items, concurrency, async (item) => {
+                const taskKey = String(item && item.task && item.task.key || '').trim();
+                const taskId = String(item && item.task && item.task.id || '').trim();
+                try {
+                    const fields = await this._fetchUserStoryFieldsForExportCached(item, runCache, opsTab);
+                    if (fields && fields.fromCache) stats.fromCache++;
+                    else if (fields && !fields.empty) stats.fetched++;
+
+                    if (!fields || fields.empty || !this._userStoryExportHasContent(fields)) {
+                        stats.skippedEmpty++;
+                        return;
+                    }
+
+                    const scenarioTitle = fields.scenarioTitle;
+                    const userStory = fields.userStory;
+                    const annotator = this._userStoryExportOmitAnnotator(
+                        userStory,
+                        fields.humanAnnotatorInstructions
+                    );
+                    const fp = this._userStoryExportFingerprint(scenarioTitle, userStory, annotator);
+                    let entry = byFingerprint.get(fp);
+                    if (!entry) {
+                        entry = {
+                            scenarioTitle: scenarioTitle,
+                            userStory: userStory,
+                            humanAnnotatorInstructions: annotator,
+                            taskKeys: []
+                        };
+                        byFingerprint.set(fp, entry);
+                    }
+                    if (taskKey && entry.taskKeys.indexOf(taskKey) === -1) {
+                        entry.taskKeys.push(taskKey);
+                    }
+                } catch (err) {
+                    stats.failed++;
+                    Logger.warn(
+                        'search-output-results-pane: user story export fetch failed — '
+                        + (taskKey || (taskId ? taskId.slice(0, 8) + '…' : '(no key)')),
+                        err
+                    );
+                } finally {
+                    done++;
+                    this._setUserStoryExportProgress(done, total);
+                }
+            });
+
+            const stories = Array.from(byFingerprint.values()).map((entry) => {
+                entry.taskKeys.sort();
+                return entry;
+            });
+            stories.sort((a, b) => {
+                const ta = String(a.scenarioTitle || '');
+                const tb = String(b.scenarioTitle || '');
+                if (ta !== tb) return ta.localeCompare(tb);
+                return String(a.userStory || '').localeCompare(String(b.userStory || ''));
+            });
+
+            if (stories.length === 0) {
+                Logger.warn(
+                    'search-output-results-pane: user story export finished with no stories — '
+                    + 'empty ' + stats.skippedEmpty + ', failed ' + stats.failed
+                );
+                return;
+            }
+
+            const payload = this._buildUserStoriesExportPayload(items, stories, stats);
+            const filename = 'user-stories-' + this._taskCardsExportIdentity(payload) + '-'
+                + this._dashExportTimestampSlug(payload.exportedAt) + '.json';
+            const json = JSON.stringify(payload, null, 2);
+            if (typeof this._downloadTextFile === 'function') {
+                this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
+            } else {
+                Logger.error('search-output-results-pane: user story export failed — download helper unavailable');
+                return;
+            }
+            const summary = stories.length + ' unique · ' + items.length + ' item(s)'
+                + (stats.failed ? ' · ' + stats.failed + ' failed' : '')
+                + ' · ' + filename;
+            Logger.log('search-output-results-pane: user stories exported — ' + summary);
+            if (stats.failed) {
+                Logger.warn(
+                    'search-output-results-pane: user story export partial failures — '
+                    + stats.failed + ' of ' + items.length
+                );
+            }
+        } finally {
+            this._state.userStoryExportRunning = false;
+            this._syncTaskExportUi();
+        }
     },
 
     _exportFilteredTasksJson() {
@@ -6456,7 +6739,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '5.19',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -5176,7 +5176,7 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._validateRangeUi();
             });
             retrieveInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     void dash._submitRetrieveTask();
                 }
@@ -5386,6 +5386,11 @@ function attachSearchOutputListeners(modal, dash) {
             const taskExportBtn = e.target.closest('#wf-dash-export-tasks-json');
             if (taskExportBtn && modal.contains(taskExportBtn)) {
                 dash._exportFilteredTasksJson();
+                return;
+            }
+            const userStoriesExportBtn = e.target.closest('#wf-dash-export-user-stories');
+            if (userStoriesExportBtn && modal.contains(userStoriesExportBtn)) {
+                void dash._exportFilteredUserStories();
                 return;
             }
             const stopSearchBtn = e.target.closest('[data-wf-dash-stop-search]');
@@ -5890,7 +5895,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.23',
+    _version: '9.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

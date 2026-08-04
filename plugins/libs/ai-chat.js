@@ -1,18 +1,42 @@
 // ============= ai-chat.js (library) =============
 // Shared OpenRouter chat transcript UI + streaming controller, backed by
 // Deep Chat (<deep-chat>). Used by verifier-fetcher Diagnose/Chat, rating-
-// explain cards, and the Ops dashboard Chats tab.
+// explain cards, Search Chat, and the Ops dashboard Chats tab.
 //
 // Consumers supply feature-specific system prompts, mount markup, and
 // turn callbacks. This module owns Deep Chat mounting, message sync, and
 // chatCompletionStream orchestration.
+//
+// ## Turn modes (Context.aiChat.sendTurn)
+//
+// 1. Composer — user typed; Deep Chat connect sets `_wfAiChatFromHandler` and
+//    streams via Deep Chat signals. Consumer `onSend` may wrap sendTurn.
+// 2. Programmatic hidden (`hideInUi: true`) — bulk context (ratings overview,
+//    tool intermediates). No user bubble; AI painted with addMessage/updateMessage.
+// 3. Programmatic visible — short `displayContent` (+ optional `displayAttachment`
+//    chip). Same direct paint path as hidden; never submitUserMessage / _pendingTurn.
+//
+// ## Attachments
+//
+// `displayAttachment` is UI metadata (chip + lazy-expanded source). Full verifier
+// text for the model belongs in `userContent` / message.content, not forced into
+// the shadow DOM on every row sync.
+//
+// ## Consumer rules
+//
+// - Wire the composer once; open the pane without remounting mid-send.
+// - Bulk context → userContent (`hideInUi` when no bubble is needed).
+// - Short label → displayContent; chips → displayAttachment.
+// - Do not call renderMessages / force history sync around sendTurn.
+// - Layout/toolbar helpers must not remount AI chat.
 
-const AI_CHAT_VERSION = '6.4';
+const AI_CHAT_VERSION = '7.1';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
 const AI_CHAT_NO_KEY_OVERLAY_ATTR = 'data-wf-ai-chat-no-key-overlay';
 const AI_CHAT_KEY_GATED_ATTR = 'data-wf-ai-chat-key-gated';
+const AI_CHAT_ATTACH_SOURCE_ATTR = 'data-wf-chat-attach-source-ready';
 const AI_CHAT_CALLBACK_KEYS = [
     'onSend', 'onStop', 'onExport', 'onTurnDone', 'getTurnOpts',
     'onToolActivity', 'executeTool',
@@ -649,6 +673,7 @@ function aiChatReconcileAttachment(row, attachment) {
         body.setAttribute('data-wf-chat-attach-body', '1');
         body.className = 'wf-chat-attach-body';
         details.appendChild(body);
+        details.setAttribute(AI_CHAT_ATTACH_SOURCE_ATTR, '0');
     }
     const bodyEl = details.querySelector('[data-wf-chat-attach-body="1"]');
     if (idBtn) {
@@ -687,8 +712,26 @@ function aiChatReconcileAttachment(row, attachment) {
             if (!idBtn.disabled) idBtn.disabled = true;
         }
     }
-    if (bodyEl && bodyEl.textContent !== att.source) {
-        bodyEl.textContent = att.source;
+    // Keep full source off the critical path: chip-only until the operator expands.
+    details._wfAttachSource = att.source;
+    if (details.getAttribute(AI_CHAT_ATTACH_SOURCE_ATTR) !== '1') {
+        details.setAttribute(AI_CHAT_ATTACH_SOURCE_ATTR, '0');
+        if (bodyEl && bodyEl.textContent) bodyEl.textContent = '';
+        if (!details._wfAttachToggleWired) {
+            details._wfAttachToggleWired = true;
+            details.addEventListener('toggle', () => {
+                if (!details.open) return;
+                const body = details.querySelector('[data-wf-chat-attach-body="1"]');
+                const source = details._wfAttachSource != null
+                    ? String(details._wfAttachSource)
+                    : '';
+                if (body && body.textContent !== source) body.textContent = source;
+                details.setAttribute(AI_CHAT_ATTACH_SOURCE_ATTR, '1');
+            });
+        }
+    } else if (details.open && bodyEl) {
+        const source = String(att.source || '');
+        if (bodyEl.textContent !== source) bodyEl.textContent = source;
     }
 }
 
@@ -865,6 +908,19 @@ function aiChatSetupCopyButtons(el, opts) {
     setTimeout(poll, 0);
 }
 
+/**
+ * Whether it is safe to reset Deep Chat's `history` from state.
+ * Skip while a programmatic/connect turn is in flight — assigning history
+ * races the just-painted user bubble and can wipe the live stream UI.
+ */
+function aiChatShouldSyncHistory(root, state) {
+    if (!state) return false;
+    if (state.streaming) return false;
+    if (state._pendingTurn) return false;
+    if (root && root._wfAiChatFromHandler) return false;
+    return true;
+}
+
 function aiChatSyncHistory(el, state) {
     if (!el) return;
     try {
@@ -872,6 +928,40 @@ function aiChatSyncHistory(el, state) {
     } catch (err) {
         Logger.warn(PLUGIN_ID + ': failed to sync deep-chat history', err);
     }
+}
+
+/**
+ * If Deep Chat's viewport is empty but state still has visible messages,
+ * restore the view from state (state is source of truth after programmatic turns).
+ */
+function aiChatHealEmptyView(el, state, opts) {
+    if (!el || !state) return false;
+    const visible = aiChatVisibleStateMessages(state);
+    if (!visible.length) return false;
+    let deepCount = -1;
+    try {
+        if (typeof el.getMessages === 'function') {
+            const msgs = el.getMessages();
+            deepCount = Array.isArray(msgs) ? msgs.length : -1;
+        }
+    } catch (_e) {
+        deepCount = -1;
+    }
+    if (deepCount < 0) {
+        try {
+            const rows = aiChatMessageRows(el.shadowRoot);
+            deepCount = rows.length;
+        } catch (_e2) {
+            deepCount = -1;
+        }
+    }
+    if (deepCount > 0) return false;
+    const o = aiChatResolveOpts(opts || (state && state._wireOpts) || {});
+    Logger.log(o.logTag + ': healing empty deep-chat view from state ('
+        + visible.length + ' message(s))');
+    aiChatSyncHistory(el, state);
+    try { aiChatSyncRowEnhancements(el, o); } catch (_e3) { /* ignore */ }
+    return true;
 }
 
 /**
@@ -1233,6 +1323,9 @@ function aiChatBindElement(el, root, state, opts) {
     const o = aiChatResolveOpts(opts);
     el._wfAiChatRoot = root;
     el._wfAiChatState = state;
+    // Re-applying theme/connect mid-turn clears Deep Chat's viewport while
+    // state.messages stay intact (follow-up wipe). Bind chrome once per element.
+    if (el._wfAiChatBound === true) return;
     aiChatApplyTheme(el, o);
     if (o.placeholder) {
         el.textInput = Object.assign({}, el.textInput || {}, {
@@ -1248,6 +1341,7 @@ function aiChatBindElement(el, root, state, opts) {
         }
     };
     aiChatSetupCopyButtons(el, o);
+    el._wfAiChatBound = true;
 }
 
 async function aiChatEnsureMounted(root, state, opts) {
@@ -1320,9 +1414,7 @@ function aiChatRenderMessages(root, state, opts) {
     const run = async () => {
         try {
             const el = await aiChatEnsureMounted(root, state, o);
-            // Do not reset Deep Chat history while a live connect/stream turn is
-            // in flight — that races the just-painted user bubble and wipes it.
-            if (!state.streaming && !root._wfAiChatFromHandler) {
+            if (aiChatShouldSyncHistory(root, state)) {
                 aiChatSyncHistory(el, state);
             }
             aiChatSetKeyGate(root, {
@@ -1373,7 +1465,9 @@ function aiChatWireComposer(root, stateOrOpts, maybeOpts) {
     }
 
     void aiChatEnsureMounted(root, state, o).then((el) => {
-        if (el) aiChatSyncHistory(el, state);
+        if (el && aiChatShouldSyncHistory(root, state)) {
+            aiChatSyncHistory(el, state);
+        }
         aiChatSetKeyGate(root, {
             mountSelector: o.mountSelector,
             state,
@@ -1454,9 +1548,123 @@ function aiChatExportConversation(state, opts) {
 }
 
 /**
+ * Programmatic turn via direct Deep Chat paint (ratings-style), not submitUserMessage.
+ * hideInUi skips the user bubble; otherwise paints display text + attachment chips.
+ */
+async function aiChatProgrammaticPaintAndStream(el, state, opts) {
+    const o = opts.wireOpts;
+    const userContent = opts.userContent;
+    const displayContent = opts.displayContent;
+    const displayAttachment = opts.displayAttachment;
+    const hideInUi = !!opts.hideInUi;
+    const systemContent = opts.systemContent;
+    const apiMessagesOverride = opts.apiMessagesOverride;
+    const display = opts.display;
+
+    if (userContent) {
+        const userMsg = aiChatApplyUserMessageExtras(
+            { role: 'user', content: userContent, hideInUi: hideInUi || undefined },
+            { displayContent, displayAttachment, hideInUi }
+        );
+        state.messages.push(userMsg);
+    }
+    state.messages.push({ role: 'assistant', content: '', streaming: true });
+
+    if (!hideInUi && display) {
+        try {
+            el.addMessage({ role: 'user', text: String(display) });
+        } catch (err) {
+            Logger.warn(o.logTag + ': programmatic user bubble failed', err);
+        }
+        try { aiChatSyncRowEnhancements(el, o); } catch (_e) { /* ignore */ }
+    }
+
+    const apiMessages = apiMessagesOverride
+        || aiChatBuildApiMessages(state, { systemContent });
+    let uiText = '';
+    let aiIndex = -1;
+    const signals = {
+        onOpen() {
+            try { el.disableSubmitButton(true); } catch (_e) { /* ignore */ }
+        },
+        onClose() {
+            try { el.disableSubmitButton(false); } catch (_e) { /* ignore */ }
+        },
+        onResponse(response) {
+            if (!response) return;
+            if (response.error) {
+                try { el.addMessage({ error: String(response.error) }); } catch (_e) { /* ignore */ }
+                return;
+            }
+            const text = response.text != null ? String(response.text) : '';
+            uiText = response.overwrite ? text : (uiText + text);
+            try {
+                if (aiIndex < 0) {
+                    el.addMessage({ role: 'ai', text: uiText });
+                    const all = typeof el.getMessages === 'function' ? el.getMessages() : [];
+                    aiIndex = Array.isArray(all) ? all.length - 1 : 0;
+                } else {
+                    el.updateMessage({ role: 'ai', text: uiText }, aiIndex);
+                }
+            } catch (_e) { /* ignore */ }
+        },
+        stopClicked: { listener: null },
+    };
+
+    try {
+        const result = await aiChatRunStreamWithSignals(state, apiMessages, signals, o);
+        const full = result && result.text != null ? String(result.text) : '';
+        const generationId = result && result.generationId ? result.generationId : null;
+        const model = result && result.model ? result.model : null;
+        state.lastGenerationId = generationId;
+        state.lastModel = model;
+        const last = state.messages[state.messages.length - 1];
+        if (last && last.role === 'assistant') {
+            last.content = full || '';
+            last.streaming = false;
+        }
+        Logger.log(o.logTag + ': chat reply done (' + (full || '').length + ' chars'
+            + (generationId ? ' · gen ' + generationId : '') + ')');
+        if (o.onTurnDone) {
+            let userPreview = '';
+            if (displayContent != null) {
+                userPreview = String(displayContent).trim();
+            } else {
+                for (let i = state.messages.length - 1; i >= 0; i--) {
+                    const m = state.messages[i];
+                    if (m && m.role === 'user') {
+                        userPreview = String(
+                            m.displayContent != null ? m.displayContent : (m.content || '')
+                        ).trim();
+                        break;
+                    }
+                }
+            }
+            try {
+                o.onTurnDone({ generationId, model, userPreview, fullText: full || '' });
+            } catch (cbErr) {
+                Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
+            }
+        }
+        try { aiChatSyncRowEnhancements(el, o); } catch (_e) { /* ignore */ }
+        aiChatHealEmptyView(el, state, o);
+        return full || '';
+    } catch (err) {
+        const last = state.messages[state.messages.length - 1];
+        if (last && last.role === 'assistant') {
+            last.content = 'Error: ' + ((err && err.message) || String(err));
+            last.streaming = false;
+        }
+        Logger.error(o.logTag + ': chat failed: ' + ((err && err.message) || err));
+        try { aiChatHealEmptyView(el, state, o); } catch (_e2) { /* ignore */ }
+        throw err;
+    }
+}
+
+/**
  * Push user + streaming assistant, run stream, finalize last bubble.
- * When invoked from Deep Chat's connect handler (via onSend), reuses the
- * active signals. Otherwise submits through Deep Chat or streams directly.
+ * Composer path reuses Deep Chat connect signals; programmatic paths paint
+ * via addMessage (ratings-style) and never submitUserMessage.
  */
 async function aiChatSendTurn(root, state, opts) {
     const o = aiChatResolveOpts(Object.assign({}, state && state._wireOpts, opts));
@@ -1517,6 +1725,7 @@ async function aiChatSendTurn(root, state, opts) {
                 }
             }
             try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
+            aiChatHealEmptyView(state._deepChat, state, o);
             return full || '';
         } catch (err) {
             const last = state.messages[state.messages.length - 1];
@@ -1525,126 +1734,44 @@ async function aiChatSendTurn(root, state, opts) {
                 last.streaming = false;
             }
             Logger.error(o.logTag + ': chat failed: ' + ((err && err.message) || err));
+            try { aiChatHealEmptyView(state._deepChat, state, o); } catch (_e2) { /* ignore */ }
             throw err;
         }
     }
 
-    // Programmatic send
+    // Programmatic send (hidden or visible): direct paint, no submitUserMessage.
     const el = await aiChatEnsureMounted(root, state, o);
     const systemContent = opts && opts.systemContent != null ? opts.systemContent : null;
     const apiMessagesOverride = opts && opts.apiMessages;
-
-    // Hidden machine payloads: stream without a visible user bubble (matches prior UX).
-    if (hideInUi) {
-        if (userContent) {
-            const userMsg = aiChatApplyUserMessageExtras(
-                { role: 'user', content: userContent, hideInUi: true },
-                { displayContent, displayAttachment, hideInUi: true }
-            );
-            state.messages.push(userMsg);
-        }
-        state.messages.push({ role: 'assistant', content: '', streaming: true });
-        const apiMessages = apiMessagesOverride
-            || aiChatBuildApiMessages(state, { systemContent });
-        let assembled = '';
-        let uiText = '';
-        let aiIndex = -1;
-        const signals = {
-            onOpen() {
-                try { el.disableSubmitButton(true); } catch (_e) { /* ignore */ }
-            },
-            onClose() {
-                try { el.disableSubmitButton(false); } catch (_e) { /* ignore */ }
-            },
-            onResponse(response) {
-                if (!response) return;
-                if (response.error) {
-                    try { el.addMessage({ error: String(response.error) }); } catch (_e) { /* ignore */ }
-                    return;
-                }
-                const text = response.text != null ? String(response.text) : '';
-                uiText = response.overwrite ? text : (uiText + text);
-                try {
-                    if (aiIndex < 0) {
-                        el.addMessage({ role: 'ai', text: uiText });
-                        const all = typeof el.getMessages === 'function' ? el.getMessages() : [];
-                        aiIndex = Array.isArray(all) ? all.length - 1 : 0;
-                    } else {
-                        el.updateMessage({ role: 'ai', text: uiText }, aiIndex);
-                    }
-                } catch (_e) { /* ignore */ }
-            },
-            stopClicked: { listener: null },
-        };
-        try {
-            const result = await aiChatRunStreamWithSignals(state, apiMessages, signals, o);
-            const full = result && result.text != null ? String(result.text) : '';
-            assembled = full;
-            const generationId = result && result.generationId ? result.generationId : null;
-            const model = result && result.model ? result.model : null;
-            state.lastGenerationId = generationId;
-            state.lastModel = model;
-            const last = state.messages[state.messages.length - 1];
-            if (last && last.role === 'assistant') {
-                last.content = full || '';
-                last.streaming = false;
-            }
-            Logger.log(o.logTag + ': chat reply done (' + (full || '').length + ' chars'
-                + (generationId ? ' · gen ' + generationId : '') + ')');
-            if (o.onTurnDone) {
-                const userPreview = displayContent != null
-                    ? String(displayContent).trim()
-                    : '';
-                try {
-                    o.onTurnDone({ generationId, model, userPreview, fullText: full || '' });
-                } catch (cbErr) {
-                    Logger.warn(o.logTag + ': onTurnDone failed', cbErr);
-                }
-            }
-            return assembled || '';
-        } catch (err) {
-            const last = state.messages[state.messages.length - 1];
-            if (last && last.role === 'assistant') {
-                last.content = 'Error: ' + ((err && err.message) || String(err));
-                last.streaming = false;
-            }
-            Logger.error(o.logTag + ': chat failed: ' + ((err && err.message) || err));
-            throw err;
-        }
-    }
-
     const display = displayContent != null
         ? String(displayContent)
         : (userText || userContent);
+
+    if (hideInUi) {
+        return aiChatProgrammaticPaintAndStream(el, state, {
+            wireOpts: o,
+            userContent,
+            displayContent,
+            displayAttachment,
+            hideInUi: true,
+            systemContent,
+            apiMessagesOverride,
+            display,
+        });
+    }
+
     if (!String(display || '').trim() && !apiMessagesOverride) return null;
 
-    let resolvePending;
-    let rejectPending;
-    const pendingResult = new Promise((resolve, reject) => {
-        resolvePending = resolve;
-        rejectPending = reject;
-    });
-    state._pendingTurn = {
-        userText,
+    return aiChatProgrammaticPaintAndStream(el, state, {
+        wireOpts: o,
         userContent,
         displayContent,
         displayAttachment,
         hideInUi: false,
         systemContent,
-        apiMessages: apiMessagesOverride,
-        onTurnDone: o.onTurnDone,
-        _resolve: resolvePending,
-        _reject: rejectPending,
-    };
-    try {
-        el.submitUserMessage({ text: String(display) });
-    } catch (err) {
-        state._pendingTurn = null;
-        Logger.error(o.logTag + ': submitUserMessage failed', err);
-        rejectPending(err instanceof Error ? err : new Error(String(err)));
-        throw err;
-    }
-    return pendingResult;
+        apiMessagesOverride,
+        display,
+    });
 }
 
 function aiChatRunStream(root, state, apiMessages, opts) {
@@ -2221,7 +2348,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '6.4',
+    _version: '7.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -5,7 +5,13 @@
 // Diagnose is disabled and Chat shows the shared no-key overlay until
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
-// Chat transcript UI / streaming uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
+//
+// Chat uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat):
+// - Diagnose / programmatic send: displayContent + optional displayAttachment chip;
+//   bulk verifier/output goes in userContent (ai-chat paints via addMessage, not
+//   submitUserMessage). Open the pane without remounting/syncing history mid-send.
+// - Typed follow-ups: composer onSend → sendTurn (fromHandler / signals).
+// - Toolbar layout sync must not remount AI chat (see syncVerifierOutputToolbar).
 
 const VERIFIER_SCRATCHPAD_WIDTH_KEY = 'fleet-ux:verifier-fetcher-scratchpad-width';
 const VERIFIER_SCRATCHPAD_OPEN_KEY = 'fleet-ux:verifier-fetcher-scratchpad-open';
@@ -318,6 +324,16 @@ async function sendVerifierChatMessage(modal, userText) {
     }
 
     ensureVerifierChatPaneOpen(modal);
+    // Already inside Deep Chat connect: remounting/rebinding clears the viewport.
+    // Match ratings follow-ups — only ensureMounted on cold programmatic sends.
+    if (!modal._wfAiChatFromHandler && typeof chat.ensureMounted === 'function') {
+        try {
+            await chat.ensureMounted(modal, state, verifierChatOpts());
+        } catch (err) {
+            Logger.error('verifier-fetcher: chat mount failed before send', err);
+            return;
+        }
+    }
 
     const attachment = takeVerifierAttachmentForTurn(modal, state);
     const userContent = attachment
@@ -371,6 +387,15 @@ async function decodeVerifierOutput(modal) {
     }
 
     ensureVerifierChatPaneOpen(modal);
+    if (typeof chat.ensureMounted === 'function') {
+        try {
+            await chat.ensureMounted(modal, state, verifierChatOpts());
+        } catch (err) {
+            Logger.error('verifier-fetcher: chat mount failed before Diagnose', err);
+            if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
+            return;
+        }
+    }
     if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
 
     const attachment = takeVerifierAttachmentForTurn(modal, state);
@@ -564,8 +589,10 @@ function restoreVerifierScratchpadState(modal) {
 
 function syncVerifierOutputToolbar(modal) {
     if (!modal) return;
+    // Layout only — do not remount/sync AI chat here. Ops calls this after every
+    // content-search UI refresh (including late highlight after Fetch), which
+    // would race Diagnose/send and wipe the live Deep Chat turn.
     applyVerifierScratchpadLayout(modal);
-    syncVerifierAiUi(modal);
 }
 
 function captureVerifierScratchpadTabState(modal) {
@@ -947,7 +974,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.0',
+    _version: '7.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -981,6 +1008,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v7.0');
+        Logger.log('verifier-fetcher: tab registered v7.3');
     }
 };

@@ -40,7 +40,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -502,12 +502,14 @@ const VncHelperApi = {
             bExtract.addEventListener('click', () => {
                 clipQueue = clipQueue
                     .then(async () => {
-                        const ok = await extractVmTextToOs();
+                        const ok = await extractVmTextToOs({ deferFocus: true });
                         if (ok) flashClipBtnSuccess(bExtract);
                         else flashClipBtnFailure(bExtract);
+                        focusVncTarget();
                     })
                     .catch(() => {
                         flashClipBtnFailure(bExtract);
+                        focusVncTarget();
                     });
             });
             bOverwrite.addEventListener('click', () => {
@@ -515,17 +517,20 @@ const VncHelperApi = {
                     .then(async () => {
                         try {
                             const t = await readClipboardText();
-                            const ok = await pushOsTextToVmClipboard(typeof t === 'string' ? t : '');
+                            const ok = await pushOsTextToVmClipboard(typeof t === 'string' ? t : '', {
+                                deferFocus: true
+                            });
                             if (ok) flashClipBtnSuccess(bOverwrite);
                             else flashClipBtnFailure(bOverwrite);
                         } catch (_eOw) {
                             toast('Overwrite failed: could not read system clipboard.');
                             flashClipBtnFailure(bOverwrite);
-                            focusVncTarget();
                         }
+                        focusVncTarget();
                     })
                     .catch(() => {
                         flashClipBtnFailure(bOverwrite);
+                        focusVncTarget();
                     });
             });
 
@@ -718,7 +723,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -776,7 +781,7 @@ function flashClipBtnFailure(btn) {
     btn.style.color = '#ffffff';
     void btn.offsetHeight;
     btn.style.transition =
-        'background-color ' + CLIP_BTN_FLASH_MS + 'ms ease-out, color ' + CLIP_BTN_FLASH_MS + 'ms ease-out';
+        'background ' + CLIP_BTN_FLASH_MS + 'ms ease-out, color ' + CLIP_BTN_FLASH_MS + 'ms ease-out';
     btn.style.background = CLIP_BTN_BG;
     btn.style.color = '#f2f2f2';
     btn._fleetClipFlashTimeout = setTimeout(() => {
@@ -1018,11 +1023,12 @@ async function runCopyVmToHost() {
 }
 
 /** Push plain text to the virtual machine via noVNC (no Ctrl+V — updates remote clipboard only). */
-async function pushOsTextToVmClipboard(text) {
+async function pushOsTextToVmClipboard(text, opts) {
+    const deferFocus = !!(opts && opts.deferFocus);
     const el = clipEl();
     if (!el) {
         toast('Overwrite failed: noVNC clipboard field (#noVNC_clipboard_text) not found.');
-        focusVncTarget();
+        if (!deferFocus) focusVncTarget();
         return false;
     }
     const merged = text;
@@ -1041,32 +1047,33 @@ async function pushOsTextToVmClipboard(text) {
         el.dispatchEvent(new Event('change', { bubbles: true }));
         el.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    focusVncTarget();
     toast(`Virtual machine clipboard updated from this computer.\n\u2192 ${truncPreview(merged)}`);
+    if (!deferFocus) focusVncTarget();
     return true;
 }
 
-async function extractVmTextToOs() {
+async function extractVmTextToOs(opts) {
+    const deferFocus = !!(opts && opts.deferFocus);
     const el = clipEl();
     if (!el) {
         toast('Extract failed: noVNC clipboard field not found.');
-        focusVncTarget();
+        if (!deferFocus) focusVncTarget();
         return false;
     }
     const v = el.value || '';
     if (!v) {
         toast('Nothing to extract yet. Copy inside the virtual machine first, then try again.');
-        focusVncTarget();
+        if (!deferFocus) focusVncTarget();
         return false;
     }
     try {
         await navigator.clipboard.writeText(v);
         toast(`Copied virtual machine clipboard to this computer.\n\u2192 ${truncPreview(v)}`);
-        focusVncTarget();
+        if (!deferFocus) focusVncTarget();
         return true;
     } catch (e3) {
         toast('Extract failed: could not write to system clipboard.');
-        focusVncTarget();
+        if (!deferFocus) focusVncTarget();
         return false;
     }
 }
