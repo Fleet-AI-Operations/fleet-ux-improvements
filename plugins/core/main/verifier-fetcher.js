@@ -5,7 +5,13 @@
 // Diagnose is disabled and Chat shows the shared no-key overlay until
 // Context.aiOpenRouter.hasStoredKey() is true. Actual OpenRouter calls still
 // require Ops unlock to decrypt the key.
-// Chat transcript UI / streaming uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
+//
+// Chat uses Context.aiChat (plugins/libs/ai-chat.js → Deep Chat):
+// - Diagnose / programmatic send: displayContent + optional displayAttachment chip;
+//   bulk verifier/output goes in userContent (ai-chat paints via addMessage, not
+//   submitUserMessage). Open the pane without remounting/syncing history mid-send.
+// - Typed follow-ups: composer onSend → sendTurn (fromHandler / signals).
+// - Toolbar layout sync must not remount AI chat (see syncVerifierOutputToolbar).
 
 const VERIFIER_SCRATCHPAD_WIDTH_KEY = 'fleet-ux:verifier-fetcher-scratchpad-width';
 const VERIFIER_SCRATCHPAD_OPEN_KEY = 'fleet-ux:verifier-fetcher-scratchpad-open';
@@ -966,7 +972,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.1',
+    _version: '7.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1000,6 +1006,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v7.1');
+        Logger.log('verifier-fetcher: tab registered v7.2');
     }
 };
