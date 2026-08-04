@@ -42,7 +42,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.5',
+    _version: '2.6',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -364,7 +364,7 @@ const VncHelperApi = {
             const openBtn = document.createElement('button');
             openBtn.type = 'button';
             openBtn.textContent = 'VNC Helper';
-            openBtn.setAttribute('aria-label', 'Restore VNC Helper');
+            openBtn.setAttribute('aria-label', 'Toggle VNC Helper');
             openBtn.style.cssText =
                 'margin:0;padding:6px 10px;border:none;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;';
             openBtn.addEventListener('click', () => {
@@ -375,6 +375,8 @@ const VncHelperApi = {
                     root.style.display = '';
                     state.minimized = false;
                     Logger.log('vncHelper: modal restored from minimized tab');
+                } else {
+                    minimizeModal();
                 }
             });
 
@@ -775,7 +777,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.5',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

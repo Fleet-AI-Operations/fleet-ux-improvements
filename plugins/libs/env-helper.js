@@ -41,7 +41,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'Env Helper',
     description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -341,7 +341,7 @@ const EnvHelperApi = {
             const openBtn = document.createElement('button');
             openBtn.type = 'button';
             openBtn.textContent = 'Env Helper';
-            openBtn.setAttribute('aria-label', 'Restore Env Helper');
+            openBtn.setAttribute('aria-label', 'Toggle Env Helper');
             openBtn.style.cssText =
                 'margin:0;padding:6px 10px;border:none;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;';
             openBtn.addEventListener('click', () => {
@@ -352,6 +352,8 @@ const EnvHelperApi = {
                     root.style.display = '';
                     state.minimized = false;
                     Logger.log('envHelper: modal restored from minimized tab');
+                } else {
+                    minimizeModal();
                 }
             });
 
@@ -626,7 +628,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'Env Helper (library)',
     description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
