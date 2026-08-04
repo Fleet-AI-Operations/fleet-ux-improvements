@@ -1,8 +1,8 @@
 
 // ==UserScript==
-// @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
+// @name         [feat/fix-overwrite] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.16
+// @version      12.4.17
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -19,8 +19,8 @@
 // @connect      cdn.jsdelivr.net
 // @connect      openrouter.ai
 // @run-at       document-start
-// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/dashboard/fleet.user.js
-// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/dashboard/fleet.user.js
+// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/fix-overwrite/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/feat/fix-overwrite/fleet.user.js
 // ==/UserScript==
 
 (function() {
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.16';
+    const VERSION = '12.4.17';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -96,7 +96,7 @@
     const GITHUB_CONFIG = {
         owner: 'Fleet-AI-Operations',
         repo: 'fleet-ux-improvements',
-        branch: 'feat/dashboard',
+        branch: 'feat/fix-overwrite',
         pluginsPath: 'plugins',
         corePath: 'core',
         devPath: 'dev',
@@ -569,19 +569,21 @@
 
     /**
      * Minimal bootstrap for FOS env iframes embedded on www.fleetai.com.
-     * Parent fos-embedded-watcher authorizes via postMessage; this injects a neutered clipboard panel only.
+     * Parent fos-embedded-watcher owns the VM Clipboard UI and system clipboard I/O;
+     * this child only pushes/pulls the noVNC buffer over postMessage.
      */
     function initFosEmbeddedMode() {
         const EMBED_LOG = '[Fleet UX Enhancer] fos-embedded';
-        const ROOT_ID = 'fleet-fos-embedded-clipboard';
         const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
-        const COPY_SUCCESS_MS = 600;
-        const COPY_FAIL_MS = 600;
         const FLEET_PARENT_HOSTS = new Set(['www.fleetai.com', 'fleetai.com']);
+        const MSG_PUSH = 'fleet-fos-push-clipboard';
+        const MSG_PUSH_RESULT = 'fleet-fos-push-result';
+        const MSG_EXTRACT_REQ = 'fleet-fos-extract-request';
+        const MSG_EXTRACT_RESULT = 'fleet-fos-extract-result';
+        const MSG_EMBEDDED_READY = 'fleet-fos-embedded-ready';
 
         let fosAuthorized = false;
-        let bridgeStarted = false;
-        let bridgeDismissed = false;
+        let bridgeReady = false;
         let waitObserver = null;
         let clipQueue = Promise.resolve();
 
@@ -591,41 +593,6 @@
             } catch (_e) {
                 return false;
             }
-        }
-
-        // Solid inline flash only — this iframe bootstrap returns before Context/ui-lib
-        // exist, and these buttons use the `background` shorthand (not background-color).
-        const CLIP_BTN_BG = 'rgba(255,255,255,0.08)';
-
-        function flashSuccess(btn) {
-            if (!btn) return;
-            if (btn._fosClipResetTimeout) clearTimeout(btn._fosClipResetTimeout);
-            btn.style.transition = '';
-            btn.style.background = 'rgb(34, 197, 94)';
-            btn.style.color = '#ffffff';
-            btn._fosClipResetTimeout = setTimeout(() => {
-                btn._fosClipResetTimeout = null;
-                btn.style.background = CLIP_BTN_BG;
-                btn.style.color = '#f2f2f2';
-            }, COPY_SUCCESS_MS);
-        }
-
-        function flashFailure(btn) {
-            if (!btn) return;
-            if (btn._fosClipResetTimeout) clearTimeout(btn._fosClipResetTimeout);
-            const prevT = btn.style.transition;
-            btn.style.transition = 'none';
-            btn.style.background = 'rgb(239, 68, 68)';
-            btn.style.color = '#ffffff';
-            void btn.offsetHeight;
-            btn.style.transition =
-                'background ' + COPY_FAIL_MS + 'ms ease-out, color ' + COPY_FAIL_MS + 'ms ease-out';
-            btn.style.background = CLIP_BTN_BG;
-            btn.style.color = '#f2f2f2';
-            btn._fosClipResetTimeout = setTimeout(() => {
-                btn.style.transition = prevT || '';
-                btn._fosClipResetTimeout = null;
-            }, COPY_FAIL_MS);
         }
 
         function clipEl() {
@@ -649,13 +616,23 @@
             });
         }
 
+        function reply(event, payload) {
+            try {
+                if (event.source && typeof event.source.postMessage === 'function') {
+                    event.source.postMessage(payload, event.origin);
+                }
+            } catch (e) {
+                console.warn(EMBED_LOG + ': reply postMessage failed', e);
+            }
+        }
+
         async function pushOsTextToVmClipboard(text) {
             const el = clipEl();
             if (!el) {
-                console.warn(EMBED_LOG + ': overwrite failed — noVNC clipboard field missing');
+                console.warn(EMBED_LOG + ': push failed — noVNC clipboard field missing');
                 return false;
             }
-            const merged = text;
+            const merged = typeof text === 'string' ? text : '';
             const rfb = getRfb();
             el.value = merged;
             if (rfb && typeof rfb.clipboardPasteFrom === 'function') {
@@ -674,281 +651,22 @@
             return true;
         }
 
-        async function extractVmTextToOs() {
+        function readVmClipboardText() {
             const el = clipEl();
             if (!el) {
                 console.warn(EMBED_LOG + ': extract failed — noVNC clipboard field missing');
-                return false;
+                return null;
             }
             const v = el.value || '';
             if (!v) {
                 console.warn(EMBED_LOG + ': extract skipped — VM clipboard empty');
-                return false;
+                return '';
             }
-            try {
-                await navigator.clipboard.writeText(v);
-                return true;
-            } catch (e) {
-                console.warn(EMBED_LOG + ': extract failed — could not write system clipboard', e);
-                return false;
-            }
+            return v;
         }
 
-        async function runOverwrite(btn, readPromise) {
-            try {
-                const t = await (readPromise || navigator.clipboard.readText());
-                const ok = await pushOsTextToVmClipboard(typeof t === 'string' ? t : '');
-                if (ok) {
-                    flashSuccess(btn);
-                    console.log(EMBED_LOG + ': overwrite ok');
-                } else {
-                    flashFailure(btn);
-                }
-            } catch (e) {
-                flashFailure(btn);
-                const name = e && e.name ? String(e.name) : '';
-                if (name === 'NotAllowedError') {
-                    console.warn(
-                        EMBED_LOG +
-                            ': overwrite failed — clipboard read blocked (NotAllowedError). ' +
-                            'Cross-origin env iframes need clipboard-read on the iframe allow attribute, ' +
-                            'and the click must keep user activation.',
-                        e
-                    );
-                } else {
-                    console.warn(EMBED_LOG + ': overwrite failed — could not read system clipboard', e);
-                }
-            }
-        }
-
-        async function runExtract(btn) {
-            const ok = await extractVmTextToOs();
-            if (ok) {
-                flashSuccess(btn);
-                console.log(EMBED_LOG + ': extract ok');
-            } else {
-                flashFailure(btn);
-            }
-        }
-
-        function injectPanel() {
-            if (bridgeDismissed) {
-                return;
-            }
-            const old = document.getElementById(ROOT_ID);
-            if (old) {
-                old.remove();
-            }
-
-            const root = document.createElement('div');
-            root.id = ROOT_ID;
-            root.style.cssText =
-                'position:fixed;left:16px;bottom:16px;z-index:2147483646;' +
-                'min-width:220px;max-width:280px;padding:0;' +
-                'border-radius:10px;border:1px solid rgba(255,255,255,0.14);' +
-                'background:rgba(28,28,32,0.96);color:#f2f2f2;' +
-                'font:500 12px/1.4 system-ui,-apple-system,sans-serif;' +
-                'box-shadow:0 8px 32px rgba(0,0,0,0.45);user-select:none;';
-
-            const clipHeader = document.createElement('div');
-            clipHeader.style.cssText =
-                'display:flex;align-items:center;justify-content:space-between;' +
-                'padding:6px 8px 4px 12px;cursor:grab;';
-
-            const clipTitle = document.createElement('div');
-            clipTitle.textContent = 'VM Clipboard';
-            clipTitle.style.cssText =
-                'font-size:11px;font-weight:600;color:#b0b0b8;' +
-                'letter-spacing:0.03em;text-transform:uppercase;flex:1;min-width:0;';
-
-            const closeActions = document.createElement('div');
-            closeActions.style.cssText =
-                'display:flex;align-items:center;gap:4px;flex-shrink:0;';
-
-            const closeBtn = document.createElement('button');
-            closeBtn.type = 'button';
-            closeBtn.setAttribute('aria-label', 'Close VM Clipboard');
-            closeBtn.textContent = '\u00d7';
-            closeBtn.style.cssText =
-                'margin:0;padding:0 4px;border:none;background:transparent;' +
-                'color:#a5a5ad;font:inherit;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;';
-            closeBtn.onmouseenter = () => {
-                closeBtn.style.color = '#f2f2f2';
-            };
-            closeBtn.onmouseleave = () => {
-                closeBtn.style.color = '#a5a5ad';
-            };
-
-            const closeConfirm = document.createElement('div');
-            closeConfirm.style.cssText = 'display:none;align-items:center;gap:4px;';
-
-            function makeHeaderActionBtn(label, destructive) {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.textContent = label;
-                b.style.cssText =
-                    'margin:0;padding:2px 6px;border-radius:4px;font:inherit;font-size:10px;' +
-                    'font-weight:600;line-height:1.3;cursor:pointer;white-space:nowrap;';
-                if (destructive) {
-                    b.style.border = '1px solid rgba(239,68,68,0.45)';
-                    b.style.background = 'rgba(239,68,68,0.18)';
-                    b.style.color = '#fecaca';
-                } else {
-                    b.style.border = '1px solid rgba(255,255,255,0.18)';
-                    b.style.background = 'rgba(255,255,255,0.06)';
-                    b.style.color = '#c8c8d0';
-                }
-                return b;
-            }
-
-            const cancelCloseBtn = makeHeaderActionBtn('Cancel', false);
-            cancelCloseBtn.setAttribute('aria-label', 'Cancel closing VM Clipboard');
-            const confirmCloseBtn = makeHeaderActionBtn('Confirm', true);
-            confirmCloseBtn.setAttribute('aria-label', 'Confirm close VM Clipboard');
-
-            closeConfirm.appendChild(cancelCloseBtn);
-            closeConfirm.appendChild(confirmCloseBtn);
-            closeActions.appendChild(closeBtn);
-            closeActions.appendChild(closeConfirm);
-
-            clipHeader.appendChild(clipTitle);
-            clipHeader.appendChild(closeActions);
-
-            const clipBody = document.createElement('div');
-            clipBody.style.cssText = 'padding:0 12px 10px 12px;';
-
-            const btnRow = document.createElement('div');
-            btnRow.style.cssText = 'display:flex;gap:8px;';
-
-            function makeBtn(label) {
-                const b = document.createElement('button');
-                b.type = 'button';
-                b.textContent = label;
-                b.style.cssText =
-                    'flex:1;margin:0;padding:6px 8px;border-radius:6px;' +
-                    'border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);' +
-                    'color:#f2f2f2;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
-                b.onmouseenter = () => {
-                    if (!b._fosClipResetTimeout) {
-                        b.style.background = 'rgba(255,255,255,0.14)';
-                    }
-                };
-                b.onmouseleave = () => {
-                    if (!b._fosClipResetTimeout) {
-                        b.style.background = 'rgba(255,255,255,0.08)';
-                    }
-                };
-                return b;
-            }
-
-            const bExtract = makeBtn('Extract');
-            const bOverwrite = makeBtn('Overwrite');
-            bExtract.addEventListener('click', () => {
-                clipQueue = clipQueue.then(() => runExtract(bExtract)).catch(() => {});
-            });
-            bOverwrite.addEventListener('click', () => {
-                // Start read under the user gesture; only serialize the VM push via clipQueue.
-                let readPromise;
-                try {
-                    readPromise = navigator.clipboard.readText();
-                } catch (eSync) {
-                    readPromise = Promise.reject(eSync);
-                }
-                clipQueue = clipQueue
-                    .then(() => runOverwrite(bOverwrite, readPromise))
-                    .catch(() => {});
-            });
-
-            btnRow.appendChild(bExtract);
-            btnRow.appendChild(bOverwrite);
-            clipBody.appendChild(btnRow);
-            root.appendChild(clipHeader);
-            root.appendChild(clipBody);
-            document.body.appendChild(root);
-
-            let dragging = false;
-            let dragOx = 0;
-            let dragOy = 0;
-
-            function onDragMove(ev) {
-                if (!dragging) {
-                    return;
-                }
-                root.style.left = Math.max(0, ev.clientX - dragOx) + 'px';
-                root.style.top = Math.max(0, ev.clientY - dragOy) + 'px';
-            }
-
-            function onDragUp() {
-                if (!dragging) {
-                    return;
-                }
-                dragging = false;
-                clipHeader.style.cursor = 'grab';
-                document.removeEventListener('mousemove', onDragMove, true);
-                document.removeEventListener('mouseup', onDragUp, true);
-            }
-
-            function dismissBridge() {
-                bridgeDismissed = true;
-                bridgeStarted = true;
-                onDragUp();
-                if (waitObserver) {
-                    try {
-                        waitObserver.disconnect();
-                    } catch (_e) { /* ignore */ }
-                    waitObserver = null;
-                }
-                if (root.parentNode) {
-                    root.parentNode.removeChild(root);
-                }
-                console.log(EMBED_LOG + ': clipboard panel dismissed');
-            }
-
-            function showCloseConfirm() {
-                closeBtn.style.display = 'none';
-                closeConfirm.style.display = 'flex';
-            }
-
-            function hideCloseConfirm() {
-                closeConfirm.style.display = 'none';
-                closeBtn.style.display = '';
-            }
-
-            closeBtn.addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                showCloseConfirm();
-            });
-            cancelCloseBtn.addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                hideCloseConfirm();
-            });
-            confirmCloseBtn.addEventListener('click', (ev) => {
-                ev.stopPropagation();
-                dismissBridge();
-            });
-
-            clipHeader.addEventListener('mousedown', (ev) => {
-                if (ev.button !== 0 || closeActions.contains(ev.target)) {
-                    return;
-                }
-                ev.preventDefault();
-                const r = root.getBoundingClientRect();
-                root.style.bottom = 'auto';
-                root.style.left = r.left + 'px';
-                root.style.top = r.top + 'px';
-                dragging = true;
-                dragOx = ev.clientX - r.left;
-                dragOy = ev.clientY - r.top;
-                clipHeader.style.cursor = 'grabbing';
-                document.addEventListener('mousemove', onDragMove, true);
-                document.addEventListener('mouseup', onDragUp, true);
-            });
-
-            console.log(EMBED_LOG + ': clipboard panel injected');
-        }
-
-        function startBridge() {
-            if (bridgeStarted || bridgeDismissed) {
+        function markBridgeReady() {
+            if (bridgeReady) {
                 return;
             }
             if (waitObserver) {
@@ -957,35 +675,24 @@
                 } catch (_e) { /* ignore */ }
                 waitObserver = null;
             }
-            bridgeStarted = true;
-
-            const attach = () => {
-                if (!document.body) {
-                    return;
-                }
-                injectPanel();
-            };
-            if (document.body) {
-                attach();
-            } else {
-                document.addEventListener('DOMContentLoaded', attach, { once: true });
-            }
+            bridgeReady = true;
+            console.log(EMBED_LOG + ': noVNC clipboard ready (parent hosts UI)');
         }
 
         function installWaitObserver() {
-            if (bridgeStarted || bridgeDismissed || waitObserver) {
+            if (bridgeReady || waitObserver) {
                 return;
             }
             const check = () => {
-                if (!fosAuthorized || bridgeStarted || bridgeDismissed) {
+                if (!fosAuthorized || bridgeReady) {
                     return;
                 }
                 if (document.getElementById(NOVNC_CLIPBOARD_ID)) {
-                    startBridge();
+                    markBridgeReady();
                 }
             };
             check();
-            if (bridgeStarted) {
+            if (bridgeReady) {
                 return;
             }
             waitObserver = new MutationObserver(check);
@@ -996,22 +703,69 @@
         }
 
         window.addEventListener('message', (event) => {
-            if (!event.data || event.data.type !== 'fleet-fos-embedded-ready') {
+            if (!event.data || typeof event.data.type !== 'string') {
                 return;
             }
             if (!isFleetParentOrigin(event.origin)) {
                 return;
             }
-            const envKey = String(event.data.envKey || '');
-            if (!envKey.includes('fos')) {
+
+            if (event.data.type === MSG_EMBEDDED_READY) {
+                const envKey = String(event.data.envKey || '');
+                if (!envKey.includes('fos')) {
+                    return;
+                }
+                if (fosAuthorized) {
+                    return;
+                }
+                fosAuthorized = true;
+                console.log(EMBED_LOG + ': authorized for env ' + envKey);
+                installWaitObserver();
                 return;
             }
-            if (fosAuthorized) {
+
+            if (!fosAuthorized) {
                 return;
             }
-            fosAuthorized = true;
-            console.log(EMBED_LOG + ': authorized for env ' + envKey);
-            installWaitObserver();
+
+            if (event.data.type === MSG_PUSH) {
+                const requestId = event.data.requestId;
+                clipQueue = clipQueue
+                    .then(async () => {
+                        const ok = await pushOsTextToVmClipboard(event.data.text);
+                        reply(event, { type: MSG_PUSH_RESULT, requestId, ok: !!ok });
+                        if (ok) {
+                            console.log(EMBED_LOG + ': push ok');
+                        }
+                    })
+                    .catch((e) => {
+                        console.warn(EMBED_LOG + ': push failed', e);
+                        reply(event, { type: MSG_PUSH_RESULT, requestId, ok: false });
+                    });
+                return;
+            }
+
+            if (event.data.type === MSG_EXTRACT_REQ) {
+                const requestId = event.data.requestId;
+                clipQueue = clipQueue
+                    .then(async () => {
+                        const text = readVmClipboardText();
+                        if (text == null) {
+                            reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: false });
+                            return;
+                        }
+                        if (!text) {
+                            reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: false, text: '' });
+                            return;
+                        }
+                        reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: true, text });
+                        console.log(EMBED_LOG + ': extract ok');
+                    })
+                    .catch((e) => {
+                        console.warn(EMBED_LOG + ': extract failed', e);
+                        reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: false });
+                    });
+            }
         });
 
         try {
@@ -1024,6 +778,7 @@
             console.warn(EMBED_LOG + ': child-ready postMessage failed', e);
         }
     }
+
 
     function showNonDevRedirectModal() {
         const root = document.body || document.documentElement;
