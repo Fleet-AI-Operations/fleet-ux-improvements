@@ -16,6 +16,8 @@ const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
 const LINE_HEIGHT_PX = 20;
 const DEFAULT_LINES = 2;
 const PROMPT_DEFAULT_LINES = 5;
+const DEFAULT_MODAL_LEFT = 16;
+const DEFAULT_MODAL_TOP = 120;
 const DEFAULT_MODAL_WIDTH = 320;
 const DEFAULT_MODAL_HEIGHT = 420;
 const MIN_MODAL_WIDTH = 260;
@@ -40,7 +42,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.4',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -62,6 +64,23 @@ const VncHelperApi = {
             width: Storage.get(LAYOUT_STORAGE_KEYS.width, DEFAULT_MODAL_WIDTH),
             height: Storage.get(LAYOUT_STORAGE_KEYS.height, DEFAULT_MODAL_HEIGHT)
         };
+    },
+
+    clearSavedLayout() {
+        Storage.delete(LAYOUT_STORAGE_KEYS.left);
+        Storage.delete(LAYOUT_STORAGE_KEYS.top);
+        Storage.delete(LAYOUT_STORAGE_KEYS.width);
+        Storage.delete(LAYOUT_STORAGE_KEYS.height);
+    },
+
+    applyDefaultLayout(root) {
+        if (!root) {
+            return;
+        }
+        root.style.left = `${DEFAULT_MODAL_LEFT}px`;
+        root.style.top = `${DEFAULT_MODAL_TOP}px`;
+        root.style.width = `${DEFAULT_MODAL_WIDTH}px`;
+        root.style.height = `${DEFAULT_MODAL_HEIGHT}px`;
     },
 
     saveLayout(root) {
@@ -330,33 +349,66 @@ const VncHelperApi = {
         let onResizeMove = () => {};
         let onResizeUp = () => {};
 
+        const self = this;
+
+        /** Persistent tab: stays mounted while the modal is open or minimized. */
+        const ensureRestoreTab = () => {
+            if (restoreTab) {
+                return;
+            }
+            restoreTab = document.createElement('div');
+            restoreTab.id = TAB_ID;
+            restoreTab.style.cssText =
+                'position:fixed;left:20px;bottom:124px;z-index:2147483646;display:flex;align-items:stretch;padding:0;font-size:12px;border-radius:10px;border:1px solid rgba(0,0,0,0.2);background:#111827;color:#f9fafb;box-shadow:0 6px 18px rgba(0,0,0,0.35);overflow:hidden;';
+
+            const openBtn = document.createElement('button');
+            openBtn.type = 'button';
+            openBtn.textContent = 'VNC Helper';
+            openBtn.setAttribute('aria-label', 'Restore VNC Helper');
+            openBtn.style.cssText =
+                'margin:0;padding:6px 10px;border:none;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;';
+            openBtn.addEventListener('click', () => {
+                if (!root) {
+                    return;
+                }
+                if (root.style.display === 'none') {
+                    root.style.display = '';
+                    state.minimized = false;
+                    Logger.log('vncHelper: modal restored from minimized tab');
+                }
+            });
+
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            refreshBtn.textContent = '\u21BB';
+            refreshBtn.setAttribute('aria-label', 'Reset VNC Helper to default position');
+            refreshBtn.title = 'Reset to default position';
+            refreshBtn.style.cssText =
+                'margin:0;padding:6px 8px;border:none;border-left:1px solid rgba(255,255,255,0.15);background:transparent;color:inherit;font:inherit;font-size:13px;line-height:1;cursor:pointer;';
+            refreshBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (!root) {
+                    return;
+                }
+                self.clearSavedLayout();
+                self.applyDefaultLayout(root);
+                root.style.display = '';
+                state.minimized = false;
+                Logger.log('vncHelper: modal reset to default position');
+            });
+
+            restoreTab.appendChild(openBtn);
+            restoreTab.appendChild(refreshBtn);
+            document.body.appendChild(restoreTab);
+        };
+
         const minimizeModal = () => {
             if (!root) {
                 return;
             }
             root.style.display = 'none';
             state.minimized = true;
-            if (!restoreTab) {
-                restoreTab = document.createElement('button');
-                restoreTab.id = TAB_ID;
-                restoreTab.type = 'button';
-                restoreTab.textContent = 'VNC Helper';
-                restoreTab.setAttribute('aria-label', 'Restore VNC Helper');
-                restoreTab.style.cssText =
-                    'position:fixed;left:20px;bottom:124px;z-index:2147483646;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid rgba(0,0,0,0.2);background:#111827;color:#f9fafb;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,0.35);';
-                restoreTab.addEventListener('click', () => {
-                    if (root) {
-                        root.style.display = '';
-                    }
-                    if (restoreTab && restoreTab.parentNode) {
-                        restoreTab.parentNode.removeChild(restoreTab);
-                    }
-                    restoreTab = null;
-                    state.minimized = false;
-                    Logger.log('vncHelper: modal restored from minimized tab');
-                });
-                document.body.appendChild(restoreTab);
-            }
+            ensureRestoreTab();
             Logger.log('vncHelper: modal minimized');
         };
 
@@ -364,7 +416,7 @@ const VncHelperApi = {
             const savedLayout = this.loadSavedLayout();
             root = document.createElement('div');
             root.id = ROOT_ID;
-            root.style.cssText = `position:fixed;left:${savedLayout.left ?? 16}px;top:${savedLayout.top ?? 120}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
+            root.style.cssText = `position:fixed;left:${savedLayout.left ?? DEFAULT_MODAL_LEFT}px;top:${savedLayout.top ?? DEFAULT_MODAL_TOP}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
 
             const headerEl = document.createElement('div');
             headerEl.style.cssText =
@@ -723,7 +775,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.4',
+    _version: '2.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
