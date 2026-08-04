@@ -30,7 +30,7 @@
 // - Do not call renderMessages / force history sync around sendTurn.
 // - Layout/toolbar helpers must not remount AI chat.
 
-const AI_CHAT_VERSION = '7.0';
+const AI_CHAT_VERSION = '7.1';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -931,6 +931,40 @@ function aiChatSyncHistory(el, state) {
 }
 
 /**
+ * If Deep Chat's viewport is empty but state still has visible messages,
+ * restore the view from state (state is source of truth after programmatic turns).
+ */
+function aiChatHealEmptyView(el, state, opts) {
+    if (!el || !state) return false;
+    const visible = aiChatVisibleStateMessages(state);
+    if (!visible.length) return false;
+    let deepCount = -1;
+    try {
+        if (typeof el.getMessages === 'function') {
+            const msgs = el.getMessages();
+            deepCount = Array.isArray(msgs) ? msgs.length : -1;
+        }
+    } catch (_e) {
+        deepCount = -1;
+    }
+    if (deepCount < 0) {
+        try {
+            const rows = aiChatMessageRows(el.shadowRoot);
+            deepCount = rows.length;
+        } catch (_e2) {
+            deepCount = -1;
+        }
+    }
+    if (deepCount > 0) return false;
+    const o = aiChatResolveOpts(opts || (state && state._wireOpts) || {});
+    Logger.log(o.logTag + ': healing empty deep-chat view from state ('
+        + visible.length + ' message(s))');
+    aiChatSyncHistory(el, state);
+    try { aiChatSyncRowEnhancements(el, o); } catch (_e3) { /* ignore */ }
+    return true;
+}
+
+/**
  * Build OpenRouter message list from transcript state.
  * Supports tool_calls on assistant messages and role:'tool' results.
  * @param {object} state
@@ -1289,6 +1323,9 @@ function aiChatBindElement(el, root, state, opts) {
     const o = aiChatResolveOpts(opts);
     el._wfAiChatRoot = root;
     el._wfAiChatState = state;
+    // Re-applying theme/connect mid-turn clears Deep Chat's viewport while
+    // state.messages stay intact (follow-up wipe). Bind chrome once per element.
+    if (el._wfAiChatBound === true) return;
     aiChatApplyTheme(el, o);
     if (o.placeholder) {
         el.textInput = Object.assign({}, el.textInput || {}, {
@@ -1304,6 +1341,7 @@ function aiChatBindElement(el, root, state, opts) {
         }
     };
     aiChatSetupCopyButtons(el, o);
+    el._wfAiChatBound = true;
 }
 
 async function aiChatEnsureMounted(root, state, opts) {
@@ -1609,6 +1647,7 @@ async function aiChatProgrammaticPaintAndStream(el, state, opts) {
             }
         }
         try { aiChatSyncRowEnhancements(el, o); } catch (_e) { /* ignore */ }
+        aiChatHealEmptyView(el, state, o);
         return full || '';
     } catch (err) {
         const last = state.messages[state.messages.length - 1];
@@ -1617,6 +1656,7 @@ async function aiChatProgrammaticPaintAndStream(el, state, opts) {
             last.streaming = false;
         }
         Logger.error(o.logTag + ': chat failed: ' + ((err && err.message) || err));
+        try { aiChatHealEmptyView(el, state, o); } catch (_e2) { /* ignore */ }
         throw err;
     }
 }
@@ -1685,6 +1725,7 @@ async function aiChatSendTurn(root, state, opts) {
                 }
             }
             try { aiChatSyncRowEnhancements(state._deepChat, o); } catch (_e) { /* ignore */ }
+            aiChatHealEmptyView(state._deepChat, state, o);
             return full || '';
         } catch (err) {
             const last = state.messages[state.messages.length - 1];
@@ -1693,6 +1734,7 @@ async function aiChatSendTurn(root, state, opts) {
                 last.streaming = false;
             }
             Logger.error(o.logTag + ': chat failed: ' + ((err && err.message) || err));
+            try { aiChatHealEmptyView(state._deepChat, state, o); } catch (_e2) { /* ignore */ }
             throw err;
         }
     }
@@ -2306,7 +2348,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '7.0',
+    _version: '7.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

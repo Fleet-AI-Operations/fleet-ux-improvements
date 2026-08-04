@@ -324,7 +324,9 @@ async function sendVerifierChatMessage(modal, userText) {
     }
 
     ensureVerifierChatPaneOpen(modal);
-    if (typeof chat.ensureMounted === 'function') {
+    // Already inside Deep Chat connect: remounting/rebinding clears the viewport.
+    // Match ratings follow-ups — only ensureMounted on cold programmatic sends.
+    if (!modal._wfAiChatFromHandler && typeof chat.ensureMounted === 'function') {
         try {
             await chat.ensureMounted(modal, state, verifierChatOpts());
         } catch (err) {
@@ -972,7 +974,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.2',
+    _version: '7.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1006,6 +1008,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v7.2');
+        Logger.log('verifier-fetcher: tab registered v7.3');
     }
 };
