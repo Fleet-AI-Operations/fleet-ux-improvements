@@ -3940,10 +3940,6 @@ const searchOutputResultsPaneMethods = {
         return this._inputStyle() + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
     },
 
-    _iconMicroBtnStyle() {
-        return 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
-    },
-
     _segmentBtnStyle(active, variant) {
         const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
         if (variant === 'depth') {
@@ -5655,6 +5651,20 @@ const searchOutputResultsPaneMethods = {
             + `</svg>`;
     },
 
+    _eyeIconSvg() {
+        return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
+            + `<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>`
+            + `<circle cx="13" cy="13.2" r="3.2"></circle>`
+            + `</svg>`;
+    },
+
+    _flagIconSvg() {
+        return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
+            + `<line x1="7.5" y1="2" x2="7.5" y2="24"></line>`
+            + `<path d="M7.5 3.5h11L14 9.5l4.5 6H7.5z" fill="currentColor" stroke="none"></path>`
+            + `</svg>`;
+    },
+
     _cardMetaFilterBtnHtml(scopeKey, valueId, title) {
         const id = String(valueId || '').trim();
         if (!id || !scopeKey) return '';
@@ -5874,13 +5884,13 @@ const searchOutputResultsPaneMethods = {
         const personId = String(id || '').trim();
         if (!personId || !historyKind || !dashKindLabels()[historyKind]) return '';
         const title = this._contributorDeepDiveTitle(historyKind);
-        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${this._iconMicroBtnStyle()}">🔦</button>`;
+        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">${this._eyeIconSvg()}</button>`;
     },
 
     _flagForSeniorReviewBtnHtml(task, itemId) {
         if (!this._shouldShowFlagCreateBtn(task)) return '';
         const escItemId = dashEscHtml(String(itemId || '').trim());
-        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" style="${this._iconMicroBtnStyle()}">🚩</button>`;
+        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" class="${this._dashBtnClass('basic', 'icon')}">${this._flagIconSvg()}</button>`;
     },
 
     _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive, opts) {
@@ -6756,7 +6766,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.6',
+    _version: '6.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
