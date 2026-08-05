@@ -1,6 +1,7 @@
 // fos-embedded-watcher.js
-// Parent-page watcher: detects FOS env instances via orchestrator + latch, authorizes embedded
-// iframe clipboard bridge, and hosts VM Clipboard UI (system clipboard I/O stays on the parent).
+// Parent-page watcher: detects FOS desktop envs via orchestrator + latch + noVNC/child shape
+// (not env_key name substrings), authorizes embedded iframe clipboard bridge, and hosts
+// VM Clipboard UI (system clipboard I/O stays on the parent).
 // Bar hosts on CU creation/QA claim UI via Context.fosEmbedded; floating panel mounts only when no host claimed.
 
 const FOS_ENV_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
@@ -20,11 +21,36 @@ function fosInstanceIdFromHostname(hostname) {
     return String(hostname || '').split('.')[0] || '';
 }
 
-function fosIsFosEnvKey(envKey) {
-    return String(envKey || '').includes('fos');
+/**
+ * FOS desktop / noVNC fetch shape (not env_key names).
+ * Root /api/v1/env/timestamp alone is NOT sufficient — single-app web envs use it too.
+ */
+function fosIsDesktopShapePath(pathname) {
+    const path = String(pathname || '');
+    if (!path) {
+        return false;
+    }
+    if (path === '/websockify' || path.endsWith('/websockify')) {
+        return true;
+    }
+    if (path === '/core/rfb.js' || path.endsWith('/core/rfb.js')) {
+        return true;
+    }
+    if (path === '/app/ui.js' || path.endsWith('/app/ui.js')) {
+        return true;
+    }
+    return false;
 }
 
-/** Any env-subdomain GET whose path includes "timestamp" (readiness probe path varies by FOS env). */
+function fosIsEnvDesktopShapeRequest(meta) {
+    return (
+        !!meta.urlObj &&
+        FOS_ENV_HOST_PATTERN.test(meta.urlObj.hostname) &&
+        fosIsDesktopShapePath(meta.urlObj.pathname)
+    );
+}
+
+/** Any env-subdomain GET whose path includes "timestamp" (readiness probe path varies by env). */
 function fosIsEnvTimestampProbe(meta) {
     return (
         meta.method === 'GET' &&
@@ -165,8 +191,8 @@ const plugin = {
     id: 'fosEmbeddedWatcher',
     name: 'FOS Embedded Watcher',
     description:
-        'Detects embedded FOS env instances, signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '2.0',
+        'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -212,6 +238,7 @@ const plugin = {
         this._state = state;
         this._exposeApi(state);
         this._subscribeOrchestrator(state);
+        this._subscribeDesktopShape(state);
         this._subscribeLatch(state);
         this._listenChildReady(state);
         this._listenClipboardResults(state);
@@ -422,10 +449,30 @@ const plugin = {
             state.fosInstances.set(instanceId, {
                 envKey: null,
                 latchReady: false,
+                isFosDesktop: false,
                 child: null
             });
         }
         return state.fosInstances.get(instanceId);
+    },
+
+    _markFosDesktop(state, instanceId, reason) {
+        const id = String(instanceId || '');
+        if (!id) {
+            return false;
+        }
+        const rec = this._ensureInstance(state, id);
+        if (rec.isFosDesktop) {
+            return false;
+        }
+        rec.isFosDesktop = true;
+        Logger.log(
+            'fosEmbeddedWatcher: FOS desktop shape for instance ' +
+                id +
+                (reason ? ' (' + reason + ')' : '')
+        );
+        this._onInstanceProgress(state, id);
+        return true;
     },
 
     _logClipboardPatched(state, iframe) {
@@ -806,7 +853,7 @@ const plugin = {
 
     _tryNotifyChild(state, instanceId, child) {
         const rec = state.fosInstances.get(instanceId);
-        if (!rec || !rec.latchReady || !rec.envKey || !fosIsFosEnvKey(rec.envKey)) {
+        if (!rec || !rec.latchReady || !rec.envKey || !rec.isFosDesktop) {
             return false;
         }
         if (!child || !child.source || typeof child.source.postMessage !== 'function') {
@@ -890,14 +937,14 @@ const plugin = {
                 response
                     .json()
                     .then((body) => {
-                        if (!body || !body.instance_id || !fosIsFosEnvKey(body.env_key)) {
+                        if (!body || !body.instance_id || body.env_key == null || body.env_key === '') {
                             return;
                         }
                         const instanceId = String(body.instance_id);
                         const rec = self._ensureInstance(state, instanceId);
                         rec.envKey = String(body.env_key);
                         Logger.log(
-                            'fosEmbeddedWatcher: FOS instance registered ' +
+                            'fosEmbeddedWatcher: env instance registered ' +
                                 instanceId +
                                 ' env=' +
                                 rec.envKey
@@ -905,6 +952,34 @@ const plugin = {
                         self._onInstanceProgress(state, instanceId);
                     })
                     .catch(() => { /* ignore non-JSON */ });
+            }
+        });
+    },
+
+    _subscribeDesktopShape(state) {
+        if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
+            Logger.warn('fosEmbeddedWatcher: NetworkObserver unavailable; desktop shape capture skipped');
+            return;
+        }
+        const self = this;
+        Context.networkObserver.subscribe({
+            id: 'fos-embedded-watcher-desktop-shape',
+            matches(meta) {
+                return fosIsEnvDesktopShapeRequest(meta);
+            },
+            onRequest(meta) {
+                const instanceId = fosInstanceIdFromHostname(meta.urlObj.hostname);
+                if (!instanceId) {
+                    return;
+                }
+                self._markFosDesktop(state, instanceId, meta.urlObj.pathname);
+            },
+            onResponse(meta, _response) {
+                const instanceId = fosInstanceIdFromHostname(meta.urlObj.hostname);
+                if (!instanceId) {
+                    return;
+                }
+                self._markFosDesktop(state, instanceId, meta.urlObj.pathname);
             }
         });
     },
@@ -1007,6 +1082,7 @@ const plugin = {
             }
             const child = { source: event.source, origin: event.origin };
             self._patchIframeForChild(state, child, hostname);
+            self._markFosDesktop(state, instanceId, 'child-ready');
             Logger.debug('fosEmbeddedWatcher: child-ready from ' + instanceId);
             if (!self._tryNotifyChild(state, instanceId, child)) {
                 state.pendingChildren.set(instanceId, child);
