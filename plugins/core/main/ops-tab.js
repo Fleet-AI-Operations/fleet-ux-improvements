@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.14',
+    _version: '9.15',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4906,24 +4906,26 @@ const plugin = {
                 </div>
                 </div>
                 <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: ${theme.card};">
-                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
-                    <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" style="
-                            flex: 1;
-                            min-width: 0;
-                            padding: 8px 12px;
-                            font-size: 13px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: ${theme.bg};
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                        ">
-                        <button type="button" id="wf-ops-password-submit" class="${this._opsDashBtnClass('primary', 'regular')}" style="
-                            flex-shrink: 0;
-                        ">Unlock</button>
-                    </div>
-                    <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
+                    <form id="wf-ops-password-form" style="margin: 0;">
+                        <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
+                        <div style="display: flex; gap: 8px; align-items: stretch;">
+                            <input type="password" id="wf-ops-password-input" name="ops-password" autocomplete="current-password" style="
+                                flex: 1;
+                                min-width: 0;
+                                padding: 8px 12px;
+                                font-size: 13px;
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                background: ${theme.bg};
+                                color: var(--foreground, #333);
+                                box-sizing: border-box;
+                            ">
+                            <button type="submit" id="wf-ops-password-submit" class="${this._opsDashBtnClass('primary', 'regular')}" style="
+                                flex-shrink: 0;
+                            ">Unlock</button>
+                        </div>
+                        <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
+                    </form>
                 </div>
             </div>`;
     },
@@ -5160,23 +5162,13 @@ const plugin = {
         if (!modal || modal.dataset.wfOpsPasswordListenersAttached === '1') return;
         modal.dataset.wfOpsPasswordListenersAttached = '1';
 
-        const submitBtn = this._opsQuery(modal, '#wf-ops-password-submit', 'opsPasswordSubmit');
-        const input = this._opsQuery(modal, '#wf-ops-password-input', 'opsPasswordInputAttach');
+        const form = this._opsQuery(modal, '#wf-ops-password-form', 'opsPasswordForm');
         const toggle = this._opsQuery(modal, '#wf-ops-tab-enabled', 'opsTabTogglePassword');
 
-        const submit = () => {
-            void this._submitOpsPassword(modal, toggle, settingsPlugin);
-        };
-
-        if (submitBtn) {
-            submitBtn.addEventListener('click', submit);
-        }
-        if (input) {
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submit();
-                }
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                void this._submitOpsPassword(modal, toggle, settingsPlugin);
             });
         }
     },
