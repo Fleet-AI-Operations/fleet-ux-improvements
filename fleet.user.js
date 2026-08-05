@@ -1,8 +1,8 @@
 
 // ==UserScript==
-// @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
+// @name         [feat/dashboard] Fleet UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.17
+// @version      12.4.18
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.17';
+    const VERSION = '12.4.18';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -823,7 +823,7 @@
             '<li>Go to your userscript extension dashboard</li>' +
             '<li>Look for any userscript that has a title like <code>[dev] Fleet..</code> or <code>[v1] Fleet...</code></li>' +
             '<li>Delete any scripts that match this description</li>' +
-            '<li>You should only have one <code>Fleet Workflow Builder UX Enhancer</code> extension, and that is exactly the title it should have.</li>' +
+            '<li>You should only have one <code>Fleet UX Enhancer</code> extension, and that is exactly the title it should have.</li>' +
             '</ol>';
         expandTrigger.addEventListener('click', function() {
             const isHidden = expandBlock.style.display === 'none';
