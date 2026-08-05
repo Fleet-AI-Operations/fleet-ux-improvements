@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.15',
+    _version: '2.16',
     enabledByDefault: true,
     phase: 'core',
 
@@ -767,7 +767,14 @@ const plugin = {
             };
         };
 
-        if (typeof Logger !== 'undefined' && typeof Logger.onLog === 'function') {
+        // Prefer the host Logger (Context.logger). Plugins receive a module logger
+        // without onLog; console wrapping is an unreliable fallback in the TM sandbox.
+        const hostLogger = (context && context.logger) || (typeof Context !== 'undefined' && Context.logger) || null;
+        if (hostLogger && typeof hostLogger.onLog === 'function') {
+            state.unsubscribe = hostLogger.onLog((level, args) => {
+                handleConsoleCall(level, args);
+            });
+        } else if (typeof Logger !== 'undefined' && typeof Logger.onLog === 'function') {
             state.unsubscribe = Logger.onLog((level, args) => {
                 handleConsoleCall(level, args);
             });
