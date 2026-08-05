@@ -1,7 +1,7 @@
 {
   "version": "12.4.17",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.235",
+  "archetypesVersion": "14.236",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -564,6 +564,7 @@
         "embedded-urlbar-fit.js",
         "prompt-scratchpad.js",
         "action-counter.js",
+        "fos-vm-clipboard-bar.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
       ],
@@ -578,6 +579,12 @@
           "name": "embedded-urlbar-fit.js",
           "version": "1.2",
           "hash": "sha256-cca653428acbc93995fea150e9169d44c5c5a9337aff413579824e4126dd90aa",
+          "log": false
+        },
+        {
+          "name": "fos-vm-clipboard.js",
+          "version": "1.0",
+          "hash": "sha256-747ab50a34fc2f587e9c0276de1f8765b10452d4972fd6b9d65a8cc069c295b1",
           "log": false
         },
         {
@@ -900,6 +907,7 @@
         "copy-verifier-output.js",
         "vnc-helper.js",
         "embedded-urlbar-fit.js",
+        "fos-vm-clipboard-bar.js",
         "user-story-markdown.js"
       ],
       "plugins": [
@@ -925,6 +933,12 @@
           "name": "env-load-gate.js",
           "version": "1.2",
           "hash": "sha256-da64d3612a9e00bace1bac6c13c36a8f3bfc57294c998da6cefd1644d8f139e1",
+          "log": false
+        },
+        {
+          "name": "fos-vm-clipboard.js",
+          "version": "1.0",
+          "hash": "sha256-084bdafc3de420e88dde7b10708b6b825e11c15031d6d3ea6a20df4acf36dfc6",
           "log": false
         },
         {
