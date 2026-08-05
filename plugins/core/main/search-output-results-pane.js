@@ -5833,7 +5833,7 @@ const searchOutputResultsPaneMethods = {
                     </div>
                     <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
                         <div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 16px; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
-                            ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment), { nowrap: true })}
+                            ${this._fieldGroupHtml('Environment', this._copyChipHtml(this._envName(task.envKey) || task.environment), { nowrap: true })}
                             ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team), { nowrap: true })}
                             ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink, { nowrap: true })}
                         </div>
@@ -6736,7 +6736,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.3',
+    _version: '6.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

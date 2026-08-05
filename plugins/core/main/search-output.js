@@ -450,6 +450,15 @@ const searchOutputCoreMethods = {
             : String(projectId).trim().slice(0, 8);
     },
 
+    _envName(envKey) {
+        if (!envKey) return '';
+        const key = String(envKey);
+        const envs = (this._state.catalog && this._state.catalog.environments) || [];
+        const env = envs.find((e) => e && e.env_key === key);
+        const name = env && env.name != null ? String(env.name).trim() : '';
+        return name || key;
+    },
+
     _dashOpsTab() {
         if (!Context.opsTab) {
             throw new Error('Ops tab unavailable. Enable the Ops tab in Settings and unlock it.');
@@ -2183,7 +2192,7 @@ const searchOutputCoreMethods = {
                 email: authorEmail
             },
             prompt,
-            environment: (version && version.env_key) || '',
+            environment: this._envName((version && version.env_key) || ''),
             project: projectName || this._projectName(projectId),
             team: this._teamName(teamId),
             teamId: teamId || '',
@@ -2660,7 +2669,7 @@ const searchOutputCoreMethods = {
                 email: (profile && profile.email) || ''
             },
             prompt,
-            environment: (version && version.env_key) || row.env_key || '',
+            environment: this._envName((version && version.env_key) || row.env_key || ''),
             project: this._projectName(projectId),
             team: this._teamName(row.team_id),
             teamId: row.team_id || '',
@@ -5895,7 +5904,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.28',
+    _version: '9.29',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
