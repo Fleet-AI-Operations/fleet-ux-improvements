@@ -1,7 +1,7 @@
 {
   "version": "13.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.253",
+  "archetypesVersion": "14.254",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -281,8 +281,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "2.17",
-      "hash": "sha256-42fa1154f42b165651f49d06290ba29fc17634183aa450bb5e32f5e992721113",
+      "version": "2.18",
+      "hash": "sha256-84c3520b7a3fa8791b1b93ed6a1d8e6922e1cff442060e2a3c95173a83cd866a",
       "log": false
     }
   ],
