@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.17',
+    _version: '2.18',
     enabledByDefault: true,
     phase: 'core',
 
@@ -400,13 +400,13 @@ const plugin = {
                     const rect = ui.root.getBoundingClientRect();
                     Storage.set(self.storageKeys.positionLeft, rect.left);
                     Storage.set(self.storageKeys.positionTop, rect.top);
-                    Logger.log(`Dev logger position saved: left=${rect.left}, top=${rect.top}`);
+                    Logger.debug(`Dev logger position saved: left=${rect.left}, top=${rect.top}`);
                 }
                 if (state.isResizing && ui) {
                     const rect = ui.root.getBoundingClientRect();
                     Storage.set(self.storageKeys.width, rect.width);
                     Storage.set(self.storageKeys.height, rect.height);
-                    Logger.log(`Dev logger size saved: width=${rect.width}, height=${rect.height}`);
+                    Logger.debug(`Dev logger size saved: width=${rect.width}, height=${rect.height}`);
                 }
                 state.isDragging = false;
                 state.isResizing = false;

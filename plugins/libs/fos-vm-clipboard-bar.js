@@ -181,8 +181,6 @@ const FosVmClipboardBarApi = {
                 this._flash(bExtract, !!ok);
                 if (ok) {
                     Logger.log(`extract ok`);
-                } else {
-                    Logger.warn(`extract failed`);
                 }
             }).catch((err) => {
                 this._flash(bExtract, false);
@@ -202,8 +200,6 @@ const FosVmClipboardBarApi = {
                 this._flash(bOverwrite, !!ok);
                 if (ok) {
                     Logger.log(`overwrite ok`);
-                } else {
-                    Logger.warn(`overwrite failed`);
                 }
             }).catch((err) => {
                 this._flash(bOverwrite, false);
@@ -222,7 +218,7 @@ const plugin = {
     name: 'FOS VM Clipboard Bar (library)',
     description:
         'Shared VM Clipboard Extract/Overwrite bar chrome (archetype modules supply find/mount)',
-    _version: '1.4',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -11,16 +11,16 @@
 #   ./sync-branch-config.sh --fleet PATH # read/write this file instead of <root>/fleet.user.js
 #   ./sync-branch-config.sh --branch NAME # use NAME instead of git HEAD (ignored if -m)
 #
-# Run from repo root (or anywhere; uses git to find root). Owner, repo, and @name base
-# always come from git (origin remote + origin/main:fleet.user.js), never from existing
-# script contents. Updates:
+# Run from repo root (or anywhere; uses git to find root). Owner/repo come from the
+# origin remote; @name base comes from the userscript files being synced (branch
+# working tree). Updates:
 #   - fleet.user.js
-#   - @name: base from origin/main; "[branch] " prefix when not main
+#   - @name: base from current file (strip any existing "[…]" prefix); "[branch] " when not main
 #   - @downloadURL / @updateURL: full raw URL from origin owner/repo + target branch
 #   - GITHUB_CONFIG.owner / .repo / .branch: from origin remote + target branch
 #   - const VERSION: set from header @version in the file being synced
 #   - dev/fleet-dev-id.user.js
-#   - @name: base from origin/main dev script; "[branch] " prefix when not main
+#   - @name: base from current file (strip any existing "[…]" prefix); "[branch] " when not main
 #   - @downloadURL / @updateURL: full raw URL from origin owner/repo + target branch
 #   - const BRANCH_NAME: set to target branch
 #
@@ -111,16 +111,11 @@ if ! origin_repo="$(printf '%s' "$origin_url" | perl -ne 'if (m{github\.com[:/](
   exit 1
 fi
 
-if ! git -C "$root" rev-parse --verify origin/main >/dev/null 2>&1; then
-  echo "[error] origin/main is required (run: git fetch origin main)" >&2
-  exit 1
-fi
-
-fleet_base_name="$(git -C "$root" show origin/main:fleet.user.js | perl -ne '
+fleet_base_name="$(perl -ne '
   if (/^\/\/ \@name\s+(?:\[[^\]]+\]\s+)?(.+?)\s*$/) { print $1; exit }
-' || true)"
+' "$file_path" || true)"
 if [[ -z "$fleet_base_name" ]]; then
-  echo "[error] Could not read @name base from origin/main:fleet.user.js" >&2
+  echo "[error] Could not read @name base from $file_path" >&2
   exit 1
 fi
 
@@ -130,19 +125,11 @@ else
   fleet_display_name="[${branch}] ${fleet_base_name}"
 fi
 
-if git -C "$root" cat-file -e "origin/main:dev/fleet-dev-id.user.js" 2>/dev/null; then
-  dev_id_base_name="$(git -C "$root" show origin/main:dev/fleet-dev-id.user.js | perl -ne '
-    if (/^\/\/ \@name\s+(?:\[[^\]]+\]\s+)?(.+?)\s*$/) { print $1; exit }
-  ' || true)"
-elif git -C "$root" cat-file -e "origin/main:dev/fleet-godmode.user.js" 2>/dev/null; then
-  # Main still has legacy godmode file; use canonical DEV-ID title until main is updated.
-  dev_id_base_name="DEV-ID - Fleet UX Enhancer - (dev identifier)"
-else
-  echo "[error] Could not read dev ID @name base from origin/main (dev/fleet-dev-id.user.js or dev/fleet-godmode.user.js)" >&2
-  exit 1
-fi
+dev_id_base_name="$(perl -ne '
+  if (/^\/\/ \@name\s+(?:\[[^\]]+\]\s+)?(.+?)\s*$/) { print $1; exit }
+' "$dev_id_path" || true)"
 if [[ -z "$dev_id_base_name" ]]; then
-  echo "[error] Could not read @name base from origin/main:dev/fleet-dev-id.user.js" >&2
+  echo "[error] Could not read @name base from $dev_id_path" >&2
   exit 1
 fi
 

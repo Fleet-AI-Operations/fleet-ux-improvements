@@ -209,7 +209,7 @@ Scripts in `dev/utils/` automate branch creation, `fleet.user.js` sync, version 
 
 Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
-- `@name`: branch prefix (e.g. `[my-feature] Fleet`) or no prefix on `main`
+- `@name`: keeps the base title from the branch’s current userscript file; remaps only the branch prefix (e.g. `[my-feature] Fleet`) or drops the prefix on `main`
 - `@downloadURL` / `@updateURL`: branch segment in the raw GitHub URL
 - `GITHUB_CONFIG.branch`: current branch name
 - `VERSION`: kept in sync with header `@version`
@@ -222,7 +222,7 @@ Scripts that touch `fleet.user.js` (checkout, test, sync-branch-config) ensure:
 
 **sync-branch-config.sh** — `./dev/utils/sync-branch-config.sh [-m] [-c] [--dry-run] [--fleet PATH] [--branch NAME]`
 
-- Aligns `fleet.user.js` with the current git branch (`-m` treats the branch as `main`). `-c` commits the file if it changed. `--dry-run` prints the planned field updates without writing. `--fleet` uses a specific file path (default: `<repo>/fleet.user.js`). `--branch` uses a branch name instead of `git` HEAD (ignored when `-m` is set). Used by `checkout.sh` and `test.sh`; safe to run by hand after switching branches.
+- Aligns `fleet.user.js` and `dev/fleet-dev-id.user.js` with the target git branch (`-m` treats the branch as `main`). `@name` base text is taken from the files being synced (so branch-local renames are preserved); only the `[branch]` prefix and GitHub URL / `GITHUB_CONFIG` fields are remapped from `origin` + target branch. `-c` commits the files if they changed. `--dry-run` prints the planned field updates without writing. `--fleet` uses a specific fleet file path (default: `<repo>/fleet.user.js`). `--branch` uses a branch name instead of `git` HEAD (ignored when `-m` is set). Used by `checkout.sh` and `test.sh`; safe to run by hand after switching branches.
 
 **apply-archetypes-boolean-patch.sh** — `./dev/utils/apply-archetypes-boolean-patch.sh <archetypes.json> <patch.json>`
 
