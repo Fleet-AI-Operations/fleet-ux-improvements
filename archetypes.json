@@ -1,7 +1,7 @@
 {
   "version": "12.4.17",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.234",
+  "archetypesVersion": "14.235",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -102,8 +102,8 @@
     },
     {
       "name": "fos-vm-clipboard-bar.js",
-      "version": "1.0",
-      "hash": "sha256-99e79f212d251d7024f5bcaea86a82b70bd804b6721b3816f0462d77feea0f27",
+      "version": "1.1",
+      "hash": "sha256-e2b4df2bf0bc703896e096528f7ccb8b41b61a6250292fe90a1227f1a53aae8e",
       "log": false
     },
     {

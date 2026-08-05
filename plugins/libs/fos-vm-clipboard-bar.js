@@ -162,7 +162,7 @@ const FosVmClipboardBarApi = {
         const bExtract = document.createElement('button');
         bExtract.type = 'button';
         bExtract.textContent = 'Extract';
-        bExtract.className = btnClass('basic');
+        bExtract.className = btnClass('secondary');
 
         const bOverwrite = document.createElement('button');
         bOverwrite.type = 'button';
@@ -216,7 +216,7 @@ const plugin = {
     name: 'FOS VM Clipboard Bar (library)',
     description:
         'Shared VM Clipboard Extract/Overwrite bar chrome (archetype modules supply find/mount)',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
