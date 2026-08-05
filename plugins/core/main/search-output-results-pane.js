@@ -5647,6 +5647,23 @@ const searchOutputResultsPaneMethods = {
         return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: ${opacity}; flex-shrink: 0;"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>`;
     },
 
+    _filterFunnelIconSvg() {
+        return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0;">`
+            + `<line x1="4" y1="7" x2="20" y2="7"></line>`
+            + `<line x1="7" y1="12" x2="17" y2="12"></line>`
+            + `<line x1="10" y1="17" x2="14" y2="17"></line>`
+            + `</svg>`;
+    },
+
+    _cardMetaFilterBtnHtml(scopeKey, valueId, title) {
+        const id = String(valueId || '').trim();
+        if (!id || !scopeKey) return '';
+        const label = String(title || 'Filter results').trim() || 'Filter results';
+        return `<button type="button" data-wf-dash-meta-filter="1" data-filter-scope="${dashEscHtml(scopeKey)}" data-filter-id="${dashEscHtml(id)}" title="${dashEscHtml(label)}" aria-label="${dashEscHtml(label)}" class="${this._dashBtnClass('basic', 'icon')}">`
+            + `${this._filterFunnelIconSvg()}`
+            + `</button>`;
+    },
+
     _extLinkHtml(href, title) {
         const url = String(href || '').trim();
         if (!url) return '';
@@ -5825,6 +5842,9 @@ const searchOutputResultsPaneMethods = {
             ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
             : '';
         const flagBtn = this._flagForSeniorReviewBtnHtml(task, itemId);
+        const envFilterBtn = this._cardMetaFilterBtnHtml('filter-envs', task.envKey, 'Filter by this environment');
+        const teamFilterBtn = this._cardMetaFilterBtnHtml('filter-teams', task.teamId, 'Filter by this team');
+        const projectFilterBtn = this._cardMetaFilterBtnHtml('filter-projects', task.projectId, 'Filter by this project');
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
                         <div style="display: flex; flex-wrap: nowrap; align-items: center; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
@@ -5833,9 +5853,9 @@ const searchOutputResultsPaneMethods = {
                     </div>
                     <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
                         <div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 16px; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
-                            ${this._fieldGroupHtml('Environment', this._copyChipHtml(this._envName(task.envKey) || task.environment), { nowrap: true })}
-                            ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team), { nowrap: true })}
-                            ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink, { nowrap: true })}
+                            ${this._fieldGroupHtml('Environment', this._copyChipHtml(this._envName(task.envKey) || task.environment) + envFilterBtn, { nowrap: true })}
+                            ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team) + teamFilterBtn, { nowrap: true })}
+                            ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectFilterBtn + projectLink, { nowrap: true })}
                         </div>
                     </div>
                 </div>`;
@@ -6736,7 +6756,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.4',
+    _version: '6.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

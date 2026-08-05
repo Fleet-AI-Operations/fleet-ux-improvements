@@ -1673,6 +1673,46 @@ const searchOutputLeftPaneMethods = {
         this._applyFiltersAndRender();
     },
 
+    _applyCardMetaFilter(scopeKey, valueId) {
+        const key = String(scopeKey || '').trim();
+        const id = String(valueId || '').trim();
+        if (!key || !id) {
+            Logger.warn('dashboard: card meta filter skipped — missing scope or id');
+            return;
+        }
+        if (key !== 'filter-envs' && key !== 'filter-teams' && key !== 'filter-projects') {
+            Logger.warn('dashboard: card meta filter skipped — unsupported scope ' + key);
+            return;
+        }
+        if (!this._state.cachedItems) {
+            Logger.warn('dashboard: card meta filter skipped — no results');
+            return;
+        }
+        const itemsEl = this._msItemsEl(key);
+        if (!itemsEl) {
+            Logger.warn('dashboard: card meta filter skipped — filter list missing (' + key + ')');
+            return;
+        }
+        const checkboxes = [...itemsEl.querySelectorAll('input[type="checkbox"][data-wf-dash-ms]')];
+        const target = checkboxes.find((cb) => cb.value === id);
+        if (!target) {
+            Logger.warn('dashboard: card meta filter skipped — option not in ' + key + ' (' + id.slice(0, 12) + ')');
+            return;
+        }
+        checkboxes.forEach((cb) => { cb.checked = cb === target; });
+        this._setMsBulkToggleMode(key, 'none');
+        this._applyMsBulkToggleLabel(key);
+        this._updateMsCount(key);
+        if (typeof this._updateFilterSelectionOrder === 'function') {
+            this._updateFilterSelectionOrder(key);
+        }
+        this._renderFilterLists();
+        this._maybeLiveApplyFilterMsChange(key);
+        this._updateApplyFiltersUi();
+        const label = this._filterScopeLabel(key).toLowerCase();
+        Logger.log('dashboard: filtered ' + label + ' to ' + id);
+    },
+
     _updateApplyFiltersUi() {
         const promptText = (this._q('#wf-dash-prompt') || {}).value || '';
         const caseSensitive = Boolean((this._q('#wf-dash-case') || {}).checked);
@@ -2470,7 +2510,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.5',
+    _version: '5.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

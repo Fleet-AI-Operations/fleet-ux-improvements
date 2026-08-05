@@ -5718,6 +5718,15 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) dash._dropResultFromSearch(itemId);
                 return;
             }
+            const metaFilterBtn = e.target.closest('[data-wf-dash-meta-filter]');
+            if (metaFilterBtn && modal.contains(metaFilterBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const scopeKey = metaFilterBtn.getAttribute('data-filter-scope');
+                const valueId = metaFilterBtn.getAttribute('data-filter-id');
+                if (scopeKey && valueId) dash._applyCardMetaFilter(scopeKey, valueId);
+                return;
+            }
             const userStoryBtn = e.target.closest('[data-wf-dash-user-story]');
             if (userStoryBtn && modal.contains(userStoryBtn)) {
                 e.stopPropagation();
@@ -5904,7 +5913,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.29',
+    _version: '9.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
