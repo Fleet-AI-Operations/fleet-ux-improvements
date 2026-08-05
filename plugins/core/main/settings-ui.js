@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.2',
+    _version: '11.3',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -19,6 +19,8 @@ const plugin = {
     _presenceObserver: null,
     _docPaneCache: {},
     _gearClickHandler: null,
+    _gearContextMenuHandler: null,
+    _gearCtrlOpenHandled: false,
     _updateTabOpenedAutomatically: false,
 
     init(state, context) {
@@ -269,8 +271,46 @@ const plugin = {
         if (this._gearClickHandler) {
             settingsBtn.removeEventListener('click', this._gearClickHandler);
         }
-        this._gearClickHandler = () => this.openModal();
+        if (this._gearContextMenuHandler) {
+            settingsBtn.removeEventListener('contextmenu', this._gearContextMenuHandler);
+        }
+        // Ctrl+click always opens the small settings modal (even when Ops routes the gear to the dashboard).
+        // On macOS, Ctrl+click often fires contextmenu instead of (or before) click — handle both, once.
+        this._gearClickHandler = (e) => {
+            if (this._gearCtrlOpenHandled) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            const forceSettings = Boolean(e && e.ctrlKey);
+            if (forceSettings) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._markGearCtrlOpenHandled();
+                Logger.log('opened settings modal (Ctrl+click)');
+                this.openModal({ forceSettings: true });
+                return;
+            }
+            this.openModal();
+        };
+        this._gearContextMenuHandler = (e) => {
+            if (!(e && e.ctrlKey)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (this._gearCtrlOpenHandled) return;
+            this._markGearCtrlOpenHandled();
+            Logger.log('opened settings modal (Ctrl+click)');
+            this.openModal({ forceSettings: true });
+        };
         settingsBtn.addEventListener('click', this._gearClickHandler);
+        settingsBtn.addEventListener('contextmenu', this._gearContextMenuHandler);
+    },
+
+    _markGearCtrlOpenHandled() {
+        this._gearCtrlOpenHandled = true;
+        queueMicrotask(() => {
+            this._gearCtrlOpenHandled = false;
+        });
     },
 
     _updatePulseAnimation() {
