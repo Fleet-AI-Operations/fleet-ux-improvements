@@ -1710,13 +1710,8 @@ const searchOutputCoreMethods = {
             return;
         }
         void this._reoverlayAllCachedItems().then((changedIds) => {
-            if (changedIds && changedIds.length > 0 && typeof this._updateResultsKindTabsUi === 'function') {
-                this._updateResultsKindTabsUi();
-            }
-            this._renderRatingsPanel();
-            if ((this._state.statsTab || 'stats') === 'stats') {
-                void this._renderStatsPanel();
-            }
+            if (!changedIds || changedIds.length === 0) return;
+            this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
         }).catch((e) => {
             Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
         });
@@ -5913,7 +5908,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.30',
+    _version: '9.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
