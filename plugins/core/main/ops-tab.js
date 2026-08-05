@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.16',
+    _version: '9.17',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3726,6 +3726,13 @@ const plugin = {
         return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>';
     },
 
+    _opsEyeIconSvg() {
+        return '<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
+            + '<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>'
+            + '<circle cx="13" cy="13.2" r="3.2"></circle>'
+            + '</svg>';
+    },
+
     _opsProfileLinkHtml(profileUrl, title) {
         const url = String(profileUrl || '').trim();
         if (!url) return '';
@@ -3738,7 +3745,7 @@ const plugin = {
     _opsSearchWorkerOutputBtnHtml(memberId) {
         const attrId = this._opsEscapeAttr(memberId);
         return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output 🔦</button>';
+            'style="flex-shrink:0;white-space:nowrap;gap:6px;">Search Worker Output' + this._opsEyeIconSvg() + '</button>';
     },
 
     _opsMemberToAuthorPerson(member) {
