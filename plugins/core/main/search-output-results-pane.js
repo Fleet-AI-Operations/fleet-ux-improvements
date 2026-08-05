@@ -5667,7 +5667,7 @@ const searchOutputResultsPaneMethods = {
     _extLinkHtml(href, title) {
         const url = String(href || '').trim();
         if (!url) return '';
-        return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); text-decoration: none;">
+        return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">
             ${this._extLinkIconSvg(true)}
         </a>`;
     },
@@ -6756,7 +6756,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.5',
+    _version: '6.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
