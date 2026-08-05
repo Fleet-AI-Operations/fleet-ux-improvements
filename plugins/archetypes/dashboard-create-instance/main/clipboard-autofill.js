@@ -6,7 +6,7 @@ const plugin = {
     name: 'Create Instance Clipboard Autofill',
     description:
         'Adds Autofill & Create Instance from clipboard JSON, optional Always Autocreate, using combobox keyboard navigation like workflow cache.',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -16,6 +16,7 @@ const plugin = {
 
     initialState: {
         missingLogged: false,
+        backLinkMissingLogged: false,
         uiRoot: null,
         toolbarInjected: false,
         autofillInProgress: false,
@@ -52,6 +53,7 @@ const plugin = {
             state.autocreateDoneForNav = false;
             state.autocreateFromMutationAttempted = false;
             state.clipboardRetryListeners = false;
+            state.backLinkMissingLogged = false;
         }
 
         this.ensureToolbarClipboardVisibilityListeners(state, root);
@@ -148,9 +150,13 @@ const plugin = {
 
         const back = this.findBackLink(root);
         if (!back) {
-            Logger.warn('Create Instance clipboard autofill: Back link not found, toolbar not injected');
+            if (!state.backLinkMissingLogged) {
+                Logger.warn('Create Instance clipboard autofill: Back link not found, toolbar not injected');
+                state.backLinkMissingLogged = true;
+            }
             return;
         }
+        state.backLinkMissingLogged = false;
 
         const wrap = document.createElement('div');
         wrap.setAttribute('data-fleet-create-instance-autofill-toolbar', 'true');
@@ -174,7 +180,7 @@ const plugin = {
         checkbox.checked = Storage.get(this.storageKeys.alwaysAutocreate, false);
         checkbox.addEventListener('change', () => {
             Storage.set(this.storageKeys.alwaysAutocreate, checkbox.checked);
-            Logger.info('Create Instance clipboard autofill: Always Autocreate ' + (checkbox.checked ? 'on' : 'off'));
+            Logger.log('Create Instance clipboard autofill: Always Autocreate ' + (checkbox.checked ? 'on' : 'off'));
             if (checkbox.checked) {
                 this.runAutofillPipeline(state, root, { submit: true, source: 'toggle-on' });
             }
@@ -190,7 +196,7 @@ const plugin = {
         wrap.appendChild(toggleWrap);
 
         back.insertAdjacentElement('afterend', wrap);
-        Logger.info('Create Instance clipboard autofill: toolbar injected');
+        Logger.log('Create Instance clipboard autofill: toolbar injected');
     },
 
     ensureClipboardRetryListeners(state, root) {
@@ -289,7 +295,7 @@ const plugin = {
         }
 
         state.autofillInProgress = true;
-        Logger.info('Create Instance clipboard autofill: pipeline start (' + source + ')');
+        Logger.debug('Create Instance clipboard autofill: pipeline start (' + source + ')');
 
         try {
             let payload = options.payload;
@@ -353,7 +359,7 @@ const plugin = {
             Logger.error('Create Instance clipboard autofill: pipeline failed', e);
         } finally {
             state.autofillInProgress = false;
-            Logger.info('Create Instance clipboard autofill: pipeline end (' + source + ')');
+            Logger.log('Create Instance clipboard autofill: pipeline end (' + source + ')');
         }
     },
 
@@ -630,7 +636,7 @@ const plugin = {
         }
 
         await this.wait(180);
-        Logger.log('Create Instance clipboard autofill: version row selected (data_version ' + dv + ')');
+        Logger.debug('Create Instance clipboard autofill: version row selected (data_version ' + dv + ')');
         return true;
     },
 
@@ -1041,7 +1047,7 @@ const plugin = {
             Logger.error('Create Instance clipboard autofill: ' + verify.detail);
             return false;
         }
-        Logger.info('Create Instance clipboard autofill: advanced env vars match clipboard exactly');
+        Logger.debug('Create Instance clipboard autofill: advanced env vars match clipboard exactly');
         return true;
     },
 

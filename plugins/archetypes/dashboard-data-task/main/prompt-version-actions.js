@@ -13,7 +13,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
     description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -161,7 +161,7 @@ const plugin = {
             return;
         }
 
-        Logger.log(PLUGIN_ID + ': fetching prompt versions for ' + taskKey);
+        Logger.debug(PLUGIN_ID + ': fetching prompt versions for ' + taskKey);
         try {
             if (typeof opsTab.whenOpsBundleReady === 'function') {
                 await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
@@ -180,8 +180,8 @@ const plugin = {
             state.evalTaskId = String(taskRow.id).trim();
             state.versionRows = rows;
             state.fetchFailed = false;
-            Logger.log(PLUGIN_ID + ': loaded ' + rows.length + ' raw version row(s) for ' + taskKey);
-            Logger.log(PLUGIN_ID + ': eval task id captured for view links');
+            Logger.debug(PLUGIN_ID + ': loaded ' + rows.length + ' raw version row(s) for ' + taskKey);
+            Logger.debug(PLUGIN_ID + ': eval task id captured for view links');
         } catch (err) {
             if (state.taskKey !== taskKey) return;
             if (this._isTransientBundleError(err)) {

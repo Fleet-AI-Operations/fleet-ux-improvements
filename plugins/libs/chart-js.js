@@ -27,7 +27,7 @@ const plugin = {
     id: 'chart-js',
     name: 'Chart.js Loader',
     description: 'Lazy-loads Chart.js from jsDelivr for Worker Output Search stats charts',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -67,7 +67,7 @@ const plugin = {
                 return this._chartJs;
             } catch (err) {
                 this._loadFailed = true;
-                Logger.warn('chart-js: load failed — stats charts unavailable', err);
+                Logger.error('chart-js: load failed — stats charts unavailable', err);
                 throw err;
             } finally {
                 this._loadPromise = null;

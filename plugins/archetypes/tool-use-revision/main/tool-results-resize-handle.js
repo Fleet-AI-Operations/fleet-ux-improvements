@@ -6,7 +6,7 @@ const plugin = {
     id: 'toolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '3.2',
+    _version: '3.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -69,7 +69,7 @@ const plugin = {
         });
 
         if (handlesAdded > 0) {
-            Logger.log(`✓ Added ${handlesAdded} result resize handle(s)`);
+            Logger.debug(`${this.id}: Added ${handlesAdded} result resize handle(s)`);
         }
     },
 

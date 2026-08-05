@@ -3,7 +3,7 @@ const plugin = {
     id: 'taskCreationTodayEnv',
     name: 'Daily Task Creation Breakdown',
     description: 'Show today\'s task creation count and environment breakdown under the Task Creation stat, with a warning when list may be incomplete',
-    _version: '4.0',
+    _version: '4.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, lastUncertain: false, lastStatsPayload: null },
@@ -375,7 +375,7 @@ const plugin = {
                             .sort((a, b) => b[1] - a[1])
                             .map(([name, count]) => `${name}: ${count}`)
                             .join(', ');
-                    Logger.log('task-creation-today-env: past-day breakdown computed', {
+                    Logger.debug('task-creation-today-env: past-day breakdown computed', {
                         daysAgo,
                         target: self.formatDateLabel(ref),
                         taskRowsInTable: liveRows.length,

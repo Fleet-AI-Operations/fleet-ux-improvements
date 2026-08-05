@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.15',
+    _version: '11.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -499,7 +499,7 @@ const plugin = {
     _logDashApiClick(action, detail) {
         const label = String(action || 'unknown').trim();
         const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
-        Logger.log('dashboard: api ' + label + suffix);
+        Logger.debug('dashboard: api ' + label + suffix);
     },
 
     _logDashApiSkip(action, reason, detail) {

@@ -253,7 +253,7 @@ const UserStoryCollapseApi = {
         if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
             CleanupRegistry.registerElement(btn);
         }
-        Logger.log(logTag + ': Hide/Show control ready on User Story row');
+        Logger.debug(logTag + ': Hide/Show control ready on User Story row');
 
         if (hidden) this.setBodiesHidden(bodies, true);
     },
@@ -290,7 +290,7 @@ const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
     description: 'Shared API to hide/show User Story bodies from the label row',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

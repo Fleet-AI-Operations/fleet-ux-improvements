@@ -5,7 +5,7 @@ const plugin = {
     id: 'jsonEditorOnline',
     name: 'JSON Editor Online',
     description: 'Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.',
-    _version: '3.0',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -93,7 +93,7 @@ const plugin = {
         
         if (!buttonContainer) {
             if (!state.missingLogged) {
-                Logger.debug('Button container not found for JSON Editor Online button');
+                Logger.debug(`${this.id}: Button container not found for JSON Editor Online button`);
                 state.missingLogged = true;
             }
             return;
@@ -116,7 +116,7 @@ const plugin = {
         
         button.onclick = () => {
             window.open('https://jsoneditoronline.org', '_blank');
-            Logger.log('Opening JSON Editor Online');
+            Logger.debug(`${this.id}: Opening JSON Editor Online`);
         };
         
         // Insert after Explore GUI button if it exists, otherwise as first child
@@ -130,7 +130,7 @@ const plugin = {
         }
         
         state.toolbarButtonAdded = true;
-        Logger.log('✓ JSON Editor Online toolbar button added');
+        Logger.log(`${this.id}: JSON Editor Online toolbar button added`);
     },
     
     addToolButtons(state, context) {
@@ -138,7 +138,7 @@ const plugin = {
         const panel = this.findWorkflowPanel();
         if (!panel) {
             if (!state.missingLogged) {
-                Logger.debug('Workflow panel not found for JSON Editor Online tool buttons');
+                Logger.debug(`${this.id}: Workflow panel not found for JSON Editor Online tool buttons`);
                 state.missingLogged = true;
             }
             return;
@@ -215,7 +215,7 @@ const plugin = {
                 }
             }
             
-            Logger.log(`✓ JSON Editor Online button added to tool result`);
+            Logger.debug(`${this.id}: JSON Editor Online button added to tool result`);
         });
     },
     
@@ -307,9 +307,10 @@ const plugin = {
         }
         this._copying = true;
         let copyOk = false;
+        let copiedChars = 0;
 
         try {
-            Logger.log('Copying result and opening JSON Editor Online');
+            Logger.debug(`${this.id}: copy + open JSON Editor Online started`);
 
             const resultContent = this.findResultContent(resultArea);
             if (resultContent) {
@@ -318,9 +319,10 @@ const plugin = {
                     try {
                         await navigator.clipboard.writeText(textContent);
                         copyOk = true;
-                        Logger.log('✓ Copied result content to clipboard');
+                        copiedChars = textContent.length;
+                        Logger.debug(`${this.id}: copied result content to clipboard (${copiedChars} chars)`);
                     } catch (e) {
-                        Logger.warn('Failed to copy to clipboard:', e);
+                        Logger.debug(`${this.id}: clipboard write failed, trying fallback`, e);
                         try {
                             const textArea = document.createElement('textarea');
                             textArea.value = textContent;
@@ -331,21 +333,26 @@ const plugin = {
                             copyOk = document.execCommand('copy');
                             document.body.removeChild(textArea);
                             if (copyOk) {
-                                Logger.log('✓ Copied result content to clipboard (fallback method)');
+                                copiedChars = textContent.length;
+                                Logger.debug(`${this.id}: copied result via fallback (${copiedChars} chars)`);
                             }
                         } catch (fallbackError) {
-                            Logger.warn('Fallback copy method also failed:', fallbackError);
+                            Logger.warn(`${this.id}: Fallback copy method also failed:`, fallbackError);
                         }
                     }
                 } else {
-                    Logger.warn('Result content is empty');
+                    Logger.debug(`${this.id}: Result content is empty`);
                 }
             } else {
-                Logger.warn('Result content div not found, opening editor anyway');
+                Logger.debug(`${this.id}: Result content div not found, opening editor anyway`);
             }
 
             window.open('https://jsoneditoronline.org', '_blank');
-            Logger.log('✓ Opened JSON Editor Online');
+            if (copyOk) {
+                Logger.log(`${this.id}: opened JSON Editor Online (copied ${copiedChars} chars)`);
+            } else {
+                Logger.log(`${this.id}: opened JSON Editor Online (copy skipped)`);
+            }
         } finally {
             this._copying = false;
         }

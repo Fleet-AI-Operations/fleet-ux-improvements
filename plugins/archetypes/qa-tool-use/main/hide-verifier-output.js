@@ -18,12 +18,13 @@ const plugin = {
     name: 'Hide Verifier Output',
     description:
         'Adds Hide/Show Verifier on the Verifier Output header; hides the output body and collapses the bottom panel until shown or Run Verifier starts',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         missingLogged: false,
         activationLogged: false,
+        injectLogged: false,
         hidden: false,
         runBtn: null,
         runObserver: null,
@@ -65,6 +66,7 @@ const plugin = {
         }
         state.missingLogged = false;
         state.activationLogged = false;
+        state.injectLogged = false;
         state.hidden = false;
         state.wasRunDisabled = false;
         state.bodyEl = null;
@@ -261,7 +263,12 @@ const plugin = {
         if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
             CleanupRegistry.registerElement(btn);
         }
-        Logger.log('hideVerifierOutput: toggle injected before Run Verifier');
+        if (!state.injectLogged) {
+            Logger.log('hideVerifierOutput: toggle injected before Run Verifier');
+            state.injectLogged = true;
+        } else {
+            Logger.debug('hideVerifierOutput: toggle reinjected before Run Verifier');
+        }
         return btn;
     },
 
@@ -415,11 +422,7 @@ const plugin = {
         this.collapsePanel(ctx, headerPx);
 
         state.hidden = true;
-        const bodyClass = (ctx.body.className || '').toString().slice(0, 80);
-        const panelId = (ctx.panel && (ctx.panel.id || ctx.panel.getAttribute('data-panel-id'))) || '?';
-        Logger.log(
-            `hideVerifierOutput: hidden (${reason}) body=.${bodyClass.replace(/\s+/g, '.')} panel=${panelId} headerPx=${headerPx}`
-        );
+        Logger.log(`hideVerifierOutput: hidden (${reason})`);
     },
 
     showVerifier(ctx, state, reason) {

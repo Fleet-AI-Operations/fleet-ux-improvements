@@ -6,7 +6,7 @@ const plugin = {
     name: 'VM Clipboard',
     description:
         'Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -27,7 +27,7 @@ const plugin = {
             state.uiHostClaimed = true;
             Logger.log(`${this.id}: claimed FOS UI host (floating panel suppressed)`);
         } else {
-            Logger.warn(`${this.id}: Context.fosEmbedded missing at init — will retry on mutation`);
+            Logger.debug(`${this.id}: Context.fosEmbedded missing at init — will retry on mutation`);
         }
     },
 

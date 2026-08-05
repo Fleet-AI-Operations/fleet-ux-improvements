@@ -21,7 +21,7 @@ const plugin = {
     name: 'Workflow Verifier Tab',
     description:
         'Adds Workflow | Verifier tabs on the QA workflow panel and shows searchable verifier source for the current task',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -32,6 +32,7 @@ const plugin = {
         activationLogged: false,
         prefetchLogged: false,
         prefetchAttemptedFor: '',
+        jwtWarnLogged: false,
         networkSubscribed: false,
         workflowTabButton: null,
         verifierTabButton: null,
@@ -73,6 +74,7 @@ const plugin = {
                 state.activationLogged = false;
                 state.prefetchLogged = false;
                 state.prefetchAttemptedFor = '';
+                state.jwtWarnLogged = false;
                 state.tabInjected = false;
                 state.tabActive = false;
             } else if (!state.missingLogged) {
@@ -104,6 +106,7 @@ const plugin = {
         if (state.prefetchAttemptedFor && state.prefetchAttemptedFor !== taskKey) {
             state.prefetchAttemptedFor = '';
             state.prefetchLogged = false;
+            state.jwtWarnLogged = false;
         }
 
         const cached = state.cache[taskKey] || {};
@@ -116,7 +119,7 @@ const plugin = {
         if (!hasSource && !verifierId) return;
 
         if (!state.prefetchLogged) {
-            Logger.log(
+            Logger.debug(
                 'workflowVerifierTab: prefetching verifier for ' +
                     taskKey +
                     (verifierId ? ' id=' + verifierId.slice(0, 8) + '…' : ' (captured source)')
@@ -293,7 +296,7 @@ const plugin = {
         state.capture = next;
 
         if (changed) {
-            Logger.log(
+            Logger.debug(
                 'workflowVerifierTab: captured verifier hints' +
                     (next.taskKey ? ' task=' + next.taskKey : '') +
                     (next.verifierId ? ' id=' + next.verifierId.slice(0, 8) + '…' : '') +
@@ -820,7 +823,7 @@ const plugin = {
             await this.renderSource(state, entry.source);
             this.updateVersionSelect(state, entry);
             this.setStatus(state, this.formatReadyStatus(taskKey, entry));
-            Logger.log('workflowVerifierTab: showing captured source for ' + taskKey);
+            Logger.debug('workflowVerifierTab: showing captured source for ' + taskKey);
             return;
         }
 
@@ -833,15 +836,19 @@ const plugin = {
         const jwt = this.getFleetJwt();
         if (!jwt) {
             if (!quiet) this.setStatus(state, 'Sign in to Fleet to load verifier source');
-            Logger.warn('workflowVerifierTab: no Fleet session JWT');
+            if (!state.jwtWarnLogged) {
+                Logger.warn('workflowVerifierTab: no Fleet session JWT');
+                state.jwtWarnLogged = true;
+            }
             return;
         }
+        state.jwtWarnLogged = false;
 
         if (state.fetchInFlight) return;
         state.fetchInFlight = true;
         if (prefetch) state.prefetchAttemptedFor = taskKey;
         this.setStatus(state, quiet ? 'Prefetching verifier…' : 'Loading verifier…');
-        Logger.log(
+        Logger.debug(
             'workflowVerifierTab: ' +
                 (quiet ? 'prefetch' : 'fetch') +
                 ' orchestrator verifier ' +

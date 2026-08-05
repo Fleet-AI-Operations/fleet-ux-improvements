@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.14',
+    _version: '11.1',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -186,7 +186,7 @@ const plugin = {
             settingsBtn.id = 'wf-settings-btn';
             document.body.appendChild(settingsBtn);
             if (!this._buttonCreated) {
-                Logger.log('✓ Settings UI initialized');
+                Logger.log('settings-ui: Settings UI initialized');
                 this._buttonCreated = true;
             }
         }
@@ -359,7 +359,7 @@ const plugin = {
             const openDialogs = document.querySelectorAll('dialog[open]');
             for (const d of openDialogs) {
                 if (d !== ourDialog) {
-                    Logger.info('Closing Fleet settings because another native dialog opened (host page modal).');
+                    Logger.info('settings-ui: Closing Fleet settings because another native dialog opened (host page modal).');
                     this._closeModal();
                     return;
                 }
@@ -368,7 +368,7 @@ const plugin = {
             const ariaModals = document.querySelectorAll('[aria-modal="true"]');
             for (const el of ariaModals) {
                 if (isForeignAriaModalVisible(el)) {
-                    Logger.info('Closing Fleet settings because a host aria-modal dialog appeared.');
+                    Logger.info('settings-ui: Closing Fleet settings because a host aria-modal dialog appeared.');
                     this._closeModal();
                     return;
                 }
@@ -547,7 +547,6 @@ const plugin = {
                 </h3>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     ${this._createToggleHTML('wf-debug-enabled', 'Enable Debug Logging', Logger.isDebugEnabled(), 'log')}
-                    ${this._createToggleHTML('wf-verbose-enabled', 'Enable Verbose Logging', Logger.isVerboseEnabled(), 'log')}
                     <div>
                         ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled, 'log')}
                         <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
@@ -575,6 +574,9 @@ const plugin = {
                                 cursor: pointer;
                                 transition: all 0.2s;
                             ">All Off</button>
+                        </div>
+                        <div id="wf-core-lib-module-logging" style="display: ${submoduleLoggingEnabled ? 'block' : 'none'}; margin-top: 12px;">
+                            ${this._createCoreLibModuleLoggingHTML()}
                         </div>
                     </div>
                     ${this._createToggleHTML('wf-pulse-override-enabled', 'Simulate Update Banner', this._getPulseOverrideEnabled(), 'sub')}
@@ -1130,7 +1132,7 @@ const plugin = {
             this._attachPluginReorderListeners(modal, devPlugins, 'dev');
         }
         
-        // Debug toggle
+        // Debug toggle (host Logger.debug only)
         const debugToggle = Context.dom.query('#wf-debug-enabled', {
             root: modal,
             context: `${this.id}.debugToggle`
@@ -1139,19 +1141,6 @@ const plugin = {
             debugToggle.addEventListener('change', (e) => {
                 this._handleToggleChange(e);
                 Logger.setDebugEnabled(e.target.checked);
-                this._updateSettingsMessage(modal, plugins);
-            });
-        }
-        
-        // Verbose toggle
-        const verboseToggle = Context.dom.query('#wf-verbose-enabled', {
-            root: modal,
-            context: `${this.id}.verboseToggle`
-        });
-        if (verboseToggle) {
-            verboseToggle.addEventListener('change', (e) => {
-                this._handleToggleChange(e);
-                Logger.setVerboseEnabled(e.target.checked);
                 this._updateSettingsMessage(modal, plugins);
             });
         }
@@ -1174,18 +1163,21 @@ const plugin = {
                     this._attachPluginToggleListeners(modal, devPlugins, 'dev');
                     this._attachPluginReorderListeners(modal, devPlugins, 'dev');
                 }
+                this._renderCoreLibModuleLoggingList(modal);
                 this._updateSettingsMessage(modal, plugins);
             });
         }
 
-        // All module logging On / Off (only affect log toggles; visible when submodule logging enabled)
+        this._attachCoreLibModuleLoggingListeners(modal, plugins);
+
+        // All module logging On / Off — every loaded plugin (archetype, core, libs, ops, dev)
         const allModuleLogOnBtn = Context.dom.query('#wf-all-module-logging-on', {
             root: modal,
             context: `${this.id}.allModuleLogOnButton`
         });
         if (allModuleLogOnBtn) {
             allModuleLogOnBtn.addEventListener('click', () => {
-                allPlugins.forEach(plugin => {
+                PluginManager.getAll().forEach(plugin => {
                     Logger.setModuleLoggingEnabled(plugin.id, true);
                 });
                 this._renderPluginList(modal, plugins);
@@ -1195,6 +1187,7 @@ const plugin = {
                     this._attachPluginReorderListeners(modal, devPlugins, 'dev');
                 }
                 this._attachPluginToggleListeners(modal, plugins);
+                this._renderCoreLibModuleLoggingList(modal);
                 this._updateSettingsMessage(modal, plugins);
             });
             allModuleLogOnBtn.addEventListener('mouseenter', () => {
@@ -1212,7 +1205,7 @@ const plugin = {
         });
         if (allModuleLogOffBtn) {
             allModuleLogOffBtn.addEventListener('click', () => {
-                allPlugins.forEach(plugin => {
+                PluginManager.getAll().forEach(plugin => {
                     Logger.setModuleLoggingEnabled(plugin.id, false);
                 });
                 this._renderPluginList(modal, plugins);
@@ -1222,6 +1215,7 @@ const plugin = {
                     this._attachPluginReorderListeners(modal, devPlugins, 'dev');
                 }
                 this._attachPluginToggleListeners(modal, plugins);
+                this._renderCoreLibModuleLoggingList(modal);
                 this._updateSettingsMessage(modal, plugins);
             });
             allModuleLogOffBtn.addEventListener('mouseenter', () => {
@@ -1244,7 +1238,7 @@ const plugin = {
                 pulseOverrideToggle.addEventListener('change', (e) => {
                     this._handleToggleChange(e);
                     const enabled = e.target.checked;
-                    Logger.log(`Simulate Update Banner toggle changed to: ${enabled}`);
+                    Logger.log(`settings-ui: Simulate Update Banner toggle changed to: ${enabled}`);
                     this._setPulseOverrideEnabled(enabled);
                     // Reapply button behavior to update styles
                     const settingsBtn = document.getElementById('wf-settings-btn');
@@ -1291,7 +1285,7 @@ const plugin = {
                 if (confirmed) {
                     const allPlugins = PluginManager.getAll();
                     const clearedCount = Storage.clearAll(allPlugins);
-                    Logger.log(`✓ Cache cleared: ${clearedCount} keys removed`);
+                    Logger.log(`settings-ui: Cache cleared: ${clearedCount} keys removed`);
                     alert(`Cache cleared successfully. ${clearedCount} storage keys were removed. The page will now reload.`);
                     if (typeof Context.requestExtensionReload === 'function') {
                         Context.requestExtensionReload('settings-ui clear cache');
@@ -1329,7 +1323,7 @@ const plugin = {
                 const repo = Context.githubRepo || 'fleet-ux-improvements';
                 const url = 'https://github.com/' + owner + '/' + repo + '/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
                 window.open(url, '_blank', 'noopener,noreferrer');
-                Logger.log('Opened GitHub issue draft: ' + title);
+                Logger.log('settings-ui: Opened GitHub issue draft: ' + title);
                 self._closeModal();
             });
             feedbackSubmitBtn.addEventListener('mouseenter', () => {
@@ -1690,7 +1684,7 @@ const plugin = {
             document.addEventListener('touchmove', onPointerMove, { passive: false, capture: true });
             document.addEventListener('touchend', onPointerUp, true);
 
-            Logger.debug(`Started pointer drag reorder (${listType})`);
+            Logger.debug(`settings-ui: Started pointer drag reorder (${listType})`);
         };
 
         list.addEventListener('mousedown', onPointerDown);
@@ -1760,8 +1754,11 @@ const plugin = {
             pageRefreshConfirmationEnabled: this._getPageRefreshConfirmationEnabled(),
             extensionRefreshConfirmationEnabled: this._getExtensionRefreshConfirmationEnabled(),
             debug: Logger.isDebugEnabled(),
-            verbose: Logger.isVerboseEnabled(),
             submoduleLogging: Logger.isSubmoduleLoggingEnabled(),
+            coreLibModuleLogging: this._getCoreLibPluginsForLogging().map(plugin => ({
+                id: plugin.id,
+                moduleLogging: Logger.isModuleLoggingEnabled(plugin.id)
+            })),
             pluginStates: sortedPlugins.map(plugin => {
                 const state = {
                     id: plugin.id,
@@ -1965,6 +1962,79 @@ const plugin = {
         if (buttonsContainer) {
             buttonsContainer.style.display = submoduleLoggingEnabled ? 'flex' : 'none';
         }
+        const coreLibContainer = Context.dom.query('#wf-core-lib-module-logging', {
+            root: modal,
+            context: `${this.id}.coreLibModuleLoggingVisibility`
+        });
+        if (coreLibContainer) {
+            coreLibContainer.style.display = submoduleLoggingEnabled ? 'block' : 'none';
+            if (submoduleLoggingEnabled) {
+                this._renderCoreLibModuleLoggingList(modal);
+            }
+        }
+    },
+
+    _getCoreLibPluginsForLogging() {
+        return PluginManager.getAll()
+            .filter((p) => p && p.id && (p.phase === 'core' || p._isLib === true || p._isOps === true))
+            .filter((p) => p._isDev !== true)
+            .slice()
+            .sort((a, b) => (a.name || a.id || '').localeCompare(b.name || b.id || ''));
+    },
+
+    _createCoreLibModuleLoggingHTML() {
+        const plugins = this._getCoreLibPluginsForLogging();
+        if (plugins.length === 0) {
+            return '<p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0;">No core or library modules loaded.</p>';
+        }
+        const rows = plugins.map((plugin) => {
+            const enabled = Logger.isModuleLoggingEnabled(plugin.id);
+            const label = plugin.name || plugin.id;
+            return `
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border, #e5e5e5);">
+                    <label style="font-size: 12px; color: var(--foreground, #333); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px;" for="wf-core-lib-log-${plugin.id}" title="${plugin.id}">
+                        ${label}
+                    </label>
+                    ${this._createSwitchHTML(`wf-core-lib-log-${plugin.id}`, enabled, null, false, { size: 'small', variant: 'log' })}
+                </div>
+            `;
+        }).join('');
+        return `
+            <div style="font-size: 12px; font-weight: 600; color: var(--foreground, #333); margin-bottom: 6px;">Core and libraries</div>
+            <div style="max-height: 180px; overflow-y: auto;">${rows}</div>
+        `;
+    },
+
+    _renderCoreLibModuleLoggingList(modal) {
+        const container = Context.dom.query('#wf-core-lib-module-logging', {
+            root: modal,
+            context: `${this.id}.renderCoreLibModuleLogging`
+        });
+        if (!container) return;
+        const submoduleOn = Logger.isSubmoduleLoggingEnabled();
+        container.style.display = submoduleOn ? 'block' : 'none';
+        if (!submoduleOn) return;
+        container.innerHTML = this._createCoreLibModuleLoggingHTML();
+        this._attachCoreLibModuleLoggingListeners(modal);
+    },
+
+    _attachCoreLibModuleLoggingListeners(modal, pluginsForMessage) {
+        const plugins = this._getCoreLibPluginsForLogging();
+        plugins.forEach((plugin) => {
+            const toggle = Context.dom.query(`#wf-core-lib-log-${plugin.id}`, {
+                root: modal,
+                context: `${this.id}.coreLibLog.${plugin.id}`
+            });
+            if (!toggle || toggle.dataset.wfBound === '1') return;
+            toggle.dataset.wfBound = '1';
+            toggle.addEventListener('change', (e) => {
+                this._handleToggleChange(e);
+                Logger.setModuleLoggingEnabled(plugin.id, e.target.checked);
+                if (pluginsForMessage) {
+                    this._updateSettingsMessage(modal, pluginsForMessage);
+                }
+            });
+        });
     },
     
     _isOpsAccessConfigured() {

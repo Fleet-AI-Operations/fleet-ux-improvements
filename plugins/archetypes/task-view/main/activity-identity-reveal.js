@@ -23,7 +23,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
     description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -165,7 +165,7 @@ const plugin = {
             return;
         }
 
-        Logger.info(PLUGIN_ID + ': fetching QA feedback + task author for ' + taskId);
+        Logger.debug(PLUGIN_ID + ': fetching QA feedback + task author for ' + taskId);
 
         try {
             const [feedbackRows, taskRow] = await Promise.all([
@@ -184,7 +184,7 @@ const plugin = {
             const profiles = await this._fetchProfiles(ops, [...userIds]);
             if (this._abortFetch(state, taskId)) return;
 
-            Logger.info(
+            Logger.debug(
                 PLUGIN_ID + ': loaded ' + feedbackRows.length + ' feedback row(s)'
                 + (authorId ? ', author ' + authorId : ', no author')
                 + ', ' + profiles.size + ' profile(s)'
@@ -547,10 +547,15 @@ const plugin = {
     },
 
     async _copyChipValue(el, value, logLabel) {
-        const label = PLUGIN_ID + ':' + (logLabel || 'value');
+        const field = logLabel || 'value';
         const ui = Context.uiLib;
         if (ui && typeof ui.copyWithFeedback === 'function') {
-            await ui.copyWithFeedback(el, value, { logLabel: label });
+            const ok = await ui.copyWithFeedback(el, value, {});
+            if (ok) {
+                Logger.log(PLUGIN_ID + ': copied ' + field + ' (' + value.length + ' chars)');
+            } else {
+                Logger.warn(PLUGIN_ID + ': copy ' + field + ' failed');
+            }
             return;
         }
         try {
@@ -559,7 +564,7 @@ const plugin = {
                 if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
                     Context.buttonFeedback.flashSuccess(el);
                 }
-                Logger.log(label + ': copied ' + value.length + ' chars');
+                Logger.log(PLUGIN_ID + ': copied ' + field + ' (' + value.length + ' chars)');
                 return;
             }
         } catch (err) {
@@ -568,7 +573,7 @@ const plugin = {
         if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
             Context.buttonFeedback.flashFailure(el);
         }
-        Logger.warn(PLUGIN_ID + ': copy ' + (logLabel || 'value') + ' failed');
+        Logger.warn(PLUGIN_ID + ': copy ' + field + ' failed');
     },
 
     _replaceNameSpan(span, userId, profile) {

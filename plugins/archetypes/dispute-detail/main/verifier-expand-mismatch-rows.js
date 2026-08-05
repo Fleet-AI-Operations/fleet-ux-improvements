@@ -8,7 +8,7 @@ const plugin = {
     name: 'Verifier expand mismatch rows',
     description:
         'Automatically expands Per-Field Comparison rows that failed verification (red X) so mismatch details show by default',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -57,7 +57,7 @@ const plugin = {
 
         if (!state.sectionLogged) {
             state.sectionLogged = true;
-            Logger.log(`${this.id}: Per-Field Comparison section detected`);
+            Logger.debug(`${this.id}: Per-Field Comparison section detected`);
         }
 
         if (state.pendingRaf != null) {

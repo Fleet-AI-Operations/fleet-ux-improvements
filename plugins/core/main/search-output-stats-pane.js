@@ -4360,7 +4360,7 @@ const searchOutputStatsPaneMethods = {
         if (!canvasCharts.length) {
             this._state.statsCharts = {};
             if (rendered > 0) {
-                Logger.log('search-output-stats-pane: stats dashboard rendered — ' + items.length + ' item(s), ' + rendered + ' chart(s)');
+                Logger.debug('search-output-stats-pane: stats dashboard rendered — ' + items.length + ' item(s), ' + rendered + ' chart(s)');
             }
             return;
         }
@@ -4406,7 +4406,7 @@ const searchOutputStatsPaneMethods = {
             rendered += 1;
         }
         this._state.statsCharts = charts;
-        Logger.log('search-output-stats-pane: stats dashboard rendered — ' + items.length + ' item(s), ' + rendered + ' chart(s)');
+        Logger.debug('search-output-stats-pane: stats dashboard rendered — ' + items.length + ' item(s), ' + rendered + ' chart(s)');
     },
 
     _statsTabStyle(active) {
@@ -5846,9 +5846,9 @@ const searchOutputStatsPaneMethods = {
             const scopeLabel = this._ratingsScopeLabel();
             const workerCount = (report.workers || []).length;
             if (report && report.error && report.error.code === 'baselinesUnavailable') {
-                Logger.warn('search-output: ratings blocked — baselines unavailable');
+                Logger.warn('search-output-stats-pane: ratings blocked — baselines unavailable');
             } else {
-                Logger.log('search-output: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
+                Logger.log('search-output-stats-pane: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
                     + (committed.ratingsEveryone ? ' (@everyone)' : '')
                     + (this._state.ratingsFromResults && !committed.ratingsEveryone ? ' (from results)' : ''));
             }
@@ -5876,7 +5876,7 @@ const searchOutputStatsPaneMethods = {
 
         if (visibleWorkers.length === 0) {
             cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No ratings match the current filters.</p>';
-            Logger.log('search-output: ratings view — showing 0 of ' + allWorkers.length);
+            Logger.debug('search-output-stats-pane: ratings view — showing 0 of ' + allWorkers.length);
             return;
         }
 
@@ -5884,7 +5884,7 @@ const searchOutputStatsPaneMethods = {
         if (Context.ratingExplain && typeof Context.ratingExplain.remountOpen === 'function') {
             Context.ratingExplain.remountOpen(cardsEl);
         }
-        Logger.log('search-output: ratings view — showing ' + visibleWorkers.length + ' of ' + allWorkers.length);
+        Logger.debug('search-output-stats-pane: ratings view — showing ' + visibleWorkers.length + ' of ' + allWorkers.length);
     },
 
     _downloadTextFile(filename, content, mime) {
@@ -5975,12 +5975,12 @@ const searchOutputStatsPaneMethods = {
         const engine = Context.ratingEngine;
         const report = this._state.ratingsReport;
         if (!engine || !report || !report.workers) {
-            Logger.warn('search-output: rating export skipped — no report');
+            Logger.warn('search-output-stats-pane: rating export skipped — no report');
             return;
         }
         const worker = report.workers.find((w) => w.workerId === workerId);
         if (!worker) {
-            Logger.warn('search-output: rating export skipped — worker not found ' + workerId);
+            Logger.warn('search-output-stats-pane: rating export skipped — worker not found ' + workerId);
             return;
         }
         const exportedAt = new Date().toISOString();
@@ -6004,7 +6004,7 @@ const searchOutputStatsPaneMethods = {
 
         if (format === 'diagnostics') {
             if (typeof engine.buildDiagnosticsReport !== 'function') {
-                Logger.warn('search-output: diagnostics export skipped — engine method missing');
+                Logger.warn('search-output-stats-pane: diagnostics export skipped — engine method missing');
                 return;
             }
             const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
@@ -6018,17 +6018,17 @@ const searchOutputStatsPaneMethods = {
             const json = engine.serializeDiagnosticsJson(diagnostics);
             const filename = engine.buildDiagnosticsFilename(workerExport);
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-            Logger.log('search-output: rating diagnostics exported — ' + filename);
+            Logger.log('search-output-stats-pane: rating diagnostics exported — ' + filename);
             return;
         }
 
         if (format === 'llm') {
             if (!Context.isDevBranch) {
-                Logger.warn('search-output: LLM Data export skipped — not a dev branch');
+                Logger.warn('search-output-stats-pane: LLM Data export skipped — not a dev branch');
                 return;
             }
             if (typeof engine.buildLlmExplainData !== 'function') {
-                Logger.warn('search-output: LLM Data export skipped — engine method missing');
+                Logger.warn('search-output-stats-pane: LLM Data export skipped — engine method missing');
                 return;
             }
             const weighting = this._ratingWorkerWeighting(workerId);
@@ -6036,7 +6036,7 @@ const searchOutputStatsPaneMethods = {
             const json = JSON.stringify(llmPayload, null, 2);
             const filename = engine.buildExportFilename(workerExport, 'llm-data', 'json');
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-            Logger.log('search-output: rating LLM Data exported — ' + filename);
+            Logger.log('search-output-stats-pane: rating LLM Data exported — ' + filename);
             return;
         }
 
@@ -6044,13 +6044,13 @@ const searchOutputStatsPaneMethods = {
             const json = engine.serializeJson(workerExport);
             const filename = engine.buildExportFilename(worker, scoreType, 'json');
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-            Logger.log('search-output: rating JSON exported — ' + filename);
+            Logger.log('search-output-stats-pane: rating JSON exported — ' + filename);
             return;
         }
         const md = engine.serializeMarkdown(workerExport);
         const mdName = engine.buildExportFilename(worker, scoreType, 'md');
         this._downloadTextFile(mdName, md, 'text/markdown;charset=utf-8');
-        Logger.log('search-output: rating MD exported — ' + mdName);
+        Logger.log('search-output-stats-pane: rating MD exported — ' + mdName);
     },
 };
 
@@ -6058,7 +6058,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.15',
+    _version: '12.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

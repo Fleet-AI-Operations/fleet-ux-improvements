@@ -377,9 +377,9 @@ These are host-level objects available to plugins via `Context` or passed as par
 
 Shared logger accessible as the `Logger` parameter inside plugins.
 
-- **Levels**: `debug`, `log`, `info`, `warn`, `error` — follow rules in `plugin-development.mdc`.
-- **Module logger**: Use `Logger.createModuleLogger(pluginId)` to get a logger that only emits when submodule logging is enabled for that plugin. Passed automatically to archetype plugins; core and dev plugins receive the global `Logger`.
-- **Remote flags**: `archetypes.json` `logs` object (`debug`, `verbose`, `submodule`) can override local GM storage defaults. Setting `log: true` on an individual plugin entry enables its module logger when `submodule` is also on.
+- **Levels**: `debug`, `log`, `info`, `warn`, `error` — follow rules in `plugin-development.mdc`. Default-visible heartbeat is `log`/`info`/`warn`/`error`; `debug` is gated.
+- **Module logger**: Every plugin (core, libs, archetypes, ops-dashboard loads, and dev) is loaded with `Logger.createModuleLogger(pluginId)`. `log`/`info`/`warn`/`error` always emit with a `[pluginId]` prefix; only `debug` requires Submodule Logging + that plugin’s Module Logging switch. Host code in `fleet.user.js` uses the global `Logger` (its `debug` is gated by Enable Debug Logging).
+- **Remote flags**: `archetypes.json` `logs` object (`debug`, `verbose`, `submodule`) can override local GM storage defaults (`debug` and `verbose` both map to the unified host debug gate). Setting `log: true` on an individual plugin entry enables its module `debug` when `submodule` is also on.
 
 ### NetworkObserver
 

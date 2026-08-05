@@ -283,7 +283,7 @@ function takeVerifierAttachmentForTurn(modal, state) {
     if (modal) modal._wfVerifierChatPending = null;
 
     if (verifierChatHasAttachedId(state, ctx.verifierId)) {
-        Logger.log('verifier-fetcher: skip verifier attach — already in chat · '
+        Logger.debug('verifier-fetcher: skip verifier attach — already in chat · '
             + ctx.verifierId);
         return null;
     }
@@ -412,7 +412,7 @@ async function decodeVerifierOutput(modal) {
     parts.push('## Verifier Output\n\n```\n' + outputText + '\n```');
     const userPayload = parts.join('\n\n');
 
-    Logger.log('verifier-fetcher: Diagnose Issues started'
+    Logger.debug('verifier-fetcher: Diagnose Issues started'
         + (attachment ? ' · with verifier attach' : ' · without new verifier attach'));
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
@@ -984,7 +984,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.4',
+    _version: '7.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -41,7 +41,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'Env Helper',
     description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.5',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -151,7 +151,7 @@ const EnvHelperApi = {
         CleanupRegistry.registerObserver(observer);
         state.waitObserver = observer;
         if (!state.panelStarted) {
-            Logger.log('envHelper: watching for non-VNC page (no #noVNC_clipboard_text)');
+            Logger.debug('envHelper: watching for non-VNC page (no #noVNC_clipboard_text)');
         }
     },
 
@@ -159,7 +159,7 @@ const EnvHelperApi = {
         try {
             const context = Storage.get(PROMPT_CONTEXT_STORAGE_KEY, '');
             if (context !== 'qa') {
-                Logger.log(
+                Logger.debug(
                     `envHelper: skipping cached prompt (context=${context || 'unset'}; last page was not QA)`
                 );
                 return '';
@@ -167,17 +167,17 @@ const EnvHelperApi = {
             const text = Storage.get(PROMPT_STORAGE_KEY, '');
             const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
             if (!text || !tsRaw) {
-                Logger.log('envHelper: no cached prompt in storage');
+                Logger.debug('envHelper: no cached prompt in storage');
                 return '';
             }
             const ts = parseInt(tsRaw, 10);
             if (Number.isNaN(ts) || Date.now() - ts > PROMPT_TTL_MS) {
                 Storage.delete(PROMPT_STORAGE_KEY);
                 Storage.delete(PROMPT_TS_STORAGE_KEY);
-                Logger.log('envHelper: cached prompt expired, cleared');
+                Logger.debug('envHelper: cached prompt expired, cleared');
                 return '';
             }
-            Logger.log(`envHelper: loaded cached prompt (${text.length} chars)`);
+            Logger.debug(`envHelper: loaded cached prompt (${text.length} chars)`);
             return text;
         } catch (e) {
             Logger.warn('envHelper: failed to read cached prompt', e);
@@ -298,7 +298,7 @@ const EnvHelperApi = {
         state.waitObserverAttached = true;
 
         state.panelStarted = true;
-        Logger.log('envHelper: non-VNC env page detected, initialising Env Helper');
+        Logger.debug('envHelper: non-VNC env page detected, initialising Env Helper');
 
         const oldRoot = document.getElementById(ROOT_ID);
         const oldTab = document.getElementById(TAB_ID);
@@ -518,7 +518,7 @@ const EnvHelperApi = {
                 if (root) {
                     this.saveLayout(root);
                     const rect = root.getBoundingClientRect();
-                    Logger.log(`envHelper: modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
+                    Logger.debug(`envHelper: modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
                 }
             };
             onResizeUp = () => {
@@ -532,7 +532,7 @@ const EnvHelperApi = {
                 if (root) {
                     this.saveLayout(root);
                     const rect = root.getBoundingClientRect();
-                    Logger.log(`envHelper: modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
+                    Logger.debug(`envHelper: modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
                 }
             };
             headerTitle.addEventListener('mousedown', (ev) => {
@@ -587,7 +587,7 @@ const EnvHelperApi = {
             Logger.log('envHelper: modal active (starts minimized)');
             toast('Env Helper ready — open from the tab.');
         } else {
-            Logger.log('envHelper: panel hidden via settings');
+            Logger.debug('envHelper: panel hidden via settings');
         }
     },
 
@@ -626,7 +626,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'Env Helper (library)',
     description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '1.5',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

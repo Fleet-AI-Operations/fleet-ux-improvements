@@ -13,7 +13,7 @@ const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
     description: 'Filter visible disputes by environment (empty selection = all); toggle sort by submitted date',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -244,7 +244,7 @@ const plugin = {
         state.fallbackAttempts += 1;
         const attempt = state.fallbackAttempts;
         const url = this.getFallbackDisputesUrl();
-        Logger.log(`${this.id}: fallback disputes fetch attempt ${attempt}/2`);
+        Logger.debug(`${this.id}: fallback disputes fetch attempt ${attempt}/2`);
 
         const self = this;
         fetch(url, { method: 'GET', credentials: 'same-origin' })

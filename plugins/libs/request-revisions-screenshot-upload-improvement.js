@@ -216,7 +216,7 @@ const RequestRevisionsScreenshotUploadApi = {
                 }
             }
             if (!files.length) {
-                Logger.info('Request Revisions screenshot upload improvement: clipboard had no image');
+                Logger.debug('Request Revisions screenshot upload improvement: clipboard had no image');
                 return;
             }
             this.mergeIntoFileInput(input, files);
@@ -316,8 +316,8 @@ label[${NATIVE_LABEL_ATTR}] {
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        Logger.debug(
-            `Request Revisions screenshot upload improvement: ${input.files.length} file(s) on native input`
+        Logger.log(
+            `Request Revisions screenshot upload improvement: merged paste/upload — ${input.files.length} file(s) on native input`
         );
     }
 };
@@ -327,7 +327,7 @@ const plugin = {
     name: 'Request Revisions Screenshot Upload Improvement (library)',
     description:
         'Shared API for Request Revisions screenshot drag-drop/upload and paste-image controls',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

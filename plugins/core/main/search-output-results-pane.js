@@ -5598,7 +5598,7 @@ const searchOutputResultsPaneMethods = {
             seeded += 1;
         }
         if (seeded > 0) {
-            Logger.log('dashboard: session QA pre-seeded for ' + seeded + ' card(s)');
+            Logger.debug('dashboard: session QA pre-seeded for ' + seeded + ' card(s)');
         }
     },
 
@@ -6739,7 +6739,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.1',
+    _version: '6.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

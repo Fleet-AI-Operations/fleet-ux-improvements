@@ -194,7 +194,7 @@ function chatsRecordTurn(opts) {
             generationIds: [],
         };
         index.conversations.push(conv);
-        Logger.log(PLUGIN_ID + ': created conversation — ' + source + ' · ' + conv.id);
+        Logger.debug(PLUGIN_ID + ': created conversation — ' + source + ' · ' + conv.id);
     }
     if (generationId) {
         const last = conv.generationIds[conv.generationIds.length - 1];
@@ -1021,7 +1021,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '4.0',
+    _version: '4.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

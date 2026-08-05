@@ -844,14 +844,14 @@ async function runOpenRouterTest(modal) {
             setTestResult(modal, { error: 'Key rejected by OpenRouter (HTTP ' + response.status + ').' });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.log(PLUGIN_ID + ': OpenRouter test failed — key rejected (' + response.status + ')');
+            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — key rejected (' + response.status + ')');
             return;
         }
         if (response.status < 200 || response.status >= 300) {
             setTestResult(modal, { error: 'OpenRouter error (HTTP ' + response.status + ').' });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.log(PLUGIN_ID + ': OpenRouter test failed — HTTP ' + response.status);
+            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — HTTP ' + response.status);
             return;
         }
         let parsed;
@@ -861,7 +861,7 @@ async function runOpenRouterTest(modal) {
             setTestResult(modal, { error: 'OpenRouter returned non-JSON response.' });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.log(PLUGIN_ID + ': OpenRouter test failed — non-JSON response');
+            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — non-JSON response');
             return;
         }
         const reply = parsed
@@ -876,7 +876,7 @@ async function runOpenRouterTest(modal) {
             setTestResult(modal, { error: 'OpenRouter response had no assistant content.', model });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.log(PLUGIN_ID + ': OpenRouter test failed — empty assistant content');
+            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — empty assistant content');
             return;
         }
         setTestResult(modal, { reply, model });
@@ -1176,7 +1176,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.18',
+    _version: '1.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

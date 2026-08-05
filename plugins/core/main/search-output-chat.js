@@ -3465,6 +3465,7 @@ function searchChatCreateExecutor(dash) {
     return function executeTool(name, args) {
         const settings = searchChatGetSettings();
         const toolName = String(name || '').trim();
+        Logger.debug(PLUGIN_ID + ': tool invoke — ' + toolName);
         const limitDefault = (fallback) => searchChatClampInt(
             args && args.limit,
             1,
@@ -3625,11 +3626,14 @@ function searchChatCreateExecutor(dash) {
                 payload = { ok: true };
                 break;
             default:
+                Logger.debug(PLUGIN_ID + ': unknown tool — ' + toolName);
                 payload = { error: 'Unknown tool: ' + toolName };
         }
         let str = typeof payload === 'string' ? payload : JSON.stringify(payload);
         usedBytes += str.length;
         if (usedBytes > settings.maxToolResultBytes) {
+            Logger.debug(PLUGIN_ID + ': tool result budget exceeded — used=' + usedBytes
+                + ' max=' + settings.maxToolResultBytes);
             payload = {
                 error: 'Tool result budget exceeded for this turn',
                 usedBytes,
@@ -4175,7 +4179,7 @@ async function searchChatSend(panel, dash, userText) {
             'Results changed; start a new chat to use the updated set.',
             false
         );
-        Logger.warn(PLUGIN_ID + ': results fingerprint changed — keeping conversation; tools use current scope');
+        Logger.debug(PLUGIN_ID + ': results fingerprint changed — keeping conversation; tools use current scope');
     }
     searchChatUi.resultsFingerprint = fp;
 
@@ -4191,6 +4195,8 @@ async function searchChatSend(panel, dash, userText) {
     searchChatUi.sendInFlight = true;
     searchChatSetStopVisible(panel, true);
     searchChatSetStatus(panel, 'Working…', false);
+    Logger.debug(PLUGIN_ID + ': tool turn started — rounds=' + settings.maxToolRounds
+        + ' · scope=' + items.length + ' result(s)');
 
     try {
         await chat.sendToolTurn(panel, state, Object.assign({}, searchChatChatOpts(), {
@@ -4454,7 +4460,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '7.0',
+    _version: '7.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

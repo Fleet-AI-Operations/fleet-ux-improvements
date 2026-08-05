@@ -18,7 +18,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with markdown rendering, copy and vertical resize',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -414,7 +414,7 @@ const plugin = {
             return;
         }
 
-        Logger.log(PLUGIN_ID + ': fetching user story for ' + taskKey);
+        Logger.debug(PLUGIN_ID + ': fetching user story for ' + taskKey);
         try {
             if (typeof opsTab.whenOpsBundleReady === 'function') {
                 await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
@@ -436,16 +436,17 @@ const plugin = {
 
             this._renderScenarioContent(shell, fields);
             state.fetchDone = true;
-            if (!state.activationLogged) {
-                Logger.log(PLUGIN_ID + ': user story section active for ' + taskKey);
-                state.activationLogged = true;
-            }
             const summary = [
                 fields.scenarioTitle ? 'title ' + fields.scenarioTitle.length + ' chars' : null,
                 fields.humanAnnotatorInstructions ? 'instructions ' + fields.humanAnnotatorInstructions.length + ' chars' : null,
                 fields.userStory ? 'story ' + fields.userStory.length + ' chars' : null
             ].filter(Boolean).join(', ');
-            Logger.log(PLUGIN_ID + ': rendered scenario content for ' + taskKey + ' (' + summary + ')');
+            if (!state.activationLogged) {
+                Logger.log(PLUGIN_ID + ': user story section active for ' + taskKey + ' (' + summary + ')');
+                state.activationLogged = true;
+            } else {
+                Logger.debug(PLUGIN_ID + ': rendered scenario content for ' + taskKey + ' (' + summary + ')');
+            }
         } catch (err) {
             if (this._isTransientBundleError(err)) {
                 state.fetchStarted = false;

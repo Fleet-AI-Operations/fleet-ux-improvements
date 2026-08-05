@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      12.4.18
+// @version      13.0
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '12.4.18';
+    const VERSION = '13.0';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1120,7 +1120,7 @@
                 clearedCount += legacyPurged;
             }
 
-            Logger.log(`✓ Cleared ${clearedCount} storage keys`);
+            Logger.log(`Cleared ${clearedCount} storage keys`);
             return clearedCount;
         },
         // Cache registry tracking methods
@@ -1170,31 +1170,29 @@
     Context.storage = Storage;
 
     // ============= LOGGING =============
+    // Host Logger: log/info/warn/error always visible; debug gated by Enable Debug Logging.
+    // Module loggers (all plugins): log/info/warn/error always visible with [id] prefix;
+    // only debug is gated by Submodule Logging + per-module toggle.
     const Logger = {
         _debugEnabled: null,
-        _verboseEnabled: null,
         _submoduleEnabled: null,
         _moduleLogEnabled: {},
         _listeners: new Set(),
         
         isDebugEnabled() {
             if (this._debugEnabled === null) {
-                const storageOn = Storage.get('debug', false);
+                const storageDebug = Storage.get('debug', false);
+                const storageVerbose = Storage.get('verbose', DEFAULT_STORAGE_LOG_VERBOSE);
                 const rl = Context.remoteLogging;
-                const remoteOn = rl && rl.debug && rl.submodule;
-                this._debugEnabled = storageOn || !!remoteOn;
+                const remoteOn = rl && rl.submodule && (rl.debug || rl.verbose);
+                this._debugEnabled = storageDebug || storageVerbose || !!remoteOn;
             }
             return this._debugEnabled;
         },
-        
+
+        /** Alias of isDebugEnabled — verbose toggle collapsed into unified debug. */
         isVerboseEnabled() {
-            if (this._verboseEnabled === null) {
-                const storageOn = Storage.get('verbose', DEFAULT_STORAGE_LOG_VERBOSE);
-                const rl = Context.remoteLogging;
-                const remoteOn = rl && rl.verbose && rl.submodule;
-                this._verboseEnabled = storageOn || !!remoteOn;
-            }
-            return this._verboseEnabled;
+            return this.isDebugEnabled();
         },
 
         isSubmoduleLoggingEnabled() {
@@ -1224,11 +1222,12 @@
         setDebugEnabled(enabled) {
             this._debugEnabled = enabled;
             Storage.set('debug', enabled);
+            // Keep legacy verbose key in sync so older storage / remote configs stay coherent.
+            Storage.set('verbose', enabled);
         },
         
         setVerboseEnabled(enabled) {
-            this._verboseEnabled = enabled;
-            Storage.set('verbose', enabled);
+            this.setDebugEnabled(enabled);
         },
 
         setSubmoduleLoggingEnabled(enabled) {
@@ -1268,7 +1267,8 @@
         },
 
         _logModule(level, msg, moduleId, ...args) {
-            if (!this._shouldLogModule(moduleId)) return;
+            // Only debug is gated; heartbeat levels always emit with the module prefix.
+            if (level === 'debug' && !this._shouldLogModule(moduleId)) return;
             const prefix = this._getModulePrefix(moduleId);
             let payload;
             if (level === 'debug') {
@@ -1302,15 +1302,13 @@
         },
         
         log(msg, ...args) {
-            if (this.isDebugEnabled()) {
-                const payload = [`${LOG_PREFIX} ${msg}`, ...args];
-                console.log(...payload);
-                this._emit('log', payload);
-            }
+            const payload = [`${LOG_PREFIX} ${msg}`, ...args];
+            console.log(...payload);
+            this._emit('log', payload);
         },
         
         debug(msg, ...args) {
-            if (this.isVerboseEnabled()) {
+            if (this.isDebugEnabled()) {
                 const payload = [`${LOG_PREFIX} 🔍 ${msg}`, ...args];
                 console.debug(...payload);
                 this._emit('debug', payload);
@@ -1604,7 +1602,7 @@
             this._subscribeAuthTokenCapture();
             this._installFetchHook(pageWindow);
             this._installed = true;
-            Logger.log('✓ NetworkObserver installed');
+            Logger.log('NetworkObserver installed');
         },
 
         _subscribeAuthTokenCapture() {
@@ -2102,7 +2100,7 @@
                 this._handleNavigation('popstate');
             });
             
-            Logger.log('✓ Navigation monitoring initialized');
+            Logger.debug('Navigation monitoring initialized');
         },
         
         _handleNavigation(method, url) {
@@ -2176,7 +2174,6 @@
         (config.devArchetypes || []).forEach((a) => ingestPluginList(a.plugins));
         Context.remoteModuleLogByFile = byFile;
         Logger._debugEnabled = null;
-        Logger._verboseEnabled = null;
         Logger._submoduleEnabled = null;
         Logger._moduleLogEnabled = {};
     }
@@ -2331,7 +2328,7 @@
                                     Logger.log('coreOnlyMode is enabled: archetype UX plugins and SPA auto-reload are off; core plugins remain active.');
                                 }
                                 
-                                Logger.log(`✓ Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
+                                Logger.log(`Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
                                 if (DEV_SCRIPTS_ENABLED) {
                                     clearOrphanMarkerForCurrentBranch();
                                 }
@@ -2433,7 +2430,7 @@
                 const currentPath = UrlMatcher.getPathFromUrl(currentUrl);
                 Context.currentPath = currentPath;
                 
-                Logger.log(`Detecting archetype for path: "${currentPath}"`);
+                Logger.debug(`Detecting archetype for path: "${currentPath}"`);
                 
                 // Step 1: Find all archetypes whose URL pattern matches
                 const urlMatches = this.archetypes.filter(archetype => {
@@ -2457,7 +2454,7 @@
                 // Step 2: If only one match, use it (no disambiguation needed)
                 if (urlMatches.length === 1) {
                     const archetype = urlMatches[0];
-                    Logger.log(`✓ Single URL match: ${archetype.id} - ${archetype.name}`);
+                    Logger.debug(`Single URL match: ${archetype.id} - ${archetype.name}`);
                     this.currentArchetype = archetype;
                     Context.currentArchetype = archetype;
                     resolve(archetype);
@@ -2483,7 +2480,7 @@
                 if (!needsDisambiguation) {
                     // Use the most specific URL match
                     const archetype = urlMatches[0];
-                    Logger.log(`✓ Most specific URL match: ${archetype.id} - ${archetype.name}`);
+                    Logger.debug(`Most specific URL match: ${archetype.id} - ${archetype.name}`);
                     this.currentArchetype = archetype;
                     Context.currentArchetype = archetype;
                     resolve(archetype);
@@ -2538,7 +2535,7 @@
                     });
                     
                     if (allPresent) {
-                        Logger.log(`✓ Disambiguated to: ${archetype.id} - ${archetype.name}`);
+                        Logger.debug(`Disambiguated to: ${archetype.id} - ${archetype.name}`);
                         this.currentArchetype = archetype;
                         Context.currentArchetype = archetype;
                         observer && observer.disconnect();
@@ -2590,7 +2587,7 @@
                 const currentUrl = window.location.href;
                 const currentPath = UrlMatcher.getPathFromUrl(currentUrl);
                 
-                Logger.log(`Detecting dev archetype for path: "${currentPath}"`);
+                Logger.debug(`Detecting dev archetype for path: "${currentPath}"`);
                 
                 // Step 1: Find all dev archetypes whose URL pattern matches
                 const urlMatches = this.devArchetypes.filter(archetype => {
@@ -2613,7 +2610,7 @@
                 // Step 2: If only one match, use it (no disambiguation needed)
                 if (urlMatches.length === 1) {
                     const archetype = urlMatches[0];
-                    Logger.log(`✓ Single dev archetype URL match: ${archetype.id} - ${archetype.name}`);
+                    Logger.debug(`Single dev archetype URL match: ${archetype.id} - ${archetype.name}`);
                     this.currentDevArchetype = archetype;
                     resolve(archetype);
                     return;
@@ -2636,7 +2633,7 @@
                 if (!needsDisambiguation) {
                     // Use the most specific URL match
                     const archetype = urlMatches[0];
-                    Logger.log(`✓ Most specific dev archetype URL match: ${archetype.id} - ${archetype.name}`);
+                    Logger.debug(`Most specific dev archetype URL match: ${archetype.id} - ${archetype.name}`);
                     this.currentDevArchetype = archetype;
                     resolve(archetype);
                     return;
@@ -2691,7 +2688,7 @@
                     });
                     
                     if (allPresent) {
-                        Logger.log(`✓ Disambiguated to dev archetype: ${archetype.id} - ${archetype.name}`);
+                        Logger.debug(`Disambiguated to dev archetype: ${archetype.id} - ${archetype.name}`);
                         this.currentDevArchetype = archetype;
                         resolve(archetype);
                         return;
@@ -2876,7 +2873,7 @@
             }
 
             // --- FETCH PATH ---
-            Logger.log(`Fetching plugin ${filename} v${version}${cached ? ` (cached: v${cached.version})` : ''}`);
+            Logger.debug(`Fetching plugin ${filename} v${version}${cached ? ` (cached: v${cached.version})` : ''}`);
 
             try {
                 const result = await this.loadPluginFromUrl(url, filename, sourcePath, version);
@@ -2921,7 +2918,7 @@
                         const versionComparison = this._compareVersions(fetchedVersion, version);
 
                         if (versionComparison > 0) {
-                            Logger.log(`✓ Fetched ${filename} has newer version v${fetchedVersion} (required v${version}). Using newer version.`);
+                            Logger.debug(`Fetched ${filename} has newer version v${fetchedVersion} (required v${version}). Using newer version.`);
                             this.cachePluginCode(filename, sourcePath, fetchedCode, fetchedVersion);
                             return fetchedCode;
                         } else {
@@ -3025,7 +3022,7 @@
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
             
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
-            const plugin = this.parsePluginCode(code, filename, { useModuleLogger: false });
+            const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded core plugin ${filename} v${version}`);
             return plugin;
@@ -3050,7 +3047,7 @@
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
-            const plugin = this.parsePluginCode(code, filename, { useModuleLogger: false });
+            const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded library ${filename} v${version}`);
             return plugin;
@@ -3068,7 +3065,7 @@
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
-            const plugin = this.parsePluginCode(code, filename, { useModuleLogger: false });
+            const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded dev plugin ${filename} v${version}`);
             return plugin;
@@ -3140,7 +3137,7 @@
                 return;
             }
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/docs/settings-modal/${filename}`;
-            Logger.log(`Fetching settings doc ${filename} v${version}${cached ? ` (cached: v${cached.version})` : ''}`);
+            Logger.debug(`Fetching settings doc ${filename} v${version}${cached ? ` (cached: v${cached.version})` : ''}`);
             return new Promise((resolve) => {
                 GM_xmlhttpRequest({
                     method: 'GET',
@@ -3186,7 +3183,8 @@
             }
 
             const normalizedType = type === 'dev' ? 'dev' : 'core';
-            Logger.log(`Loading ${pluginList.length} ${normalizedType} plugin(s)...`);
+            Logger.debug(`Loading ${pluginList.length} ${normalizedType} plugin(s)...`);
+            let loadedCount = 0;
 
             const loader = normalizedType === 'dev'
                 ? this.loadDevPlugin.bind(this)
@@ -3219,16 +3217,20 @@
                         plugin._isDev = true;
                     }
                     PluginManager.register(plugin);
-                    Logger.log(`✓ Loaded ${normalizedType} plugin: ${filename} v${loadedVersion}`);
+                    loadedCount++;
+                    Logger.debug(`Loaded ${normalizedType} plugin: ${filename} v${loadedVersion}`);
                 } catch (err) {
                     Logger.error(`✗ Failed to load ${normalizedType} plugin: ${filename} v${version}`, err);
                 }
+            }
+            if (loadedCount > 0) {
+                Logger.log(`Loaded ${loadedCount} ${normalizedType} plugin(s)`);
             }
         },
         
         async loadPluginsForArchetype(pluginList, archetypeId) {
             if (!pluginList || pluginList.length === 0) {
-                Logger.log('No plugins to load for this archetype');
+                Logger.debug('No plugins to load for this archetype');
                 return;
             }
             
@@ -3237,8 +3239,9 @@
                 return;
             }
             
-            Logger.log(`Loading ${pluginList.length} archetype plugin(s) for ${archetypeId}...`);
+            Logger.debug(`Loading ${pluginList.length} archetype plugin(s) for ${archetypeId}...`);
             const loadPromises = [];
+            let loadedCount = 0;
             
             for (const pluginDef of pluginList) {
                 let filename, version, hash;
@@ -3286,7 +3289,8 @@
                             plugin._version = loadedVersion;
                             plugin._isCore = false;
                             PluginManager.register(plugin);
-                            Logger.log(`✓ Loaded plugin: ${filename} v${loadedVersion}`);
+                            loadedCount++;
+                            Logger.debug(`Loaded plugin: ${filename} v${loadedVersion}`);
                         })
                         .catch(err => {
                             Logger.error(`✗ Failed to load plugin: ${filename} v${version}`, err);
@@ -3307,7 +3311,11 @@
             // Clean up deprecated cached plugins for this archetype
             this.cleanupDeprecatedCache(pluginList, archetypeId, 'main');
             
-            Logger.log('Archetype plugin loading complete');
+            if (loadedCount > 0) {
+                Logger.log(`Loaded ${loadedCount} archetype plugin(s) for ${archetypeId}`);
+            } else {
+                Logger.debug('Archetype plugin loading complete (none newly loaded)');
+            }
         },
         
         /**
@@ -3317,7 +3325,7 @@
          */
         async loadPluginsForDevArchetype(pluginList, archetypeId) {
             if (!pluginList || pluginList.length === 0) {
-                Logger.log('No dev archetype plugins to load');
+                Logger.debug('No dev archetype plugins to load');
                 return;
             }
             
@@ -3326,8 +3334,9 @@
                 return;
             }
             
-            Logger.log(`Loading ${pluginList.length} dev archetype plugin(s) for ${archetypeId}...`);
+            Logger.debug(`Loading ${pluginList.length} dev archetype plugin(s) for ${archetypeId}...`);
             const loadPromises = [];
+            let loadedCount = 0;
             
             for (const pluginDef of pluginList) {
                 let filename, version, hash;
@@ -3373,7 +3382,8 @@
                             plugin._isCore = false;
                             plugin._isDev = true;
                             PluginManager.register(plugin);
-                            Logger.log(`✓ Loaded dev archetype plugin: ${filename} v${loadedVersion}`);
+                            loadedCount++;
+                            Logger.debug(`Loaded dev archetype plugin: ${filename} v${loadedVersion}`);
                         })
                         .catch(err => {
                             Logger.error(`✗ Failed to load dev archetype plugin: ${filename} v${version}`, err);
@@ -3394,7 +3404,11 @@
             // Clean up deprecated cached plugins for this dev archetype
             this.cleanupDeprecatedCache(pluginList, archetypeId, 'dev');
             
-            Logger.log('Dev archetype plugin loading complete');
+            if (loadedCount > 0) {
+                Logger.log(`Loaded ${loadedCount} dev archetype plugin(s) for ${archetypeId}`);
+            } else {
+                Logger.debug('Dev archetype plugin loading complete (none newly loaded)');
+            }
             // Dev archetype plugins: when dev-global is off, disable all; on dev builds default is on (see Storage.get default).
             if (!Storage.get('dev-global-plugins-enabled', DEV_SCRIPTS_ENABLED)) {
                 PluginManager.getDevPlugins().forEach(p => PluginManager.setEnabled(p.id, false));
@@ -3475,7 +3489,7 @@
                         try {
                             Storage.delete(key);
                             deleted = true;
-                            Logger.log(`Deleted deprecated cached plugin: ${filename} (archetype: ${archetypeId}, format: ${keyFormat})`);
+                            Logger.debug(`Deleted deprecated cached plugin: ${filename} (archetype: ${archetypeId}, format: ${keyFormat})`);
                             break; // Only delete once per plugin
                         } catch (e) {
                             Logger.error(`Failed to delete deprecated cache entry for ${filename} (archetype: ${archetypeId}, format: ${keyFormat}):`, e);
@@ -3494,7 +3508,7 @@
             });
             
             if (deletedCount > 0) {
-                Logger.log(`✓ Cleaned up ${deletedCount} deprecated cached plugin(s) for archetype: ${archetypeId}`);
+                Logger.log(`Cleaned up ${deletedCount} deprecated cached plugin(s) for archetype: ${archetypeId}`);
             }
         }
     };
@@ -3611,7 +3625,7 @@
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
-                        Logger.log(`✓ Core plugin initialized: ${plugin.id}`);
+                        Logger.debug(`Core plugin initialized: ${plugin.id}`);
                     } catch (e) {
                         Logger.error(`Error in core plugin ${plugin.id}:`, e);
                     }
@@ -3632,7 +3646,7 @@
                 return;
             }
             if (registered.state) registered.state.libInitialized = true;
-            Logger.log(`✓ Library plugin initialized: ${registered.id}`);
+            Logger.debug(`Library plugin initialized: ${registered.id}`);
         },
 
         runOpsDashboardPluginInit(plugin) {
@@ -3646,7 +3660,7 @@
                 return;
             }
             if (plugin.state) plugin.state.opsInitialized = true;
-            Logger.log(`✓ Ops dashboard plugin initialized: ${plugin.id}`);
+            Logger.debug(`Ops dashboard plugin initialized: ${plugin.id}`);
         },
 
         runOpsDashboardPlugins() {
@@ -3661,7 +3675,7 @@
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
-                        Logger.log(`✓ Early plugin initialized: ${plugin.id}`);
+                        Logger.debug(`Early plugin initialized: ${plugin.id}`);
                     } catch (e) {
                         Logger.error(`Error in early plugin ${plugin.id}:`, e);
                     }
@@ -3674,7 +3688,7 @@
                 .forEach(plugin => {
                     try {
                         if (plugin.init) plugin.init(plugin.state, Context);
-                        Logger.log(`✓ Init plugin initialized: ${plugin.id}`);
+                        Logger.debug(`Init plugin initialized: ${plugin.id}`);
                     } catch (e) {
                         Logger.error(`Error in init plugin ${plugin.id}:`, e);
                     }
@@ -3746,7 +3760,8 @@
             if (entries.length === 0) {
                 return true;
             }
-            Logger.log(`Loading ${entries.length} library module(s)...`);
+            Logger.debug(`Loading ${entries.length} library module(s)...`);
+            let loadedCount = 0;
             for (const pluginDef of entries) {
                 const filename = pluginDef.name;
                 const version = pluginDef.version;
@@ -3768,10 +3783,14 @@
                     // register() stores a copy with initialized state; init must use that entry
                     PluginManager.runLibraryPluginInit(PluginManager.get(plugin.id));
                     loadedLibraryNames.add(filename);
-                    Logger.log(`✓ Loaded library: ${filename} v${loadedVersion}`);
+                    loadedCount++;
+                    Logger.debug(`Loaded library: ${filename} v${loadedVersion}`);
                 } catch (err) {
-                    Logger.error(`✗ Failed to load library: ${filename} v${version}`, err);
+                    Logger.error(`Failed to load library: ${filename} v${version}`, err);
                 }
+            }
+            if (loadedCount > 0) {
+                Logger.log(`Loaded ${loadedCount} library module(s)`);
             }
             return true;
         };
@@ -3903,7 +3922,7 @@
     }
 
     async function initializeForPage() {
-        Logger.log('Initializing for current page...');
+        Logger.debug('Initializing for current page...');
 
         try {
             Context.networkObserver.refreshFromPage(Context.getPageWindow());
@@ -3957,7 +3976,7 @@
                 if (devById && devById.urlPattern && UrlMatcher.matches(Context.currentPath, devById.urlPattern)) {
                     devArchetype = devById;
                     ArchetypeManager.currentDevArchetype = devById;
-                    Logger.log(`✓ Dev archetype aligned with main archetype id: ${devArchetype.id}`);
+                    Logger.debug(`Dev archetype aligned with main archetype id: ${devArchetype.id}`);
                 }
                 if (!devArchetype) {
                     devArchetype = await ArchetypeManager.detectDevArchetype();
@@ -4001,7 +4020,7 @@
             // Run mutation plugins once for initial state
             PluginManager.runMutationPlugins();
             
-            Logger.log(`✓ Initialized for archetype: ${archetype.name} (path: "${Context.currentPath}")`);
+            Logger.log(`Initialized for archetype: ${archetype.name} (path: "${Context.currentPath}")`);
         } catch (error) {
             Logger.error('Failed to initialize:', error);
         }
@@ -4039,10 +4058,10 @@
     }
     
     async function handleNavigation(newUrl, previousUrl) {
-        Logger.log('Handling navigation, checking URL diff...');
+        Logger.debug('Handling navigation, checking URL diff...');
 
         if (newUrl === previousUrl) {
-            Logger.log('URL is the same, skipping...');
+            Logger.debug('URL is the same, skipping...');
             return;
         }
 
@@ -4056,7 +4075,7 @@
         }
         navigationHandlerActive = true;
 
-        Logger.log('Handling navigation, checking archetype match...');
+        Logger.debug('Handling navigation, checking archetype match...');
 
         try {
             ArchetypeManager._fetchedAt = 0; // Invalidate cache so we get fresh config for this navigation
@@ -4065,7 +4084,7 @@
             // If further navigation occurred while we were fetching, the URL we were
             // called with is now stale. Reloading here would fire on the wrong page.
             if (window.location.href !== newUrl) {
-                Logger.log('URL changed during archetype fetch, skipping reload...');
+                Logger.debug('URL changed during archetype fetch, skipping reload...');
                 return;
             }
 
@@ -4079,7 +4098,7 @@
             const warrantsFullReload = navigationTargetHasConfiguredPlugins(newPath);
 
             if (matchesMainArchetypePath && !warrantsFullReload) {
-                Logger.log(
+                Logger.debug(
                     'Navigation matches an archetype URL pattern but no configured main/dev plugins warrant a full reload; skipping reload...'
                 );
             }
@@ -4106,7 +4125,7 @@
             navigationPendingUrl = null;
         }
         
-        Logger.log('Handling navigation, reinitializing...');
+        Logger.debug('Handling navigation, reinitializing...');
         
         // Clean up archetype plugins and resources
         Context.initialized = false;

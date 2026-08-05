@@ -21,7 +21,7 @@ const plugin = {
     name: 'Verifier Code Block',
     description:
         'Fetches and displays verifier Python code on dashboard task pages (No verifier or Verifier sanity checks)',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -558,7 +558,7 @@ const plugin = {
             return;
         }
 
-        Logger.log(PLUGIN_ID + ': fetching verifier for ' + taskKey);
+        Logger.debug(PLUGIN_ID + ': fetching verifier for ' + taskKey);
         try {
             if (typeof opsTab.whenOpsBundleReady === 'function') {
                 await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });

@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.11',
+    _version: '9.13',
     phase: 'core',
     enabledByDefault: true,
 
@@ -919,7 +919,7 @@ const plugin = {
         const taskRef = taskId
             ? (taskId.length > 12 ? taskId.slice(0, 8) + '…' : taskId)
             : '(none)';
-        Logger.log(
+        Logger.debug(
             'ops-tab: task link target resolved — task=' + taskRef +
             ' team=' + this._opsTeamRef(teamId) +
             ' source=' + teamSource +
@@ -949,7 +949,7 @@ const plugin = {
         let teamSwitch = 'none';
         if (!teamId) {
             teamSwitch = 'skipped-no-team';
-            Logger.log('ops-tab: task link — no team_id; opening without team switch');
+            Logger.debug('ops-tab: task link — no team_id; opening without team switch');
         } else if (!Context.dashboard || typeof Context.dashboard.switchFleetTeam !== 'function') {
             teamSwitch = 'skipped-no-dashboard';
             Logger.warn('ops-tab: task link — dashboard.switchFleetTeam unavailable; opening without team switch');
@@ -957,7 +957,7 @@ const plugin = {
             try {
                 await Context.dashboard.switchFleetTeam(teamId);
                 teamSwitch = 'switched';
-                Logger.log('ops-tab: task link — team switch completed (' + this._opsTeamRef(teamId) + ')');
+                Logger.debug('ops-tab: task link — team switch completed (' + this._opsTeamRef(teamId) + ')');
             } catch (e) {
                 teamSwitch = 'failed';
                 Logger.warn('ops-tab: team switch before task link failed', e);
@@ -1403,7 +1403,7 @@ const plugin = {
             fetchedAt: new Date().toISOString(),
             teams
         };
-        Logger.info('ops-tab: user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
+        Logger.log('ops-tab: user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
         return teams;
     },
 
@@ -1770,7 +1770,7 @@ const plugin = {
         } catch (e) {
             Logger.debug('ops-tab: expert stats action cache clear failed', e);
         }
-        Logger.info('ops-tab: expert stats action cache cleared (will re-discover on expert profile visit)');
+        Logger.log('ops-tab: expert stats action cache cleared (will re-discover on expert profile visit)');
     },
 
     _opsExpertStatsActionStaleError() {
@@ -1805,7 +1805,7 @@ const plugin = {
                     const credRefreshTab = self._isOpsExpertCredRefreshTab();
                     if (nextAction !== self._opsExpertStatsActionCache.nextAction) {
                         self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                        Logger.debug('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                     if (credRefreshTab) {
                         self._signalOpsExpertCredRefreshComplete();
@@ -2445,7 +2445,7 @@ const plugin = {
         } catch (e) {
             Logger.debug('ops-tab: team search action cache clear failed', e);
         }
-        Logger.info('ops-tab: team search action cache cleared (will re-discover on next search)');
+        Logger.log('ops-tab: team search action cache cleared (will re-discover on next search)');
     },
 
     _persistOpsTeamAddMemberAction({ nextAction, routerState }) {
@@ -2474,7 +2474,7 @@ const plugin = {
         } catch (e) {
             Logger.debug('ops-tab: team add-member action cache clear failed', e);
         }
-        Logger.info('ops-tab: team add-member action cache cleared (will re-discover on next add)');
+        Logger.log('ops-tab: team add-member action cache cleared (will re-discover on next add)');
     },
 
     _loadOpsTaskDataActionFromStorage() {
@@ -2515,7 +2515,7 @@ const plugin = {
         } catch (e) {
             Logger.debug('ops-tab: task data action cache clear failed', e);
         }
-        Logger.info('ops-tab: task data action cache cleared (will re-discover on next task page load)');
+        Logger.log('ops-tab: task data action cache cleared (will re-discover on next task page load)');
     },
 
     async _fetchOpsTaskDataRsc(taskKey, taskUuid) {
@@ -2592,7 +2592,7 @@ const plugin = {
                     const credRefreshTab = self._isOpsTeamCredRefreshTab();
                     if (nextAction !== self._opsTeamSearchActionCache.nextAction) {
                         self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                        Logger.debug('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                     if (credRefreshTab) {
                         self._signalOpsTeamCredRefreshComplete();
@@ -2601,7 +2601,7 @@ const plugin = {
                 } else if (kind === 'add-member') {
                     if (nextAction !== self._opsTeamAddMemberActionCache.nextAction) {
                         self._persistOpsTeamAddMemberAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: team add-member action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                        Logger.debug('ops-tab: team add-member action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                 }
             }
@@ -2629,7 +2629,7 @@ const plugin = {
                 if (!self._opsClassifyTaskDataPostBody(meta.body)) return;
                 if (nextAction !== self._opsTaskDataActionCache.nextAction) {
                     self._persistOpsTaskDataAction({ nextAction, routerState: routerState || '' });
-                    Logger.info('ops-tab: task data action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    Logger.debug('ops-tab: task data action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                 }
             }
         });

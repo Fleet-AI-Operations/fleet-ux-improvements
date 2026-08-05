@@ -30,7 +30,7 @@
 // - Do not call renderMessages / force history sync around sendTurn.
 // - Layout/toolbar helpers must not remount AI chat.
 
-const AI_CHAT_VERSION = '7.1';
+const AI_CHAT_VERSION = '7.2';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -957,7 +957,7 @@ function aiChatHealEmptyView(el, state, opts) {
     }
     if (deepCount > 0) return false;
     const o = aiChatResolveOpts(opts || (state && state._wireOpts) || {});
-    Logger.log(o.logTag + ': healing empty deep-chat view from state ('
+    Logger.debug(o.logTag + ': healing empty deep-chat view from state ('
         + visible.length + ' message(s))');
     aiChatSyncHistory(el, state);
     try { aiChatSyncRowEnhancements(el, o); } catch (_e3) { /* ignore */ }
@@ -1069,9 +1069,14 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
     let responseChain = Promise.resolve();
     const suppressText = !!(opts && opts.suppressTextDeltas);
 
+    Logger.debug(o.logTag + ': chat stream start ('
+        + ((apiMessages && apiMessages.length) || 0) + ' msg'
+        + (suppressText ? ', suppressText' : '') + ')');
+
     try { signals.onOpen(); } catch (_e) { /* ignore */ }
 
     signals.stopClicked.listener = () => {
+        Logger.debug(o.logTag + ': stream cancel requested');
         aiChatStopStream(state, o);
         // keepStreamingFlag tool turns close Deep Chat once when the loop exits.
         if (!(opts && opts.keepStreamingFlag)) {
@@ -2025,7 +2030,7 @@ async function aiChatSendToolTurn(root, state, opts) {
                 + 'Do not reply with plain text. Reason: ' + reason,
             hideInUi: true,
         });
-        Logger.warn(o.logTag + ': forcing ' + finalizeName + ' — ' + reason
+        Logger.debug(o.logTag + ': forcing ' + finalizeName + ' — ' + reason
             + ' (attempt ' + forcedFinalizeAttempts + '/' + maxForcedFinalizeAttempts + ')');
         return true;
     };
@@ -2056,7 +2061,7 @@ async function aiChatSendToolTurn(root, state, opts) {
                 keepStreamingFlag: true,
             });
 
-            Logger.log(o.logTag + ': tool round ' + round + '/' + maxRounds
+            Logger.debug(o.logTag + ': tool round ' + round + '/' + maxRounds
                 + (forceFinalize ? ' (force ' + finalizeName + ')' : '')
                 + ' — requesting completion (' + apiMessages.length + ' msg)');
 
@@ -2115,7 +2120,7 @@ async function aiChatSendToolTurn(root, state, opts) {
             const toolNames = toolCalls.map((tc) =>
                 (tc && tc.function && tc.function.name) ? String(tc.function.name) : '?'
             ).join(', ');
-            Logger.log(o.logTag + ': tool round ' + round + ' done — finish_reason='
+            Logger.debug(o.logTag + ': tool round ' + round + ' done — finish_reason='
                 + (finishReason || 'unknown')
                 + (toolNames ? ' · tools=[' + toolNames + ']' : ' · no tools')
                 + (salvageText && !toolCalls.length ? ' · salvageText=' + salvageText.length + 'c' : ''));
@@ -2348,7 +2353,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '7.1',
+    _version: '7.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

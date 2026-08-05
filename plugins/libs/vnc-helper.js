@@ -42,7 +42,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.6',
+    _version: '2.8',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -192,14 +192,14 @@ const VncHelperApi = {
         observer.observe(target, { childList: true, subtree: true });
         CleanupRegistry.registerObserver(observer);
         state.waitObserver = observer;
-        Logger.log('vncHelper: waiting for noVNC clipboard element (MutationObserver)');
+        Logger.debug('vncHelper: waiting for noVNC clipboard element (MutationObserver)');
     },
 
     readCachedPrompt() {
         try {
             const context = Storage.get(PROMPT_CONTEXT_STORAGE_KEY, '');
             if (context !== 'qa') {
-                Logger.log(
+                Logger.debug(
                     `vncHelper: skipping cached prompt (context=${context || 'unset'}; last page was not QA)`
                 );
                 return '';
@@ -207,17 +207,17 @@ const VncHelperApi = {
             const text = Storage.get(PROMPT_STORAGE_KEY, '');
             const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
             if (!text || !tsRaw) {
-                Logger.log('vncHelper: no cached prompt in storage');
+                Logger.debug('vncHelper: no cached prompt in storage');
                 return '';
             }
             const ts = parseInt(tsRaw, 10);
             if (Number.isNaN(ts) || Date.now() - ts > PROMPT_TTL_MS) {
                 Storage.delete(PROMPT_STORAGE_KEY);
                 Storage.delete(PROMPT_TS_STORAGE_KEY);
-                Logger.log('vncHelper: cached prompt expired, cleared');
+                Logger.debug('vncHelper: cached prompt expired, cleared');
                 return '';
             }
-            Logger.log(`vncHelper: loaded cached prompt (${text.length} chars)`);
+            Logger.debug(`vncHelper: loaded cached prompt (${text.length} chars)`);
             return text;
         } catch (e) {
             Logger.warn('vncHelper: failed to read cached prompt', e);
@@ -315,7 +315,7 @@ const VncHelperApi = {
         }
 
         state.bridgeStarted = true;
-        Logger.log('vncHelper: noVNC clipboard element detected, initialising VNC Helper');
+        Logger.debug('vncHelper: noVNC clipboard element detected, initialising VNC Helper');
 
         const oldRoot = document.getElementById(ROOT_ID);
         const oldTab = document.getElementById(TAB_ID);
@@ -561,7 +561,8 @@ const VncHelperApi = {
                         else flashClipBtnFailure(bExtract);
                         focusVncTarget();
                     })
-                    .catch(() => {
+                    .catch((err) => {
+                        Logger.error('vncHelper: Extract click failed', err);
                         flashClipBtnFailure(bExtract);
                         focusVncTarget();
                     });
@@ -576,13 +577,15 @@ const VncHelperApi = {
                             });
                             if (ok) flashClipBtnSuccess(bOverwrite);
                             else flashClipBtnFailure(bOverwrite);
-                        } catch (_eOw) {
+                        } catch (eOw) {
                             toast('Overwrite failed: could not read system clipboard.');
+                            Logger.warn('vncHelper: Overwrite failed — could not read system clipboard', eOw);
                             flashClipBtnFailure(bOverwrite);
                         }
                         focusVncTarget();
                     })
-                    .catch(() => {
+                    .catch((err) => {
+                        Logger.error('vncHelper: Overwrite click failed', err);
                         flashClipBtnFailure(bOverwrite);
                         focusVncTarget();
                     });
@@ -630,7 +633,7 @@ const VncHelperApi = {
                 if (root) {
                     this.saveLayout(root);
                     const rect = root.getBoundingClientRect();
-                    Logger.log(`vncHelper: modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
+                    Logger.debug(`vncHelper: modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
                 }
             };
             onResizeUp = () => {
@@ -644,7 +647,7 @@ const VncHelperApi = {
                 if (root) {
                     this.saveLayout(root);
                     const rect = root.getBoundingClientRect();
-                    Logger.log(`vncHelper: modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
+                    Logger.debug(`vncHelper: modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
                 }
             };
             headerTitle.addEventListener('mousedown', (ev) => {
@@ -737,7 +740,7 @@ const VncHelperApi = {
             Logger.log('vncHelper: modal and keyboard shortcuts active (starts minimized)');
             toast('VNC Helper ready — open from the tab. ⌘C/⌘V, Ctrl+Shift+C/F.');
         } else {
-            Logger.log('vncHelper: keyboard shortcuts active (panel hidden via settings)');
+            Logger.debug('vncHelper: keyboard shortcuts active (panel hidden via settings)');
             toast('VNC Helper ready — ⌘C/⌘V, Ctrl+Shift+C/F. Panel is hidden in settings.');
         }
     },
@@ -777,7 +780,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.6',
+    _version: '2.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1010,12 +1013,14 @@ async function runPasteFromClipboard() {
         text = await readClipboardText();
     } catch (err) {
         toast('PASTE fail (clipboard)');
+        Logger.warn('vncHelper: PASTE failed — could not read system clipboard', err);
         focusVncTarget();
         return;
     }
     const el = clipEl();
     if (!el) {
         toast('PASTE fail (noVNC el)');
+        Logger.warn('vncHelper: PASTE failed — noVNC clipboard element missing');
         focusVncTarget();
         return;
     }
@@ -1043,6 +1048,11 @@ async function runPasteFromClipboard() {
         sendCtrlDom('v');
     }
     toast(`${ok ? 'PASTE ' : 'PASTE? '}\u2192 ${truncKey(merged)}`);
+    if (ok) {
+        Logger.log(`vncHelper: PASTE ok (${merged.length} chars)`);
+    } else {
+        Logger.warn(`vncHelper: PASTE uncertain — Ctrl+V RFB send failed (${merged.length} chars)`);
+    }
     focusVncTarget();
 }
 
@@ -1052,6 +1062,7 @@ async function runOverwriteFromShortcut() {
         await pushOsTextToVmClipboard(typeof t === 'string' ? t : '');
     } catch (eOw) {
         toast('Overwrite failed: could not read system clipboard.');
+        Logger.warn('vncHelper: Overwrite failed — could not read system clipboard', eOw);
         focusVncTarget();
     }
 }
@@ -1068,11 +1079,13 @@ async function runCopyVmToHost() {
             await navigator.clipboard.writeText(val);
         } catch (eW) {
             toast('COPY fail (could not write system clipboard)');
+            Logger.error('vncHelper: COPY failed — could not write system clipboard', eW);
             focusVncTarget();
             return;
         }
     }
     toast(`COPY \u2192 ${truncKey(val)}`);
+    Logger.log(`vncHelper: COPY ok (${val.length} chars)`);
     focusVncTarget();
 }
 
@@ -1082,6 +1095,7 @@ async function pushOsTextToVmClipboard(text, opts) {
     const el = clipEl();
     if (!el) {
         toast('Overwrite failed: noVNC clipboard field (#noVNC_clipboard_text) not found.');
+        Logger.warn('vncHelper: Overwrite failed — noVNC clipboard field not found');
         if (!deferFocus) focusVncTarget();
         return false;
     }
@@ -1102,6 +1116,7 @@ async function pushOsTextToVmClipboard(text, opts) {
         el.dispatchEvent(new Event('input', { bubbles: true }));
     }
     toast(`Virtual machine clipboard updated from this computer.\n\u2192 ${truncPreview(merged)}`);
+    Logger.log(`vncHelper: Overwrite ok (${String(merged || '').length} chars)`);
     if (!deferFocus) focusVncTarget();
     return true;
 }
@@ -1111,22 +1126,26 @@ async function extractVmTextToOs(opts) {
     const el = clipEl();
     if (!el) {
         toast('Extract failed: noVNC clipboard field not found.');
+        Logger.warn('vncHelper: Extract failed — noVNC clipboard field not found');
         if (!deferFocus) focusVncTarget();
         return false;
     }
     const v = el.value || '';
     if (!v) {
         toast('Nothing to extract yet. Copy inside the virtual machine first, then try again.');
+        Logger.warn('vncHelper: Extract failed — VM clipboard empty');
         if (!deferFocus) focusVncTarget();
         return false;
     }
     try {
         await navigator.clipboard.writeText(v);
         toast(`Copied virtual machine clipboard to this computer.\n\u2192 ${truncPreview(v)}`);
+        Logger.log(`vncHelper: Extract ok (${v.length} chars)`);
         if (!deferFocus) focusVncTarget();
         return true;
     } catch (e3) {
         toast('Extract failed: could not write to system clipboard.');
+        Logger.error('vncHelper: Extract failed — could not write system clipboard', e3);
         if (!deferFocus) focusVncTarget();
         return false;
     }

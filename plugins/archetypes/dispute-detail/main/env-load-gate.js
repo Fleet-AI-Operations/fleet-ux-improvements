@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeToolEnvGate',
     name: 'Dispute Tool Environment Gate',
     description: 'Detects tool environment readiness for dispute detail pages',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -41,7 +41,7 @@ const plugin = {
             attributes: true
         });
         CleanupRegistry.registerObserver(observer);
-        Logger.log(`${this.id}: MutationObserver installed on document.body for readiness`);
+        Logger.debug(`${this.id}: MutationObserver installed on document.body for readiness`);
     },
 
     updateReadyState(state) {
@@ -72,7 +72,7 @@ const plugin = {
         if (!state.waitingLogged) {
             const createInstanceButton = this.findCreateInstanceButton();
             if (createInstanceButton) {
-                Logger.log(`${this.id}: waiting for tool environment load`);
+                Logger.debug(`${this.id}: waiting for tool environment load`);
             } else {
                 Logger.debug(`${this.id}: create-instance button not detected yet`);
             }

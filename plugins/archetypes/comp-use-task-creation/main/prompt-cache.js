@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '4.0',
+    _version: '4.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -118,7 +118,7 @@ const plugin = {
 
         this.ensureRestoreButtons(state, textarea);
 
-        Logger.log('Prompt Cache: initialized');
+        Logger.debug('Prompt Cache: initialized');
     },
 
     // ─── save logic ───────────────────────────────────────────────────────────

@@ -321,7 +321,7 @@ async function startRatingExplainOverview(panel, workerId, state) {
     }
 
     const userContent = RATING_EXPLAIN_INITIAL_USER_PREFIX + json + RATING_EXPLAIN_INITIAL_USER_SUFFIX;
-    Logger.log(PLUGIN_ID + ': overview request — ' + workerId + ' · ' + userContent.length + ' chars');
+    Logger.debug(PLUGIN_ID + ': overview request — ' + workerId + ' · ' + userContent.length + ' chars');
     try {
         await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
             userContent,
@@ -506,7 +506,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

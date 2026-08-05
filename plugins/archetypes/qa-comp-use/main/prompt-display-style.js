@@ -35,7 +35,7 @@ const plugin = {
     id: 'promptDisplayStyle',
     name: 'Prompt Display Style',
     description: 'Adjust prompt font size, text color, and background in view mode',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -480,18 +480,27 @@ const plugin = {
         fontInput.value = String(prefs.fontSize);
         fontInput.setAttribute('aria-label', 'Prompt font size');
 
+        let fontAtFocus = prefs.fontSize;
+        fontInput.addEventListener('focus', () => {
+            fontAtFocus = prefs.fontSize;
+        });
         fontInput.addEventListener('input', () => {
-            const prev = prefs.fontSize;
             const next = this.clampFontSize(fontInput.value);
             fontInput.value = String(next);
             prefs.fontSize = next;
             Storage.set(this.storageKeys.fontSize, next);
             const liveReplica = section.querySelector('[' + REPLICA_MARKER + '="true"]');
             this.applyStyles(liveReplica, prefs);
-            if (next !== prev) {
-                Logger.log(`${this.id}: font ${prev}→${next}`);
-            }
         });
+        const logFontIfChanged = () => {
+            const next = prefs.fontSize;
+            if (next !== fontAtFocus) {
+                Logger.log(`${this.id}: font ${fontAtFocus}→${next}`);
+                fontAtFocus = next;
+            }
+        };
+        fontInput.addEventListener('change', logFontIfChanged);
+        fontInput.addEventListener('blur', logFontIfChanged);
 
         controls.appendChild(fontLabel);
         controls.appendChild(fontInput);

@@ -65,6 +65,7 @@ const AcceptTaskModalApi = {
                 state.lastProcessedDialog = null;
                 state.motivateButtonAdded = false;
             }
+            state.warnLogged = false;
             if (!state.missingLogged) {
                 Logger.debug(logTag + ': Approve Task dialog not found');
                 state.missingLogged = true;
@@ -102,9 +103,13 @@ const AcceptTaskModalApi = {
         const labelRow = notesSection.querySelector('.flex.items-center.justify-between.mb-1');
         const textarea = notesSection.querySelector('textarea');
         if (!labelRow || !textarea) {
-            Logger.warn(logTag + ': label or textarea not found in notes section');
+            if (!state.warnLogged) {
+                Logger.warn(logTag + ': label or textarea not found in notes section');
+                state.warnLogged = true;
+            }
             return;
         }
+        state.warnLogged = false;
 
         wrapper = document.createElement('div');
         wrapper.setAttribute('data-fleet-plugin', pluginId);
@@ -171,7 +176,7 @@ const plugin = {
     id: 'acceptTaskModalImprovementsLib',
     name: '"Accept Task" Modal Improvements (library)',
     description: 'Shared API for the Approve Task motivate-worker button',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

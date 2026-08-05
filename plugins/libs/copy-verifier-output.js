@@ -33,7 +33,7 @@ const CopyVerifierOutputApi = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '5.1',
+    _version: '5.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -226,9 +226,6 @@ const CopyVerifierOutputApi = {
     attemptCopyFromStdoutSection(button, block) {
         const copyOrFail = (text, logSuffix) => {
             if (text) {
-                if (logSuffix) {
-                    Logger.log(`Copy Verifier Output: Copy succeeded after expanding Stdout`);
-                }
                 this.copyVerifierTextWithFeedback(button, text, logSuffix);
                 return;
             }
@@ -798,7 +795,7 @@ const plugin = {
     id: 'copyVerifierOutputLib',
     name: 'Copy Verifier Output (library)',
     description: 'Shared API for copying verifier expected/actual output',
-    _version: '5.1',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
