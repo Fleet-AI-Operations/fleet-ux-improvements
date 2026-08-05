@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.15',
+    _version: '9.16',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4889,9 +4889,14 @@ const plugin = {
                     ${externalHostNotice}
                     <div id="wf-ops-dashboard-suboptions-wrap" style="display: ${suboptionsDisplay}; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0 4px 12px;">
-                            <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; flex: 1; min-width: 0;">
-                                Open dashboard when opening settings
-                            </label>
+                            <div style="flex: 1; min-width: 0;">
+                                <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; display: block;">
+                                    Open dashboard when opening settings
+                                </label>
+                                <div style="font-size: 11px; color: var(--muted-foreground, #666); margin-top: 2px; line-height: 1.35;">
+                                    Ctrl+click the gear icon to open this smaller modal.
+                                </div>
+                            </div>
                             ${submoduleSwitchHTML}
                         </div>
                         <button type="button" id="wf-ops-open-dashboard-btn" class="${this._opsDashBtnClass('secondary', 'regular')} wf-dash-btn--full" style="
