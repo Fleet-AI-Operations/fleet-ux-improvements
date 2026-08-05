@@ -8,6 +8,7 @@ const FOS_ENV_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 const FOS_ORCHESTRATOR_INSTANCES_URL = 'https://orchestrator.fleetai.com/v1/env/instances';
 const FOS_CHILD_READY_TYPE = 'fleet-fos-child-ready';
 const FOS_EMBEDDED_READY_TYPE = 'fleet-fos-embedded-ready';
+const FOS_EMBEDDED_ACK_TYPE = 'fleet-fos-embedded-ack';
 const FOS_PUSH_TYPE = 'fleet-fos-push-clipboard';
 const FOS_PUSH_RESULT_TYPE = 'fleet-fos-push-result';
 const FOS_EXTRACT_REQ_TYPE = 'fleet-fos-extract-request';
@@ -192,7 +193,7 @@ const plugin = {
     name: 'FOS Embedded Watcher',
     description:
         'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '3.2',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -205,6 +206,7 @@ const plugin = {
         readinessListeners: null,
         messageListenerInstalled: false,
         resultListenerInstalled: false,
+        ackListenerInstalled: false,
         iframeObserverInstalled: false,
         layoutListenersInstalled: false,
         activationLogged: false,
@@ -241,6 +243,7 @@ const plugin = {
         this._subscribeDesktopShape(state);
         this._subscribeLatch(state);
         this._listenChildReady(state);
+        this._listenEmbeddedAck(state);
         this._listenClipboardResults(state);
         this._watchEnvIframes(state);
         this._installLayoutListeners(state);
@@ -898,9 +901,8 @@ const plugin = {
                 (hostname ? fosFindEnvIframeByHostname(hostname) : null);
             if (iframe) {
                 this._patchIframeClipboardAllow(state, iframe);
-                this._markInstanceReady(state, instanceId, child, iframe);
-                this._mountClipboardPanel(state, instanceId, child, iframe);
             }
+            // Ready UI waits for fleet-fos-embedded-ack so push/extract are not offered before auth.
             if (!state.activationLogged) {
                 state.activationLogged = true;
                 Logger.log('signaled embedded FOS iframe for instance ' +
@@ -917,6 +919,58 @@ const plugin = {
             Logger.warn('postMessage to child failed for ' + instanceId, e);
             return false;
         }
+    },
+
+    _onEmbeddedAck(state, event) {
+        let originHostname = '';
+        try {
+            originHostname = new URL(event.origin).hostname;
+        } catch (_e) {
+            return;
+        }
+        if (!FOS_ENV_HOST_PATTERN.test(originHostname)) {
+            return;
+        }
+        if (!event.data || event.data.ok !== true) {
+            Logger.warn('embedded ack rejected from ' + originHostname);
+            return;
+        }
+        const instanceId = fosInstanceIdFromHostname(originHostname);
+        if (!instanceId) {
+            return;
+        }
+        const rec = state.fosInstances.get(instanceId);
+        const child =
+            (rec && rec.child && rec.child.source === event.source && rec.child) ||
+            { source: event.source, origin: event.origin };
+        if (rec) {
+            rec.child = child;
+        }
+        const iframe =
+            fosFindIframeForSource(event.source) ||
+            fosFindEnvIframeByHostname(originHostname);
+        if (!iframe) {
+            Logger.warn('embedded ack for ' + instanceId + ' — iframe not found');
+            return;
+        }
+        this._patchIframeClipboardAllow(state, iframe);
+        this._markInstanceReady(state, instanceId, child, iframe);
+        this._mountClipboardPanel(state, instanceId, child, iframe);
+        Logger.log('embedded bridge authorized for ' + instanceId);
+    },
+
+    _listenEmbeddedAck(state) {
+        if (state.ackListenerInstalled) {
+            return;
+        }
+        state.ackListenerInstalled = true;
+        const self = this;
+        window.addEventListener('message', (event) => {
+            if (!event.data || event.data.type !== FOS_EMBEDDED_ACK_TYPE) {
+                return;
+            }
+            self._onEmbeddedAck(state, event);
+        });
     },
 
     _flushPendingChild(state, instanceId) {
@@ -1100,6 +1154,9 @@ const plugin = {
             self._patchIframeForChild(state, child, hostname);
             self._markFosDesktop(state, instanceId, 'child-ready');
             Logger.debug('child-ready from ' + instanceId);
+            // Iframe navigated/reloaded: clear prior ready until the new document acks.
+            self._teardownPanel(state, instanceId);
+            self._unmarkInstanceReady(state, instanceId);
             if (!self._tryNotifyChild(state, instanceId, child)) {
                 state.pendingChildren.set(instanceId, child);
                 Logger.debug('child queued pending latch for ' + instanceId);

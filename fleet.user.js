@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.3
+// @version      13.4
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.3';
+    const VERSION = '13.4';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -581,6 +581,7 @@
         const MSG_EXTRACT_REQ = 'fleet-fos-extract-request';
         const MSG_EXTRACT_RESULT = 'fleet-fos-extract-result';
         const MSG_EMBEDDED_READY = 'fleet-fos-embedded-ready';
+        const MSG_EMBEDDED_ACK = 'fleet-fos-embedded-ack';
 
         let fosAuthorized = false;
         let bridgeReady = false;
@@ -710,26 +711,33 @@
                 return;
             }
 
+            // Parent already decided desktop+latch; authorize any embedded-ready (no env_key substring gate).
             if (event.data.type === MSG_EMBEDDED_READY) {
                 const envKey = String(event.data.envKey || '');
-                if (!envKey.includes('fos')) {
-                    return;
-                }
-                if (fosAuthorized) {
-                    return;
-                }
+                const wasAuthorized = fosAuthorized;
                 fosAuthorized = true;
-                console.log(EMBED_LOG + ': authorized for env ' + envKey);
-                installWaitObserver();
-                return;
-            }
-
-            if (!fosAuthorized) {
+                if (!wasAuthorized) {
+                    console.log(EMBED_LOG + ': authorized for env ' + (envKey || '(none)'));
+                    installWaitObserver();
+                } else {
+                    console.log(EMBED_LOG + ': re-ack for env ' + (envKey || '(none)'));
+                }
+                reply(event, { type: MSG_EMBEDDED_ACK, envKey, ok: true });
                 return;
             }
 
             if (event.data.type === MSG_PUSH) {
                 const requestId = event.data.requestId;
+                if (!fosAuthorized) {
+                    console.warn(EMBED_LOG + ': push ignored — not authorized');
+                    reply(event, {
+                        type: MSG_PUSH_RESULT,
+                        requestId,
+                        ok: false,
+                        reason: 'not-authorized'
+                    });
+                    return;
+                }
                 clipQueue = clipQueue
                     .then(async () => {
                         const ok = await pushOsTextToVmClipboard(event.data.text);
@@ -761,6 +769,16 @@
 
             if (event.data.type === MSG_EXTRACT_REQ) {
                 const requestId = event.data.requestId;
+                if (!fosAuthorized) {
+                    console.warn(EMBED_LOG + ': extract ignored — not authorized');
+                    reply(event, {
+                        type: MSG_EXTRACT_RESULT,
+                        requestId,
+                        ok: false,
+                        reason: 'not-authorized'
+                    });
+                    return;
+                }
                 clipQueue = clipQueue
                     .then(async () => {
                         const text = readVmClipboardText();
