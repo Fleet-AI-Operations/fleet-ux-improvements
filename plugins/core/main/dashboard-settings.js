@@ -65,7 +65,7 @@ function readOpenRouterKeyRecord() {
         if (!enc || !last4) return null;
         return { enc, last4 };
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': failed to read OpenRouter key record', err);
+        Logger.warn('failed to read OpenRouter key record', err);
         return null;
     }
 }
@@ -571,7 +571,7 @@ function notifyAiKeyConsumers() {
         try {
             verifierUi.syncAiUi(modal);
         } catch (err) {
-            Logger.debug(PLUGIN_ID + ': syncAiUi notify failed', err);
+            Logger.debug('syncAiUi notify failed', err);
         }
     }
 
@@ -582,7 +582,7 @@ function notifyAiKeyConsumers() {
             const panel = modal && modal.querySelector('[data-wf-dash-search-chat-panel]');
             if (panel) searchChat.wirePanel(panel, dash);
         } catch (err) {
-            Logger.debug(PLUGIN_ID + ': search chat key notify failed', err);
+            Logger.debug('search chat key notify failed', err);
         }
     }
 
@@ -592,7 +592,7 @@ function notifyAiKeyConsumers() {
             const panel = modal && modal.querySelector('[data-wf-dash-chats-panel]');
             if (panel) chatsApi.syncPanel(panel);
         } catch (err) {
-            Logger.debug(PLUGIN_ID + ': chats key notify failed', err);
+            Logger.debug('chats key notify failed', err);
         }
     }
 
@@ -601,7 +601,7 @@ function notifyAiKeyConsumers() {
         try {
             explain.remountOpen(modal);
         } catch (err) {
-            Logger.debug(PLUGIN_ID + ': rating explain key notify failed', err);
+            Logger.debug('rating explain key notify failed', err);
         }
     }
 }
@@ -778,12 +778,12 @@ async function saveOpenRouterKey(modal) {
         input.value = '';
         renderAiSection(modal);
         setAiStatus(modal, 'API key saved.', false);
-        Logger.log(PLUGIN_ID + ': OpenRouter API key saved (encrypted)');
+        Logger.log('OpenRouter API key saved (encrypted)');
         notifyAiKeyConsumers();
         const testBtn = modal.querySelector('#wf-dash-settings-ai-test-btn');
         if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashSuccess(testBtn);
     } catch (err) {
-        Logger.error(PLUGIN_ID + ': failed to encrypt/save OpenRouter key', err);
+        Logger.error('failed to encrypt/save OpenRouter key', err);
         setAiStatus(modal, 'Could not encrypt key — is Ops unlocked?', true);
         if (Context.buttonFeedback && saveBtn) Context.buttonFeedback.flashFailure(saveBtn);
     }
@@ -793,7 +793,7 @@ function removeOpenRouterKey(modal) {
     clearOpenRouterKeyRecord();
     renderAiSection(modal);
     setAiStatus(modal, 'API key removed.', false);
-    Logger.log(PLUGIN_ID + ': OpenRouter API key removed');
+    Logger.log('OpenRouter API key removed');
     notifyAiKeyConsumers();
 }
 
@@ -816,7 +816,7 @@ async function runOpenRouterTest(modal) {
     try {
         apiKey = await Context.opsTab.decryptWithOpsPassword(record.enc);
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': OpenRouter key decrypt failed — clearing stored record');
+        Logger.warn('OpenRouter key decrypt failed — clearing stored record');
         clearOpenRouterKeyRecord();
         renderAiSection(modal, { forceEntry: true });
         setAiStatus(modal, 'Stored key could not be decrypted. Enter the key again.', true);
@@ -844,14 +844,14 @@ async function runOpenRouterTest(modal) {
             setTestResult(modal, { error: 'Key rejected by OpenRouter (HTTP ' + response.status + ').' });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — key rejected (' + response.status + ')');
+            Logger.warn('OpenRouter test failed — key rejected (' + response.status + ')');
             return;
         }
         if (response.status < 200 || response.status >= 300) {
             setTestResult(modal, { error: 'OpenRouter error (HTTP ' + response.status + ').' });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — HTTP ' + response.status);
+            Logger.warn('OpenRouter test failed — HTTP ' + response.status);
             return;
         }
         let parsed;
@@ -861,7 +861,7 @@ async function runOpenRouterTest(modal) {
             setTestResult(modal, { error: 'OpenRouter returned non-JSON response.' });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — non-JSON response');
+            Logger.warn('OpenRouter test failed — non-JSON response');
             return;
         }
         const reply = parsed
@@ -876,17 +876,17 @@ async function runOpenRouterTest(modal) {
             setTestResult(modal, { error: 'OpenRouter response had no assistant content.', model });
             setAiStatus(modal, '', false);
             if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
-            Logger.warn(PLUGIN_ID + ': OpenRouter test failed — empty assistant content');
+            Logger.warn('OpenRouter test failed — empty assistant content');
             return;
         }
         setTestResult(modal, { reply, model });
         setAiStatus(modal, 'Test succeeded.', false);
         if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashSuccess(testBtn);
-        Logger.log(PLUGIN_ID + ': OpenRouter test succeeded'
+        Logger.log('OpenRouter test succeeded'
             + (model ? ' (model reported)' : ''));
     } catch (err) {
         apiKey = '';
-        Logger.error(PLUGIN_ID + ': OpenRouter test request failed', err);
+        Logger.error('OpenRouter test request failed', err);
         setTestResult(modal, { error: (err && err.message) || 'Request failed.' });
         setAiStatus(modal, '', false);
         if (Context.buttonFeedback && testBtn) Context.buttonFeedback.flashFailure(testBtn);
@@ -1046,7 +1046,7 @@ function attachDashboardSettingsListeners(modal) {
 
         const openRouterLink = e.target.closest('[data-wf-dash-openrouter-link]');
         if (openRouterLink) {
-            Logger.log(PLUGIN_ID + ': OpenRouter website opened');
+            Logger.log('OpenRouter website opened');
             return;
         }
         const defaultTabCheckbox = e.target.closest('[data-wf-dash-default-tab]');
@@ -1122,13 +1122,13 @@ function attachDashboardSettingsListeners(modal) {
             try {
                 api.saveSettings(raw);
                 if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(chatSave);
-                Logger.log(PLUGIN_ID + ': search chat settings saved');
+                Logger.log('search chat settings saved');
                 renderAiSection(modal);
                 api.setSettingsStatus(modal, 'Search Chat limits saved.', false);
             } catch (err) {
                 api.setSettingsStatus(modal, (err && err.message) || String(err), true);
                 if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(chatSave);
-                Logger.warn(PLUGIN_ID + ': search chat settings save failed', err);
+                Logger.warn('search chat settings save failed', err);
             }
             return;
         }
@@ -1139,7 +1139,7 @@ function attachDashboardSettingsListeners(modal) {
             try {
                 api.saveSettings(api.defaultSettings());
                 if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(chatReset);
-                Logger.log(PLUGIN_ID + ': search chat settings reset');
+                Logger.log('search chat settings reset');
                 renderAiSection(modal);
                 api.setSettingsStatus(modal, 'Search Chat limits reset to defaults.', false);
             } catch (err) {
@@ -1176,7 +1176,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.19',
+    _version: '1.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1184,7 +1184,7 @@ const plugin = {
     init() {
         const loader = Context.dashboard && Context.dashboard._loader;
         if (!loader) {
-            Logger.error(PLUGIN_ID + ': dashboard loader not registered');
+            Logger.error('dashboard loader not registered');
             return;
         }
         Context.aiOpenRouter = {
@@ -1244,9 +1244,9 @@ const plugin = {
                 renderAiSection(modal);
                 setAiStatus(modal, '', false);
                 setTestResult(modal, null);
-                Logger.debug(PLUGIN_ID + ': Settings tab activated');
+                Logger.debug('Settings tab activated');
             }
         });
-        Logger.log(PLUGIN_ID + ': tab registered (Context.aiOpenRouter)');
+        Logger.log('tab registered (Context.aiOpenRouter)');
     }
 };

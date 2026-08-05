@@ -232,16 +232,14 @@ const UserStoryCollapseApi = {
                 ) || btn.parentElement;
             const liveBodies = self.collectBodiesInContainer(liveContainer, liveHeader);
             if (liveBodies.length === 0) {
-                Logger.warn(logTag + ': click — no User Story bodies found in container');
+                Logger.warn('click — no User Story bodies found in container');
                 return;
             }
             const nowHidden = self.isSectionHidden(liveBodies);
             self.setBodiesHidden(liveBodies, !nowHidden);
             self.syncToggleLabel(btn, !nowHidden);
             self.applyToggleChrome(btn);
-            Logger.log(
-                logTag +
-                    ': User Story ' +
+            Logger.log('User Story ' +
                     (!nowHidden ? 'hidden' : 'shown') +
                     ' (' +
                     liveBodies.length +
@@ -253,7 +251,7 @@ const UserStoryCollapseApi = {
         if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
             CleanupRegistry.registerElement(btn);
         }
-        Logger.debug(logTag + ': Hide/Show control ready on User Story row');
+        Logger.debug('Hide/Show control ready on User Story row');
 
         if (hidden) this.setBodiesHidden(bodies, true);
     },
@@ -264,11 +262,11 @@ const UserStoryCollapseApi = {
 
         if (sections.length === 0) {
             if (state.activationLogged) {
-                Logger.debug(logTag + ': User Story sections gone — idle');
+                Logger.debug('User Story sections gone — idle');
                 state.activationLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(logTag + ': no User Story section yet');
+                Logger.debug('no User Story section yet');
                 state.missingLogged = true;
             }
             return;
@@ -280,7 +278,7 @@ const UserStoryCollapseApi = {
         }
 
         if (!state.activationLogged) {
-            Logger.log(logTag + ': User Story collapse active (' + sections.length + ' section(s))');
+            Logger.log('User Story collapse active (' + sections.length + ' section(s))');
             state.activationLogged = true;
         }
     }
@@ -290,7 +288,7 @@ const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
     description: 'Shared API to hide/show User Story bodies from the label row',
-    _version: '1.2',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -304,7 +302,7 @@ const plugin = {
             }
         };
         if (!state.registered) {
-            Logger.log('userStoryCollapseLib: module registered (Context.userStoryCollapse)');
+            Logger.log('module registered (Context.userStoryCollapse)');
             state.registered = true;
         }
     }

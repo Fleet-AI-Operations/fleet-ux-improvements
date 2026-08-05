@@ -414,7 +414,7 @@ const UserStoryMarkdownApi = {
         }
         state.activeByBody.clear();
         if (state.activationLogged) {
-            Logger.debug(logTag + ': User Story markdown replicas cleared');
+            Logger.debug('User Story markdown replicas cleared');
             state.activationLogged = false;
         }
     },
@@ -432,7 +432,7 @@ const UserStoryMarkdownApi = {
                 this.teardownAll(state, logTag);
             }
             if (!state.missingLogged) {
-                Logger.debug(logTag + ': User Story body not found yet');
+                Logger.debug('User Story body not found yet');
                 state.missingLogged = true;
             }
             return;
@@ -455,7 +455,7 @@ const UserStoryMarkdownApi = {
         }
 
         if (!state.activationLogged) {
-            Logger.log(logTag + ': User Story markdown replicas active (' + bodies.length + ')');
+            Logger.log('User Story markdown replicas active (' + bodies.length + ')');
             state.activationLogged = true;
         }
     }
@@ -465,7 +465,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -478,7 +478,7 @@ const plugin = {
             PROSE_ATTR
         };
         if (!state.registered) {
-            Logger.log('userStoryMarkdownLib: module registered (Context.userStoryMarkdown)');
+            Logger.log('module registered (Context.userStoryMarkdown)');
             state.registered = true;
         }
     }

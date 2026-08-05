@@ -5,7 +5,7 @@ const plugin = {
     id: 'disputeToolEnvGate',
     name: 'Dispute Tool Environment Gate',
     description: 'Detects tool environment readiness for dispute detail pages',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -41,7 +41,7 @@ const plugin = {
             attributes: true
         });
         CleanupRegistry.registerObserver(observer);
-        Logger.debug(`${this.id}: MutationObserver installed on document.body for readiness`);
+        Logger.debug(`MutationObserver installed on document.body for readiness`);
     },
 
     updateReadyState(state) {
@@ -51,7 +51,7 @@ const plugin = {
         state.lastReady = ready;
 
         if (prev === true && ready === false) {
-            Logger.info(`${this.id}: tool environment no longer detected — readiness flag cleared`);
+            Logger.info(`tool environment no longer detected — readiness flag cleared`);
             state.readyLogged = false;
             state.waitingLogged = false;
         }
@@ -60,7 +60,7 @@ const plugin = {
             root.setAttribute('data-fleet-dispute-tool-env-ready', '1');
             window.__fleetDisputeToolEnvReady = true;
             if (!state.readyLogged) {
-                Logger.info(`${this.id}: tool environment detected and marked ready`);
+                Logger.info(`tool environment detected and marked ready`);
                 state.readyLogged = true;
             }
             return;
@@ -72,9 +72,9 @@ const plugin = {
         if (!state.waitingLogged) {
             const createInstanceButton = this.findCreateInstanceButton();
             if (createInstanceButton) {
-                Logger.debug(`${this.id}: waiting for tool environment load`);
+                Logger.debug(`waiting for tool environment load`);
             } else {
-                Logger.debug(`${this.id}: create-instance button not detected yet`);
+                Logger.debug(`create-instance button not detected yet`);
             }
             state.waitingLogged = true;
         }

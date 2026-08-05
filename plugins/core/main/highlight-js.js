@@ -62,7 +62,7 @@ async function gmFetchTextVerified(url) {
     if (expected === undefined) return text;
     const actual = await sha256hex(text);
     if (!expected) {
-        if (actual) Logger.debug('highlight-js: unverified asset ' + url + ' (sha256=' + actual + ')');
+        if (actual) Logger.debug('unverified asset ' + url + ' (sha256=' + actual + ')');
         return text;
     }
     if (actual !== expected) {
@@ -81,7 +81,7 @@ const plugin = {
     id: 'highlight-js',
     name: 'Highlight.js Loader',
     description: 'Lazy-loads highlight.js from jsDelivr for Python syntax highlighting',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
 
@@ -101,7 +101,7 @@ const plugin = {
             highlightCodeElement: (codeEl, options) => self._highlightCodeElement(codeEl, options),
             setPlainCode: (codeEl, text) => self._setPlainCode(codeEl, text)
         };
-        Logger.log('highlight-js: module registered (Context.highlightJs)');
+        Logger.log('module registered (Context.highlightJs)');
     },
 
     _ensureFleetThemeSubscription() {
@@ -118,7 +118,7 @@ const plugin = {
         try {
             document.documentElement.setAttribute(HLJS_THEME_ATTR, next);
         } catch (err) {
-            Logger.warn('highlight-js: failed to apply theme attribute', err);
+            Logger.warn('failed to apply theme attribute', err);
         }
     },
 
@@ -126,7 +126,7 @@ const plugin = {
         const next = resolveFleetSyntaxTheme();
         if (next === this._activeTheme) return;
         this._applyThemeToDocument(next);
-        Logger.log('highlight-js: theme synced to fleet site → ' + next);
+        Logger.log('theme synced to fleet site → ' + next);
         await this._refreshAllHighlighted();
     },
 
@@ -153,7 +153,7 @@ const plugin = {
 
         this._loadPromise = (async () => {
             try {
-                Logger.debug('highlight-js: fetching core + python + themes from jsDelivr');
+                Logger.debug('fetching core + python + themes from jsDelivr');
                 const [coreJs, pythonJs, lightCss, darkCss] = await Promise.all([
                     gmFetchTextVerified(HLJS_CORE_URL),
                     gmFetchTextVerified(HLJS_PYTHON_URL),
@@ -169,11 +169,11 @@ const plugin = {
                 }
                 this._injectThemeStylesheets({ light: lightCss, dark: darkCss });
                 this._hljs = instance;
-                Logger.info('highlight-js: loaded v' + HLJS_VERSION);
+                Logger.info('loaded v' + HLJS_VERSION);
                 return this._hljs;
             } catch (err) {
                 this._loadFailed = true;
-                Logger.warn('highlight-js: load failed — code blocks will use plain text', err);
+                Logger.warn('load failed — code blocks will use plain text', err);
                 throw err;
             } finally {
                 this._loadPromise = null;
@@ -269,7 +269,7 @@ const plugin = {
             return true;
         } catch (err) {
             this._setPlainCode(codeEl, text);
-            Logger.warn('highlight-js: highlight failed — showing plain text', err);
+            Logger.warn('highlight failed — showing plain text', err);
             return false;
         }
     }

@@ -9,7 +9,7 @@ const plugin = {
     name: 'Dispute Resolution Snippets',
     description:
         'Adds Create / Insert / Delete controls for saved resolution messages under the dispute resolution textarea',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -24,7 +24,7 @@ const plugin = {
         const msgApi = Context.disputeResolutionMessages;
         if (!msgApi || typeof msgApi.mountToolbar !== 'function') {
             if (!state.apiMissingLogged) {
-                Logger.debug('disputeResolutionSnippets: Context.disputeResolutionMessages unavailable');
+                Logger.debug('Context.disputeResolutionMessages unavailable');
                 state.apiMissingLogged = true;
             }
             return;
@@ -38,7 +38,7 @@ const plugin = {
                 state.activationLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug('disputeResolutionSnippets: resolution textarea not found');
+                Logger.debug('resolution textarea not found');
                 state.missingLogged = true;
             }
             return;
@@ -56,7 +56,7 @@ const plugin = {
         if (mounted) {
             state.lastTextarea = textarea;
             if (!state.activationLogged) {
-                Logger.log('disputeResolutionSnippets: resolution snippets toolbar active');
+                Logger.log('resolution snippets toolbar active');
                 state.activationLogged = true;
             }
         }

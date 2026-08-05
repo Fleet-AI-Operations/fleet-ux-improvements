@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.16',
+    _version: '2.17',
     enabledByDefault: true,
     phase: 'core',
 
@@ -48,7 +48,7 @@ const plugin = {
             // Load saved visibility state
             state.isVisible = Storage.get(this.storageKeys.isVisible, true);
             this._setupLogging(state, context);
-            Logger.log('✓ Dev logger panel initialized');
+            Logger.log('Dev logger panel initialized');
         }
 
         this._ensureUI(state, context);
@@ -400,13 +400,13 @@ const plugin = {
                     const rect = ui.root.getBoundingClientRect();
                     Storage.set(self.storageKeys.positionLeft, rect.left);
                     Storage.set(self.storageKeys.positionTop, rect.top);
-                    Logger.log(`✓ Dev logger position saved: left=${rect.left}, top=${rect.top}`);
+                    Logger.log(`Dev logger position saved: left=${rect.left}, top=${rect.top}`);
                 }
                 if (state.isResizing && ui) {
                     const rect = ui.root.getBoundingClientRect();
                     Storage.set(self.storageKeys.width, rect.width);
                     Storage.set(self.storageKeys.height, rect.height);
-                    Logger.log(`✓ Dev logger size saved: width=${rect.width}, height=${rect.height}`);
+                    Logger.log(`Dev logger size saved: width=${rect.width}, height=${rect.height}`);
                 }
                 state.isDragging = false;
                 state.isResizing = false;
@@ -419,7 +419,7 @@ const plugin = {
             },
             onMinimize: () => this._updateVisibility(state, false),
             onRefresh: () => {
-                Logger.log('✓ Dev logger: refresh page requested');
+                Logger.log('Dev logger: refresh page requested');
                 window.location.reload();
             },
             onSearch: (event) => {
@@ -495,7 +495,7 @@ const plugin = {
         if (!ui) return;
         ui.root.style.display = visible ? 'flex' : 'none';
         ui.toggleButton.textContent = this._toggleButtonLabel(visible);
-        Logger.log(`✓ Dev logger visibility ${visible ? 'shown' : 'hidden'}`);
+        Logger.log(`Dev logger visibility ${visible ? 'shown' : 'hidden'}`);
     },
 
     _applySearchFilter(state) {

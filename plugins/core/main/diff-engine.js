@@ -49,7 +49,7 @@ function _deNotifyFleetThemeChange() {
         try {
             fn(payload);
         } catch (err) {
-            Logger.warn('diff-engine: theme listener failed', err);
+            Logger.warn('theme listener failed', err);
         }
     }
 }
@@ -63,7 +63,7 @@ function _deEnsureFleetThemeObserver() {
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         CleanupRegistry.register(() => observer.disconnect());
     } catch (err) {
-        Logger.warn('diff-engine: fleet theme observer failed', err);
+        Logger.warn('fleet theme observer failed', err);
     }
 }
 
@@ -334,7 +334,7 @@ function _deComputeDiff(baseText, compareText, granularity, _punctuationMode) {
     let diff;
     let effectiveGranularity;
     if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
-        Logger.warn('diff-engine: texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
+        Logger.warn('texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
         diff = _deComputeWordDiff(baseText, compareText);
         effectiveGranularity = 'word';
     } else if (isChar) {
@@ -690,7 +690,7 @@ function _deDiffUnits(baseText, compareText, granularity) {
     const a = _deTokenize(baseText);
     const b = _deTokenize(compareText);
     if (a.length + b.length > DE_WORD_DIFF_TOKEN_LIMIT) {
-        Logger.debug('diff-engine: word token count ' + (a.length + b.length) + ' > ' + DE_WORD_DIFF_TOKEN_LIMIT + '; falling back to line diff');
+        Logger.debug('word token count ' + (a.length + b.length) + ' > ' + DE_WORD_DIFF_TOKEN_LIMIT + '; falling back to line diff');
         const aLines = baseText.split('\n');
         const bLines = compareText.split('\n');
         return { a: aLines, b: bLines, effectiveGranularity: 'line' };
@@ -702,7 +702,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.5',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -841,6 +841,6 @@ const plugin = {
                 return html;
             }
         };
-        Logger.log('diff-engine: module registered (Context.diffEngine)');
+        Logger.log('module registered (Context.diffEngine)');
     }
 };

@@ -66,7 +66,7 @@ async function aiChatCopyWithFeedback(el, text, logLabel) {
         } else {
             aiChatFlashCopyButton(el, false);
         }
-        Logger.warn(PLUGIN_ID + ': copy skipped (empty ' + (logLabel || 'payload') + ')');
+        Logger.warn('copy skipped (empty ' + (logLabel || 'payload') + ')');
         return false;
     }
     try {
@@ -83,14 +83,14 @@ async function aiChatCopyWithFeedback(el, text, logLabel) {
             Context.buttonFeedback.flashSuccess(el);
         }
         aiChatFlashCopyButton(el, true);
-        Logger.log(PLUGIN_ID + ': copied ' + (logLabel || 'chat copy') + ' (' + value.length + ' chars)');
+        Logger.log('copied ' + (logLabel || 'chat copy') + ' (' + value.length + ' chars)');
         return true;
     } catch (err) {
         if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
             Context.buttonFeedback.flashFailure(el);
         }
         aiChatFlashCopyButton(el, false);
-        Logger.error(PLUGIN_ID + ': failed to copy ' + (logLabel || 'chat copy'), err);
+        Logger.error('failed to copy ' + (logLabel || 'chat copy'), err);
         return false;
     }
 }
@@ -658,13 +658,13 @@ function aiChatReconcileAttachment(row, attachment) {
                 if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
                     Context.buttonFeedback.flashSuccess(idBtn);
                 }
-                Logger.log(PLUGIN_ID + ': copied verifier task id (' + value.length + ' chars)');
+                Logger.log('copied verifier task id (' + value.length + ' chars)');
             } catch (err) {
                 aiChatFlashAttachIdButton(idBtn, false);
                 if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
                     Context.buttonFeedback.flashFailure(idBtn);
                 }
-                Logger.error(PLUGIN_ID + ': failed to copy verifier task id', err);
+                Logger.error('failed to copy verifier task id', err);
             }
         });
         summary.appendChild(idBtn);
@@ -926,7 +926,7 @@ function aiChatSyncHistory(el, state) {
     try {
         el.history = aiChatVisibleHistory(state);
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': failed to sync deep-chat history', err);
+        Logger.warn('failed to sync deep-chat history', err);
     }
 }
 
@@ -2353,7 +2353,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '7.2',
+    _version: '7.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2361,7 +2361,7 @@ const plugin = {
     init(state) {
         Context.aiChat = AiChatApi;
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': module registered (Context.aiChat) v' + AI_CHAT_VERSION
+            Logger.log('module registered (Context.aiChat) v' + AI_CHAT_VERSION
                 + ' · deep-chat UI');
             state.registered = true;
         }

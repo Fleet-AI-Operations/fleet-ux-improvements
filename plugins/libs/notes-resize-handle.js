@@ -7,7 +7,7 @@ const NotesResizeHandleApi = {
         const notesTextarea = this.findNotesTextarea(logTag);
         if (!notesTextarea) {
             if (!state.missingLogged) {
-                Logger.debug(logTag + ': QA notes textarea not found yet');
+                Logger.debug('QA notes textarea not found yet');
                 state.missingLogged = true;
             }
             return;
@@ -21,7 +21,7 @@ const NotesResizeHandleApi = {
         notesTextarea.dataset.wfNotesResizeApplied = '1';
 
         state.missingLogged = false;
-        Logger.log(logTag + ': DOM ready — enabled vertical resize on QA notes textarea');
+        Logger.log('DOM ready — enabled vertical resize on QA notes textarea');
     },
 
     findNotesTextarea(logTag) {
@@ -52,7 +52,7 @@ const plugin = {
     id: 'notesResizeHandleLib',
     name: 'Notes Resize Handle (library)',
     description: 'Shared API for enabling vertical resize on the QA reviewer notes textarea',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -63,7 +63,7 @@ const plugin = {
             findNotesTextarea: (logTag) => NotesResizeHandleApi.findNotesTextarea(logTag)
         };
         if (!state.registered) {
-            Logger.log('notesResizeHandleLib: module registered (Context.notesResizeHandle)');
+            Logger.log('module registered (Context.notesResizeHandle)');
             state.registered = true;
         }
     }

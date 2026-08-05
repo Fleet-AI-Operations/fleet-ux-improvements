@@ -166,7 +166,7 @@ const searchOutputStatsPaneMethods = {
         const next = engine.setActiveDashboardId(this._ensureStatsLayout(), dashboardId);
         this._state.statsLayout = next;
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: active dashboard set — ' + dashboardId);
+        Logger.log('active dashboard set — ' + dashboardId);
         void this._renderStatsPanel();
     },
 
@@ -178,12 +178,12 @@ const searchOutputStatsPaneMethods = {
         if (nextName == null) return;
         const trimmed = String(nextName).trim();
         if (!trimmed) {
-            Logger.warn('search-output-stats-pane: dashboard rename skipped — empty name');
+            Logger.warn('dashboard rename skipped — empty name');
             return;
         }
         this._state.statsLayout = engine.renameDashboard(this._ensureStatsLayout(), active.id, trimmed);
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: dashboard renamed — ' + trimmed);
+        Logger.log('dashboard renamed — ' + trimmed);
         this._syncStatsToolbarUi();
         void this._renderStatsPanel();
     },
@@ -194,13 +194,13 @@ const searchOutputStatsPaneMethods = {
         const store = this._ensureStatsLayout();
         const max = engine.maxDashboards || 5;
         if ((store.dashboards || []).length >= max) {
-            Logger.warn('search-output-stats-pane: add dashboard blocked — at limit ' + max);
+            Logger.warn('add dashboard blocked — at limit ' + max);
             return;
         }
         this._state.statsLayout = engine.addDashboard(store);
         this._persistStatsLayout();
         const active = this._activeStatsDashboard();
-        Logger.log('search-output-stats-pane: dashboard added — ' + (active && active.name));
+        Logger.log('dashboard added — ' + (active && active.name));
         void this._renderStatsPanel();
     },
 
@@ -210,7 +210,7 @@ const searchOutputStatsPaneMethods = {
         const active = this._activeStatsDashboard();
         if (!engine || !active || typeof engine.deleteDashboard !== 'function') return;
         if ((store.dashboards || []).length <= 1) {
-            Logger.warn('search-output-stats-pane: delete dashboard blocked — last remaining');
+            Logger.warn('delete dashboard blocked — last remaining');
             return;
         }
         const confirmed = confirm(
@@ -219,7 +219,7 @@ const searchOutputStatsPaneMethods = {
         if (!confirmed) return;
         this._state.statsLayout = engine.deleteDashboard(store, active.id);
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: dashboard deleted — ' + active.id);
+        Logger.log('dashboard deleted — ' + active.id);
         void this._renderStatsPanel();
     },
 
@@ -234,7 +234,7 @@ const searchOutputStatsPaneMethods = {
             toDashboardId
         );
         if (!result || !result.chart) {
-            Logger.warn('search-output-stats-pane: copy chart failed — ' + chartId + ' → ' + toDashboardId);
+            Logger.warn('copy chart failed — ' + chartId + ' → ' + toDashboardId);
             return;
         }
         this._state.statsLayout = result.store;
@@ -242,8 +242,7 @@ const searchOutputStatsPaneMethods = {
         const target = engine.findDashboard
             ? engine.findDashboard(result.store, toDashboardId)
             : null;
-        Logger.log(
-            'search-output-stats-pane: chart copied — '
+        Logger.log('chart copied — '
             + (result.chart.title || chartId)
             + ' → '
             + (target && target.name ? target.name : toDashboardId)
@@ -293,7 +292,7 @@ const searchOutputStatsPaneMethods = {
         } else {
             void this._renderStatsBuilder();
         }
-        Logger.log('search-output-stats-pane: stats view ' + next);
+        Logger.log('stats view ' + next);
     },
 
     _openStatsBuilder(chartId) {
@@ -429,7 +428,7 @@ const searchOutputStatsPaneMethods = {
         const chart = this._draftToChartObject(draft, engine);
         const validation = engine.validateChart(chart, catalog, items, this._statsCatalogCtx(items));
         if (!validation.ok) {
-            Logger.warn('search-output-stats-pane: builder save blocked — missing ' + (validation.missing[0] && validation.missing[0].label));
+            Logger.warn('builder save blocked — missing ' + (validation.missing[0] && validation.missing[0].label));
             this._renderStatsBuilderValidation(validation.missing);
             return;
         }
@@ -439,7 +438,7 @@ const searchOutputStatsPaneMethods = {
         const targetDash = (store.dashboards || []).find((d) => d.id === targetId)
             || active;
         if (!targetDash) {
-            Logger.warn('search-output-stats-pane: builder save blocked — no target dashboard');
+            Logger.warn('builder save blocked — no target dashboard');
             return;
         }
         chart.id = draft.id || engine.newChartId();
@@ -467,7 +466,7 @@ const searchOutputStatsPaneMethods = {
                 targetDash.charts.push(chart);
             } else {
                 targetDash.charts.push(chart);
-                Logger.debug('search-output-stats-pane: edited chart id not found — appended to target');
+                Logger.debug('edited chart id not found — appended to target');
             }
         } else {
             targetDash.charts.push(chart);
@@ -479,7 +478,7 @@ const searchOutputStatsPaneMethods = {
             this._state.statsLayout = store;
         }
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: chart saved — ' + chart.title + ' → ' + targetDash.name);
+        Logger.log('chart saved — ' + chart.title + ' → ' + targetDash.name);
         this._closeStatsBuilder();
     },
 
@@ -489,7 +488,7 @@ const searchOutputStatsPaneMethods = {
         if (!dash) return;
         dash.charts = (dash.charts || []).filter((c) => c.id !== chartId);
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: chart deleted — ' + chartId);
+        Logger.log('chart deleted — ' + chartId);
         void this._renderStatsPanel();
     },
 
@@ -505,8 +504,7 @@ const searchOutputStatsPaneMethods = {
         const [moved] = dash.charts.splice(from, 1);
         dash.charts.splice(to, 0, moved);
         this._persistStatsLayout();
-        Logger.log(
-            'search-output-stats-pane: chart moved '
+        Logger.log('chart moved '
             + (step < 0 ? 'up' : 'down')
             + ' — '
             + (moved.title || chartId)
@@ -641,7 +639,7 @@ const searchOutputStatsPaneMethods = {
         const next = Boolean(useFiltered);
         if (this._state.statsUseFiltered === next) return;
         this._state.statsUseFiltered = next;
-        Logger.log('search-output-stats-pane: stats scope ' + (next ? 'filtered' : 'all'));
+        Logger.log('stats scope ' + (next ? 'filtered' : 'all'));
         this._syncStatsScopeToggleUi();
         void this._renderStatsPanel();
         if ((this._state.statsTab || 'stats') === 'ratings') {
@@ -948,7 +946,7 @@ const searchOutputStatsPaneMethods = {
                 }
             }
         } catch (e) {
-            Logger.warn('search-output-stats-pane: builder preview failed', e);
+            Logger.warn('builder preview failed', e);
             if (statusEl) {
                 statusEl.style.display = '';
                 statusEl.textContent = 'Preview failed to render.';
@@ -1196,7 +1194,7 @@ const searchOutputStatsPaneMethods = {
             ? engine.setAllowHorizontalStack(store, next)
             : Object.assign({}, store, { allowHorizontalStack: next });
         this._persistStatsLayout();
-        Logger.log('search-output-stats-pane: horizontal stacking ' + (next ? 'enabled' : 'disabled'));
+        Logger.log('horizontal stacking ' + (next ? 'enabled' : 'disabled'));
         void this._renderStatsPanel();
     },
 
@@ -2082,8 +2080,7 @@ const searchOutputStatsPaneMethods = {
             }
 
             if (unplaced.length) {
-                Logger.debug(
-                    'search-output-stats-pane: outlabels dropped '
+                Logger.debug('outlabels dropped '
                     + unplaced.length
                     + ' on '
                     + side
@@ -3053,7 +3050,7 @@ const searchOutputStatsPaneMethods = {
     _exportStatsDashboard() {
         const engine = Context.statsEngine;
         if (!engine || typeof engine.exportLayoutObject !== 'function') {
-            Logger.warn('search-output-stats-pane: dashboard export skipped — stats engine unavailable');
+            Logger.warn('dashboard export skipped — stats engine unavailable');
             return;
         }
         const store = this._ensureStatsLayout();
@@ -3066,19 +3063,19 @@ const searchOutputStatsPaneMethods = {
         const filename = 'fleet-stats-dashboard-' + slug + '-' + date + '.json';
         const json = JSON.stringify(payload, null, 2);
         this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-        Logger.log('search-output-stats-pane: dashboard exported — ' + payload.charts.length + ' chart(s)');
+        Logger.log('dashboard exported — ' + payload.charts.length + ' chart(s)');
     },
 
     _exportStatsChart(chartId) {
         const engine = Context.statsEngine;
         if (!engine || !chartId || typeof engine.exportChartObject !== 'function') {
-            Logger.warn('search-output-stats-pane: chart export skipped — missing chart or engine');
+            Logger.warn('chart export skipped — missing chart or engine');
             return;
         }
         const dash = this._activeStatsDashboard();
         const chart = (dash.charts || []).find((c) => c.id === chartId);
         if (!chart) {
-            Logger.warn('search-output-stats-pane: chart export skipped — chart not found ' + chartId);
+            Logger.warn('chart export skipped — chart not found ' + chartId);
             return;
         }
         const payload = engine.exportChartObject(chart);
@@ -3089,7 +3086,7 @@ const searchOutputStatsPaneMethods = {
         const filename = 'fleet-stats-chart-' + slug + '-' + date + '.json';
         const json = JSON.stringify(payload, null, 2);
         this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-        Logger.log('search-output-stats-pane: chart exported — ' + (chart.title || chartId));
+        Logger.log('chart exported — ' + (chart.title || chartId));
     },
 
     _statsExportImageFilename(prefix, slug) {
@@ -3143,7 +3140,7 @@ const searchOutputStatsPaneMethods = {
             a.click();
             document.body.removeChild(a);
         } catch (e) {
-            Logger.error('search-output-stats-pane: image export download failed', e);
+            Logger.error('image export download failed', e);
         }
     },
 
@@ -3208,7 +3205,7 @@ const searchOutputStatsPaneMethods = {
         try {
             bodyImg = await this._loadStatsImage(bodyDataUrl);
         } catch (e) {
-            Logger.warn('search-output-stats-pane: chart image compose failed — body load error', e);
+            Logger.warn('chart image compose failed — body load error', e);
             return null;
         }
         const theme = this._statsChartTheme();
@@ -3286,7 +3283,7 @@ const searchOutputStatsPaneMethods = {
                     try {
                         rowImgs.push(await this._loadStatsImage(dataUrl));
                     } catch (e) {
-                        Logger.warn('search-output-stats-pane: dashboard image export row compose failed — chart load error', e);
+                        Logger.warn('dashboard image export row compose failed — chart load error', e);
                     }
                 }
                 if (!rowImgs.length) continue;
@@ -3306,7 +3303,7 @@ const searchOutputStatsPaneMethods = {
                 try {
                     images.push(await this._loadStatsImage(dataUrl));
                 } catch (e) {
-                    Logger.warn('search-output-stats-pane: dashboard image export compose failed — chart load error', e);
+                    Logger.warn('dashboard image export compose failed — chart load error', e);
                 }
             }
         }
@@ -3318,23 +3315,23 @@ const searchOutputStatsPaneMethods = {
         const dash = this._activeStatsDashboard();
         const chart = (dash.charts || []).find((c) => c.id === chartIdStr);
         if (!chart) {
-            Logger.warn('search-output-stats-pane: chart image export skipped — chart not found ' + chartIdStr);
+            Logger.warn('chart image export skipped — chart not found ' + chartIdStr);
             return;
         }
         const dataUrl = await this._composeStatsChartImage(chart, this._statsChartBodyCssWidth(chart) || undefined);
         if (!dataUrl) {
-            Logger.warn('search-output-stats-pane: chart image export skipped — chart not rendered ' + chartIdStr);
+            Logger.warn('chart image export skipped — chart not rendered ' + chartIdStr);
             return;
         }
         const filename = this._statsExportImageFilename('fleet-stats-chart', chart.title || chartIdStr);
         this._downloadDataUrl(filename, dataUrl);
-        Logger.log('search-output-stats-pane: chart image exported — ' + (chart.title || chartIdStr));
+        Logger.log('chart image exported — ' + (chart.title || chartIdStr));
     },
 
     async _exportStatsDashboardImage() {
         const dash = this._activeStatsDashboard();
         if (!(dash.charts || []).length) {
-            Logger.warn('search-output-stats-pane: dashboard image export skipped — no charts');
+            Logger.warn('dashboard image export skipped — no charts');
             return;
         }
         const exportCssWidth = this._statsDashboardExportCssWidth();
@@ -3342,11 +3339,11 @@ const searchOutputStatsPaneMethods = {
         try {
             imgs = await this._composeStatsDashboardExportImages(dash, exportCssWidth);
         } catch (e) {
-            Logger.warn('search-output-stats-pane: dashboard image export failed — compose error', e);
+            Logger.warn('dashboard image export failed — compose error', e);
             return;
         }
         if (!imgs.length) {
-            Logger.warn('search-output-stats-pane: dashboard image export skipped — no renderable charts');
+            Logger.warn('dashboard image export skipped — no renderable charts');
             return;
         }
         const gap = 12;
@@ -3357,7 +3354,7 @@ const searchOutputStatsPaneMethods = {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-            Logger.warn('search-output-stats-pane: dashboard image export failed — canvas unavailable');
+            Logger.warn('dashboard image export failed — canvas unavailable');
             return;
         }
         ctx.fillStyle = this._statsResolvedColor('--background', '#f8fafc');
@@ -3369,7 +3366,7 @@ const searchOutputStatsPaneMethods = {
         }
         const filename = this._statsExportImageFilename('fleet-stats-dashboard', (dash && dash.name) || 'dashboard');
         this._downloadDataUrl(filename, canvas.toDataURL('image/png'));
-        Logger.log('search-output-stats-pane: dashboard image exported — ' + imgs.length + ' chart(s)');
+        Logger.log('dashboard image exported — ' + imgs.length + ' chart(s)');
     },
 
     _triggerStatsImportJson() {
@@ -3390,7 +3387,7 @@ const searchOutputStatsPaneMethods = {
                 const payload = engine.parseImportPayload(parsed);
                 if (!payload || !payload.charts || !payload.charts.length) {
                     this._showStatsBuilderImportError('Import failed — expected a chart object or dashboard with a charts array');
-                    Logger.warn('search-output-stats-pane: stats import rejected — invalid payload');
+                    Logger.warn('stats import rejected — invalid payload');
                     return;
                 }
                 const dash = this._activeStatsDashboard();
@@ -3405,21 +3402,21 @@ const searchOutputStatsPaneMethods = {
                 }
                 if (!added) {
                     this._showStatsBuilderImportError('Import failed — no valid charts found in JSON');
-                    Logger.warn('search-output-stats-pane: stats import rejected — no valid charts');
+                    Logger.warn('stats import rejected — no valid charts');
                     return;
                 }
                 this._persistStatsLayout();
                 this._renderStatsBuilderValidation(null);
-                Logger.log('search-output-stats-pane: imported ' + added + ' chart(s) from ' + payload.kind);
+                Logger.log('imported ' + added + ' chart(s) from ' + payload.kind);
                 this._closeStatsBuilder();
             } catch (e) {
                 this._showStatsBuilderImportError('Import failed — invalid JSON');
-                Logger.warn('search-output-stats-pane: stats import parse failed', e);
+                Logger.warn('stats import parse failed', e);
             }
         };
         reader.onerror = () => {
             this._showStatsBuilderImportError('Import failed — could not read file');
-            Logger.warn('search-output-stats-pane: stats import file read failed');
+            Logger.warn('stats import file read failed');
         };
         reader.readAsText(file);
     },
@@ -4396,7 +4393,7 @@ const searchOutputStatsPaneMethods = {
         } catch (e) {
             this._renderStatsWarnings([...warnings, 'Chart.js failed to load — showing text summary only.']);
             this._renderStatsFallbackText(dash, catalog, items, ctx);
-            Logger.warn('search-output-stats-pane: Chart.js load failed', e);
+            Logger.warn('Chart.js load failed', e);
             return;
         }
 
@@ -4440,7 +4437,7 @@ const searchOutputStatsPaneMethods = {
     _setStatsTab(tab) {
         this._state.statsTab = tab;
         this._syncStatsTabUi();
-        Logger.log('search-output-stats-pane: stats tab ' + tab);
+        Logger.log('stats tab ' + tab);
         if (tab === 'stats') {
             void this._renderStatsPanel();
         } else if (tab === 'ratings') {
@@ -4454,11 +4451,11 @@ const searchOutputStatsPaneMethods = {
         const api = Context.searchOutputChat;
         const panel = this._q('[data-wf-dash-search-chat-panel]');
         if (!api || typeof api.wirePanel !== 'function' || !panel) {
-            Logger.warn('search-output-stats-pane: Search Chat unavailable');
+            Logger.warn('Search Chat unavailable');
             return;
         }
         api.wirePanel(panel, this);
-        Logger.log('search-output-stats-pane: Search Chat activated');
+        Logger.log('Search Chat activated');
     },
 
     _syncStatsTabUi() {
@@ -4529,7 +4526,7 @@ const searchOutputStatsPaneMethods = {
         if (!dashApi || typeof dashApi.readStatsPanelHiddenPref !== 'function') return;
         const next = !dashApi.readStatsPanelHiddenPref();
         dashApi.writeStatsPanelHiddenPref(next);
-        Logger.log('search-output-stats-pane: ratings panel ' + (next ? 'hidden' : 'shown'));
+        Logger.log('ratings panel ' + (next ? 'hidden' : 'shown'));
         const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
         if (root && typeof dashApi.applyStatsPanelLayout === 'function') {
             dashApi.applyStatsPanelLayout(root);
@@ -4642,14 +4639,14 @@ const searchOutputStatsPaneMethods = {
 
     _generateRatingsFromResults() {
         if (!this._state.hasSearched || !this._state.cachedItems || this._state.cachedItems.length === 0) {
-            Logger.warn('search-output-stats-pane: generate ratings skipped — no search results');
+            Logger.warn('generate ratings skipped — no search results');
             return;
         }
         this._state.ratingsFromResults = true;
         this._state.ratingsSortKey = 'confidence-desc';
         const scopeItems = this._getRatingsScopeItems();
         const derivedIds = this._collectRatingWorkerIdsFromItems(scopeItems, this._state.committed || {});
-        Logger.log('search-output-stats-pane: ratings generated from results — ' + derivedIds.length + ' worker(s) · '
+        Logger.log('ratings generated from results — ' + derivedIds.length + ' worker(s) · '
             + this._ratingsScopeLabel());
         this._renderRatingsPanel({ recompute: true });
     },
@@ -5867,9 +5864,9 @@ const searchOutputStatsPaneMethods = {
             const scopeLabel = this._ratingsScopeLabel();
             const workerCount = (report.workers || []).length;
             if (report && report.error && report.error.code === 'baselinesUnavailable') {
-                Logger.warn('search-output-stats-pane: ratings blocked — baselines unavailable');
+                Logger.warn('ratings blocked — baselines unavailable');
             } else {
-                Logger.log('search-output-stats-pane: ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
+                Logger.log('ratings computed — ' + workerCount + ' worker(s) · ' + scopeLabel
                     + (committed.ratingsEveryone ? ' (@everyone)' : '')
                     + (this._state.ratingsFromResults && !committed.ratingsEveryone ? ' (from results)' : ''));
             }
@@ -5897,7 +5894,7 @@ const searchOutputStatsPaneMethods = {
 
         if (visibleWorkers.length === 0) {
             cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No ratings match the current filters.</p>';
-            Logger.debug('search-output-stats-pane: ratings view — showing 0 of ' + allWorkers.length);
+            Logger.debug('ratings view — showing 0 of ' + allWorkers.length);
             return;
         }
 
@@ -5905,7 +5902,7 @@ const searchOutputStatsPaneMethods = {
         if (Context.ratingExplain && typeof Context.ratingExplain.remountOpen === 'function') {
             Context.ratingExplain.remountOpen(cardsEl);
         }
-        Logger.debug('search-output-stats-pane: ratings view — showing ' + visibleWorkers.length + ' of ' + allWorkers.length);
+        Logger.debug('ratings view — showing ' + visibleWorkers.length + ' of ' + allWorkers.length);
     },
 
     _downloadTextFile(filename, content, mime) {
@@ -5921,7 +5918,7 @@ const searchOutputStatsPaneMethods = {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } catch (e) {
-            Logger.error('search-output: rating export download failed', e);
+            Logger.error('rating export download failed', e);
         }
     },
 
@@ -5966,19 +5963,19 @@ const searchOutputStatsPaneMethods = {
 
     _exportFilteredRatingsJson() {
         if (!Context.isDevBranch) {
-            Logger.warn('search-output-stats-pane: ratings bulk export skipped — not a dev build');
+            Logger.warn('ratings bulk export skipped — not a dev build');
             return;
         }
         const report = this._state.ratingsReport;
         if (!report || !report.workers) {
-            Logger.warn('search-output-stats-pane: ratings bulk export skipped — no report');
+            Logger.warn('ratings bulk export skipped — no report');
             return;
         }
         const committed = this._state.committed || {};
         const scoreTypes = this._ratingSearchScoreTypes(committed);
         const visibleWorkers = this._applyRatingsViewFilters(report.workers, scoreTypes);
         if (visibleWorkers.length === 0) {
-            Logger.warn('search-output-stats-pane: ratings bulk export skipped — no visible workers');
+            Logger.warn('ratings bulk export skipped — no visible workers');
             return;
         }
         const payload = this._buildRatingsBulkExportPayload(visibleWorkers);
@@ -5989,19 +5986,19 @@ const searchOutputStatsPaneMethods = {
         const filename = 'fleet-ratings-' + date + '.json';
         const json = JSON.stringify(payload, null, 2);
         this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-        Logger.log('search-output-stats-pane: ratings bulk exported — ' + payload.workers.length + ' worker(s) · ' + filename);
+        Logger.log('ratings bulk exported — ' + payload.workers.length + ' worker(s) · ' + filename);
     },
 
     _handleRatingExport(workerId, format) {
         const engine = Context.ratingEngine;
         const report = this._state.ratingsReport;
         if (!engine || !report || !report.workers) {
-            Logger.warn('search-output-stats-pane: rating export skipped — no report');
+            Logger.warn('rating export skipped — no report');
             return;
         }
         const worker = report.workers.find((w) => w.workerId === workerId);
         if (!worker) {
-            Logger.warn('search-output-stats-pane: rating export skipped — worker not found ' + workerId);
+            Logger.warn('rating export skipped — worker not found ' + workerId);
             return;
         }
         const exportedAt = new Date().toISOString();
@@ -6025,7 +6022,7 @@ const searchOutputStatsPaneMethods = {
 
         if (format === 'diagnostics') {
             if (typeof engine.buildDiagnosticsReport !== 'function') {
-                Logger.warn('search-output-stats-pane: diagnostics export skipped — engine method missing');
+                Logger.warn('diagnostics export skipped — engine method missing');
                 return;
             }
             const warnings = [...this._getRatingsPrefetchWarnings(), ...this._getRatingsHydrationWarnings()];
@@ -6039,17 +6036,17 @@ const searchOutputStatsPaneMethods = {
             const json = engine.serializeDiagnosticsJson(diagnostics);
             const filename = engine.buildDiagnosticsFilename(workerExport);
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-            Logger.log('search-output-stats-pane: rating diagnostics exported — ' + filename);
+            Logger.log('rating diagnostics exported — ' + filename);
             return;
         }
 
         if (format === 'llm') {
             if (!Context.isDevBranch) {
-                Logger.warn('search-output-stats-pane: LLM Data export skipped — not a dev branch');
+                Logger.warn('LLM Data export skipped — not a dev branch');
                 return;
             }
             if (typeof engine.buildLlmExplainData !== 'function') {
-                Logger.warn('search-output-stats-pane: LLM Data export skipped — engine method missing');
+                Logger.warn('LLM Data export skipped — engine method missing');
                 return;
             }
             const weighting = this._ratingWorkerWeighting(workerId);
@@ -6057,7 +6054,7 @@ const searchOutputStatsPaneMethods = {
             const json = JSON.stringify(llmPayload, null, 2);
             const filename = engine.buildExportFilename(workerExport, 'llm-data', 'json');
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-            Logger.log('search-output-stats-pane: rating LLM Data exported — ' + filename);
+            Logger.log('rating LLM Data exported — ' + filename);
             return;
         }
 
@@ -6065,13 +6062,13 @@ const searchOutputStatsPaneMethods = {
             const json = engine.serializeJson(workerExport);
             const filename = engine.buildExportFilename(worker, scoreType, 'json');
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
-            Logger.log('search-output-stats-pane: rating JSON exported — ' + filename);
+            Logger.log('rating JSON exported — ' + filename);
             return;
         }
         const md = engine.serializeMarkdown(workerExport);
         const mdName = engine.buildExportFilename(worker, scoreType, 'md');
         this._downloadTextFile(mdName, md, 'text/markdown;charset=utf-8');
-        Logger.log('search-output-stats-pane: rating MD exported — ' + mdName);
+        Logger.log('rating MD exported — ' + mdName);
     },
 };
 
@@ -6079,19 +6076,19 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.17',
+    _version: '12.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug('search-output-stats-pane: already registered — skipping re-init');
+            Logger.debug('already registered — skipping re-init');
             return;
         }
         Context.searchOutputStatsPaneMethods = searchOutputStatsPaneMethods;
         searchOutputStatsPaneMethods._ensureStatsChartCardStyles();
         if (state) state.registered = true;
-        Logger.log('search-output-stats-pane: registered (Context.searchOutputStatsPaneMethods)');
+        Logger.log('registered (Context.searchOutputStatsPaneMethods)');
     }
 };

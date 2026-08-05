@@ -20,7 +20,7 @@ const RequestRevisionsTaskOnlyApi = {
         const modal = this.findRequestRevisionsModal();
         if (!modal) {
             if (state.activationLogged) {
-                Logger.debug(`${logTag}: Request Revisions modal closed — reset`);
+                Logger.debug(`Request Revisions modal closed — reset`);
                 state.activationLogged = false;
             }
             state.missingLogged = false;
@@ -33,7 +33,7 @@ const RequestRevisionsTaskOnlyApi = {
         const buttonRow = this.findWhereAreTheIssuesButtonRow(modal);
         if (!buttonRow) {
             if (!state.warnLogged) {
-                Logger.warn(`${logTag}: Request Revisions modal open but "Where are the issues?" button row missing`);
+                Logger.warn(`Request Revisions modal open but "Where are the issues?" button row missing`);
                 state.warnLogged = true;
             }
             return;
@@ -70,7 +70,7 @@ const RequestRevisionsTaskOnlyApi = {
             : taskAlreadySelected
               ? 'Task already selected'
               : 'Task button not found';
-        Logger.log(`${logTag}: ${hidSummary}, ${taskSummary}`);
+        Logger.log(`${hidSummary}, ${taskSummary}`);
         state.activationLogged = true;
         state.missingLogged = false;
     },
@@ -147,7 +147,7 @@ const plugin = {
     name: 'Request Revisions Task-Only Issues (library)',
     description:
         'Shared API to hide Task/Environment/Grading and auto-select Task on Request Revisions',
-    _version: '1.1',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -157,8 +157,7 @@ const plugin = {
             run: (s, options) => RequestRevisionsTaskOnlyApi.run(s, options)
         };
         if (!state.registered) {
-            Logger.log(
-                'requestRevisionsTaskOnlyLib: module registered (Context.requestRevisionsTaskOnly)'
+            Logger.log('module registered (Context.requestRevisionsTaskOnly)'
             );
             state.registered = true;
         }

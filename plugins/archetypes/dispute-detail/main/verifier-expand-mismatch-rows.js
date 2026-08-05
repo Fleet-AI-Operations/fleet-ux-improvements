@@ -8,7 +8,7 @@ const plugin = {
     name: 'Verifier expand mismatch rows',
     description:
         'Automatically expands Per-Field Comparison rows that failed verification (red X) so mismatch details show by default',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -43,11 +43,11 @@ const plugin = {
         const found = this.findPerFieldSection();
         if (!found) {
             if (state.sectionLogged && !state.sectionLeftLogged) {
-                Logger.debug(`${this.id}: Per-Field Comparison section left DOM`);
+                Logger.debug(`Per-Field Comparison section left DOM`);
                 state.sectionLeftLogged = true;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: Per-Field Comparison section not found yet`);
+                Logger.debug(`Per-Field Comparison section not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -57,7 +57,7 @@ const plugin = {
 
         if (!state.sectionLogged) {
             state.sectionLogged = true;
-            Logger.debug(`${this.id}: Per-Field Comparison section detected`);
+            Logger.debug(`Per-Field Comparison section detected`);
         }
 
         if (state.pendingRaf != null) {
@@ -123,7 +123,7 @@ const plugin = {
                 }
             }
             if (n > 0) {
-                Logger.log(`${this.id}: expanded ${n} failed verifier row(s) for visibility`);
+                Logger.log(`expanded ${n} failed verifier row(s) for visibility`);
             }
         });
     }

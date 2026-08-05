@@ -192,7 +192,7 @@ const plugin = {
     name: 'FOS Embedded Watcher',
     description:
         'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -244,7 +244,7 @@ const plugin = {
         this._listenClipboardResults(state);
         this._watchEnvIframes(state);
         this._installLayoutListeners(state);
-        Logger.debug('fosEmbeddedWatcher: parent watchers registered');
+        Logger.debug('parent watchers registered');
     },
 
     _exposeApi(state) {
@@ -259,7 +259,7 @@ const plugin = {
                 state.uiHosts.add(id);
                 if (wasEmpty && state.uiHosts.size > 0) {
                     self._teardownAllPanels(state);
-                    Logger.log('fosEmbeddedWatcher: UI host claimed — floating VM Clipboard suppressed');
+                    Logger.log('UI host claimed — floating VM Clipboard suppressed');
                 }
             },
             releaseUiHost(ownerId) {
@@ -269,7 +269,7 @@ const plugin = {
                 }
                 state.uiHosts.delete(id);
                 if (state.uiHosts.size === 0) {
-                    Logger.log('fosEmbeddedWatcher: UI hosts cleared — floating VM Clipboard allowed');
+                    Logger.log('UI hosts cleared — floating VM Clipboard allowed');
                     state.readyInstances.forEach((entry, instanceId) => {
                         if (entry && entry.iframe && entry.child) {
                             self._mountClipboardPanel(state, instanceId, entry.child, entry.iframe);
@@ -308,7 +308,7 @@ const plugin = {
         };
         if (!state.apiRegistered) {
             state.apiRegistered = true;
-            Logger.log('fosEmbeddedWatcher: Context.fosEmbedded registered');
+            Logger.log('Context.fosEmbedded registered');
         }
     },
 
@@ -332,7 +332,7 @@ const plugin = {
             try {
                 listener({ instanceId: String(instanceId), ready: !!ready });
             } catch (e) {
-                Logger.warn('fosEmbeddedWatcher: readiness listener threw', e);
+                Logger.warn('readiness listener threw', e);
             }
         });
     },
@@ -376,14 +376,14 @@ const plugin = {
         const id = String(instanceId || '');
         const child = this._resolveChild(state, id);
         if (!child || !child.source) {
-            Logger.warn('fosEmbeddedWatcher: overwrite failed — child missing for ' + id);
+            Logger.warn('overwrite failed — child missing for ' + id);
             return false;
         }
         let text;
         try {
             text = await navigator.clipboard.readText();
         } catch (e) {
-            Logger.warn('fosEmbeddedWatcher: overwrite failed — could not read system clipboard', e);
+            Logger.warn('overwrite failed — could not read system clipboard', e);
             return false;
         }
         if (text == null) {
@@ -398,15 +398,15 @@ const plugin = {
             );
         } catch (ePost) {
             state.pendingRequests.delete(requestId);
-            Logger.warn('fosEmbeddedWatcher: push postMessage failed', ePost);
+            Logger.warn('push postMessage failed', ePost);
             return false;
         }
         const result = await resultPromise;
         if (result && result.ok) {
-            Logger.log('fosEmbeddedWatcher: overwrite ok for ' + id);
+            Logger.log('overwrite ok for ' + id);
             return true;
         }
-        Logger.warn('fosEmbeddedWatcher: overwrite failed for ' + id);
+        Logger.warn('overwrite failed for ' + id);
         return false;
     },
 
@@ -414,7 +414,7 @@ const plugin = {
         const id = String(instanceId || '');
         const child = this._resolveChild(state, id);
         if (!child || !child.source) {
-            Logger.warn('fosEmbeddedWatcher: extract failed — child missing for ' + id);
+            Logger.warn('extract failed — child missing for ' + id);
             return false;
         }
         const requestId = fosNextRequestId();
@@ -426,20 +426,20 @@ const plugin = {
             );
         } catch (ePost) {
             state.pendingRequests.delete(requestId);
-            Logger.warn('fosEmbeddedWatcher: extract postMessage failed', ePost);
+            Logger.warn('extract postMessage failed', ePost);
             return false;
         }
         const result = await resultPromise;
         if (!result || !result.ok || typeof result.text !== 'string' || !result.text) {
-            Logger.warn('fosEmbeddedWatcher: extract failed for ' + id);
+            Logger.warn('extract failed for ' + id);
             return false;
         }
         try {
             await navigator.clipboard.writeText(result.text);
-            Logger.log('fosEmbeddedWatcher: extract ok for ' + id);
+            Logger.log('extract ok for ' + id);
             return true;
         } catch (eWrite) {
-            Logger.warn('fosEmbeddedWatcher: extract failed — could not write system clipboard', eWrite);
+            Logger.warn('extract failed — could not write system clipboard', eWrite);
             return false;
         }
     },
@@ -466,8 +466,7 @@ const plugin = {
             return false;
         }
         rec.isFosDesktop = true;
-        Logger.log(
-            'fosEmbeddedWatcher: FOS desktop shape for instance ' +
+        Logger.log('FOS desktop shape for instance ' +
                 id +
                 (reason ? ' (' + reason + ')' : '')
         );
@@ -479,9 +478,9 @@ const plugin = {
         const host = fosHostnameFromIframe(iframe) || 'unknown';
         if (!state.clipboardPatchedLogged) {
             state.clipboardPatchedLogged = true;
-            Logger.log('fosEmbeddedWatcher: enabled clipboard permissions on env iframe ' + host);
+            Logger.log('enabled clipboard permissions on env iframe ' + host);
         } else {
-            Logger.debug('fosEmbeddedWatcher: clipboard permissions patched on ' + host);
+            Logger.debug('clipboard permissions patched on ' + host);
         }
     },
 
@@ -641,7 +640,7 @@ const plugin = {
             entry.root.parentNode.removeChild(entry.root);
         }
         state.clipboardPanels.delete(instanceId);
-        Logger.debug('fosEmbeddedWatcher: VM Clipboard panel removed for ' + instanceId);
+        Logger.debug('VM Clipboard panel removed for ' + instanceId);
     },
 
     _teardownAllPanels(state) {
@@ -774,7 +773,7 @@ const plugin = {
         closeBtn.addEventListener('click', (ev) => {
             ev.stopPropagation();
             self._teardownPanel(state, instanceId);
-            Logger.log('fosEmbeddedWatcher: VM Clipboard panel dismissed for ' + instanceId);
+            Logger.log('VM Clipboard panel dismissed for ' + instanceId);
         });
 
         btnRow.appendChild(bExtract);
@@ -845,9 +844,9 @@ const plugin = {
 
         if (!state.panelMountedLogged) {
             state.panelMountedLogged = true;
-            Logger.log('fosEmbeddedWatcher: mounted parent VM Clipboard for ' + instanceId);
+            Logger.log('mounted parent VM Clipboard for ' + instanceId);
         } else {
-            Logger.debug('fosEmbeddedWatcher: mounted VM Clipboard for ' + instanceId);
+            Logger.debug('mounted VM Clipboard for ' + instanceId);
         }
     },
 
@@ -884,19 +883,18 @@ const plugin = {
             }
             if (!state.activationLogged) {
                 state.activationLogged = true;
-                Logger.log(
-                    'fosEmbeddedWatcher: signaled embedded FOS iframe for instance ' +
+                Logger.log('signaled embedded FOS iframe for instance ' +
                         instanceId +
                         ' (' +
                         rec.envKey +
                         ')'
                 );
             } else {
-                Logger.debug('fosEmbeddedWatcher: signaled instance ' + instanceId);
+                Logger.debug('signaled instance ' + instanceId);
             }
             return true;
         } catch (e) {
-            Logger.warn('fosEmbeddedWatcher: postMessage to child failed for ' + instanceId, e);
+            Logger.warn('postMessage to child failed for ' + instanceId, e);
             return false;
         }
     },
@@ -917,7 +915,7 @@ const plugin = {
 
     _subscribeOrchestrator(state) {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.warn('fosEmbeddedWatcher: NetworkObserver unavailable; orchestrator capture skipped');
+            Logger.warn('NetworkObserver unavailable; orchestrator capture skipped');
             return;
         }
         const self = this;
@@ -943,8 +941,7 @@ const plugin = {
                         const instanceId = String(body.instance_id);
                         const rec = self._ensureInstance(state, instanceId);
                         rec.envKey = String(body.env_key);
-                        Logger.log(
-                            'fosEmbeddedWatcher: env instance registered ' +
+                        Logger.log('env instance registered ' +
                                 instanceId +
                                 ' env=' +
                                 rec.envKey
@@ -958,7 +955,7 @@ const plugin = {
 
     _subscribeDesktopShape(state) {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.warn('fosEmbeddedWatcher: NetworkObserver unavailable; desktop shape capture skipped');
+            Logger.warn('NetworkObserver unavailable; desktop shape capture skipped');
             return;
         }
         const self = this;
@@ -986,7 +983,7 @@ const plugin = {
 
     _subscribeLatch(state) {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.warn('fosEmbeddedWatcher: NetworkObserver unavailable; latch capture skipped');
+            Logger.warn('NetworkObserver unavailable; latch capture skipped');
             return;
         }
         const self = this;
@@ -1006,8 +1003,7 @@ const plugin = {
                 const rec = self._ensureInstance(state, instanceId);
                 if (!rec.latchReady) {
                     rec.latchReady = true;
-                    Logger.log(
-                        'fosEmbeddedWatcher: env ready for instance ' +
+                    Logger.log('env ready for instance ' +
                             instanceId +
                             ' (' +
                             meta.urlObj.pathname +
@@ -1083,10 +1079,10 @@ const plugin = {
             const child = { source: event.source, origin: event.origin };
             self._patchIframeForChild(state, child, hostname);
             self._markFosDesktop(state, instanceId, 'child-ready');
-            Logger.debug('fosEmbeddedWatcher: child-ready from ' + instanceId);
+            Logger.debug('child-ready from ' + instanceId);
             if (!self._tryNotifyChild(state, instanceId, child)) {
                 state.pendingChildren.set(instanceId, child);
-                Logger.debug('fosEmbeddedWatcher: child queued pending latch for ' + instanceId);
+                Logger.debug('child queued pending latch for ' + instanceId);
             }
         });
     }

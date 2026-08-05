@@ -21,7 +21,7 @@ const plugin = {
     name: 'User Story Markdown',
     description:
         'Markdown-rendered Scenario / User Story collapsible and full-story copy control on dispute detail',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -189,12 +189,12 @@ const plugin = {
                 if (Context.buttonFeedback) {
                     Context.buttonFeedback.flashSuccess(copyBtn, { restoreStyles: false });
                 }
-                Logger.log(this.id + ': copied scenario story (' + text.length + ' chars)');
+                Logger.log('copied scenario story (' + text.length + ' chars)');
             } else {
                 if (Context.buttonFeedback) {
                     Context.buttonFeedback.flashFailure(copyBtn, { restoreStyles: false });
                 }
-                Logger.warn(this.id + ': scenario story copy failed');
+                Logger.warn('scenario story copy failed');
             }
         };
 
@@ -212,7 +212,7 @@ const plugin = {
         root.headerSpan.appendChild(copyBtn);
 
         if (!state.copyButtonLogged) {
-            Logger.log(this.id + ': copy control injected in Scenario / User Story header');
+            Logger.log('copy control injected in Scenario / User Story header');
             state.copyButtonLogged = true;
         }
     }

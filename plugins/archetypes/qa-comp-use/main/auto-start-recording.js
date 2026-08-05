@@ -5,7 +5,7 @@ const plugin = {
     id: 'autoStartRecording',
     name: 'Auto Start Recording',
     description: 'Automatically clicks the "Start Recording" button once when it appears on the page.',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -35,7 +35,7 @@ const plugin = {
         try {
             button.click();
             state.clicked = true;
-            Logger.log('✓ Auto Start Recording: clicked \"Start Recording\" button');
+            Logger.log('Auto Start Recording: clicked \"Start Recording\" button');
         } catch (error) {
             Logger.error('Auto Start Recording: failed to click \"Start Recording\" button', error);
         }

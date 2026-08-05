@@ -15,7 +15,7 @@ const plugin = {
     name: 'Expert Feedback Tooltip Fix',
     description:
         'Fixes Recent Feedback tooltip text color and enables scrolling for long feedback on expert profile pages',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -40,10 +40,10 @@ const plugin = {
         if (fixedNow > 0) {
             state.fixedCount += fixedNow;
             if (!state.activationLogged) {
-                Logger.log(PLUGIN_ID + ': enhancing Recent Feedback tooltip');
+                Logger.log('enhancing Recent Feedback tooltip');
                 state.activationLogged = true;
             }
-            Logger.debug(PLUGIN_ID + ': updated ' + fixedNow + ' feedback tooltip(s)');
+            Logger.debug('updated ' + fixedNow + ' feedback tooltip(s)');
         }
     },
 
@@ -79,7 +79,7 @@ const plugin = {
             '-webkit-overflow-scrolling: touch;' +
             '}';
         document.head.appendChild(style);
-        Logger.debug(PLUGIN_ID + ': injected tooltip text color stylesheet');
+        Logger.debug('injected tooltip text color stylesheet');
     },
 
     _fixFeedbackTooltips() {

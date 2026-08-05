@@ -87,7 +87,7 @@ const teamMembersMethods = {
                     this._syncMsDropdown(scopeKey, { immediate: true });
                 }
             });
-            Logger.debug('team-members: constraint filter state reset');
+            Logger.debug('constraint filter state reset');
         });
     },
 
@@ -103,9 +103,9 @@ const teamMembersMethods = {
                 const itemsEl = typeof this._msItemsEl === 'function' ? this._msItemsEl(scopeKey) : null;
                 const rowCount = itemsEl ? itemsEl.querySelectorAll('[data-wf-dash-ms-dual-row]').length : -1;
                 const open = Boolean(this._state && this._state.msDropdownOpen[scopeKey]);
-                Logger.debug('team-members: ' + scopeKey + ' rows=' + rowCount + ' open=' + open);
+                Logger.debug('' + scopeKey + ' rows=' + rowCount + ' open=' + open);
                 if (rowCount === 0 && itemsEl) {
-                    Logger.warn('team-members: constraint list empty after populate — ' + scopeKey);
+                    Logger.warn('constraint list empty after populate — ' + scopeKey);
                 }
                 if (typeof this._syncMsDropdown === 'function') {
                     this._syncMsDropdown(scopeKey, { immediate: true });
@@ -127,7 +127,7 @@ const teamMembersMethods = {
                 ? this._readDualConstraintSelection('team-members-permissions')
                 : { include: new Set(), exclude: new Set() };
             if (typeof this._renderDualConstraintMsList !== 'function') {
-                Logger.warn('team-members: _renderDualConstraintMsList unavailable');
+                Logger.warn('_renderDualConstraintMsList unavailable');
                 return;
             }
             this._renderDualConstraintMsList(
@@ -141,7 +141,7 @@ const teamMembersMethods = {
             if (!loading) {
                 this._syncTeamMemberConstraintListsUi(modal);
             }
-            Logger.log('team-members: constraint lists rendered'
+            Logger.log('constraint lists rendered'
                 + (loading ? ' (loading)' : ' — ' + (options.teamItems || []).length + ' teams, '
                     + (options.permItems || []).length + ' permissions'));
         });
@@ -171,7 +171,7 @@ const teamMembersMethods = {
             const v = String(value || TEAM_MEMBERS_PAGE_SIZE_DEFAULT);
             Storage.setData(TEAM_MEMBERS_PAGE_SIZE_KEY, v);
         } catch (e) {
-            Logger.debug('team-members: could not persist page size', e);
+            Logger.debug('could not persist page size', e);
         }
     },
 
@@ -237,7 +237,7 @@ const teamMembersMethods = {
         const next = meta.page + delta;
         if (next < 0 || next >= meta.totalPages) return;
         this._teamMembersPage = next;
-        Logger.log('team-members: page — ' + (next + 1) + ' / ' + meta.totalPages);
+        Logger.log('page — ' + (next + 1) + ' / ' + meta.totalPages);
         const ops = Context.opsTab;
         if (ops && typeof ops.filterTeamSearchCards === 'function') {
             ops.filterTeamSearchCards(modal || this._modal);
@@ -267,7 +267,7 @@ const teamMembersMethods = {
         });
         const rowEl = row.firstElementChild;
         if (rowEl) rowsEl.appendChild(rowEl);
-        Logger.debug('team-members: numeric filter row added');
+        Logger.debug('numeric filter row added');
     },
 
     _readNumericFilters(modal) {
@@ -475,7 +475,7 @@ function attachTeamMembersListeners(modal, dash) {
             dash._teamMembersPageSize = val === 'all' ? 'all' : (Number(val) || TEAM_MEMBERS_PAGE_SIZE_DEFAULT);
             if (typeof dash._persistTeamMembersPageSizePref === 'function') dash._persistTeamMembersPageSizePref(val);
             if (typeof dash.resetTeamMembersPage === 'function') dash.resetTeamMembersPage();
-            Logger.log('team-members: page size — ' + val);
+            Logger.log('page size — ' + val);
             if (ops && typeof ops.filterTeamSearchCards === 'function') ops.filterTeamSearchCards(modal);
         });
     }
@@ -500,7 +500,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '4.1',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -508,7 +508,7 @@ const plugin = {
     init() {
         const loader = Context.dashboard && Context.dashboard._loader;
         if (!loader) {
-            Logger.error('team-members: dashboard loader not registered');
+            Logger.error('dashboard loader not registered');
             return;
         }
         Object.assign(loader, teamMembersMethods);
@@ -525,7 +525,7 @@ const plugin = {
                 if (typeof dash._captureTeamMembersState === 'function') dash._captureTeamMembersState(modal);
             }
         });
-        Logger.log('team-members: tab registered');
+        Logger.log('tab registered');
     }
 
 };

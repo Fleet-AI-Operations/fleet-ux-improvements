@@ -6,7 +6,7 @@ const plugin = {
     name: 'VM Clipboard',
     description:
         'Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -25,9 +25,9 @@ const plugin = {
         if (Context.fosEmbedded && typeof Context.fosEmbedded.claimUiHost === 'function') {
             Context.fosEmbedded.claimUiHost(this.id);
             state.uiHostClaimed = true;
-            Logger.log(`${this.id}: claimed FOS UI host (floating panel suppressed)`);
+            Logger.log(`claimed FOS UI host (floating panel suppressed)`);
         } else {
-            Logger.debug(`${this.id}: Context.fosEmbedded missing at init — will retry on mutation`);
+            Logger.debug(`Context.fosEmbedded missing at init — will retry on mutation`);
         }
     },
 
@@ -41,7 +41,7 @@ const plugin = {
         if (!state.uiHostClaimed && Context.fosEmbedded && typeof Context.fosEmbedded.claimUiHost === 'function') {
             Context.fosEmbedded.claimUiHost(this.id);
             state.uiHostClaimed = true;
-            Logger.log(`${this.id}: claimed FOS UI host (floating panel suppressed)`);
+            Logger.log(`claimed FOS UI host (floating panel suppressed)`);
         }
 
         const api = Context.fosVmClipboardBar;
@@ -52,14 +52,14 @@ const plugin = {
         const taskCard = document.querySelector('[data-ui="qa-task-card"]');
         if (!taskCard) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: task card left DOM — clipboard bar inactive`);
+                Logger.debug(`task card left DOM — clipboard bar inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
                 state.readyShownLogged = false;
                 state.readyHiddenLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: [data-ui="qa-task-card"] not found yet`);
+                Logger.debug(`[data-ui="qa-task-card"] not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -68,14 +68,14 @@ const plugin = {
         const verifierTab = this.findVerifierTab();
         if (!verifierTab) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: verifier tab left DOM — clipboard bar inactive`);
+                Logger.debug(`verifier tab left DOM — clipboard bar inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
                 state.readyShownLogged = false;
                 state.readyHiddenLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: verifier tab not found yet`);
+                Logger.debug(`verifier tab not found yet`);
                 state.missingLogged = true;
             }
             return;

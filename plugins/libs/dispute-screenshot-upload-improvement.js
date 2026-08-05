@@ -330,7 +330,7 @@ const plugin = {
     name: 'Dispute Screenshot Upload Improvement (library)',
     description:
         'Shared API for dispute resolution screenshot drag-drop/upload and paste-image controls',
-    _version: '1.1',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -340,8 +340,7 @@ const plugin = {
             run: (s, options) => DisputeScreenshotUploadApi.run(s, options)
         };
         if (!state.registered) {
-            Logger.log(
-                'disputeScreenshotUploadImprovementLib: module registered (Context.disputeScreenshotUpload)'
+            Logger.log('module registered (Context.disputeScreenshotUpload)'
             );
             state.registered = true;
         }

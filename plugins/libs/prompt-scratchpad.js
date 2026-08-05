@@ -5,7 +5,7 @@ const PromptScratchpadApi = {
     id: 'promptScratchpad',
     name: 'Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -55,7 +55,7 @@ const PromptScratchpadApi = {
             if (!state.resizeHandlerAttached) {
                 this.attachResizeHandler(state, scratchpadContainer);
                 state.resizeHandlerAttached = true;
-                Logger.debug(`${this.id}: Resize handler attached`);
+                Logger.debug(`Resize handler attached`);
             }
             return;
         }
@@ -65,16 +65,16 @@ const PromptScratchpadApi = {
         promptSection.insertAdjacentElement('afterend', scratchpad);
         state.scratchpadInserted = true;
         state.insertionFailedLogged = false; // Reset on success
-        Logger.log(`${this.id}: inserted after Prompt section`);
+        Logger.log(`inserted after Prompt section`);
 
         // Attach resize handler
         scratchpadContainer = promptSection.nextElementSibling;
         if (scratchpadContainer && scratchpadContainer.dataset.promptScratchpad === 'true') {
             this.attachResizeHandler(state, scratchpadContainer);
             state.resizeHandlerAttached = true;
-            Logger.debug(`${this.id}: Resize handler attached`);
+            Logger.debug(`Resize handler attached`);
         } else {
-            Logger.warn(`${this.id}: Inserted but could not find container for resize handler`);
+            Logger.warn(`Inserted but could not find container for resize handler`);
         }
     },
 
@@ -173,7 +173,7 @@ const PromptScratchpadApi = {
         const resizeHandle = textareaWrapper?.querySelector('div.cursor-ns-resize');
 
         if (!textareaWrapper || !resizeHandle) {
-            Logger.warn(`${this.id}: Could not find textarea wrapper or resize handle for attachment`);
+            Logger.warn(`Could not find textarea wrapper or resize handle for attachment`);
             return;
         }
 
@@ -211,7 +211,7 @@ const PromptScratchpadApi = {
 
             const endH = textareaWrapper.offsetHeight;
             if (endH !== startHeight) {
-                Logger.debug(`${this.id}: user finished resizing prompt scratchpad`, { fromPx: startHeight, toPx: endH });
+                Logger.debug(`user finished resizing prompt scratchpad`, { fromPx: startHeight, toPx: endH });
             }
 
             isResizing = false;

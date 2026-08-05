@@ -41,7 +41,7 @@ const FosVmClipboardBarApi = {
 
         if (!state.activationLogged) {
             const detail = opts.activationDetail || 'VM Clipboard bar injected';
-            Logger.log(`${logTag}: ${detail}`);
+            Logger.log(`${detail}`);
             state.activationLogged = true;
         }
 
@@ -82,7 +82,7 @@ const FosVmClipboardBarApi = {
         if (!api || typeof api.subscribe !== 'function') {
             if (!state.apiMissingLogged) {
                 state.apiMissingLogged = true;
-                Logger.warn(`${logTag}: Context.fosEmbedded unavailable`);
+                Logger.warn(`Context.fosEmbedded unavailable`);
             }
             return;
         }
@@ -96,14 +96,14 @@ const FosVmClipboardBarApi = {
                 if (!state.readyShownLogged) {
                     state.readyShownLogged = true;
                     state.readyHiddenLogged = false;
-                    Logger.log(`${logTag}: VM Clipboard shown (instance ${evt.instanceId})`);
+                    Logger.log(`VM Clipboard shown (instance ${evt.instanceId})`);
                 }
             } else if (evt && !evt.ready) {
                 const stillReady = this._primaryInstanceId();
                 if (!stillReady && !state.readyHiddenLogged) {
                     state.readyHiddenLogged = true;
                     state.readyShownLogged = false;
-                    Logger.log(`${logTag}: VM Clipboard hidden (no ready instance)`);
+                    Logger.log(`VM Clipboard hidden (no ready instance)`);
                 }
             }
         });
@@ -125,11 +125,11 @@ const FosVmClipboardBarApi = {
             if (show && !state.readyShownLogged) {
                 state.readyShownLogged = true;
                 state.readyHiddenLogged = false;
-                Logger.log(`${logTag}: VM Clipboard shown (instance ${readyId})`);
+                Logger.log(`VM Clipboard shown (instance ${readyId})`);
             } else if (!show && !state.readyHiddenLogged && state.activationLogged) {
                 state.readyHiddenLogged = true;
                 state.readyShownLogged = false;
-                Logger.debug(`${logTag}: VM Clipboard hidden (waiting for FOS)`);
+                Logger.debug(`VM Clipboard hidden (waiting for FOS)`);
             }
         }
     },
@@ -174,19 +174,19 @@ const FosVmClipboardBarApi = {
             const instanceId = this._primaryInstanceId();
             if (!api || !instanceId || typeof api.extract !== 'function') {
                 this._flash(bExtract, false);
-                Logger.warn(`${logTag}: extract failed — no ready FOS instance`);
+                Logger.warn(`extract failed — no ready FOS instance`);
                 return;
             }
             api.extract(instanceId).then((ok) => {
                 this._flash(bExtract, !!ok);
                 if (ok) {
-                    Logger.log(`${logTag}: extract ok`);
+                    Logger.log(`extract ok`);
                 } else {
-                    Logger.warn(`${logTag}: extract failed`);
+                    Logger.warn(`extract failed`);
                 }
             }).catch((err) => {
                 this._flash(bExtract, false);
-                Logger.error(`${logTag}: extract promise rejected`, err);
+                Logger.error(`extract promise rejected`, err);
             });
         });
 
@@ -195,19 +195,19 @@ const FosVmClipboardBarApi = {
             const instanceId = this._primaryInstanceId();
             if (!api || !instanceId || typeof api.overwrite !== 'function') {
                 this._flash(bOverwrite, false);
-                Logger.warn(`${logTag}: overwrite failed — no ready FOS instance`);
+                Logger.warn(`overwrite failed — no ready FOS instance`);
                 return;
             }
             api.overwrite(instanceId).then((ok) => {
                 this._flash(bOverwrite, !!ok);
                 if (ok) {
-                    Logger.log(`${logTag}: overwrite ok`);
+                    Logger.log(`overwrite ok`);
                 } else {
-                    Logger.warn(`${logTag}: overwrite failed`);
+                    Logger.warn(`overwrite failed`);
                 }
             }).catch((err) => {
                 this._flash(bOverwrite, false);
-                Logger.error(`${logTag}: overwrite promise rejected`, err);
+                Logger.error(`overwrite promise rejected`, err);
             });
         });
 
@@ -222,7 +222,7 @@ const plugin = {
     name: 'FOS VM Clipboard Bar (library)',
     description:
         'Shared VM Clipboard Extract/Overwrite bar chrome (archetype modules supply find/mount)',
-    _version: '1.2',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -234,7 +234,7 @@ const plugin = {
             buildGroup: (s, options) => FosVmClipboardBarApi.buildGroup(s, options)
         };
         if (!state.registered) {
-            Logger.log('fosVmClipboardBarLib: module registered (Context.fosVmClipboardBar)');
+            Logger.log('module registered (Context.fosVmClipboardBar)');
             state.registered = true;
         }
     }

@@ -10,7 +10,7 @@ const plugin = {
     name: 'Grade Question Pasted Text',
     description:
         'Shows clipboard paste events per question in grading sections, with diff vs applicant answer on the last paste',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -149,7 +149,7 @@ const plugin = {
         }
 
         if (!state.clipboardHostMissingLogged) {
-            Logger.debug(`${this.id}: clipboard events list not found yet`);
+            Logger.debug(`clipboard events list not found yet`);
             state.clipboardHostMissingLogged = true;
         }
         return null;
@@ -425,7 +425,7 @@ const plugin = {
         `;
         document.head.appendChild(style);
         state.stylesInjected = true;
-        Logger.debug(`${this.id}: diff highlight styles injected`);
+        Logger.debug(`diff highlight styles injected`);
     },
 
     formatDuration(totalSeconds) {

@@ -444,7 +444,7 @@ const searchOutputResultsPaneMethods = {
         if (!dashApi || typeof dashApi.readResultsPanelHiddenPref !== 'function') return;
         const next = !dashApi.readResultsPanelHiddenPref();
         dashApi.writeResultsPanelHiddenPref(next);
-        Logger.log('search-output-results-pane: results panel ' + (next ? 'hidden' : 'shown'));
+        Logger.log('results panel ' + (next ? 'hidden' : 'shown'));
         const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
         if (root && typeof dashApi.applyResultsPanelLayout === 'function') {
             dashApi.applyResultsPanelLayout(root);
@@ -1311,7 +1311,7 @@ const searchOutputResultsPaneMethods = {
         try {
             return JSON.parse(JSON.stringify(value));
         } catch (e) {
-            Logger.error('search-output-results-pane: JSON clone failed', e);
+            Logger.error('JSON clone failed', e);
             return null;
         }
     },
@@ -1535,21 +1535,21 @@ const searchOutputResultsPaneMethods = {
 
     async _exportFilteredUserStories() {
         if (!Context.isDevBranch) {
-            Logger.warn('search-output-results-pane: user story export skipped — not a dev build');
+            Logger.warn('user story export skipped — not a dev build');
             return;
         }
         if (this._state.userStoryExportRunning) {
-            Logger.debug('search-output-results-pane: user story export already running');
+            Logger.debug('user story export already running');
             return;
         }
         const items = this._getViewItems();
         if (!items || items.length === 0) {
-            Logger.warn('search-output-results-pane: user story export skipped — no filtered items');
+            Logger.warn('user story export skipped — no filtered items');
             return;
         }
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
-            Logger.warn('search-output-results-pane: user story export skipped — ops module missing');
+            Logger.warn('user story export skipped — ops module missing');
             return;
         }
 
@@ -1600,8 +1600,7 @@ const searchOutputResultsPaneMethods = {
                     }
                 } catch (err) {
                     stats.failed++;
-                    Logger.warn(
-                        'search-output-results-pane: user story export fetch failed — '
+                    Logger.warn('user story export fetch failed — '
                         + (taskKey || (taskId ? taskId.slice(0, 8) + '…' : '(no key)')),
                         err
                     );
@@ -1623,8 +1622,7 @@ const searchOutputResultsPaneMethods = {
             });
 
             if (stories.length === 0) {
-                Logger.warn(
-                    'search-output-results-pane: user story export finished with no stories — '
+                Logger.warn('user story export finished with no stories — '
                     + 'empty ' + stats.skippedEmpty + ', failed ' + stats.failed
                 );
                 return;
@@ -1637,16 +1635,15 @@ const searchOutputResultsPaneMethods = {
             if (typeof this._downloadTextFile === 'function') {
                 this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
             } else {
-                Logger.error('search-output-results-pane: user story export failed — download helper unavailable');
+                Logger.error('user story export failed — download helper unavailable');
                 return;
             }
             const summary = stories.length + ' unique · ' + items.length + ' item(s)'
                 + (stats.failed ? ' · ' + stats.failed + ' failed' : '')
                 + ' · ' + filename;
-            Logger.log('search-output-results-pane: user stories exported — ' + summary);
+            Logger.log('user stories exported — ' + summary);
             if (stats.failed) {
-                Logger.warn(
-                    'search-output-results-pane: user story export partial failures — '
+                Logger.warn('user story export partial failures — '
                     + stats.failed + ' of ' + items.length
                 );
             }
@@ -1658,12 +1655,12 @@ const searchOutputResultsPaneMethods = {
 
     _exportFilteredTasksJson() {
         if (!Context.isDevBranch) {
-            Logger.warn('search-output-results-pane: task export skipped — not a dev build');
+            Logger.warn('task export skipped — not a dev build');
             return;
         }
         const items = this._getViewItems();
         if (!items || items.length === 0) {
-            Logger.warn('search-output-results-pane: task export skipped — no filtered items');
+            Logger.warn('task export skipped — no filtered items');
             return;
         }
         const payload = this._buildTaskCardsExportPayload(items);
@@ -1673,10 +1670,10 @@ const searchOutputResultsPaneMethods = {
         if (typeof this._downloadTextFile === 'function') {
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
         } else {
-            Logger.error('search-output-results-pane: task export failed — download helper unavailable');
+            Logger.error('task export failed — download helper unavailable');
             return;
         }
-        Logger.log('search-output-results-pane: task cards exported — ' + payload.items.length + ' item(s) · ' + filename);
+        Logger.log('task cards exported — ' + payload.items.length + ' item(s) · ' + filename);
     },
 
     _syncDiffIncludedUi() {
@@ -6739,18 +6736,18 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug('search-output-results-pane: already registered — skipping re-init');
+            Logger.debug('already registered — skipping re-init');
             return;
         }
         Context.searchOutputResultsPaneMethods = searchOutputResultsPaneMethods;
         if (state) state.registered = true;
-        Logger.log('search-output-results-pane: registered (Context.searchOutputResultsPaneMethods)');
+        Logger.log('registered (Context.searchOutputResultsPaneMethods)');
     }
 };

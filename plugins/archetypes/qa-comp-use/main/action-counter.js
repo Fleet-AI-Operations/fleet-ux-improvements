@@ -6,7 +6,7 @@ const plugin = {
     name: 'Action Counter',
     description:
         'Persistent +/- counter beside the Verifier tab; click the number to type a value',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -30,12 +30,12 @@ const plugin = {
         const taskCard = document.querySelector('[data-ui="qa-task-card"]');
         if (!taskCard) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: task card left DOM — counter inactive`);
+                Logger.debug(`task card left DOM — counter inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: [data-ui="qa-task-card"] not found yet`);
+                Logger.debug(`[data-ui="qa-task-card"] not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -44,12 +44,12 @@ const plugin = {
         const verifierTab = this.findVerifierTab();
         if (!verifierTab) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: verifier tab left DOM — counter inactive`);
+                Logger.debug(`verifier tab left DOM — counter inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: verifier tab not found yet`);
+                Logger.debug(`verifier tab not found yet`);
                 state.missingLogged = true;
             }
             return;

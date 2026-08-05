@@ -10,7 +10,7 @@ const plugin = {
     id: 'disputeIdDisplay',
     name: 'Dispute ID Display',
     description: 'Show dispute ID after the time-ago badge on each dispute card',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -35,7 +35,7 @@ const plugin = {
         const cards = this.getLeafDisputeCards();
         if (cards.length > 0 && !state.fallbackRequested) {
             if (!state.waitingLogged) {
-                Logger.debug(`${this.id}: cards present but no /api/disputes data yet; requesting fallback`);
+                Logger.debug(`cards present but no /api/disputes data yet; requesting fallback`);
                 state.waitingLogged = true;
             }
             this.requestDisputesFallback(state);
@@ -46,7 +46,7 @@ const plugin = {
         if (state.subscribed) return;
         const observer = Context.networkObserver;
         if (!observer || typeof observer.subscribe !== 'function') {
-            Logger.debug(`${this.id}: Context.networkObserver not ready`);
+            Logger.debug(`Context.networkObserver not ready`);
             return;
         }
 
@@ -78,7 +78,7 @@ const plugin = {
             }
         });
         state.subscribed = true;
-        Logger.debug(`${this.id}: subscribed to NetworkObserver for GET /api/disputes`);
+        Logger.debug(`subscribed to NetworkObserver for GET /api/disputes`);
     },
 
     getLeafDisputeCards() {
@@ -184,7 +184,7 @@ const plugin = {
 
             const timeAgo = this.findTimeAgoSpan(card);
             if (!timeAgo || !timeAgo.parentNode) {
-                Logger.debug(`${this.id}: time-ago span not found for card index ${index}`);
+                Logger.debug(`time-ago span not found for card index ${index}`);
                 return;
             }
 
@@ -198,10 +198,10 @@ const plugin = {
         });
 
         if (injected > 0 && !state.injectedLogged) {
-            Logger.log(`${this.id}: injected dispute ID badge on ${injected} card(s)`);
+            Logger.log(`injected dispute ID badge on ${injected} card(s)`);
             state.injectedLogged = true;
         } else if (injected > 0) {
-            Logger.debug(`${this.id}: injected ${injected} additional dispute ID badge(s)`);
+            Logger.debug(`injected ${injected} additional dispute ID badge(s)`);
         }
     },
 
@@ -217,7 +217,7 @@ const plugin = {
             }
             return `${pageWindow.location.origin}/api/disputes?limit=50&offset=0`;
         } catch (e) {
-            Logger.debug(`${this.id}: performance resource scan failed`, e);
+            Logger.debug(`performance resource scan failed`, e);
             return '/api/disputes?limit=50&offset=0';
         }
     },
@@ -230,7 +230,7 @@ const plugin = {
         state.fallbackAttempts += 1;
         const attempt = state.fallbackAttempts;
         const url = this.getFallbackDisputesUrl();
-        Logger.log(`${this.id}: fallback disputes fetch attempt ${attempt}/2`);
+        Logger.log(`fallback disputes fetch attempt ${attempt}/2`);
 
         const self = this;
         fetch(url, { method: 'GET', credentials: 'same-origin' })

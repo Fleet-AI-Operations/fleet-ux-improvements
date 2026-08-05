@@ -2470,18 +2470,18 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.4',
+    _version: '5.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug('search-output-left-pane: already registered — skipping re-init');
+            Logger.debug('already registered — skipping re-init');
             return;
         }
         Context.searchOutputLeftPaneMethods = searchOutputLeftPaneMethods;
         if (state) state.registered = true;
-        Logger.log('search-output-left-pane: registered (Context.searchOutputLeftPaneMethods)');
+        Logger.log('registered (Context.searchOutputLeftPaneMethods)');
     }
 };

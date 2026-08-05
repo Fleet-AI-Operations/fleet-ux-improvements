@@ -6,7 +6,7 @@ const plugin = {
     name: 'VM Clipboard',
     description:
         'Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -26,9 +26,9 @@ const plugin = {
         if (Context.fosEmbedded && typeof Context.fosEmbedded.claimUiHost === 'function') {
             Context.fosEmbedded.claimUiHost(this.id);
             state.uiHostClaimed = true;
-            Logger.log(`${this.id}: claimed FOS UI host (floating panel suppressed)`);
+            Logger.log(`claimed FOS UI host (floating panel suppressed)`);
         } else {
-            Logger.debug(`${this.id}: Context.fosEmbedded missing at init — will retry on mutation`);
+            Logger.debug(`Context.fosEmbedded missing at init — will retry on mutation`);
         }
     },
 
@@ -70,7 +70,7 @@ const plugin = {
         if (!state.uiHostClaimed && Context.fosEmbedded && typeof Context.fosEmbedded.claimUiHost === 'function') {
             Context.fosEmbedded.claimUiHost(this.id);
             state.uiHostClaimed = true;
-            Logger.log(`${this.id}: claimed FOS UI host (floating panel suppressed)`);
+            Logger.log(`claimed FOS UI host (floating panel suppressed)`);
         }
 
         const api = Context.fosVmClipboardBar;
@@ -81,14 +81,14 @@ const plugin = {
         const anchor = this.findContentAnchor();
         if (!anchor) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — clipboard bar inactive`);
+                Logger.debug(`Task/Notes tab bar left DOM — clipboard bar inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
                 state.readyShownLogged = false;
                 state.readyHiddenLogged = false;
             }
             if (!state.anchorMissingLogged) {
-                Logger.debug(`${this.id}: content anchor not found yet`);
+                Logger.debug(`content anchor not found yet`);
                 state.anchorMissingLogged = true;
             }
             state.tabBarMissingLogged = false;
@@ -99,14 +99,14 @@ const plugin = {
         const tabBar = this.findTaskNotesTabBar(anchor);
         if (!tabBar) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — clipboard bar inactive`);
+                Logger.debug(`Task/Notes tab bar left DOM — clipboard bar inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
                 state.readyShownLogged = false;
                 state.readyHiddenLogged = false;
             }
             if (!state.tabBarMissingLogged) {
-                Logger.debug(`${this.id}: Task/Notes tab bar not found yet (anchor present)`);
+                Logger.debug(`Task/Notes tab bar not found yet (anchor present)`);
                 state.tabBarMissingLogged = true;
             }
             return;

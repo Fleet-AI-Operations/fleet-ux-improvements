@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.1',
+    _version: '11.2',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -51,7 +51,7 @@ const plugin = {
             return;
         }
         const routeDashboard = this._shouldOpenOpsDashboard();
-        Logger.log('settings-ui: openModal — routeDashboard=' + routeDashboard + ' forceSettings=' + Boolean(options.forceSettings));
+        Logger.log('openModal — routeDashboard=' + routeDashboard + ' forceSettings=' + Boolean(options.forceSettings));
         if (routeDashboard) {
             void this._openOpsDashboardFromGear();
             return;
@@ -64,19 +64,19 @@ const plugin = {
             try {
                 await Context.ensureOpsDashboardPluginsLoaded();
             } catch (e) {
-                Logger.warn('settings-ui: ensureOpsDashboardPluginsLoaded before gear route failed', e);
+                Logger.warn('ensureOpsDashboardPluginsLoaded before gear route failed', e);
             }
         }
         if (!Context.dashboard || typeof Context.dashboard.open !== 'function') {
-            Logger.warn('settings-ui: Ops dashboard routing requested but Context.dashboard unavailable — opening settings');
+            Logger.warn('Ops dashboard routing requested but Context.dashboard unavailable — opening settings');
             this._openSettingsModal();
             return;
         }
         try {
             Context.dashboard.open();
-            Logger.log('settings-ui: opened Ops dashboard from gear');
+            Logger.log('opened Ops dashboard from gear');
         } catch (err) {
-            Logger.error('settings-ui: dashboard open failed — falling back to settings', err);
+            Logger.error('dashboard open failed — falling back to settings', err);
             this._openSettingsModal();
         }
     },
@@ -112,7 +112,7 @@ const plugin = {
                 modal.showModal();
             }
         } catch (err) {
-            Logger.error('settings-ui: settings dialog showModal failed', err);
+            Logger.error('settings dialog showModal failed', err);
             modal.remove();
             this._modalOpen = false;
             return;
@@ -186,7 +186,7 @@ const plugin = {
             settingsBtn.id = 'wf-settings-btn';
             document.body.appendChild(settingsBtn);
             if (!this._buttonCreated) {
-                Logger.log('settings-ui: Settings UI initialized');
+                Logger.log('Settings UI initialized');
                 this._buttonCreated = true;
             }
         }
@@ -224,7 +224,7 @@ const plugin = {
         if (shouldPulse) {
             settingsBtn.classList.add('wf-settings-outdated');
             if (!wasOutdated) {
-                Logger.log('settings-ui: update indicator pulse started');
+                Logger.log('update indicator pulse started');
             }
         } else {
             settingsBtn.classList.remove('wf-settings-outdated');
@@ -276,7 +276,7 @@ const plugin = {
     _updatePulseAnimation() {
         const settingsBtn = document.getElementById('wf-settings-btn');
         if (!settingsBtn) {
-            Logger.debug('settings-ui: settings button not found for pulse animation update');
+            Logger.debug('settings button not found for pulse animation update');
             return;
         }
         this._applySettingsButtonBehavior(settingsBtn);
@@ -359,7 +359,7 @@ const plugin = {
             const openDialogs = document.querySelectorAll('dialog[open]');
             for (const d of openDialogs) {
                 if (d !== ourDialog) {
-                    Logger.info('settings-ui: Closing Fleet settings because another native dialog opened (host page modal).');
+                    Logger.info('Closing Fleet settings because another native dialog opened (host page modal).');
                     this._closeModal();
                     return;
                 }
@@ -368,7 +368,7 @@ const plugin = {
             const ariaModals = document.querySelectorAll('[aria-modal="true"]');
             for (const el of ariaModals) {
                 if (isForeignAriaModalVisible(el)) {
-                    Logger.info('settings-ui: Closing Fleet settings because a host aria-modal dialog appeared.');
+                    Logger.info('Closing Fleet settings because a host aria-modal dialog appeared.');
                     this._closeModal();
                     return;
                 }
@@ -953,7 +953,7 @@ const plugin = {
             const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
             if (content && (path.includes(content) || content.contains(e.target))) return;
 
-            Logger.debug('settings-ui: closing settings modal from backdrop click');
+            Logger.debug('closing settings modal from backdrop click');
             self._closeModal();
         });
 
@@ -966,7 +966,7 @@ const plugin = {
         if (Context.opsTab && typeof Context.opsTab.attachSettingsListeners === 'function') {
             Context.opsTab.attachSettingsListeners(modal, this);
         } else if (Context.opsTab) {
-            Logger.warn('settings-ui: Context.opsTab.attachSettingsListeners unavailable');
+            Logger.warn('Context.opsTab.attachSettingsListeners unavailable');
         }
         this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
 
@@ -1238,7 +1238,7 @@ const plugin = {
                 pulseOverrideToggle.addEventListener('change', (e) => {
                     this._handleToggleChange(e);
                     const enabled = e.target.checked;
-                    Logger.log(`settings-ui: Simulate Update Banner toggle changed to: ${enabled}`);
+                    Logger.log(`Simulate Update Banner toggle changed to: ${enabled}`);
                     this._setPulseOverrideEnabled(enabled);
                     // Reapply button behavior to update styles
                     const settingsBtn = document.getElementById('wf-settings-btn');
@@ -1285,7 +1285,7 @@ const plugin = {
                 if (confirmed) {
                     const allPlugins = PluginManager.getAll();
                     const clearedCount = Storage.clearAll(allPlugins);
-                    Logger.log(`settings-ui: Cache cleared: ${clearedCount} keys removed`);
+                    Logger.log(`Cache cleared: ${clearedCount} keys removed`);
                     alert(`Cache cleared successfully. ${clearedCount} storage keys were removed. The page will now reload.`);
                     if (typeof Context.requestExtensionReload === 'function') {
                         Context.requestExtensionReload('settings-ui clear cache');
@@ -1323,7 +1323,7 @@ const plugin = {
                 const repo = Context.githubRepo || 'fleet-ux-improvements';
                 const url = 'https://github.com/' + owner + '/' + repo + '/issues/new?title=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(body);
                 window.open(url, '_blank', 'noopener,noreferrer');
-                Logger.log('settings-ui: Opened GitHub issue draft: ' + title);
+                Logger.log('Opened GitHub issue draft: ' + title);
                 self._closeModal();
             });
             feedbackSubmitBtn.addEventListener('mouseenter', () => {
@@ -1684,7 +1684,7 @@ const plugin = {
             document.addEventListener('touchmove', onPointerMove, { passive: false, capture: true });
             document.addEventListener('touchend', onPointerUp, true);
 
-            Logger.debug(`settings-ui: Started pointer drag reorder (${listType})`);
+            Logger.debug(`Started pointer drag reorder (${listType})`);
         };
 
         list.addEventListener('mousedown', onPointerDown);
@@ -2269,7 +2269,7 @@ const plugin = {
     _mountEnvCodenamesWidget(pane) {
         const root = pane.querySelector('#wf-env-codenames-root');
         if (!root) {
-            Logger.debug('settings-ui: env codenames mount node missing');
+            Logger.debug('env codenames mount node missing');
             return;
         }
         if (root.dataset.wfEnvCodenamesMounted === '1') return;
@@ -2278,13 +2278,13 @@ const plugin = {
             ? Context.settingsModalDocs['information-tab.md'].raw
             : null;
         if (!raw || typeof raw !== 'string') {
-            Logger.debug('settings-ui: information-tab raw missing for codenames widget');
+            Logger.debug('information-tab raw missing for codenames widget');
             return;
         }
         const body = this._settingsModalDocBody(raw);
         const { rows } = this._extractInformationCodenameRows(body);
         if (rows.length === 0) {
-            Logger.debug('settings-ui: no env codename rows parsed for widget');
+            Logger.debug('no env codename rows parsed for widget');
             return;
         }
 
@@ -2371,7 +2371,7 @@ const plugin = {
         });
 
         refresh();
-        Logger.log('settings-ui: mounted interactive environment codenames table');
+        Logger.log('mounted interactive environment codenames table');
     },
 
     _markdownToHtml(md) {
@@ -2572,7 +2572,7 @@ const plugin = {
             this._attachOpsRefreshBannerListeners(modal, 'settings-ui');
         }
         banner.style.display = 'block';
-        Logger.log('settings-ui: ops refresh banner shown');
+        Logger.log('ops refresh banner shown');
     },
 
     _attachOpsRefreshBannerListeners(root, reloadSource) {
@@ -2673,7 +2673,7 @@ const plugin = {
         if (Storage.get(storageKey, null) === latestVersion) return;
 
         if (typeof Context.openInTab !== 'function') {
-            Logger.warn(`${this.id}: could not automatically open update because the tab opener is unavailable`);
+            Logger.warn(`could not automatically open update because the tab opener is unavailable`);
             return;
         }
 
@@ -2681,7 +2681,7 @@ const plugin = {
         this.openModal({ forceSettings: true });
         if (!this._modalOpen) {
             this._updateTabOpenedAutomatically = false;
-            Logger.warn(`${this.id}: could not automatically open update because the Settings modal failed to open`);
+            Logger.warn(`could not automatically open update because the Settings modal failed to open`);
             return;
         }
 
@@ -2689,9 +2689,9 @@ const plugin = {
             try {
                 Context.openInTab(this._getUpdateUrl(), { active: true, insert: true, setParent: true });
                 Storage.set(storageKey, latestVersion);
-                Logger.log(`${this.id}: opened Settings and automatically opened update ${latestVersion} in a new tab`);
+                Logger.log(`opened Settings and automatically opened update ${latestVersion} in a new tab`);
             } catch (error) {
-                Logger.error(`${this.id}: failed to automatically open update ${latestVersion}`, error);
+                Logger.error(`failed to automatically open update ${latestVersion}`, error);
             }
         });
     },

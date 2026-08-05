@@ -35,7 +35,7 @@ const plugin = {
     id: 'promptDisplayStyle',
     name: 'Prompt Display Style',
     description: 'Adjust prompt font size, text color, and background in view mode',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -64,7 +64,7 @@ const plugin = {
                 this.teardown(state);
             }
             if (!state.sectionMissingLogged) {
-                Logger.debug(`${this.id}: Prompt section not found`);
+                Logger.debug(`Prompt section not found`);
                 state.sectionMissingLogged = true;
             }
             return;
@@ -74,7 +74,7 @@ const plugin = {
         if (this.isEditMode(section)) {
             if (state.activeSection) {
                 if (!state.editModeLogged) {
-                    Logger.debug(`${this.id}: edit mode — styling inactive`);
+                    Logger.debug(`edit mode — styling inactive`);
                     state.editModeLogged = true;
                 }
                 this.teardown(state);
@@ -207,12 +207,12 @@ const plugin = {
                     throw new Error('jscolor global missing after load');
                 }
                 instance.init();
-                Logger.debug(`${this.id}: jscolor loaded`);
+                Logger.debug(`jscolor loaded`);
                 return instance;
             })
             .catch((err) => {
                 state.jscolorFailed = true;
-                Logger.warn(`${this.id}: jscolor load failed — color pickers unavailable`, err);
+                Logger.warn(`jscolor load failed — color pickers unavailable`, err);
                 throw err;
             })
             .finally(() => {
@@ -342,7 +342,7 @@ const plugin = {
         state.activeSection = section;
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: styling active (font=${prefs.fontSize}px)`);
+            Logger.log(`styling active (font=${prefs.fontSize}px)`);
             state.activationLogged = true;
         }
     },
@@ -405,7 +405,7 @@ const plugin = {
 
         const liveReplica = section.querySelector('[' + REPLICA_MARKER + '="true"]');
         this.applyStyles(liveReplica, prefs);
-        Logger.log(`${this.id}: reset to defaults (font=${defaults.fontSize}px)`);
+        Logger.log(`reset to defaults (font=${defaults.fontSize}px)`);
     },
 
     createColorButton(kind, initialColor, alpha) {
@@ -495,7 +495,7 @@ const plugin = {
         const logFontIfChanged = () => {
             const next = prefs.fontSize;
             if (next !== fontAtFocus) {
-                Logger.log(`${this.id}: font ${fontAtFocus}→${next}`);
+                Logger.log(`font ${fontAtFocus}→${next}`);
                 fontAtFocus = next;
             }
         };
@@ -549,7 +549,7 @@ const plugin = {
                         const liveReplica = section.querySelector('[' + REPLICA_MARKER + '="true"]');
                         this.applyStyles(liveReplica, prefs);
                         if (logChange) {
-                            Logger.log(`${this.id}: ${kind} ${value}`);
+                            Logger.log(`${kind} ${value}`);
                         }
                     };
                     button.jscolor.option('onInput', () => applyColor(false));

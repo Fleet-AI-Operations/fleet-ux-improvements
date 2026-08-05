@@ -10,7 +10,7 @@ const plugin = {
     id: 'vncPromptWriter',
     name: 'VNC Prompt Writer',
     description: 'Caches the QA task prompt for the VNC Helper modal on noVNC pages',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -55,11 +55,11 @@ const plugin = {
             Storage.set(PROMPT_TS_STORAGE_KEY, String(Date.now()));
             state.lastSavedText = text;
             if (!state.savedLogged) {
-                Logger.log(`vncPromptWriter: cached prompt for VNC Helper (${text.length} chars)`);
+                Logger.log(`cached prompt for VNC Helper (${text.length} chars)`);
                 state.savedLogged = true;
             }
         } catch (e) {
-            Logger.warn('vncPromptWriter: failed to write prompt to storage', e);
+            Logger.warn('failed to write prompt to storage', e);
         }
     },
 
@@ -67,7 +67,7 @@ const plugin = {
         const section = this.findPromptSection();
         if (!section) {
             if (!state.missingLogged) {
-                Logger.debug('vncPromptWriter: prompt section not found yet');
+                Logger.debug('prompt section not found yet');
                 state.missingLogged = true;
             }
             return;

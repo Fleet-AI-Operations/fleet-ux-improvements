@@ -27,7 +27,7 @@ const plugin = {
     id: 'chart-js',
     name: 'Chart.js Loader',
     description: 'Lazy-loads Chart.js from jsDelivr for Worker Output Search stats charts',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -41,7 +41,7 @@ const plugin = {
             isReady: () => !!self._chartJs,
             ensureLoaded: () => self._ensureChartJsLoaded()
         };
-        Logger.log('chart-js: module registered (Context.chartJs)');
+        Logger.log('module registered (Context.chartJs)');
     },
 
     async _ensureChartJsLoaded() {
@@ -53,7 +53,7 @@ const plugin = {
 
         this._loadPromise = (async () => {
             try {
-                Logger.debug('chart-js: fetching Chart.js v' + CHART_JS_VERSION + ' from jsDelivr');
+                Logger.debug('fetching Chart.js v' + CHART_JS_VERSION + ' from jsDelivr');
                 const chartJs = await chartJsGmFetchText(CHART_JS_URL);
                 const loadChart = new Function(
                     chartJs + '\nreturn typeof Chart !== "undefined" ? Chart : null;'
@@ -63,11 +63,11 @@ const plugin = {
                     throw new Error('chart-js: Chart global missing after load');
                 }
                 this._chartJs = instance;
-                Logger.info('chart-js: loaded v' + CHART_JS_VERSION);
+                Logger.info('loaded v' + CHART_JS_VERSION);
                 return this._chartJs;
             } catch (err) {
                 this._loadFailed = true;
-                Logger.error('chart-js: load failed — stats charts unavailable', err);
+                Logger.error('load failed — stats charts unavailable', err);
                 throw err;
             } finally {
                 this._loadPromise = null;

@@ -33,7 +33,7 @@ const CopyVerifierOutputApi = {
     name: 'Copy Verifier Output',
     description:
         'Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text',
-    _version: '5.2',
+    _version: '5.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -52,7 +52,7 @@ const CopyVerifierOutputApi = {
 
         if (!anchorRow) {
             if (!state.verifierTargetMissingLogged) {
-                Logger.debug('Copy Verifier Output: Stdout/Score row not found');
+                Logger.debug('Stdout/Score row not found');
                 state.verifierTargetMissingLogged = true;
             }
             return;
@@ -63,13 +63,13 @@ const CopyVerifierOutputApi = {
         if (scoreRow) {
             container = scoreRow.closest('div.p-3') || scoreRow.closest('div.p-2');
             if (!container) {
-                Logger.debug('Copy Verifier Output: Score card container not found');
+                Logger.debug('Score card container not found');
                 return;
             }
         } else {
             container = stdoutRow.closest('div.text-xs.w-full');
             if (!container) {
-                Logger.debug('Copy Verifier Output: Stdout container not found');
+                Logger.debug('Stdout container not found');
                 return;
             }
         }
@@ -83,7 +83,7 @@ const CopyVerifierOutputApi = {
             }
             if (!state.buttonAdded) {
                 state.buttonAdded = true;
-                Logger.log('Copy Verifier Output: Copy button added');
+                Logger.log('Copy button added');
             }
         }
 
@@ -167,7 +167,7 @@ const CopyVerifierOutputApi = {
             return false;
         }
         header.click();
-        Logger.debug('Copy Verifier Output: Expanded Stdout section');
+        Logger.debug('Expanded Stdout section');
         return true;
     },
 
@@ -319,7 +319,7 @@ const CopyVerifierOutputApi = {
         wrapper.appendChild(toggleBtn);
         copyBtn = this.createRawOutputCopyButton(pre);
         wrapper.appendChild(copyBtn);
-        Logger.debug('Copy Verifier Output: Raw Output copy control added');
+        Logger.debug('Raw Output copy control added');
     },
 
     getGradingPanelRoot() {
@@ -639,7 +639,7 @@ const CopyVerifierOutputApi = {
 
     copyVerifierTextWithFeedback(button, text, logSuffix = '') {
         const showOk = () => {
-            Logger.log(`Copy Verifier Output: Copied ${text.length} chars to clipboard${logSuffix}`);
+            Logger.log(`Copied ${text.length} chars to clipboard${logSuffix}`);
             if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
         };
 
@@ -811,7 +811,7 @@ const plugin = {
             }
         };
         if (!state.registered) {
-            Logger.log('copyVerifierOutputLib: module registered (Context.copyVerifierOutput)');
+            Logger.log('module registered (Context.copyVerifierOutput)');
             state.registered = true;
         }
     }

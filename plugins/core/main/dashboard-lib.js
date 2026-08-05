@@ -801,7 +801,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.1',
+    _version: '8.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -968,7 +968,7 @@ const plugin = {
             itemDisputeResolutionTimeMinutesBuckets: bind(self._itemDisputeResolutionTimeMinutesBuckets),
             itemTaskCreatedBuckets: bind(self._itemTaskCreatedBuckets)
         };
-        Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
+        Logger.log('module registered (Context.dashboardLib)');
     },
 
     _computeDisplayVersions(rawVersions) {

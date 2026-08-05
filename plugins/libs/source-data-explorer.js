@@ -30,7 +30,7 @@ const SourceDataExplorerApi = {
 
         if (!buttonContainer || typeof mountButton !== 'function') {
             if (!state.missingLogged) {
-                Logger.debug(logTag + ': Button container not found for Explore GUI button');
+                Logger.debug('Button container not found for Explore GUI button');
                 state.missingLogged = true;
             }
             return;
@@ -92,10 +92,10 @@ const SourceDataExplorerApi = {
         const previousSource = context.source;
         if (previousSource === null) {
             context.source = href;
-            Logger.log(`sourceDataExplorer: ✓ Source URL captured (${via}): ${href}`);
+            Logger.log(`Source URL captured (${via}): ${href}`);
         } else if (previousSource !== href) {
             context.source = href;
-            Logger.log(`sourceDataExplorer: ✓ Source URL updated (${via}): ${previousSource} → ${href}`);
+            Logger.log(`Source URL updated (${via}): ${previousSource} → ${href}`);
         }
     },
 
@@ -222,7 +222,7 @@ const SourceDataExplorerApi = {
         pageWindow.getFleetSource = () => context.source;
 
         state.interceptionInstalled = true;
-        Logger.log('sourceDataExplorer: ✓ Network interception installed (fetch + XHR)');
+        Logger.log('Network interception installed (fetch + XHR)');
     },
 
     /** @param {Window} pageWindow */
@@ -234,12 +234,12 @@ const SourceDataExplorerApi = {
 
         const openInstance = () => {
             if (!context.source) {
-                Logger.warn('sourceDataExplorer: Source URL not available (no MCP POST observed yet)');
+                Logger.warn('Source URL not available (no MCP POST observed yet)');
                 return;
             }
             const sourceUrl = this.sourceHrefToOpenUrl(context.source, context);
             pageWindow.open(sourceUrl, '_blank');
-            Logger.log('sourceDataExplorer: Opening Explore GUI after acknowledgment:', sourceUrl);
+            Logger.log('Opening Explore GUI after acknowledgment:', sourceUrl);
         };
 
         const overlay = document.createElement('div');
@@ -323,7 +323,7 @@ const SourceDataExplorerApi = {
         const closeModal = (reason) => {
             overlay.remove();
             if (reason) {
-                Logger.log(`sourceDataExplorer: Explore GUI acknowledgment modal closed (${reason})`);
+                Logger.log(`Explore GUI acknowledgment modal closed (${reason})`);
             }
         };
 
@@ -343,7 +343,7 @@ const SourceDataExplorerApi = {
             }
         });
 
-        Logger.log('sourceDataExplorer: Explore GUI acknowledgment modal shown');
+        Logger.log('Explore GUI acknowledgment modal shown');
     },
 
     ensureSourceButton(buttonContainer, context, options) {
@@ -369,7 +369,7 @@ const SourceDataExplorerApi = {
         const self = this;
         button.addEventListener('click', () => {
             if (!context.source) {
-                Logger.warn('sourceDataExplorer: Source URL not available (no MCP POST observed yet)');
+                Logger.warn('Source URL not available (no MCP POST observed yet)');
                 return;
             }
             self.showExploreGuiAckModal(pageWindow, context);
@@ -380,7 +380,7 @@ const SourceDataExplorerApi = {
         } else {
             buttonContainer.insertBefore(button, buttonContainer.firstChild);
         }
-        Logger.log(logTag + ': ✓ Explore GUI button added');
+        Logger.log('Explore GUI button added');
         return button;
     },
 
@@ -397,7 +397,7 @@ const plugin = {
     id: 'sourceDataExplorerLib',
     name: 'Explore GUI (library)',
     description: 'Shared Explore GUI API: mcp-proxy capture, acknowledgment modal, and button chrome (archetype modules supply placement)',
-    _version: '6.0',
+    _version: '6.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -413,7 +413,7 @@ const plugin = {
                 SourceDataExplorerApi.updateSourceButton(button, ctx)
         };
         if (!state.registered) {
-            Logger.log('sourceDataExplorerLib: module registered (Context.sourceDataExplorer)');
+            Logger.log('module registered (Context.sourceDataExplorer)');
             state.registered = true;
         }
     }
@@ -421,7 +421,7 @@ const plugin = {
 
 try {
     SourceDataExplorerApi.installNetworkInterception(Context, { interceptionInstalled: false });
-    Logger.debug('sourceDataExplorer: early interception bootstrap attempted at library load');
+    Logger.debug('early interception bootstrap attempted at library load');
 } catch (e) {
-    Logger.warn('sourceDataExplorer: early interception bootstrap failed; will retry during mutation phase', e);
+    Logger.warn('early interception bootstrap failed; will retry during mutation phase', e);
 }

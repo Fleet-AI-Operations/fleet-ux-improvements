@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.16',
+    _version: '11.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -134,7 +134,7 @@ const plugin = {
 
     init(state) {
         if (state && state.loaderRegistered) {
-            Logger.debug('dashboard: loader already registered — skipping re-init');
+            Logger.debug('loader already registered — skipping re-init');
             return;
         }
         this._state = this._createInitialState();
@@ -145,7 +145,7 @@ const plugin = {
             _loader: self,
             registerTab(def) {
                 if (!def || !def.id) {
-                    Logger.warn('dashboard: registerTab skipped — missing id');
+                    Logger.warn('registerTab skipped — missing id');
                     return;
                 }
                 const isNew = !self._tabsById[def.id];
@@ -153,7 +153,7 @@ const plugin = {
                 const idx = self._tabs.findIndex((t) => t.id === def.id);
                 if (idx >= 0) self._tabs[idx] = def;
                 else self._tabs.push(def);
-                Logger.log('dashboard: tab registered — ' + def.id);
+                Logger.log('tab registered — ' + def.id);
                 if (isNew && self._built && self._overlay && self._overlay.isConnected) {
                     const wasOpen = self._isOpen();
                     self._built = false;
@@ -206,21 +206,21 @@ const plugin = {
             numericFilterRowHtml: (opts) => self._numericFilterRowHtml(opts),
             setAuthorTokens: (persons, options) => {
                 if (typeof self._setAuthorTokens === 'function') return self._setAuthorTokens(persons, options);
-                Logger.warn('dashboard: setAuthorTokens unavailable — search-output tab not loaded');
+                Logger.warn('setAuthorTokens unavailable — search-output tab not loaded');
             },
             runContributorWorkerOutputDeepDive: (person, options) => {
                 if (typeof self._runContributorWorkerOutputDeepDive === 'function') {
                     return self._runContributorWorkerOutputDeepDive(person, options);
                 }
-                Logger.warn('dashboard: runContributorWorkerOutputDeepDive unavailable — search-output tab not loaded');
+                Logger.warn('runContributorWorkerOutputDeepDive unavailable — search-output tab not loaded');
             },
             switchFleetTeam: (teamId) => {
                 if (typeof self._switchFleetTeam === 'function') return self._switchFleetTeam(teamId);
-                Logger.warn('dashboard: switchFleetTeam unavailable — search-output tab not loaded');
+                Logger.warn('switchFleetTeam unavailable — search-output tab not loaded');
             },
             renderTeamMemberConstraintLists: (opts) => {
                 if (typeof self._renderTeamMemberConstraintLists === 'function') return self._renderTeamMemberConstraintLists(opts);
-                Logger.warn('dashboard: renderTeamMemberConstraintLists unavailable — team-members tab not loaded');
+                Logger.warn('renderTeamMemberConstraintLists unavailable — team-members tab not loaded');
             },
             readTeamMemberConstraints: (scopeKey) => {
                 if (typeof self._readDualConstraintSelection === 'function') return self._readDualConstraintSelection(scopeKey);
@@ -259,7 +259,7 @@ const plugin = {
             }
         };
         if (state) state.loaderRegistered = true;
-        Logger.log('dashboard: loader registered (Context.dashboard)');
+        Logger.log('loader registered (Context.dashboard)');
     },
 
     _readTabOrder() {
@@ -269,7 +269,7 @@ const plugin = {
             const parsed = JSON.parse(raw);
             return Array.isArray(parsed) ? parsed.map(String) : null;
         } catch (err) {
-            Logger.warn('dashboard: failed to read saved tab order', err);
+            Logger.warn('failed to read saved tab order', err);
             return null;
         }
     },
@@ -298,7 +298,7 @@ const plugin = {
         try {
             Storage.setData(DASH_TAB_ORDER_STORAGE_KEY, JSON.stringify(tabs.map((tab) => tab.id)));
         } catch (err) {
-            Logger.error('dashboard: failed to save tab order', err);
+            Logger.error('failed to save tab order', err);
         }
     },
 
@@ -326,7 +326,7 @@ const plugin = {
         ordered.splice(to, 0, moved);
         this._writeTabOrder(ordered);
         this._applyTabOrderToDom();
-        Logger.log('dashboard: tab moved ' + (step < 0 ? 'up' : 'down') + ' — ' + (moved.label || moved.id));
+        Logger.log('tab moved ' + (step < 0 ? 'up' : 'down') + ' — ' + (moved.label || moved.id));
         return true;
     },
 
@@ -334,11 +334,11 @@ const plugin = {
         try {
             Storage.deleteData(DASH_TAB_ORDER_STORAGE_KEY);
         } catch (err) {
-            Logger.error('dashboard: failed to reset tab order', err);
+            Logger.error('failed to reset tab order', err);
             return false;
         }
         this._applyTabOrderToDom();
-        Logger.log('dashboard: tab order reset to default');
+        Logger.log('tab order reset to default');
         return true;
     },
 
@@ -346,7 +346,7 @@ const plugin = {
         try {
             return String(Storage.getData(DASH_DEFAULT_TAB_STORAGE_KEY, 'search-output') || 'search-output').trim();
         } catch (err) {
-            Logger.warn('dashboard: failed to read default tab', err);
+            Logger.warn('failed to read default tab', err);
             return 'search-output';
         }
     },
@@ -356,10 +356,10 @@ const plugin = {
         if (!id || !this._tabsById || !this._tabsById[id]) return false;
         try {
             Storage.setData(DASH_DEFAULT_TAB_STORAGE_KEY, id);
-            Logger.log('dashboard: default tab set — ' + (this._tabsById[id].label || id));
+            Logger.log('default tab set — ' + (this._tabsById[id].label || id));
             return true;
         } catch (err) {
-            Logger.error('dashboard: failed to save default tab', err);
+            Logger.error('failed to save default tab', err);
             return false;
         }
     },
@@ -375,7 +375,7 @@ const plugin = {
             const raw = Storage.getData(DASH_DEFAULT_STATS_TAB_STORAGE_KEY, DASH_DEFAULT_STATS_TAB);
             return this._normalizeStatsTabId(raw);
         } catch (err) {
-            Logger.warn('dashboard: failed to read default stats tab', err);
+            Logger.warn('failed to read default stats tab', err);
             return DASH_DEFAULT_STATS_TAB;
         }
     },
@@ -384,10 +384,10 @@ const plugin = {
         const id = this._normalizeStatsTabId(tabId);
         try {
             Storage.setData(DASH_DEFAULT_STATS_TAB_STORAGE_KEY, id);
-            Logger.log('dashboard: default stats tab set — ' + id);
+            Logger.log('default stats tab set — ' + id);
             return true;
         } catch (err) {
-            Logger.error('dashboard: failed to save default stats tab', err);
+            Logger.error('failed to save default stats tab', err);
             return false;
         }
     },
@@ -499,14 +499,14 @@ const plugin = {
     _logDashApiClick(action, detail) {
         const label = String(action || 'unknown').trim();
         const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
-        Logger.debug('dashboard: api ' + label + suffix);
+        Logger.debug('api ' + label + suffix);
     },
 
     _logDashApiSkip(action, reason, detail) {
         const label = String(action || 'unknown').trim();
         const why = String(reason || 'blocked').trim();
         const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
-        Logger.warn('dashboard: api ' + label + ' skipped — ' + why + suffix);
+        Logger.warn('api ' + label + ' skipped — ' + why + suffix);
     },
 
     _isOpen() {
@@ -537,7 +537,7 @@ const plugin = {
     _logActiveTabFallbackIfNeeded(preferred, resolved) {
         if (this._activeTabFallbackLogged) return;
         this._activeTabFallbackLogged = true;
-        Logger.warn('dashboard: active tab ' + preferred + ' unavailable — showing ' + resolved);
+        Logger.warn('active tab ' + preferred + ' unavailable — showing ' + resolved);
     },
 
     _syncIncompleteTabsBanner() {
@@ -552,12 +552,12 @@ const plugin = {
         banner.textContent = missing.length > 0
             ? 'Some dashboard modules failed to load (' + missing.join(', ') + '). Check the console or refresh the page.'
             : 'Some dashboard modules failed to load. Check the console or refresh the page.';
-        Logger.warn('dashboard: incomplete — missing tab(s): ' + (missing.join(', ') || 'unknown'));
+        Logger.warn('incomplete — missing tab(s): ' + (missing.join(', ') || 'unknown'));
     },
 
     open() {
         if (Context.isExternalInstanceHost) {
-            Logger.warn('dashboard: open blocked — Ops dashboard is not allowed on external env instances');
+            Logger.warn('open blocked — Ops dashboard is not allowed on external env instances');
             return;
         }
         const doOpen = () => {
@@ -567,7 +567,7 @@ const plugin = {
                         Context.networkObserver.refreshFromPage(this._pageWindow());
                     }
                 } catch (e) {
-                    Logger.debug('dashboard: refreshFromPage on open failed', e);
+                    Logger.debug('refreshFromPage on open failed', e);
                 }
                 this._ensureBuilt();
                 if (!this._overlay) {
@@ -577,17 +577,17 @@ const plugin = {
                 try {
                     if (Context.settingsUi && typeof Context.settingsUi.closeModal === 'function') {
                         Context.settingsUi.closeModal();
-                        Logger.log('dashboard: closed settings modal on dashboard open');
+                        Logger.log('closed settings modal on dashboard open');
                     } else {
                         const doc = this._pageWindow().document;
                         const settingsModal = doc.getElementById('wf-settings-modal');
                         if (settingsModal && typeof settingsModal.close === 'function' && settingsModal.open) {
                             settingsModal.close();
-                            Logger.log('dashboard: closed settings modal on dashboard open');
+                            Logger.log('closed settings modal on dashboard open');
                         }
                     }
                 } catch (e) {
-                    Logger.debug('dashboard: could not close settings modal', e);
+                    Logger.debug('could not close settings modal', e);
                 }
                 const sessionTab = String(this._sessionActiveTabId || '').trim();
                 const openTabId = sessionTab
@@ -596,10 +596,9 @@ const plugin = {
                 this._state.activeTab = openTabId;
                 this._setActiveTab(openTabId);
                 if (sessionTab && openTabId === sessionTab) {
-                    Logger.debug('dashboard: restored session tab — ' + openTabId);
+                    Logger.debug('restored session tab — ' + openTabId);
                 } else if (sessionTab && openTabId !== sessionTab) {
-                    Logger.debug(
-                        'dashboard: session tab ' + sessionTab + ' unavailable — opening ' + openTabId
+                    Logger.debug('session tab ' + sessionTab + ' unavailable — opening ' + openTabId
                     );
                 }
                 const defaultStatsTab = this._readDefaultStatsTabId();
@@ -614,14 +613,14 @@ const plugin = {
                         try {
                             tab.onOpen(this);
                         } catch (e) {
-                            Logger.error('dashboard: onOpen failed for tab ' + tab.id, e);
+                            Logger.error('onOpen failed for tab ' + tab.id, e);
                         }
                     }
                 }
                 this._scheduleSplitLayoutSync();
-                Logger.log('dashboard: opened');
+                Logger.log('opened');
             } catch (e) {
-                Logger.error('dashboard: open failed', e);
+                Logger.error('open failed', e);
                 throw e;
             }
         };
@@ -632,14 +631,14 @@ const plugin = {
                     await Context.ensureOpsDashboardPluginsLoaded();
                 }
             } catch (e) {
-                Logger.warn('dashboard: ensureOpsDashboardPluginsLoaded failed', e);
+                Logger.warn('ensureOpsDashboardPluginsLoaded failed', e);
             }
             try {
                 if (Context.opsTab && typeof Context.opsTab.ensureOpsSessionReady === 'function') {
                     await Context.opsTab.ensureOpsSessionReady(this._modal);
                 }
             } catch (e) {
-                Logger.debug('dashboard: ensureOpsSessionReady failed', e);
+                Logger.debug('ensureOpsSessionReady failed', e);
             }
             doOpen();
         };
@@ -652,7 +651,7 @@ const plugin = {
             const active = String((this._state && this._state.activeTab) || '').trim();
             if (active) {
                 this._sessionActiveTabId = active;
-                Logger.debug('dashboard: remembered session tab on close — ' + active);
+                Logger.debug('remembered session tab on close — ' + active);
             }
             if (Context.dashboard && typeof Context.dashboard.captureTabState === 'function') {
                 Context.dashboard.captureTabState(this._modal);
@@ -665,7 +664,7 @@ const plugin = {
         if (Context.opsTab && typeof Context.opsTab.onModalClosed === 'function') {
             Context.opsTab.onModalClosed();
         }
-        Logger.log('dashboard: closed');
+        Logger.log('closed');
     },
 
     toggle() {
@@ -753,13 +752,13 @@ const plugin = {
                     try {
                         tab.onBuilt(this._modal, this);
                     } catch (e) {
-                        Logger.error('dashboard: onBuilt failed for tab ' + tab.id, e);
+                        Logger.error('onBuilt failed for tab ' + tab.id, e);
                     }
                 }
             }
-            Logger.log('dashboard: popup built');
+            Logger.log('popup built');
         } catch (e) {
-            Logger.error('dashboard: build failed', e);
+            Logger.error('build failed', e);
             if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
             this._overlay = null;
             this._modal = null;
@@ -1188,7 +1187,7 @@ const plugin = {
                 try {
                     inner = def.panelHtml(this);
                 } catch (e) {
-                    Logger.error('dashboard: panelHtml failed for ' + t.id, e);
+                    Logger.error('panelHtml failed for ' + t.id, e);
                     inner = '<p style="padding: 12px; color: #dc2626;">Tab failed to render.</p>';
                 }
             }
@@ -1417,7 +1416,7 @@ const plugin = {
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_WIDTH, Math.round(widthPx));
             Storage.setData(this._sidePanelWidthStorageKey(scope), String(clamped));
         } catch (e) {
-            Logger.warn('dashboard: failed to write side panel width pref (' + scope + ')', e);
+            Logger.warn('failed to write side panel width pref (' + scope + ')', e);
         }
     },
 
@@ -1448,7 +1447,7 @@ const plugin = {
             const clamped = Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.round(widthPx));
             Storage.setData(DASH_RESULTS_PANEL_MAX_WIDTH_STORAGE_KEY, String(clamped));
         } catch (e) {
-            Logger.warn('dashboard: failed to write results panel max width pref', e);
+            Logger.warn('failed to write results panel max width pref', e);
         }
     },
 
@@ -1464,7 +1463,7 @@ const plugin = {
         try {
             Storage.setData(DASH_STATS_PANEL_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false');
         } catch (e) {
-            Logger.warn('dashboard: failed to write stats panel hidden pref', e);
+            Logger.warn('failed to write stats panel hidden pref', e);
         }
     },
 
@@ -1480,7 +1479,7 @@ const plugin = {
         try {
             Storage.setData(DASH_RESULTS_PANEL_HIDDEN_STORAGE_KEY, hidden ? 'true' : 'false');
         } catch (e) {
-            Logger.warn('dashboard: failed to write results panel hidden pref', e);
+            Logger.warn('failed to write results panel hidden pref', e);
         }
     },
 
@@ -1498,7 +1497,7 @@ const plugin = {
             const clamped = Math.max(DASH_STATS_PANEL_MIN_WIDTH, Math.round(widthPx));
             Storage.setData(DASH_STATS_PANEL_WIDTH_STORAGE_KEY, String(clamped));
         } catch (e) {
-            Logger.warn('dashboard: failed to write stats panel width pref', e);
+            Logger.warn('failed to write stats panel width pref', e);
         }
     },
 
@@ -2312,7 +2311,7 @@ const plugin = {
                             this._applyResultsPanelMaxWidth(root);
                         }
                     }
-                    Logger.log('dashboard: side panel width set to ' + finalWidth + 'px (' + scope + ')');
+                    Logger.log('side panel width set to ' + finalWidth + 'px (' + scope + ')');
                 }
             });
         });
@@ -2354,14 +2353,14 @@ const plugin = {
                     if (statsHidden && rawIntent >= maxClosed - DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX) {
                         this._writeResultsPanelMaxWidthPref(maxClosed);
                         this._applyResultsPanelMaxWidth(root, true);
-                        Logger.log('dashboard: results panel max width set to ' + maxClosed + 'px (hidden full width)');
+                        Logger.log('results panel max width set to ' + maxClosed + 'px (hidden full width)');
                     } else {
                         const sharedPref = Math.round(
                             Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxClosed, rawIntent))
                         );
                         this._writeResultsPanelMaxWidthPref(sharedPref);
                         this._applyResultsPanelMaxWidth(root, statsHidden);
-                        Logger.log('dashboard: results panel max width set to ' + sharedPref + 'px');
+                        Logger.log('results panel max width set to ' + sharedPref + 'px');
                     }
                     if (statsCol) {
                         this._applyStatsPanelWidth(root);
@@ -2442,9 +2441,9 @@ const plugin = {
                 this.close();
                 if (Context.settingsUi && typeof Context.settingsUi.openModal === 'function') {
                     Context.settingsUi.openModal({ forceSettings: true });
-                    Logger.log('dashboard: closed dashboard and opened extension settings');
+                    Logger.log('closed dashboard and opened extension settings');
                 } else {
-                    Logger.warn('dashboard: Context.settingsUi.openModal unavailable');
+                    Logger.warn('Context.settingsUi.openModal unavailable');
                 }
             });
         }
@@ -3134,7 +3133,7 @@ const plugin = {
             const next = Math.max(0, Math.min(scrollEl.scrollTop + delta, maxScroll));
             if (next !== scrollEl.scrollTop) {
                 scrollEl.scrollTop = next;
-                Logger.debug('dashboard: scrolled filter menu into view — ' + scopeKey);
+                Logger.debug('scrolled filter menu into view — ' + scopeKey);
             }
         });
     },
@@ -3497,7 +3496,7 @@ const plugin = {
     _renderDualConstraintMsList(scopeKey, items, colIncludeLabel, colExcludeLabel, emptyHint, preserve, opts) {
         const itemsEl = this._msItemsEl(scopeKey);
         if (!itemsEl) {
-            Logger.warn('dashboard: dual constraint list panel missing — ' + scopeKey);
+            Logger.warn('dual constraint list panel missing — ' + scopeKey);
             return;
         }
         const options = opts || {};

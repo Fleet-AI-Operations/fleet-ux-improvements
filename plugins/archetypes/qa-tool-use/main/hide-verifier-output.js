@@ -18,7 +18,7 @@ const plugin = {
     name: 'Hide Verifier Output',
     description:
         'Adds Hide/Show Verifier on the Verifier Output header; hides the output body and collapses the bottom panel until shown or Run Verifier starts',
-    _version: '1.6',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -52,7 +52,7 @@ const plugin = {
         this.ensureRunWatch(ctx.runBtn, state);
 
         if (!state.activationLogged) {
-            Logger.log('hideVerifierOutput: Hide Verifier control ready');
+            Logger.log('Hide Verifier control ready');
             state.activationLogged = true;
         }
 
@@ -62,7 +62,7 @@ const plugin = {
     resetPane(state) {
         this.teardownRunWatch(state);
         if (state.activationLogged || state.hidden) {
-            Logger.debug('hideVerifierOutput: Verifier Output pane gone — reset');
+            Logger.debug('Verifier Output pane gone — reset');
         }
         state.missingLogged = false;
         state.activationLogged = false;
@@ -264,10 +264,10 @@ const plugin = {
             CleanupRegistry.registerElement(btn);
         }
         if (!state.injectLogged) {
-            Logger.log('hideVerifierOutput: toggle injected before Run Verifier');
+            Logger.log('toggle injected before Run Verifier');
             state.injectLogged = true;
         } else {
-            Logger.debug('hideVerifierOutput: toggle reinjected before Run Verifier');
+            Logger.debug('toggle reinjected before Run Verifier');
         }
         return btn;
     },
@@ -275,7 +275,7 @@ const plugin = {
     handleToggleClick(btn, state) {
         const live = this.contextFromToggle(btn, state);
         if (!live || !live.body) {
-            Logger.warn('hideVerifierOutput: click — could not resolve verifier body');
+            Logger.warn('click — could not resolve verifier body');
             return;
         }
 
@@ -404,11 +404,11 @@ const plugin = {
 
     hideVerifier(ctx, state, reason) {
         if (!ctx.body) {
-            Logger.warn(`hideVerifierOutput: hide failed — no body (${reason})`);
+            Logger.warn(`hide failed — no body (${reason})`);
             return;
         }
         if (this.isBodyHidden(ctx.body) && state.hidden) {
-            Logger.debug(`hideVerifierOutput: hide skipped — already hidden (${reason})`);
+            Logger.debug(`hide skipped — already hidden (${reason})`);
             return;
         }
 
@@ -422,18 +422,18 @@ const plugin = {
         this.collapsePanel(ctx, headerPx);
 
         state.hidden = true;
-        Logger.log(`hideVerifierOutput: hidden (${reason})`);
+        Logger.log(`hidden (${reason})`);
     },
 
     showVerifier(ctx, state, reason) {
         if (!ctx.body) {
-            Logger.warn(`hideVerifierOutput: show failed — no body (${reason})`);
+            Logger.warn(`show failed — no body (${reason})`);
             return;
         }
 
         const wasHidden = this.isBodyHidden(ctx.body) || state.hidden;
         if (!wasHidden) {
-            Logger.debug(`hideVerifierOutput: show skipped — already visible (${reason})`);
+            Logger.debug(`show skipped — already visible (${reason})`);
             return;
         }
 
@@ -461,7 +461,7 @@ const plugin = {
             this.syncToggleLabel(toggle, false);
             this.applyToggleChrome(toggle);
         }
-        Logger.log(`hideVerifierOutput: shown (${reason})`);
+        Logger.log(`shown (${reason})`);
     },
 
     ensureRunWatch(runBtn, state) {
@@ -532,7 +532,7 @@ const plugin = {
                   }
                 : null) || this.findVerifierContext();
         if (!ctx || !ctx.body) {
-            Logger.warn(`hideVerifierOutput: auto-show failed — could not resolve verifier body (${reason})`);
+            Logger.warn(`auto-show failed — could not resolve verifier body (${reason})`);
             return;
         }
         this.showVerifier(ctx, state, reason);

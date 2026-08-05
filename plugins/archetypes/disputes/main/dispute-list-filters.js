@@ -13,7 +13,7 @@ const plugin = {
     id: 'disputeListFilters',
     name: 'Dispute List Filters',
     description: 'Filter visible disputes by environment (empty selection = all); toggle sort by submitted date',
-    _version: '1.9',
+    _version: '1.10',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -48,7 +48,7 @@ const plugin = {
         const mountAnchor = this.findSearchMount();
         if (!mountAnchor) {
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: search mount not found`);
+                Logger.debug(`search mount not found`);
                 state.missingLogged = true;
             }
             return;
@@ -69,7 +69,7 @@ const plugin = {
             const cards = this.getLeafDisputeCards();
             if (cards.length > 0 && !state.fallbackRequested) {
                 if (!state.waitingLogged) {
-                    Logger.debug(`${this.id}: cards present but no /api/disputes data yet; requesting fallback`);
+                    Logger.debug(`cards present but no /api/disputes data yet; requesting fallback`);
                     state.waitingLogged = true;
                 }
                 this.requestDisputesFallback(state);
@@ -185,7 +185,7 @@ const plugin = {
         if (state.subscribed) return;
         const observer = Context.networkObserver;
         if (!observer || typeof observer.subscribe !== 'function') {
-            Logger.debug(`${this.id}: Context.networkObserver not ready`);
+            Logger.debug(`Context.networkObserver not ready`);
             return;
         }
 
@@ -216,7 +216,7 @@ const plugin = {
             }
         });
         state.subscribed = true;
-        Logger.debug(`${this.id}: subscribed to NetworkObserver for GET /api/disputes`);
+        Logger.debug(`subscribed to NetworkObserver for GET /api/disputes`);
     },
 
     getFallbackDisputesUrl() {
@@ -231,7 +231,7 @@ const plugin = {
             }
             return `${pageWindow.location.origin}/api/disputes?limit=50&offset=0`;
         } catch (e) {
-            Logger.debug(`${this.id}: performance resource scan failed`, e);
+            Logger.debug(`performance resource scan failed`, e);
             return '/api/disputes?limit=50&offset=0';
         }
     },
@@ -244,7 +244,7 @@ const plugin = {
         state.fallbackAttempts += 1;
         const attempt = state.fallbackAttempts;
         const url = this.getFallbackDisputesUrl();
-        Logger.debug(`${this.id}: fallback disputes fetch attempt ${attempt}/2`);
+        Logger.debug(`fallback disputes fetch attempt ${attempt}/2`);
 
         const self = this;
         fetch(url, { method: 'GET', credentials: 'same-origin' })
@@ -317,7 +317,7 @@ const plugin = {
             const clearBtn = controls.querySelector('[data-fleet-dlf-clear="1"]');
             if (clearBtn) controls.insertBefore(sortBtn, clearBtn);
             else controls.appendChild(sortBtn);
-            Logger.log(`${this.id}: sort toggle injected into existing toolbar`);
+            Logger.log(`sort toggle injected into existing toolbar`);
         } else {
             this.syncSortButtonLabel(state, controls.querySelector('[data-fleet-dlf-sort="1"]'));
         }
@@ -433,7 +433,7 @@ const plugin = {
         }
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: filter toolbar mounted`);
+            Logger.log(`filter toolbar mounted`);
             state.activationLogged = true;
         }
 
@@ -598,7 +598,7 @@ const plugin = {
         this.renderEnvPanel(state, toolbar);
         this.updateEnvButtonLabel(state, toolbar);
         this.applyFilters(state);
-        Logger.log(`${this.id}: filters cleared`);
+        Logger.log(`filters cleared`);
     },
 
     // Empty selection means show all environments.
@@ -681,7 +681,7 @@ const plugin = {
 
         state.lastSortSignature = signature;
         if (moved > 0) {
-            Logger.debug(`${this.id}: reordered ${moved} card(s) ${state.sortDesc ? 'descending' : 'ascending'}`);
+            Logger.debug(`reordered ${moved} card(s) ${state.sortDesc ? 'descending' : 'ascending'}`);
         }
     },
 
@@ -711,9 +711,9 @@ const plugin = {
         this.applySort(state);
 
         if (!quiet && filtering) {
-            Logger.log(`${this.id}: filter applied — shown ${shown}, hidden ${hidden}`);
+            Logger.log(`filter applied — shown ${shown}, hidden ${hidden}`);
         } else if (!quiet && !filtering) {
-            Logger.debug(`${this.id}: no active filters — showing ${shown} card(s)`);
+            Logger.debug(`no active filters — showing ${shown} card(s)`);
         }
     }
 };

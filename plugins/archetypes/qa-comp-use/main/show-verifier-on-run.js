@@ -7,7 +7,7 @@ const plugin = {
     name: 'Show Verifier On Run',
     description:
         'Automatically clicks "Show Grading" when the verifier runs if the grading panel is hidden; no-op when already visible.',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -23,7 +23,7 @@ const plugin = {
         const running = this.isVerifierRunning();
         if (!running) {
             if (state.verifierRunning) {
-                Logger.debug(`${this.id}: verifier run ended`);
+                Logger.debug(`verifier run ended`);
             }
             state.verifierRunning = false;
             state.showClickedForRun = false;
@@ -42,7 +42,7 @@ const plugin = {
             state.gradingVisibleLogged = false;
             if (!state.runStartLogged) {
                 state.runStartLogged = true;
-                Logger.log(`${this.id}: verifier run detected — will show grading panel`);
+                Logger.log(`verifier run detected — will show grading panel`);
             }
         }
 
@@ -54,7 +54,7 @@ const plugin = {
             state.showClickedForRun = true;
             if (!state.gradingVisibleLogged) {
                 state.gradingVisibleLogged = true;
-                Logger.debug(`${this.id}: grading panel already visible (Hide Grading present)`);
+                Logger.debug(`grading panel already visible (Hide Grading present)`);
             }
             return;
         }
@@ -62,7 +62,7 @@ const plugin = {
         const button = this.findShowGradingButton();
         if (!button) {
             if (!state.showGradingMissingLogged) {
-                Logger.debug(`${this.id}: "Show Grading" button not found yet`);
+                Logger.debug(`"Show Grading" button not found yet`);
                 state.showGradingMissingLogged = true;
             }
             return;
@@ -70,7 +70,7 @@ const plugin = {
 
         if (!this.isButtonClickable(button)) {
             if (!state.showGradingNotClickableLogged) {
-                Logger.debug(`${this.id}: "Show Grading" not clickable yet`);
+                Logger.debug(`"Show Grading" not clickable yet`);
                 state.showGradingNotClickableLogged = true;
             }
             return;
@@ -79,9 +79,9 @@ const plugin = {
         try {
             button.click();
             state.showClickedForRun = true;
-            Logger.log(`${this.id}: clicked "Show Grading"`);
+            Logger.log(`clicked "Show Grading"`);
         } catch (error) {
-            Logger.error(`${this.id}: failed to click "Show Grading"`, error);
+            Logger.error(`failed to click "Show Grading"`, error);
         }
     },
 

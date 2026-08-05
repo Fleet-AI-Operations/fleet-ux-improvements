@@ -327,7 +327,7 @@ const plugin = {
     name: 'Request Revisions Screenshot Upload Improvement (library)',
     description:
         'Shared API for Request Revisions screenshot drag-drop/upload and paste-image controls',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -337,8 +337,7 @@ const plugin = {
             run: (s, options) => RequestRevisionsScreenshotUploadApi.run(s, options)
         };
         if (!state.registered) {
-            Logger.log(
-                'requestRevisionsScreenshotUploadImprovementLib: module registered (Context.requestRevisionsScreenshotUpload)'
+            Logger.log('module registered (Context.requestRevisionsScreenshotUpload)'
             );
             state.registered = true;
         }

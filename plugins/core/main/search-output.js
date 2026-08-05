@@ -625,7 +625,7 @@ const searchOutputCoreMethods = {
             offset += limit;
             if (rows.length < limit || offset >= totalCount) break;
         }
-        Logger.warn('search-output: dispute ' + did + ' not found in review history after '
+        Logger.warn('dispute ' + did + ' not found in review history after '
             + DASH_DISPUTE_REVIEWS_HISTORY_MAX_PAGES + ' page(s)');
         return null;
     },
@@ -721,7 +721,7 @@ const searchOutputCoreMethods = {
 
         const item = this._findCachedItem(iid);
         if (!item || !item.task || !item.task.id) {
-            Logger.warn('search-output: dispute resolve cache sync skipped — item not found ' + iid);
+            Logger.warn('dispute resolve cache sync skipped — item not found ' + iid);
             return;
         }
         const taskId = item.task.id;
@@ -733,11 +733,11 @@ const searchOutputCoreMethods = {
         try {
             historyRow = await this._fetchLiveDashboardResolvedDispute(id, userId, teamId);
         } catch (e) {
-            Logger.warn('search-output: dispute review history fetch failed — ' + id, e);
+            Logger.warn('dispute review history fetch failed — ' + id, e);
         }
 
         if (!historyRow && !openRow) {
-            Logger.warn('search-output: dispute resolve cache sync skipped — no history or open row for ' + id);
+            Logger.warn('dispute resolve cache sync skipped — no history or open row for ' + id);
             return;
         }
 
@@ -748,13 +748,13 @@ const searchOutputCoreMethods = {
             taskId
         });
         if (!stripped || !stripped.id) {
-            Logger.warn('search-output: dispute resolve cache sync skipped — merge failed for ' + id);
+            Logger.warn('dispute resolve cache sync skipped — merge failed for ' + id);
             return;
         }
 
         this._removeDisputeFromOpenPrefetch(id, taskId);
         this._upsertDisputeInResolvedPrefetch(stripped, taskId);
-        Logger.log('search-output: dispute resolve cache synced — ' + id
+        Logger.log('dispute resolve cache synced — ' + id
             + ' task ' + String(taskId).slice(0, 8)
             + (historyRow ? '' : ' (degraded merge)'));
     },
@@ -916,7 +916,7 @@ const searchOutputCoreMethods = {
         if (typeof ops.hydrateUserTeamCatalog === 'function') {
             ops.hydrateUserTeamCatalog(id, teams);
         }
-        Logger.log('search-output: user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
+        Logger.log('user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
         return teams;
     },
 
@@ -1103,7 +1103,7 @@ const searchOutputCoreMethods = {
                 expires_at: 'gt.' + nowIso
             }, { expires_at: nowIso });
         } catch (e) {
-            Logger.debug('search-output: rescue lease PATCH other leases failed — ' + tid.slice(0, 8), e);
+            Logger.debug('rescue lease PATCH other leases failed — ' + tid.slice(0, 8), e);
         }
         try {
             await this._dashPostgrestInsert('eval_task_leases', {
@@ -1111,7 +1111,7 @@ const searchOutputCoreMethods = {
                 owner_id: userId,
                 expires_at: expiresAt
             });
-            Logger.log('search-output: rescue lease claimed — ' + tid.slice(0, 8));
+            Logger.log('rescue lease claimed — ' + tid.slice(0, 8));
             return { leased: true, alreadyHeld: false };
         } catch (e) {
             const rows = await this._dashPostgrestListGet('eval_task_leases', {
@@ -1124,7 +1124,7 @@ const searchOutputCoreMethods = {
             }).catch(() => []);
             const open = Array.isArray(rows) && rows[0] && rows[0].ended_at == null;
             if (open) {
-                Logger.log('search-output: rescue lease already held — ' + tid.slice(0, 8));
+                Logger.log('rescue lease already held — ' + tid.slice(0, 8));
                 return { leased: true, alreadyHeld: true };
             }
             throw e;
@@ -1152,7 +1152,7 @@ const searchOutputCoreMethods = {
                 'x-team-id': teamId
             }
         });
-        Logger.log('search-output: rescue discard — task ' + tid.slice(0, 8)
+        Logger.log('rescue discard — task ' + tid.slice(0, 8)
             + ' lifecycle ' + ((json && json.new_lifecycle_status) || '?')
             + (json && json.feedback_id != null ? (' feedback ' + json.feedback_id) : ''));
         return json;
@@ -1171,17 +1171,17 @@ const searchOutputCoreMethods = {
         const item = this._findCachedItem(itemId);
         if (!item || !item.task || !item.task.id) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('search-output: card rehydrate skipped — dashboardData not loaded');
+            Logger.warn('card rehydrate skipped — dashboardData not loaded');
             return;
         }
         if (!this._state.cardRehydrating) this._state.cardRehydrating = {};
         if (this._state.cardRehydrating[itemId]) {
-            Logger.debug('search-output: card rehydrate already in progress — ' + itemId);
+            Logger.debug('card rehydrate already in progress — ' + itemId);
             return;
         }
         const taskId = item.task.id;
         this._state.cardRehydrating[itemId] = true;
-        Logger.debug('search-output: card rehydrate started — ' + itemId);
+        Logger.debug('card rehydrate started — ' + itemId);
 
         // Throw away hydrated payload so the in-place rebuild is a full refresh.
         item.hydrated = false;
@@ -1239,15 +1239,15 @@ const searchOutputCoreMethods = {
                     this._addItemOutputKind(item, 'dispute');
                 }
             } catch (disputeErr) {
-                Logger.debug('search-output: card rehydrate task-disputes refresh failed — ' + itemId, disputeErr);
+                Logger.debug('card rehydrate task-disputes refresh failed — ' + itemId, disputeErr);
             }
             item.hydrated = true;
             this._patchTaskCard(itemId);
             this._onScopeDataEnriched();
-            Logger.log('search-output: card rehydrated — ' + itemId);
+            Logger.log('card rehydrated — ' + itemId);
         } catch (e) {
             if (!this._handleDashSessionRefreshError(e)) {
-                Logger.warn('search-output: card rehydrate failed — ' + itemId, e);
+                Logger.warn('card rehydrate failed — ' + itemId, e);
             }
         } finally {
             delete this._state.cardRehydrating[itemId];
@@ -1262,7 +1262,7 @@ const searchOutputCoreMethods = {
         const userId = this._dashGetCurrentUserId();
         if (!userId) throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
         const teamLabel = this._teamName(id) || id.slice(0, 8) + '…';
-        Logger.debug('search-output: switching active team to ' + teamLabel);
+        Logger.debug('switching active team to ' + teamLabel);
         this._dashSetCookie('current-team-id', id);
         const membership = await this._dashPostgrestObjectGet('team_member', {
             select: 'role',
@@ -1272,7 +1272,7 @@ const searchOutputCoreMethods = {
         if (membership && membership.role) {
             this._dashSetCookie('current-team-role', String(membership.role));
         }
-        Logger.log('search-output: active team set to ' + teamLabel);
+        Logger.log('active team set to ' + teamLabel);
         return membership;
     },
 
@@ -1742,7 +1742,7 @@ const searchOutputCoreMethods = {
                 slot.status = 'done';
                 return 0;
             }
-            Logger.debug('search-output: ' + this._prefetchLabel(kind) + ' prefetch started — ' + teamIds.length + ' team(s)');
+            Logger.debug('' + this._prefetchLabel(kind) + ' prefetch started — ' + teamIds.length + ' team(s)');
             let rows = [];
             let capped = false;
             if (kind === 'openDisputes') {
@@ -1773,7 +1773,7 @@ const searchOutputCoreMethods = {
             }
             slot.bulkIncomplete = capped;
             slot.status = 'done';
-            Logger.log('search-output: ' + this._prefetchLabel(kind) + ' prefetch complete — ' + rows.length
+            Logger.log('' + this._prefetchLabel(kind) + ' prefetch complete — ' + rows.length
                 + ' row(s), ' + slot.byTaskId.size + ' task(s)'
                 + (capped ? ' · pagination capped' : ''));
             if (capped) {
@@ -1954,7 +1954,7 @@ const searchOutputCoreMethods = {
         const openMeta = this._deriveOpenDisputeMeta(scope, afterIso, beforeIso, contributorSet || null);
         const resolvedMeta = this._deriveResolvedDisputeMeta(scope, afterIso, beforeIso, contributorSet || null);
         const bulkIncomplete = this._isAnyPrefetchIncomplete(['openDisputes', 'resolvedDisputes']);
-        Logger.debug('search-output: disputes bootstrap — ' + openMeta.openDisputesByTaskId.size
+        Logger.debug('disputes bootstrap — ' + openMeta.openDisputesByTaskId.size
             + ' open task(s), ' + resolvedMeta.resolvedDisputeTaskIds.size
             + ' resolved task id(s) in search date range'
             + (bulkIncomplete ? ' · prefetch pagination capped' : ''));
@@ -2208,7 +2208,7 @@ const searchOutputCoreMethods = {
                 }
             }
             if (!embed) {
-                Logger.warn('search-output: dispute prefetch missing eval_task embed — task ' + String(taskId).slice(0, 8));
+                Logger.warn('dispute prefetch missing eval_task embed — task ' + String(taskId).slice(0, 8));
                 continue;
             }
             if (!this._prefetchEmbedMatchesProjectScope(embed, scope)) continue;
@@ -2236,7 +2236,7 @@ const searchOutputCoreMethods = {
             });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
-        Logger.debug('search-output: prefetch dispute items — ' + items.length);
+        Logger.debug('prefetch dispute items — ' + items.length);
         return items;
     },
 
@@ -2248,7 +2248,7 @@ const searchOutputCoreMethods = {
             const embedRow = rows.find((r) => r.task && r.task.id);
             const embed = embedRow ? embedRow.task : null;
             if (!embed) {
-                Logger.warn('search-output: flag prefetch missing task embed — task ' + String(taskId).slice(0, 8));
+                Logger.warn('flag prefetch missing task embed — task ' + String(taskId).slice(0, 8));
                 continue;
             }
             if (!this._prefetchEmbedMatchesProjectScope(embed, scope)) continue;
@@ -2275,7 +2275,7 @@ const searchOutputCoreMethods = {
             });
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
-        Logger.debug('search-output: prefetch flag items — ' + items.length);
+        Logger.debug('prefetch flag items — ' + items.length);
         return items;
     },
 
@@ -2289,7 +2289,7 @@ const searchOutputCoreMethods = {
         await this._ensurePrefetch('resolvedDisputes');
         const contributorSet = this._contributorSetFromAuthorIds(authorIds);
         const meta = this._deriveResolvedDisputeMeta(scope, afterIso, beforeIso, contributorSet);
-        Logger.debug('search-output: dispute resolver discovery — ' + meta.resolvedDisputeTaskIds.size + ' task id(s)'
+        Logger.debug('dispute resolver discovery — ' + meta.resolvedDisputeTaskIds.size + ' task id(s)'
             + (this._isPrefetchIncomplete('resolvedDisputes') ? ' · prefetch pagination capped' : ''));
         return {
             resolverDisputeTaskIds: meta.resolvedDisputeTaskIds,
@@ -2356,7 +2356,7 @@ const searchOutputCoreMethods = {
             }
         };
         await Promise.all(Array.from({ length: concurrency }, () => worker()));
-        Logger.debug('search-output: task-disputes batch — ' + byTaskId.size + '/' + ids.length + ' task(s) with resolved history');
+        Logger.debug('task-disputes batch — ' + byTaskId.size + '/' + ids.length + ' task(s) with resolved history');
         return byTaskId;
     },
 
@@ -2503,7 +2503,7 @@ const searchOutputCoreMethods = {
             }
         }
         if (attached > 0) {
-            Logger.debug('search-output: dispute/flag overlay — ' + attached + ' card(s)');
+            Logger.debug('dispute/flag overlay — ' + attached + ' card(s)');
         }
         return attached;
     },
@@ -3109,7 +3109,7 @@ const searchOutputCoreMethods = {
         }
         items.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
         const positiveCount = items.filter((it) => it.qaFeedback && it.qaFeedback.isPositive).length;
-        Logger.debug('search-output: QA items built — ' + items.length + ' total (' + positiveCount + ' accepted, ' + (items.length - positiveCount) + ' returned)');
+        Logger.debug('QA items built — ' + items.length + ' total (' + positiveCount + ' accepted, ' + (items.length - positiveCount) + ' returned)');
         return items;
     },
 
@@ -3425,7 +3425,7 @@ const searchOutputCoreMethods = {
                     .map((row) => enrichedTasksById.get(row.id))
                     .filter(Boolean);
                 items.push(...this._taskCreationItemsFromTasks(creationTasks));
-                Logger.debug('search-output: task creation items built — ' + creationTasks.length);
+                Logger.debug('task creation items built — ' + creationTasks.length);
             }
             if (includeQa && (feedbackRows || []).length > 0) {
                 items.push(...this._qaItemsFromFeedbackRows(feedbackRows, enrichedTasksById, profilesMap));
@@ -3435,7 +3435,7 @@ const searchOutputCoreMethods = {
                     .map((row) => enrichedTasksById.get(row.id))
                     .filter(Boolean);
                 items.push(...this._sessionItemsFromTasks(sessionTasks, sessionMetaByTaskId));
-                Logger.debug('search-output: session items built — ' + sessionTasks.length);
+                Logger.debug('session items built — ' + sessionTasks.length);
             }
         } else if (items.length > 0) {
             this._setSearchLoadPhase('Assembling results…', items.length);
@@ -4240,7 +4240,7 @@ const searchOutputCoreMethods = {
             );
         }
         const tab = this._state.resultsKindTab || 'all';
-        Logger.debug('search-output: filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
+        Logger.debug('filter lists reindexed — ' + scopeItems.length + ' item(s) in scope'
             + (tab !== 'all' ? ' · tab ' + tab : ''));
         return newBounds;
     },
@@ -4505,13 +4505,13 @@ const searchOutputCoreMethods = {
 
         const tab = this._state.resultsKindTab || 'all';
         if (filterSource === 'client') {
-            Logger.log('search-output: filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
+            Logger.log('filters applied — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope'
                 + (manual.rows.length > 0 ? ' · ' + manual.rows.length + ' manual' : '')
                 + ' · ' + this._parseDashSortValue(sortMetric + ':' + sortOrder).label);
         } else if (filterSource === 'filter-reset') {
-            Logger.log('search-output: filters reset — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope');
+            Logger.log('filters reset — ' + result.length + ' / ' + scopeItems.length + ' item(s) in tab scope');
         } else {
-            Logger.debug('search-output: results view ready — ' + result.length + ' / ' + scopeItems.length + ' · tab ' + tab);
+            Logger.debug('results view ready — ' + result.length + ' / ' + scopeItems.length + ' · tab ' + tab);
         }
 
         const finishRender = () => {
@@ -4550,12 +4550,12 @@ const searchOutputCoreMethods = {
                     this._state.searchLoadPhase = '';
                     this._state.loading = false;
                     if (hydrated > 0) {
-                        Logger.debug('search-output: initial hydrate batch complete — ' + hydrated + ' card(s)');
+                        Logger.debug('initial hydrate batch complete — ' + hydrated + ' card(s)');
                     }
                     finishRender();
                     return true;
                 }).catch((err) => {
-                    Logger.warn('search-output: initial hydrate batch failed', err);
+                    Logger.warn('initial hydrate batch failed', err);
                     this._state.searchLoadPhase = '';
                     this._state.loading = false;
                     finishRender();
@@ -4677,9 +4677,9 @@ const searchOutputCoreMethods = {
                     }
                 }
             } catch (e) {
-                Logger.warn('search-output: dispute/flag overlay failed', e);
+                Logger.warn('dispute/flag overlay failed', e);
             }
-            Logger.debug('search-output: hydrated ' + updated + ' card(s)');
+            Logger.debug('hydrated ' + updated + ' card(s)');
             return updated;
         } finally {
             this._state.hydrateFetchActive = false;
@@ -4752,7 +4752,7 @@ const searchOutputCoreMethods = {
             throw new Error('Dashboard helpers not loaded. Reload the page and try again.');
         }
 
-        Logger.debug('search-output: deep search hydrating all results — ' + toHydrate.length + ' card(s)');
+        Logger.debug('deep search hydrating all results — ' + toHydrate.length + ' card(s)');
         const hydratedTotal = await this._hydrateItemsInBulkBatches(toHydrate, {
             prefetchedFeedbackRows: opts.prefetchedFeedbackRows,
             skipFeedbackFetch: Boolean(opts.skipFeedbackFetch),
@@ -4762,7 +4762,7 @@ const searchOutputCoreMethods = {
         if (hydratedTotal > 0) {
             this._onScopeDataEnriched();
         }
-        Logger.debug('search-output: deep search hydrate complete — ' + hydratedTotal + ' card(s)');
+        Logger.debug('deep search hydrate complete — ' + hydratedTotal + ' card(s)');
         return hydratedTotal;
     },
 
@@ -4771,11 +4771,11 @@ const searchOutputCoreMethods = {
         const batch = this._getInitialHydrateBatch();
         if (batch.length === 0) return 0;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
-            Logger.warn('search-output: initial hydrate batch skipped — dashboardData not loaded');
+            Logger.warn('initial hydrate batch skipped — dashboardData not loaded');
             return 0;
         }
         const contextKey = this._autoHydrateContextKey();
-        Logger.debug('search-output: prehydrating initial batch before display — ' + batch.length + ' card(s)');
+        Logger.debug('prehydrating initial batch before display — ' + batch.length + ' card(s)');
 
         this._state.autoHydrateActive = true;
         this._syncResultsHydrateBannerUi();
@@ -4825,7 +4825,7 @@ const searchOutputCoreMethods = {
 
         const contextKey = this._autoHydrateContextKey();
         const meta = this._getResultsPaginationMeta();
-        Logger.debug('search-output: page hydrate — ' + onPage.length + ' card(s)'
+        Logger.debug('page hydrate — ' + onPage.length + ' card(s)'
             + (meta ? ' (page ' + (meta.page + 1) + '/' + meta.totalPages + ')' : ''));
 
         this._state.autoHydrateActive = true;
@@ -4835,17 +4835,17 @@ const searchOutputCoreMethods = {
                 shouldCancel: () => this._autoHydrateContextKey() !== contextKey
             });
             if (this._autoHydrateContextKey() !== contextKey) {
-                Logger.debug('search-output: page hydrate cancelled — view changed');
+                Logger.debug('page hydrate cancelled — view changed');
                 return;
             }
             if (hydrated > 0) {
                 this._onScopeDataEnriched();
                 this._renderResults();
-                Logger.debug('search-output: page hydrate complete — ' + hydrated + ' card(s)');
+                Logger.debug('page hydrate complete — ' + hydrated + ' card(s)');
             }
         } catch (err) {
             if (!this._handleDashSessionRefreshError(err)) {
-                Logger.warn('search-output: page hydrate failed', err);
+                Logger.warn('page hydrate failed', err);
             }
         } finally {
             this._state.autoHydrateActive = false;
@@ -5344,7 +5344,7 @@ function attachSearchOutputListeners(modal, dash) {
                     const nextOpen = !set.has(key);
                     if (nextOpen) set.add(key);
                     else set.delete(key);
-                    Logger.log('search-output: ratings cohort slice ' + (nextOpen ? 'expanded' : 'collapsed')
+                    Logger.log('ratings cohort slice ' + (nextOpen ? 'expanded' : 'collapsed')
                         + ' — ' + workerId + ' · ' + scoreKind + ' · ' + dimension + ' · ' + sliceKey);
                     dash._renderRatingsPanel({ recompute: false });
                 }
@@ -5360,7 +5360,7 @@ function attachSearchOutputListeners(modal, dash) {
                     const nextOpen = !set.has(key);
                     if (nextOpen) set.add(key);
                     else set.delete(key);
-                    Logger.log('search-output: ratings score ' + (nextOpen ? 'expanded' : 'collapsed')
+                    Logger.log('ratings score ' + (nextOpen ? 'expanded' : 'collapsed')
                         + ' — ' + workerId + ' · ' + scoreKind);
                     dash._renderRatingsPanel({ recompute: false });
                 }
@@ -5373,7 +5373,7 @@ function attachSearchOutputListeners(modal, dash) {
                 if (workerId && (weighting === 'flat' || weighting === 'recency')) {
                     if (!dash._state.ratingsWeightingByWorker) dash._state.ratingsWeightingByWorker = {};
                     dash._state.ratingsWeightingByWorker[workerId] = weighting;
-                    Logger.log('search-output: ratings weighting toggled — ' + workerId + ' → ' + weighting);
+                    Logger.log('ratings weighting toggled — ' + workerId + ' → ' + weighting);
                     dash._renderRatingsPanel({ recompute: false });
                 }
                 return;
@@ -5895,14 +5895,14 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.27',
+    _version: '9.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug('search-output: tab already registered — skipping re-init');
+            Logger.debug('tab already registered — skipping re-init');
             return;
         }
         const loader = Context.dashboard && Context.dashboard._loader;
@@ -5917,7 +5917,7 @@ const plugin = {
             if (Context.searchOutputResultsPaneMethods) Object.assign(loader, Context.searchOutputResultsPaneMethods);
             if (Context.searchOutputStatsPaneMethods) Object.assign(loader, Context.searchOutputStatsPaneMethods);
         } catch (e) {
-            Logger.error('search-output: attach to dashboard loader failed', e);
+            Logger.error('attach to dashboard loader failed', e);
             throw e;
         }
         try {
@@ -5931,7 +5931,7 @@ const plugin = {
                 loader._state.catalog = loader._readBootstrapCache();
             }
         } catch (e) {
-            Logger.warn('search-output: pre-register setup failed', e);
+            Logger.warn('pre-register setup failed', e);
         }
         Context.dashboard.registerTab({
             id: 'search-output',
@@ -5991,7 +5991,7 @@ const plugin = {
             }
         });
         if (state) state.registered = true;
-        Logger.log('search-output: tab registered');
+        Logger.log('tab registered');
     }
 
 };

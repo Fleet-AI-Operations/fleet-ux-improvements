@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.0
+// @version      13.1
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.0';
+    const VERSION = '13.1';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1257,9 +1257,53 @@
             });
         },
 
-        _getModulePrefix(moduleId) {
-            const safeId = moduleId || 'unknown';
-            return `${LOG_PREFIX} [${safeId}]`;
+        _LEVEL_EMOJI: {
+            debug: '🔍',
+            info: 'ℹ️',
+            warn: '⚠️',
+            error: '❌'
+        },
+
+        /**
+         * Strip call-site framing that Logger already owns (leading level emojis / ✓,
+         * and a leading module identity prefix when moduleId is set).
+         */
+        _normalizeMessage(msg, moduleId) {
+            let text = msg == null ? '' : String(msg);
+            const stripLeadingDecor = () => {
+                while (/^(?:🔍|ℹ️|⚠️|⚠|❌|✓)\s+/u.test(text)) {
+                    text = text.replace(/^(?:🔍|ℹ️|⚠️|⚠|❌|✓)\s+/u, '');
+                }
+            };
+            stripLeadingDecor();
+            if (moduleId) {
+                const escaped = String(moduleId).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                text = text.replace(new RegExp('^\\[' + escaped + '\\]\\s*', ''), '');
+                text = text.replace(new RegExp('^' + escaped + '\\s*(?::|—|-)\\s*', ''), '');
+                // Lib modules often used a shorter prose tag (FooLib → Foo).
+                if (/Lib$/.test(moduleId)) {
+                    const shortId = String(moduleId).slice(0, -3);
+                    if (shortId) {
+                        const shortEsc = shortId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        text = text.replace(new RegExp('^\\[' + shortEsc + '\\]\\s*', ''), '');
+                        text = text.replace(new RegExp('^' + shortEsc + '\\s*(?::|—|-)\\s*', ''), '');
+                    }
+                }
+                stripLeadingDecor();
+            }
+            return text;
+        },
+
+        /**
+         * Build console/_emit payload: LOG_PREFIX, optional [moduleId], level emoji, message.
+         */
+        _formatPayload(level, msg, moduleId, args) {
+            const normalized = this._normalizeMessage(msg, moduleId);
+            const emoji = this._LEVEL_EMOJI[level] || '';
+            let prefix = LOG_PREFIX;
+            if (moduleId) prefix += ` [${moduleId}]`;
+            if (emoji) prefix += ` ${emoji}`;
+            return [`${prefix} ${normalized}`, ...(args || [])];
         },
 
         _shouldLogModule(moduleId) {
@@ -1269,19 +1313,7 @@
         _logModule(level, msg, moduleId, ...args) {
             // Only debug is gated; heartbeat levels always emit with the module prefix.
             if (level === 'debug' && !this._shouldLogModule(moduleId)) return;
-            const prefix = this._getModulePrefix(moduleId);
-            let payload;
-            if (level === 'debug') {
-                payload = [`${prefix} 🔍 ${msg}`, ...args];
-            } else if (level === 'info') {
-                payload = [`${prefix} ℹ️ ${msg}`, ...args];
-            } else if (level === 'warn') {
-                payload = [`${prefix} ⚠️ ${msg}`, ...args];
-            } else if (level === 'error') {
-                payload = [`${prefix} ❌ ${msg}`, ...args];
-            } else {
-                payload = [`${prefix} ${msg}`, ...args];
-            }
+            const payload = this._formatPayload(level, msg, moduleId || 'unknown', args);
             console[level](...payload);
             this._emit(level, payload);
         },
@@ -1302,21 +1334,21 @@
         },
         
         log(msg, ...args) {
-            const payload = [`${LOG_PREFIX} ${msg}`, ...args];
+            const payload = this._formatPayload('log', msg, null, args);
             console.log(...payload);
             this._emit('log', payload);
         },
         
         debug(msg, ...args) {
             if (this.isDebugEnabled()) {
-                const payload = [`${LOG_PREFIX} 🔍 ${msg}`, ...args];
+                const payload = this._formatPayload('debug', msg, null, args);
                 console.debug(...payload);
                 this._emit('debug', payload);
             }
         },
 
         info(msg, ...args) {
-            const payload = [`${LOG_PREFIX} ℹ️ ${msg}`, ...args];
+            const payload = this._formatPayload('info', msg, null, args);
             if (typeof console.info === 'function') {
                 console.info(...payload);
             } else {
@@ -1326,13 +1358,13 @@
         },
         
         warn(msg, ...args) {
-            const payload = [`${LOG_PREFIX} ⚠️ ${msg}`, ...args];
+            const payload = this._formatPayload('warn', msg, null, args);
             console.warn(...payload);
             this._emit('warn', payload);
         },
         
         error(msg, ...args) {
-            const payload = [`${LOG_PREFIX} ❌ ${msg}`, ...args];
+            const payload = this._formatPayload('error', msg, null, args);
             console.error(...payload);
             this._emit('error', payload);
         }
@@ -2264,7 +2296,7 @@
             const timestamp = Date.now();
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.archetypesPath}?t=${timestamp}`;
             
-            Logger.debug(`🔍 Fetching archetypes from branch: ${GITHUB_CONFIG.branch} (${url})`);
+            Logger.debug(`Fetching archetypes from branch: ${GITHUB_CONFIG.branch} (${url})`);
             
             return new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
@@ -2298,7 +2330,7 @@
                                     // This handles semantic versioning (e.g., "3.4.0" vs "3.4.1")
                                     Context.isOutdated = this._compareVersions(VERSION, latestVersion) < 0;
                                     if (Context.isOutdated) {
-                                        Logger.warn(`⚠ Script version ${VERSION} is outdated. Latest version is ${latestVersion}`);
+                                        Logger.warn(`Script version ${VERSION} is outdated. Latest version is ${latestVersion}`);
                                     }
                                 } else {
                                     // No version in config, assume up to date
@@ -2904,7 +2936,7 @@
                         throw new Error(`Plugin ${filename} blocked: integrity hash mismatch`);
                     }
 
-                    Logger.warn(`⚠ Plugin ${filename} hash mismatch (dev branch). Loading anyway (not caching).`);
+                    Logger.warn(`Plugin ${filename} hash mismatch (dev branch). Loading anyway (not caching).`);
                     return fetchedCode;
                 }
 
@@ -2922,7 +2954,7 @@
                             this.cachePluginCode(filename, sourcePath, fetchedCode, fetchedVersion);
                             return fetchedCode;
                         } else {
-                            Logger.warn(`⚠ Fetched ${filename} has version v${fetchedVersion}, expected v${version}. GitHub CDN may be stale.`);
+                            Logger.warn(`Fetched ${filename} has version v${fetchedVersion}, expected v${version}. GitHub CDN may be stale.`);
                             if (cached) {
                                 Logger.warn(`Using cached v${cached.version} instead of stale fetched version`);
                                 Context.outdatedPlugins.push({ filename, sourcePath, cachedVersion: cached.version, requiredVersion: version, fetchedVersion });
@@ -2960,7 +2992,7 @@
                             throw new Error(`Plugin ${filename} blocked: fetch failed and cache integrity mismatch`);
                         }
                     }
-                    Logger.warn(`⚠ Failed to fetch ${filename} v${version}, using cached v${cached.version}`);
+                    Logger.warn(`Failed to fetch ${filename} v${version}, using cached v${cached.version}`);
                     Context.outdatedPlugins.push({ filename, sourcePath, cachedVersion: cached.version, requiredVersion: version });
                     return cached.code;
                 }
@@ -3205,7 +3237,7 @@
                     continue;
                 }
                 
-                Logger.debug(`🔍 archetypes.json requests ${normalizedType} plugin ${filename} v${version}${hash ? ' (hash present)' : ''}`);
+                Logger.debug(`archetypes.json requests ${normalizedType} plugin ${filename} v${version}${hash ? ' (hash present)' : ''}`);
                 
                 try {
                     const plugin = await loader(filename, version, hash);
@@ -3258,7 +3290,7 @@
                     continue;
                 }
 
-                Logger.debug(`🔍 archetypes.json requests archetype plugin ${filename} v${version} for ${archetypeId}${hash ? ' (hash present)' : ''}`);
+                Logger.debug(`archetypes.json requests archetype plugin ${filename} v${version} for ${archetypeId}${hash ? ' (hash present)' : ''}`);
 
                 if (filename.includes('/')) {
                     Logger.error(
@@ -3302,7 +3334,7 @@
             
             // Log warnings about outdated plugins
             if (Context.outdatedPlugins.length > 0) {
-                Logger.warn(`⚠ ${Context.outdatedPlugins.length} plugin(s) are using outdated cached versions:`);
+                Logger.warn(`${Context.outdatedPlugins.length} plugin(s) are using outdated cached versions:`);
                 Context.outdatedPlugins.forEach(p => {
                     Logger.warn(`  - ${p.filename}: cached v${p.cachedVersion}, required v${p.requiredVersion}`);
                 });
@@ -3353,7 +3385,7 @@
                     continue;
                 }
 
-                Logger.debug(`🔍 archetypes.json requests dev archetype plugin ${filename} v${version} for ${archetypeId}${hash ? ' (hash present)' : ''}`);
+                Logger.debug(`archetypes.json requests dev archetype plugin ${filename} v${version} for ${archetypeId}${hash ? ' (hash present)' : ''}`);
 
                 if (filename.includes('/')) {
                     Logger.error(
@@ -3395,7 +3427,7 @@
             
             // Log warnings about outdated plugins
             if (Context.outdatedPlugins.length > 0) {
-                Logger.warn(`⚠ ${Context.outdatedPlugins.length} dev archetype plugin(s) are using outdated cached versions:`);
+                Logger.warn(`${Context.outdatedPlugins.length} dev archetype plugin(s) are using outdated cached versions:`);
                 Context.outdatedPlugins.forEach(p => {
                     Logger.warn(`  - ${p.filename}: cached v${p.cachedVersion}, required v${p.requiredVersion}`);
                 });
@@ -3602,7 +3634,7 @@
                 try {
                     if (plugin.destroy) {
                         plugin.destroy(plugin.state, Context);
-                        Logger.debug(`✓ Destroyed plugin: ${plugin.id}`);
+                        Logger.debug(`Destroyed plugin: ${plugin.id}`);
                     }
                     plugin.state = plugin.initialState ? { ...plugin.initialState } : {};
                 } catch (e) {

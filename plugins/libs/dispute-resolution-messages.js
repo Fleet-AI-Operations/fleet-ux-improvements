@@ -42,7 +42,7 @@ function drmReadList() {
         if (raw == null || raw === '') return [];
         parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
     } catch (e) {
-        Logger.warn(DRM_PLUGIN_TAG + ': failed to parse stored messages', e);
+        Logger.warn('failed to parse stored messages', e);
         return [];
     }
     if (!Array.isArray(parsed)) return [];
@@ -360,11 +360,11 @@ function drmOpenCreateDialog(opts) {
         }
         try {
             const created = drmCreate({ name, body });
-            Logger.log(DRM_PLUGIN_TAG + ': created message — ' + created.name);
+            Logger.log('created message — ' + created.name);
             drmCloseCreateDialog();
             if (onSaved) onSaved(created);
         } catch (e) {
-            Logger.warn(DRM_PLUGIN_TAG + ': create failed', e);
+            Logger.warn('create failed', e);
             setError(e && e.message ? e.message : 'Failed to save message.');
         }
     });
@@ -470,12 +470,12 @@ function drmMountToolbar(opts) {
         const id = String(select.value || '').trim();
         const entry = drmGetById(id);
         if (!entry) {
-            Logger.warn(DRM_PLUGIN_TAG + ': insert blocked — no message selected');
+            Logger.warn('insert blocked — no message selected');
             return;
         }
         const next = drmAppendBody(textarea.value, entry.body);
         drmSetTextareaValue(textarea, next);
-        Logger.log(DRM_PLUGIN_TAG + ': inserted message — ' + entry.name);
+        Logger.log('inserted message — ' + entry.name);
     });
 
     deleteBtn.addEventListener('click', (ev) => {
@@ -484,15 +484,15 @@ function drmMountToolbar(opts) {
         const id = String(select.value || '').trim();
         const entry = drmGetById(id);
         if (!entry) {
-            Logger.warn(DRM_PLUGIN_TAG + ': delete blocked — no message selected');
+            Logger.warn('delete blocked — no message selected');
             return;
         }
         if (!window.confirm('Delete saved message "' + entry.name + '"?')) return;
         if (drmRemove(id)) {
-            Logger.log(DRM_PLUGIN_TAG + ': deleted message — ' + entry.name);
+            Logger.log('deleted message — ' + entry.name);
             drmFillSelect(select, '');
         } else {
-            Logger.warn(DRM_PLUGIN_TAG + ': delete failed — ' + id);
+            Logger.warn('delete failed — ' + id);
         }
     });
 
@@ -507,7 +507,7 @@ function drmMountToolbar(opts) {
         });
     });
 
-    Logger.log(DRM_PLUGIN_TAG + ': toolbar mounted under resolution textarea');
+    Logger.log('toolbar mounted under resolution textarea');
     return wrap;
 }
 
@@ -516,7 +516,7 @@ const plugin = {
     name: 'Dispute Resolution Messages',
     description:
         'Shared cached named messages for dispute resolution textareas (create, insert, delete)',
-    _version: '1.2',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -539,7 +539,7 @@ const plugin = {
             ensureStyles: drmEnsureStyles
         };
         if (!state.registered) {
-            Logger.log(DRM_PLUGIN_TAG + ': module registered (Context.disputeResolutionMessages)');
+            Logger.log('module registered (Context.disputeResolutionMessages)');
             state.registered = true;
         }
     }
