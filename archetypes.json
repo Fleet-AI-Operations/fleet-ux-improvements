@@ -1,7 +1,7 @@
 {
   "version": "12.4.17",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.233",
+  "archetypesVersion": "14.234",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -40,8 +40,8 @@
     },
     {
       "name": "fos-embedded-watcher.js",
-      "version": "1.3",
-      "hash": "sha256-30cc4df04e5ecb86fd332b656bd3b4ad14d7ed645f4e4efb88e92a78aabf59ce",
+      "version": "2.0",
+      "hash": "sha256-757a912e8c46fbdd5fffea9198acb831a0e1d98c93198d156efd3fabec20011f",
       "log": false
     }
   ],
@@ -98,6 +98,12 @@
       "name": "embedded-urlbar-fit.js",
       "version": "2.0",
       "hash": "sha256-46680e913bca4286a0ae3a22d0d90105e468fed8f402058652a762f2817036a4",
+      "log": false
+    },
+    {
+      "name": "fos-vm-clipboard-bar.js",
+      "version": "1.0",
+      "hash": "sha256-99e79f212d251d7024f5bcaea86a82b70bd804b6721b3816f0462d77feea0f27",
       "log": false
     },
     {
@@ -499,6 +505,7 @@
         "notes-resize-handle.js",
         "embedded-urlbar-fit.js",
         "action-counter.js",
+        "fos-vm-clipboard-bar.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
       ],
@@ -513,6 +520,12 @@
           "name": "embedded-urlbar-fit.js",
           "version": "1.2",
           "hash": "sha256-af74f8721b45ca18eff146a4edf8c6487826c6dfe9dab9e7f0a73d2ab93b1a6f",
+          "log": false
+        },
+        {
+          "name": "fos-vm-clipboard.js",
+          "version": "1.0",
+          "hash": "sha256-e5b17e7b13f8584d103dd42177ee194ab957b16f212e26596e6b977234fa4602",
           "log": false
         },
         {
@@ -719,6 +732,7 @@
         "action-counter.js",
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
+        "fos-vm-clipboard-bar.js",
         "request-revisions-screenshot-upload-improvement.js",
         "request-revisions-task-only.js",
         "top-nav-horizontal-scroll.js",
@@ -760,6 +774,12 @@
           "name": "embedded-urlbar-fit.js",
           "version": "1.2",
           "hash": "sha256-58491167edb29153eafe3448763e68dea1209ec4073036a1b77721478a8dc3cf",
+          "log": false
+        },
+        {
+          "name": "fos-vm-clipboard.js",
+          "version": "1.0",
+          "hash": "sha256-1b6697917ae3e02dedb1c5ed9ed92d15d136ab0758e42e6776443253ee40cc7b",
           "log": false
         },
         {
