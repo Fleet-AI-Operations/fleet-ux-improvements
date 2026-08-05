@@ -1019,7 +1019,7 @@ const RatingEngine = {
         const profiles = opts.workerProfiles || {};
         const baselines = reLoadRatingBaselines(opts);
         if (!baselines) {
-            Logger.warn('rating-engine: baselines unavailable — unlock Ops secrets with ratingBaselines');
+            Logger.warn('baselines unavailable — unlock Ops secrets with ratingBaselines');
             return {
                 version: RE_VERSION,
                 computedAt: new Date(nowMs).toISOString(),
@@ -1828,18 +1828,18 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '11.1',
+    _version: '11.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug('rating-engine: already registered — skipping re-init');
+            Logger.debug('already registered — skipping re-init');
             return;
         }
         Context.ratingEngine = RatingEngine;
         if (state) state.registered = true;
-        Logger.log('rating-engine: module registered (Context.ratingEngine) v' + RE_VERSION);
+        Logger.log('module registered (Context.ratingEngine) v' + RE_VERSION);
     }
 };

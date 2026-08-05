@@ -41,7 +41,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'Env Helper',
     description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.5',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -126,7 +126,7 @@ const EnvHelperApi = {
         const sync = () => {
             if (self.hasNovncClipboard()) {
                 if (state.panelStarted) {
-                    Logger.log('envHelper: noVNC clipboard appeared — tearing down Env Helper');
+                    Logger.log('noVNC clipboard appeared — tearing down Env Helper');
                     self.destroy(state);
                     self.installWaitObserver(state);
                 }
@@ -151,7 +151,7 @@ const EnvHelperApi = {
         CleanupRegistry.registerObserver(observer);
         state.waitObserver = observer;
         if (!state.panelStarted) {
-            Logger.log('envHelper: watching for non-VNC page (no #noVNC_clipboard_text)');
+            Logger.debug('watching for non-VNC page (no #noVNC_clipboard_text)');
         }
     },
 
@@ -159,7 +159,7 @@ const EnvHelperApi = {
         try {
             const context = Storage.get(PROMPT_CONTEXT_STORAGE_KEY, '');
             if (context !== 'qa') {
-                Logger.log(
+                Logger.debug(
                     `envHelper: skipping cached prompt (context=${context || 'unset'}; last page was not QA)`
                 );
                 return '';
@@ -167,20 +167,20 @@ const EnvHelperApi = {
             const text = Storage.get(PROMPT_STORAGE_KEY, '');
             const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
             if (!text || !tsRaw) {
-                Logger.log('envHelper: no cached prompt in storage');
+                Logger.debug('no cached prompt in storage');
                 return '';
             }
             const ts = parseInt(tsRaw, 10);
             if (Number.isNaN(ts) || Date.now() - ts > PROMPT_TTL_MS) {
                 Storage.delete(PROMPT_STORAGE_KEY);
                 Storage.delete(PROMPT_TS_STORAGE_KEY);
-                Logger.log('envHelper: cached prompt expired, cleared');
+                Logger.debug('cached prompt expired, cleared');
                 return '';
             }
-            Logger.log(`envHelper: loaded cached prompt (${text.length} chars)`);
+            Logger.debug(`loaded cached prompt (${text.length} chars)`);
             return text;
         } catch (e) {
-            Logger.warn('envHelper: failed to read cached prompt', e);
+            Logger.warn('failed to read cached prompt', e);
             return '';
         }
     },
@@ -251,7 +251,7 @@ const EnvHelperApi = {
             collapsed = !collapsed;
             toggleBtn.textContent = collapsed ? '▶' : '▼';
             onToggle(collapsed);
-            Logger.log(`envHelper: ${label} section ${collapsed ? 'hidden' : 'shown'}`);
+            Logger.log(`${label} section ${collapsed ? 'hidden' : 'shown'}`);
         });
 
         return {
@@ -276,7 +276,7 @@ const EnvHelperApi = {
             try {
                 state.waitObserver.disconnect();
             } catch (eDisc) {
-                Logger.warn('envHelper: error disconnecting wait observer', eDisc);
+                Logger.warn('error disconnecting wait observer', eDisc);
             }
             state.waitObserver = null;
         }
@@ -288,7 +288,7 @@ const EnvHelperApi = {
             if (!self.hasNovncClipboard()) {
                 return;
             }
-            Logger.log('envHelper: noVNC clipboard appeared after start — tearing down');
+            Logger.log('noVNC clipboard appeared after start — tearing down');
             self.destroy(state);
             self.installWaitObserver(state);
         });
@@ -298,7 +298,7 @@ const EnvHelperApi = {
         state.waitObserverAttached = true;
 
         state.panelStarted = true;
-        Logger.log('envHelper: non-VNC env page detected, initialising Env Helper');
+        Logger.debug('non-VNC env page detected, initialising Env Helper');
 
         const oldRoot = document.getElementById(ROOT_ID);
         const oldTab = document.getElementById(TAB_ID);
@@ -307,7 +307,7 @@ const EnvHelperApi = {
                 try {
                     window.__fleetEnvHelperTeardown();
                 } catch (e4) {
-                    Logger.warn('envHelper: prior teardown failed', e4);
+                    Logger.warn('prior teardown failed', e4);
                 }
             }
             if (oldRoot) {
@@ -349,7 +349,7 @@ const EnvHelperApi = {
                 if (root.style.display === 'none') {
                     root.style.display = '';
                     state.minimized = false;
-                    Logger.log('envHelper: modal restored from minimized tab');
+                    Logger.log('modal restored from minimized tab');
                 } else {
                     minimizeModal();
                 }
@@ -371,7 +371,7 @@ const EnvHelperApi = {
                 self.applyDefaultLayout(root);
                 root.style.display = '';
                 state.minimized = false;
-                Logger.log('envHelper: modal reset to default position');
+                Logger.log('modal reset to default position');
             });
 
             restoreTab.appendChild(openBtn);
@@ -386,7 +386,7 @@ const EnvHelperApi = {
             root.style.display = 'none';
             state.minimized = true;
             ensureRestoreTab();
-            Logger.log('envHelper: modal minimized');
+            Logger.log('modal minimized');
         };
 
         if (showPanel) {
@@ -441,7 +441,7 @@ const EnvHelperApi = {
                     ev.stopPropagation();
                     promptTextarea.value = initialPromptText;
                     this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
-                    Logger.log('envHelper: prompt reset to page-load state');
+                    Logger.log('prompt reset to page-load state');
                 });
             }
 
@@ -518,7 +518,7 @@ const EnvHelperApi = {
                 if (root) {
                     this.saveLayout(root);
                     const rect = root.getBoundingClientRect();
-                    Logger.log(`envHelper: modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
+                    Logger.debug(`modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
                 }
             };
             onResizeUp = () => {
@@ -532,7 +532,7 @@ const EnvHelperApi = {
                 if (root) {
                     this.saveLayout(root);
                     const rect = root.getBoundingClientRect();
-                    Logger.log(`envHelper: modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
+                    Logger.debug(`modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
                 }
             };
             headerTitle.addEventListener('mousedown', (ev) => {
@@ -584,10 +584,10 @@ const EnvHelperApi = {
 
         if (showPanel) {
             minimizeModal();
-            Logger.log('envHelper: modal active (starts minimized)');
+            Logger.log('modal active (starts minimized)');
             toast('Env Helper ready — open from the tab.');
         } else {
-            Logger.log('envHelper: panel hidden via settings');
+            Logger.debug('panel hidden via settings');
         }
     },
 
@@ -603,7 +603,7 @@ const EnvHelperApi = {
             try {
                 state.waitObserver.disconnect();
             } catch (e) {
-                Logger.warn('envHelper: wait observer disconnect in destroy', e);
+                Logger.warn('wait observer disconnect in destroy', e);
             }
             state.waitObserver = null;
         }
@@ -611,14 +611,14 @@ const EnvHelperApi = {
             try {
                 window.__fleetEnvHelperTeardown();
             } catch (eTeardown) {
-                Logger.error('envHelper: teardown failed', eTeardown);
+                Logger.error('teardown failed', eTeardown);
             }
             window.__fleetEnvHelperTeardown = undefined;
         }
         state.waitObserverAttached = false;
         state.panelStarted = false;
         state.minimized = false;
-        Logger.log('envHelper: destroyed');
+        Logger.log('destroyed');
     }
 };
 
@@ -626,7 +626,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'Env Helper (library)',
     description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '1.5',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

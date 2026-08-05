@@ -21,7 +21,7 @@ const plugin = {
     name: 'Workflow Verifier Tab',
     description:
         'Adds Workflow | Verifier tabs on the QA workflow panel and shows searchable verifier source for the current task',
-    _version: '1.2',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -32,6 +32,7 @@ const plugin = {
         activationLogged: false,
         prefetchLogged: false,
         prefetchAttemptedFor: '',
+        jwtWarnLogged: false,
         networkSubscribed: false,
         workflowTabButton: null,
         verifierTabButton: null,
@@ -69,14 +70,15 @@ const plugin = {
         const panel = this.findWorkflowPanel();
         if (!panel) {
             if (state.activationLogged) {
-                Logger.debug('workflowVerifierTab: workflow-panel gone — reset');
+                Logger.debug('workflow-panel gone — reset');
                 state.activationLogged = false;
                 state.prefetchLogged = false;
                 state.prefetchAttemptedFor = '';
+                state.jwtWarnLogged = false;
                 state.tabInjected = false;
                 state.tabActive = false;
             } else if (!state.missingLogged) {
-                Logger.debug('workflowVerifierTab: workflow-panel not found');
+                Logger.debug('workflow-panel not found');
                 state.missingLogged = true;
             }
             return;
@@ -104,6 +106,7 @@ const plugin = {
         if (state.prefetchAttemptedFor && state.prefetchAttemptedFor !== taskKey) {
             state.prefetchAttemptedFor = '';
             state.prefetchLogged = false;
+            state.jwtWarnLogged = false;
         }
 
         const cached = state.cache[taskKey] || {};
@@ -116,8 +119,7 @@ const plugin = {
         if (!hasSource && !verifierId) return;
 
         if (!state.prefetchLogged) {
-            Logger.log(
-                'workflowVerifierTab: prefetching verifier for ' +
+            Logger.debug('prefetching verifier for ' +
                     taskKey +
                     (verifierId ? ' id=' + verifierId.slice(0, 8) + '…' : ' (captured source)')
             );
@@ -231,7 +233,7 @@ const plugin = {
     ensureNetworkCapture(state) {
         if (state.networkSubscribed) return;
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.debug('workflowVerifierTab: NetworkObserver not ready');
+            Logger.debug('NetworkObserver not ready');
             return;
         }
         const self = this;
@@ -265,7 +267,7 @@ const plugin = {
             }
         });
         state.networkSubscribed = true;
-        Logger.debug('workflowVerifierTab: subscribed for verifier_id / source capture');
+        Logger.debug('subscribed for verifier_id / source capture');
     },
 
     ingestCapturePayload(state, body, meta) {
@@ -293,8 +295,7 @@ const plugin = {
         state.capture = next;
 
         if (changed) {
-            Logger.log(
-                'workflowVerifierTab: captured verifier hints' +
+            Logger.debug('captured verifier hints' +
                     (next.taskKey ? ' task=' + next.taskKey : '') +
                     (next.verifierId ? ' id=' + next.verifierId.slice(0, 8) + '…' : '') +
                     (next.source ? ' source=' + next.source.length + 'ch' : '') +
@@ -493,7 +494,7 @@ const plugin = {
         state.tabInjected = true;
 
         if (!state.activationLogged) {
-            Logger.log('workflowVerifierTab: Workflow | Verifier tabs injected');
+            Logger.log('Workflow | Verifier tabs injected');
             state.activationLogged = true;
         }
     },
@@ -507,7 +508,7 @@ const plugin = {
 
     activateWorkflowTab(state) {
         if (!state.tabActive && state.workflowTabButton) {
-            Logger.log('workflowVerifierTab: switched to Workflow');
+            Logger.log('switched to Workflow');
         }
         state.tabActive = false;
         this.setTabVisual(state.workflowTabButton, true);
@@ -519,7 +520,7 @@ const plugin = {
 
     activateVerifierTab(state) {
         if (!state.tabActive) {
-            Logger.log('workflowVerifierTab: switched to Verifier');
+            Logger.log('switched to Verifier');
         }
         state.tabActive = true;
         this.setTabVisual(state.workflowTabButton, false);
@@ -623,8 +624,7 @@ const plugin = {
             void this.rerenderCode(state);
             const q = state.searchState.query.trim();
             if (q) {
-                Logger.debug(
-                    'workflowVerifierTab: search — ' +
+                Logger.debug('search — ' +
                         (state.searchState.matchStarts.length || 0) +
                         ' match(es) for "' +
                         q +
@@ -650,7 +650,7 @@ const plugin = {
             state.searchState.index = 0;
             void this.rerenderCode(state);
             this.updateSearchUi(state);
-            Logger.debug('workflowVerifierTab: search cleared');
+            Logger.debug('search cleared');
         });
         state.searchClearBtn = clearBtn;
         searchRow.appendChild(clearBtn);
@@ -786,7 +786,7 @@ const plugin = {
         if (!taskKey) {
             if (!quiet) {
                 this.setStatus(state, 'No task key found on this page');
-                Logger.warn('workflowVerifierTab: fetch skipped — missing task key');
+                Logger.warn('fetch skipped — missing task key');
             }
             return;
         }
@@ -800,7 +800,7 @@ const plugin = {
             await this.renderSource(state, cached.source);
             this.updateVersionSelect(state, cached);
             this.setStatus(state, this.formatReadyStatus(taskKey, cached));
-            Logger.debug('workflowVerifierTab: using cached source for ' + taskKey);
+            Logger.debug('using cached source for ' + taskKey);
             return;
         }
 
@@ -820,30 +820,32 @@ const plugin = {
             await this.renderSource(state, entry.source);
             this.updateVersionSelect(state, entry);
             this.setStatus(state, this.formatReadyStatus(taskKey, entry));
-            Logger.log('workflowVerifierTab: showing captured source for ' + taskKey);
+            Logger.debug('showing captured source for ' + taskKey);
             return;
         }
 
         if (!verifierId) {
             if (!quiet) this.setStatus(state, 'Waiting for verifier id from page traffic…');
-            Logger.debug('workflowVerifierTab: fetch deferred — no verifierId yet for ' + taskKey);
+            Logger.debug('fetch deferred — no verifierId yet for ' + taskKey);
             return;
         }
 
         const jwt = this.getFleetJwt();
         if (!jwt) {
             if (!quiet) this.setStatus(state, 'Sign in to Fleet to load verifier source');
-            Logger.warn('workflowVerifierTab: no Fleet session JWT');
+            if (!state.jwtWarnLogged) {
+                Logger.warn('no Fleet session JWT');
+                state.jwtWarnLogged = true;
+            }
             return;
         }
+        state.jwtWarnLogged = false;
 
         if (state.fetchInFlight) return;
         state.fetchInFlight = true;
         if (prefetch) state.prefetchAttemptedFor = taskKey;
         this.setStatus(state, quiet ? 'Prefetching verifier…' : 'Loading verifier…');
-        Logger.log(
-            'workflowVerifierTab: ' +
-                (quiet ? 'prefetch' : 'fetch') +
+        Logger.debug((quiet ? 'prefetch' : 'fetch') +
                 ' orchestrator verifier ' +
                 verifierId.slice(0, 8) +
                 '…' +
@@ -866,7 +868,7 @@ const plugin = {
             });
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
-                Logger.warn('workflowVerifierTab: orchestrator HTTP ' + res.status, {
+                Logger.warn('orchestrator HTTP ' + res.status, {
                     verifierId,
                     body: String(text).slice(0, 200)
                 });
@@ -877,7 +879,7 @@ const plugin = {
             const body = await res.json().catch(() => null);
             const parsed = this.extractOrchestratorSource(body);
             if (!parsed || !parsed.source) {
-                Logger.warn('workflowVerifierTab: orchestrator response had no source');
+                Logger.warn('orchestrator response had no source');
                 this.setStatus(state, 'No verifier source in response');
                 return;
             }
@@ -895,8 +897,7 @@ const plugin = {
             await this.renderSource(state, entry.source);
             this.updateVersionSelect(state, entry);
             this.setStatus(state, this.formatReadyStatus(taskKey, entry));
-            Logger.log(
-                'workflowVerifierTab: loaded ' +
+            Logger.log('loaded ' +
                     entry.source.length +
                     ' chars' +
                     (entry.version != null ? ' v' + entry.version : '') +
@@ -904,7 +905,7 @@ const plugin = {
                     taskKey
             );
         } catch (err) {
-            Logger.error('workflowVerifierTab: fetch failed', err);
+            Logger.error('fetch failed', err);
             this.setStatus(state, 'Fetch error');
         } finally {
             state.fetchInFlight = false;
@@ -985,7 +986,7 @@ const plugin = {
             Context.opsTab.scrollVerifierActiveContentMatch(codeEl);
         }
         this.updateSearchUi(state);
-        Logger.debug('workflowVerifierTab: stepped match to index ' + (state.searchState.index || 0));
+        Logger.debug('stepped match to index ' + (state.searchState.index || 0));
     },
 
     copySource(state, btn) {
@@ -995,17 +996,17 @@ const plugin = {
             (state.capture && state.capture.source) ||
             '';
         if (!text) {
-            Logger.warn('workflowVerifierTab: copy failed — empty source');
+            Logger.warn('copy failed — empty source');
             if (Context.buttonFeedback && btn) Context.buttonFeedback.flashFailure(btn);
             return;
         }
         navigator.clipboard.writeText(text).then(
             () => {
-                Logger.log('workflowVerifierTab: copied ' + text.length + ' chars');
+                Logger.log('copied ' + text.length + ' chars');
                 if (Context.buttonFeedback && btn) Context.buttonFeedback.flashSuccess(btn);
             },
             (err) => {
-                Logger.error('workflowVerifierTab: clipboard failed', err);
+                Logger.error('clipboard failed', err);
                 if (Context.buttonFeedback && btn) Context.buttonFeedback.flashFailure(btn);
             }
         );

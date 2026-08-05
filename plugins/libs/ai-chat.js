@@ -30,7 +30,7 @@
 // - Do not call renderMessages / force history sync around sendTurn.
 // - Layout/toolbar helpers must not remount AI chat.
 
-const AI_CHAT_VERSION = '7.1';
+const AI_CHAT_VERSION = '7.2';
 const PLUGIN_ID = 'ai-chat';
 const AI_CHAT_MAX_WIDTH_PX = 900;
 const AI_CHAT_TOOL_ROUND_TIMEOUT_MS = 90000;
@@ -66,7 +66,7 @@ async function aiChatCopyWithFeedback(el, text, logLabel) {
         } else {
             aiChatFlashCopyButton(el, false);
         }
-        Logger.warn(PLUGIN_ID + ': copy skipped (empty ' + (logLabel || 'payload') + ')');
+        Logger.warn('copy skipped (empty ' + (logLabel || 'payload') + ')');
         return false;
     }
     try {
@@ -83,14 +83,14 @@ async function aiChatCopyWithFeedback(el, text, logLabel) {
             Context.buttonFeedback.flashSuccess(el);
         }
         aiChatFlashCopyButton(el, true);
-        Logger.log(PLUGIN_ID + ': copied ' + (logLabel || 'chat copy') + ' (' + value.length + ' chars)');
+        Logger.log('copied ' + (logLabel || 'chat copy') + ' (' + value.length + ' chars)');
         return true;
     } catch (err) {
         if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
             Context.buttonFeedback.flashFailure(el);
         }
         aiChatFlashCopyButton(el, false);
-        Logger.error(PLUGIN_ID + ': failed to copy ' + (logLabel || 'chat copy'), err);
+        Logger.error('failed to copy ' + (logLabel || 'chat copy'), err);
         return false;
     }
 }
@@ -658,13 +658,13 @@ function aiChatReconcileAttachment(row, attachment) {
                 if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
                     Context.buttonFeedback.flashSuccess(idBtn);
                 }
-                Logger.log(PLUGIN_ID + ': copied verifier task id (' + value.length + ' chars)');
+                Logger.log('copied verifier task id (' + value.length + ' chars)');
             } catch (err) {
                 aiChatFlashAttachIdButton(idBtn, false);
                 if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
                     Context.buttonFeedback.flashFailure(idBtn);
                 }
-                Logger.error(PLUGIN_ID + ': failed to copy verifier task id', err);
+                Logger.error('failed to copy verifier task id', err);
             }
         });
         summary.appendChild(idBtn);
@@ -926,7 +926,7 @@ function aiChatSyncHistory(el, state) {
     try {
         el.history = aiChatVisibleHistory(state);
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': failed to sync deep-chat history', err);
+        Logger.warn('failed to sync deep-chat history', err);
     }
 }
 
@@ -957,7 +957,7 @@ function aiChatHealEmptyView(el, state, opts) {
     }
     if (deepCount > 0) return false;
     const o = aiChatResolveOpts(opts || (state && state._wireOpts) || {});
-    Logger.log(o.logTag + ': healing empty deep-chat view from state ('
+    Logger.debug(o.logTag + ': healing empty deep-chat view from state ('
         + visible.length + ' message(s))');
     aiChatSyncHistory(el, state);
     try { aiChatSyncRowEnhancements(el, o); } catch (_e3) { /* ignore */ }
@@ -1069,9 +1069,14 @@ function aiChatRunStreamWithSignals(state, apiMessages, signals, opts) {
     let responseChain = Promise.resolve();
     const suppressText = !!(opts && opts.suppressTextDeltas);
 
+    Logger.debug(o.logTag + ': chat stream start ('
+        + ((apiMessages && apiMessages.length) || 0) + ' msg'
+        + (suppressText ? ', suppressText' : '') + ')');
+
     try { signals.onOpen(); } catch (_e) { /* ignore */ }
 
     signals.stopClicked.listener = () => {
+        Logger.debug(o.logTag + ': stream cancel requested');
         aiChatStopStream(state, o);
         // keepStreamingFlag tool turns close Deep Chat once when the loop exits.
         if (!(opts && opts.keepStreamingFlag)) {
@@ -2025,7 +2030,7 @@ async function aiChatSendToolTurn(root, state, opts) {
                 + 'Do not reply with plain text. Reason: ' + reason,
             hideInUi: true,
         });
-        Logger.warn(o.logTag + ': forcing ' + finalizeName + ' — ' + reason
+        Logger.debug(o.logTag + ': forcing ' + finalizeName + ' — ' + reason
             + ' (attempt ' + forcedFinalizeAttempts + '/' + maxForcedFinalizeAttempts + ')');
         return true;
     };
@@ -2056,7 +2061,7 @@ async function aiChatSendToolTurn(root, state, opts) {
                 keepStreamingFlag: true,
             });
 
-            Logger.log(o.logTag + ': tool round ' + round + '/' + maxRounds
+            Logger.debug(o.logTag + ': tool round ' + round + '/' + maxRounds
                 + (forceFinalize ? ' (force ' + finalizeName + ')' : '')
                 + ' — requesting completion (' + apiMessages.length + ' msg)');
 
@@ -2115,7 +2120,7 @@ async function aiChatSendToolTurn(root, state, opts) {
             const toolNames = toolCalls.map((tc) =>
                 (tc && tc.function && tc.function.name) ? String(tc.function.name) : '?'
             ).join(', ');
-            Logger.log(o.logTag + ': tool round ' + round + ' done — finish_reason='
+            Logger.debug(o.logTag + ': tool round ' + round + ' done — finish_reason='
                 + (finishReason || 'unknown')
                 + (toolNames ? ' · tools=[' + toolNames + ']' : ' · no tools')
                 + (salvageText && !toolCalls.length ? ' · salvageText=' + salvageText.length + 'c' : ''));
@@ -2348,7 +2353,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '7.1',
+    _version: '7.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2356,7 +2361,7 @@ const plugin = {
     init(state) {
         Context.aiChat = AiChatApi;
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': module registered (Context.aiChat) v' + AI_CHAT_VERSION
+            Logger.log('module registered (Context.aiChat) v' + AI_CHAT_VERSION
                 + ' · deep-chat UI');
             state.registered = true;
         }

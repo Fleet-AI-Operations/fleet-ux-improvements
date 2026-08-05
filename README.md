@@ -1,4 +1,4 @@
-# Fleet Workflow Builder UX Enhancer
+# Fleet UX Enhancer
 
 Custom userscript to enhance the web UX for Fleet problem creation and review workflows.
 
@@ -113,12 +113,14 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
+- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)
 
 ### Computer Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
+- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)
 
 ### QA Tool Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
@@ -145,6 +147,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
+- **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
 
 ### Dispute Review Page
 - **Dispute List Filters**: Environment checkbox dropdown (with per-environment counts; nothing selected = all) and a Sort by Date (Descending/Ascending) toggle on the same toolbar row as native search; Clear resets environment filters; non-matching cards are hidden in place
@@ -158,6 +161,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
+- **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)
 
 ### Session Trace Review Page
 - **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)
@@ -169,7 +173,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ## Configuration
 
-Click the Tampermonkey icon and select "Fleet Workflow Builder UX Enhancer" to access the settings panel. From there you can:
+Click the Tampermonkey icon and select "Fleet UX Enhancer" to access the settings panel. From there you can:
 
 - Enable or disable individual features
 - Configure feature-specific options

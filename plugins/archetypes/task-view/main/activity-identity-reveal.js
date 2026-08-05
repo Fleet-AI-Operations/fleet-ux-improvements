@@ -23,7 +23,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
     description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.3',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -69,7 +69,7 @@ const plugin = {
 
         if (!opsEnabled) {
             if (!state.opsBlockedLogged) {
-                Logger.info(PLUGIN_ID + ': inactive — Ops not enabled');
+                Logger.info('inactive — Ops not enabled');
                 state.opsBlockedLogged = true;
             }
             return;
@@ -78,7 +78,7 @@ const plugin = {
 
         if (!taskId) {
             if (!state.taskIdMissingLogged) {
-                Logger.warn(PLUGIN_ID + ': no eval task id in path "' + (Context.currentPath || '') + '"');
+                Logger.warn('no eval task id in path "' + (Context.currentPath || '') + '"');
                 state.taskIdMissingLogged = true;
             }
             return;
@@ -88,7 +88,7 @@ const plugin = {
         const root = document.querySelector('[data-ui="view-task"]');
         if (!root) {
             if (!state.missingRootLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for [data-ui="view-task"]');
+                Logger.debug('waiting for [data-ui="view-task"]');
                 state.missingRootLogged = true;
             }
             return;
@@ -98,7 +98,7 @@ const plugin = {
         const entries = this._findActivityEntries(root);
         if (!entries.length) {
             if (!state.missingActivityLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for Activity & Feedback entries');
+                Logger.debug('waiting for Activity & Feedback entries');
                 state.missingActivityLogged = true;
             }
             return;
@@ -158,14 +158,14 @@ const plugin = {
     async _fetchAndReveal(state, taskId, entries) {
         const ops = Context.opsTab;
         if (!ops || typeof ops.postgrestQuery !== 'function') {
-            Logger.warn(PLUGIN_ID + ': Ops PostgREST client unavailable');
+            Logger.warn('Ops PostgREST client unavailable');
             state.fetchFailed = true;
             state.fetchStarted = false;
             state.revealComplete = true;
             return;
         }
 
-        Logger.info(PLUGIN_ID + ': fetching QA feedback + task author for ' + taskId);
+        Logger.debug('fetching QA feedback + task author for ' + taskId);
 
         try {
             const [feedbackRows, taskRow] = await Promise.all([
@@ -184,8 +184,7 @@ const plugin = {
             const profiles = await this._fetchProfiles(ops, [...userIds]);
             if (this._abortFetch(state, taskId)) return;
 
-            Logger.info(
-                PLUGIN_ID + ': loaded ' + feedbackRows.length + ' feedback row(s)'
+            Logger.debug('loaded ' + feedbackRows.length + ' feedback row(s)'
                 + (authorId ? ', author ' + authorId : ', no author')
                 + ', ' + profiles.size + ' profile(s)'
             );
@@ -206,9 +205,9 @@ const plugin = {
             state.revealComplete = true;
             const refresh = ops.isSessionRefreshRequiredError && ops.isSessionRefreshRequiredError(err);
             if (refresh) {
-                Logger.warn(PLUGIN_ID + ': session refresh required — reload Fleet and retry');
+                Logger.warn('session refresh required — reload Fleet and retry');
             } else {
-                Logger.warn(PLUGIN_ID + ': identity reveal fetch failed', err);
+                Logger.warn('identity reveal fetch failed', err);
             }
         }
     },
@@ -266,7 +265,7 @@ const plugin = {
                     });
                 }
             } catch (err) {
-                Logger.debug(PLUGIN_ID + ': profile fetch failed for ' + id, err);
+                Logger.debug('profile fetch failed for ' + id, err);
             }
         }
         return map;
@@ -479,13 +478,12 @@ const plugin = {
 
         const mappedCount = assignments.filter((a) => a.userId).length;
         if (!state.mappingSummaryLogged) {
-            Logger.log(PLUGIN_ID + ': mapped ' + mappedCount + '/' + assignments.length + ' activity entries');
+            Logger.log('mapped ' + mappedCount + '/' + assignments.length + ' activity entries');
             state.mappingSummaryLogged = true;
         }
 
         if (mappedCount === 0 && assignments.length > 0 && !state.activationLogged) {
-            Logger.warn(
-                PLUGIN_ID + ': no DOM entries matched — task ' + state.taskId
+            Logger.warn('no DOM entries matched — task ' + state.taskId
                 + ', ' + feedbackRows.length + ' feedback row(s)'
             );
         }
@@ -506,15 +504,13 @@ const plugin = {
         if (newlyRevealed > 0) {
             state.revealedCount += newlyRevealed;
             if (!state.activationLogged) {
-                Logger.info(
-                    PLUGIN_ID + ': revealed ' + newlyRevealed + ' name(s) for task ' + state.taskId
+                Logger.info('revealed ' + newlyRevealed + ' name(s) for task ' + state.taskId
                     + ' (' + mappedCount + '/' + assignments.length + ' mapped)'
                 );
                 state.activationLogged = true;
             }
         } else if (!state.activationLogged && mappedCount > 0) {
-            Logger.info(
-                PLUGIN_ID + ': no new names to reveal for task ' + state.taskId
+            Logger.info('no new names to reveal for task ' + state.taskId
                 + ' (' + mappedCount + '/' + assignments.length + ' mapped)'
             );
             state.activationLogged = true;
@@ -547,10 +543,15 @@ const plugin = {
     },
 
     async _copyChipValue(el, value, logLabel) {
-        const label = PLUGIN_ID + ':' + (logLabel || 'value');
+        const field = logLabel || 'value';
         const ui = Context.uiLib;
         if (ui && typeof ui.copyWithFeedback === 'function') {
-            await ui.copyWithFeedback(el, value, { logLabel: label });
+            const ok = await ui.copyWithFeedback(el, value, {});
+            if (ok) {
+                Logger.log('copied ' + field + ' (' + value.length + ' chars)');
+            } else {
+                Logger.warn('copy ' + field + ' failed');
+            }
             return;
         }
         try {
@@ -559,16 +560,16 @@ const plugin = {
                 if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
                     Context.buttonFeedback.flashSuccess(el);
                 }
-                Logger.log(label + ': copied ' + value.length + ' chars');
+                Logger.log('copied ' + field + ' (' + value.length + ' chars)');
                 return;
             }
         } catch (err) {
-            Logger.error(PLUGIN_ID + ': copy failed', err);
+            Logger.error('copy failed', err);
         }
         if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
             Context.buttonFeedback.flashFailure(el);
         }
-        Logger.warn(PLUGIN_ID + ': copy ' + (logLabel || 'value') + ' failed');
+        Logger.warn('copy ' + field + ' failed');
     },
 
     _replaceNameSpan(span, userId, profile) {

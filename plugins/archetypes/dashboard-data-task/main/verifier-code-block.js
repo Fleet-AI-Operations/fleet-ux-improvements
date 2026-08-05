@@ -21,7 +21,7 @@ const plugin = {
     name: 'Verifier Code Block',
     description:
         'Fetches and displays verifier Python code on dashboard task pages (No verifier or Verifier sanity checks)',
-    _version: '2.1',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -44,7 +44,7 @@ const plugin = {
         const slot = this._findVerifierAnchor();
         if (!slot) {
             if (!state.missingLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for verifier anchor');
+                Logger.debug('waiting for verifier anchor');
                 state.missingLogged = true;
             }
             return;
@@ -54,7 +54,7 @@ const plugin = {
         const taskKey = this._extractTaskKeyFromPath();
         if (!taskKey) {
             if (!state.missingLogged) {
-                Logger.warn(PLUGIN_ID + ': could not parse task key from URL');
+                Logger.warn('could not parse task key from URL');
                 state.missingLogged = true;
             }
             return;
@@ -92,7 +92,7 @@ const plugin = {
             .catch((err) => {
                 state.bundleWaitStarted = false;
                 state.bundleUnavailable = true;
-                Logger.warn(PLUGIN_ID + ': ops bundle unavailable', err);
+                Logger.warn('ops bundle unavailable', err);
             });
         return false;
     },
@@ -235,10 +235,10 @@ const plugin = {
             const ok = await this._copyTextToClipboard(source);
             if (ok) {
                 this._showCopySuccessFlash(copyBtn);
-                Logger.log(PLUGIN_ID + ': verifier code copied (' + source.length + ' chars)');
+                Logger.log('verifier code copied (' + source.length + ' chars)');
             } else {
                 this._showCopyFailurePulse(copyBtn);
-                Logger.warn(PLUGIN_ID + ': verifier copy failed');
+                Logger.warn('verifier copy failed');
             }
         });
 
@@ -389,14 +389,14 @@ const plugin = {
         const q = ui.state.contentSearch.query.trim();
         if (q) {
             const n = ui.state.contentSearch.matchStarts ? ui.state.contentSearch.matchStarts.length : 0;
-            Logger.log(PLUGIN_ID + ': verifier content search — ' + n + ' match(es) for "' + q + '"');
+            Logger.log('verifier content search — ' + n + ' match(es) for "' + q + '"');
         }
     },
 
     _clearVerifierContentSearch(ui) {
         if (ui.searchInput) ui.searchInput.value = '';
         this._applyVerifierContentSearch(ui, '');
-        Logger.log(PLUGIN_ID + ': verifier content search cleared');
+        Logger.log('verifier content search cleared');
     },
 
     _stepVerifierContentMatch(ui, delta) {
@@ -447,7 +447,7 @@ const plugin = {
         if (ui.wrap) ui.wrap.style.display = show ? 'block' : 'none';
         if (ui.searchToolbar) ui.searchToolbar.style.display = show ? 'flex' : 'none';
         if (ui.showBtn) ui.showBtn.textContent = show ? 'Hide verifier' : 'Show verifier';
-        Logger.log(PLUGIN_ID + ': verifier ' + (show ? 'shown' : 'hidden'));
+        Logger.log('verifier ' + (show ? 'shown' : 'hidden'));
     },
 
     _subscribeFleetThemeRefresh(ui) {
@@ -523,7 +523,7 @@ const plugin = {
             if (!isResizing) return;
             const endHeight = pre.offsetHeight;
             if (endHeight !== startHeight) {
-                Logger.log(PLUGIN_ID + ': resize ' + startHeight + 'px→' + endHeight + 'px');
+                Logger.log('resize ' + startHeight + 'px→' + endHeight + 'px');
             }
             isResizing = false;
             document.removeEventListener('mousemove', handleMouseMove);
@@ -553,12 +553,12 @@ const plugin = {
     async _fetchAndRender(state, slot, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchVerifierCode !== 'function') {
-            Logger.warn(PLUGIN_ID + ': Context.opsTab.fetchVerifierCode unavailable');
+            Logger.warn('Context.opsTab.fetchVerifierCode unavailable');
             state.fetchStarted = false;
             return;
         }
 
-        Logger.log(PLUGIN_ID + ': fetching verifier for ' + taskKey);
+        Logger.debug('fetching verifier for ' + taskKey);
         try {
             if (typeof opsTab.whenOpsBundleReady === 'function') {
                 await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
@@ -570,23 +570,23 @@ const plugin = {
                     state.fetchStarted = false;
                     return;
                 }
-                Logger.warn(PLUGIN_ID + ': fetch returned no source for ' + taskKey);
+                Logger.warn('fetch returned no source for ' + taskKey);
                 state.fetchStarted = false;
                 return;
             }
 
             const isSanityChecks = slot.mode === 'sanity-checks';
             if (!slot.parent.isConnected) {
-                Logger.debug(PLUGIN_ID + ': DOM changed before render — skipping');
+                Logger.debug('DOM changed before render — skipping');
                 return;
             }
             if (isSanityChecks) {
                 if (!slot.checklist || !slot.checklist.isConnected) {
-                    Logger.debug(PLUGIN_ID + ': DOM changed before render — skipping');
+                    Logger.debug('DOM changed before render — skipping');
                     return;
                 }
             } else if (!slot.placeholder || !slot.placeholder.isConnected) {
-                Logger.debug(PLUGIN_ID + ': DOM changed before render — skipping');
+                Logger.debug('DOM changed before render — skipping');
                 return;
             }
 
@@ -646,13 +646,13 @@ const plugin = {
             this._setVerifierVisible(ui, false);
 
             state.fetchDone = true;
-            Logger.log(PLUGIN_ID + ': rendered verifier (' + source.length + ' chars) for ' + taskKey);
+            Logger.log('rendered verifier (' + source.length + ' chars) for ' + taskKey);
         } catch (err) {
             if (this._isTransientBundleError(err)) {
                 state.fetchStarted = false;
                 return;
             }
-            Logger.warn(PLUGIN_ID + ': verifier fetch failed for ' + taskKey, err);
+            Logger.warn('verifier fetch failed for ' + taskKey, err);
             state.fetchStarted = false;
         }
     }

@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.11',
+    _version: '9.17',
     phase: 'core',
     enabledByDefault: true,
 
@@ -425,7 +425,7 @@ const plugin = {
             encryptWithOpsPassword: (plaintext) => this._encryptWithOpsPassword(plaintext),
             decryptWithOpsPassword: (blob) => this._decryptWithOpsPassword(blob)
         };
-        Logger.log('ops-tab: module registered (Context.opsTab)');
+        Logger.log('module registered (Context.opsTab)');
         this._loadOpsTeamSearchActionFromStorage();
         this._loadOpsTeamAddMemberActionFromStorage();
         this._loadOpsTaskDataActionFromStorage();
@@ -466,7 +466,7 @@ const plugin = {
         const seen = String(Storage.get(OPS_PASSWORD_HASH_SEEN_STORAGE_KEY, '') || '').trim();
         if (seen && seen !== currentHash && this._hasOpsStoredPassword()) {
             this._clearOpsStoredPassword();
-            Logger.info('ops-tab: stored password cleared — opsAccess.passwordHash changed');
+            Logger.info('stored password cleared — opsAccess.passwordHash changed');
             if (Context.dashboard && typeof Context.dashboard.isOpen === 'function'
                 && Context.dashboard.isOpen()
                 && typeof Context.dashboard.close === 'function') {
@@ -622,7 +622,7 @@ const plugin = {
     _logOpsBundleNotLoadedOnce(context) {
         if (this._opsBundleNotLoadedLogged) return;
         this._opsBundleNotLoadedLogged = true;
-        Logger.debug('ops-tab: ' + (context || 'request') + ' skipped — ' + OPS_BUNDLE_NOT_LOADED_MESSAGE);
+        Logger.debug('' + (context || 'request') + ' skipped — ' + OPS_BUNDLE_NOT_LOADED_MESSAGE);
     },
 
     async _whenOpsBundleReady(options) {
@@ -790,7 +790,7 @@ const plugin = {
                 const wrapped = await self._fetchOpsSecretsEncryptedWrapper();
                 if (!wrapped || typeof wrapped.encrypted !== 'string' || !wrapped.encrypted) {
                     if (!self._opsSecretsCache.missingLogged) {
-                        Logger.debug('ops-tab: no encrypted secrets file on branch');
+                        Logger.debug('no encrypted secrets file on branch');
                         self._opsSecretsCache.missingLogged = true;
                     }
                     self._opsSecretsCache.json = null;
@@ -801,32 +801,31 @@ const plugin = {
                 self._opsSecretsCache.json = parsed;
                 self._opsBundleNotLoadedLogged = false;
                 const keyCount = parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0;
-                Logger.log('ops-tab: secrets decrypted (' + keyCount + ' top-level keys)');
+                Logger.log('secrets decrypted (' + keyCount + ' top-level keys)');
                 try {
                     const baselines = self._getOpsRatingBaselines();
                     if (baselines && Context.ratingEngine && typeof Context.ratingEngine.setCohortBaselines === 'function') {
                         Context.ratingEngine.setCohortBaselines(baselines);
-                        Logger.log('ops-tab: ratingBaselines applied to Context.ratingEngine');
+                        Logger.log('ratingBaselines applied to Context.ratingEngine');
                     } else if (!baselines) {
-                        Logger.debug('ops-tab: ratingBaselines missing or incomplete in secrets');
+                        Logger.debug('ratingBaselines missing or incomplete in secrets');
                     }
                 } catch (baselineErr) {
-                    Logger.warn('ops-tab: failed to apply ratingBaselines', baselineErr);
+                    Logger.warn('failed to apply ratingBaselines', baselineErr);
                 }
             } catch (e) {
                 self._opsSecretsCache.json = null;
                 self._opsSecretsCache.loadError = e;
-                Logger.warn('ops-tab: secrets decrypt failed', e);
+                Logger.warn('secrets decrypt failed', e);
                 try {
                     const ok = await self._verifyOpsPassword(password);
                     if (ok && !self._opsSecretsCache.decryptMismatchLogged) {
                         self._opsSecretsCache.decryptMismatchLogged = true;
-                        Logger.warn(
-                            'ops-tab: password accepted but decrypt failed — pull latest ops-secrets.enc.json or re-save password after branch sync'
+                        Logger.warn('password accepted but decrypt failed — pull latest ops-secrets.enc.json or re-save password after branch sync'
                         );
                     }
                 } catch (_verifyErr) {
-                    Logger.debug('ops-tab: decrypt failure password check skipped', _verifyErr);
+                    Logger.debug('decrypt failure password check skipped', _verifyErr);
                 }
             } finally {
                 self._opsSecretsCache.loading = false;
@@ -865,7 +864,7 @@ const plugin = {
             const computed = await computeSha256Hex(password);
             return computed === expected;
         } catch (err) {
-            Logger.error('ops-tab: password verification failed', err);
+            Logger.error('password verification failed', err);
             return false;
         }
     },
@@ -911,7 +910,7 @@ const plugin = {
                 teamId = String(resolved.teamId || '').trim();
                 teamSource = teamId ? 'tasks-lookup' : 'tasks-lookup-empty';
             } catch (e) {
-                Logger.debug('ops-tab: task link team_id lookup failed', e);
+                Logger.debug('task link team_id lookup failed', e);
                 teamSource = 'tasks-lookup-failed';
             }
         }
@@ -919,14 +918,13 @@ const plugin = {
         const taskRef = taskId
             ? (taskId.length > 12 ? taskId.slice(0, 8) + '…' : taskId)
             : '(none)';
-        Logger.log(
-            'ops-tab: task link target resolved — task=' + taskRef +
+        Logger.debug('task link target resolved — task=' + taskRef +
             ' team=' + this._opsTeamRef(teamId) +
             ' source=' + teamSource +
             ' url=' + url
         );
         if (teamSource === 'tasks-lookup-empty') {
-            Logger.warn('ops-tab: task link — no team_id from PostgREST; open may use wrong team context');
+            Logger.warn('task link — no team_id from PostgREST; open may use wrong team context');
         }
         return { url, teamId, taskId, teamSource };
     },
@@ -941,7 +939,7 @@ const plugin = {
         const value = raw != null ? raw : (input && input.value);
         const target = await this.resolveTaskLinkTarget(value);
         if (!target || !target.url) {
-            Logger.warn('ops-tab: openTaskLink skipped — no URL');
+            Logger.warn('openTaskLink skipped — no URL');
             return;
         }
         const teamId = String(target.teamId || '').trim();
@@ -949,18 +947,18 @@ const plugin = {
         let teamSwitch = 'none';
         if (!teamId) {
             teamSwitch = 'skipped-no-team';
-            Logger.log('ops-tab: task link — no team_id; opening without team switch');
+            Logger.debug('task link — no team_id; opening without team switch');
         } else if (!Context.dashboard || typeof Context.dashboard.switchFleetTeam !== 'function') {
             teamSwitch = 'skipped-no-dashboard';
-            Logger.warn('ops-tab: task link — dashboard.switchFleetTeam unavailable; opening without team switch');
+            Logger.warn('task link — dashboard.switchFleetTeam unavailable; opening without team switch');
         } else {
             try {
                 await Context.dashboard.switchFleetTeam(teamId);
                 teamSwitch = 'switched';
-                Logger.log('ops-tab: task link — team switch completed (' + this._opsTeamRef(teamId) + ')');
+                Logger.debug('task link — team switch completed (' + this._opsTeamRef(teamId) + ')');
             } catch (e) {
                 teamSwitch = 'failed';
-                Logger.warn('ops-tab: team switch before task link failed', e);
+                Logger.warn('team switch before task link failed', e);
             }
         }
         if (options.newTab) {
@@ -968,8 +966,7 @@ const plugin = {
         } else {
             this._getOpsPageWindow().location.href = target.url;
         }
-        Logger.log(
-            'ops-tab: task link opened (' + tabMode + ') — switch=' + teamSwitch +
+        Logger.log('task link opened (' + tabMode + ') — switch=' + teamSwitch +
             ' team=' + this._opsTeamRef(teamId) +
             ' source=' + (target.teamSource || 'unknown') +
             ' url=' + target.url
@@ -1021,7 +1018,7 @@ const plugin = {
                 return Context.getPageWindow() || window;
             }
         } catch (e) {
-            Logger.debug('ops-tab: page window lookup failed', e);
+            Logger.debug('page window lookup failed', e);
         }
         return window;
     },
@@ -1107,7 +1104,7 @@ const plugin = {
             const text = await res.text().catch(() => '');
             const err = new Error('Supabase API ' + res.status + ': ' + (text || res.statusText));
             if (this._isOpsPostgrestJwtExpiredError(err)) {
-                Logger.warn('ops-tab: PostgREST JWT expired — use Fleet on a data page to capture a fresh token');
+                Logger.warn('PostgREST JWT expired — use Fleet on a data page to capture a fresh token');
                 throw this._opsSessionRefreshRequiredError();
             }
             throw err;
@@ -1157,8 +1154,7 @@ const plugin = {
             else params.id = 'eq.' + parsed.taskId;
             const rows = await this._opsPostgrestQuery('tasks.select_verifier_lookup', params);
             taskRow = Array.isArray(rows) ? rows[0] : rows;
-            Logger.debug(
-                'ops-tab: tasks row id=' + (taskRow && taskRow.id || '(none)') +
+            Logger.debug('tasks row id=' + (taskRow && taskRow.id || '(none)') +
                 ' current_version_id=' + (taskRow && taskRow.current_version_id || '(none)') +
                 ' team_id=' + (taskRow && taskRow.team_id || '(none)')
             );
@@ -1167,14 +1163,14 @@ const plugin = {
                 this._logOpsBundleNotLoadedOnce('tasks lookup');
                 throw e;
             }
-            Logger.debug('ops-tab: tasks lookup failed', e);
+            Logger.debug('tasks lookup failed', e);
         }
 
         if (!taskRow) {
             if (!this._isOpsBundleReady()) {
                 throw new Error(OPS_BUNDLE_NOT_LOADED_MESSAGE);
             }
-            Logger.debug('ops-tab: tasks no row for ' + (parsed.taskKey || parsed.taskId) + ' — treating input as verifier ID');
+            Logger.debug('tasks no row for ' + (parsed.taskKey || parsed.taskId) + ' — treating input as verifier ID');
             return parsed;
         }
 
@@ -1198,17 +1194,16 @@ const plugin = {
                     verifierVersion = (vRow.metadata && vRow.metadata.verifier_version) != null
                         ? vRow.metadata.verifier_version
                         : null;
-                    Logger.debug(
-                        'ops-tab: task_versions verifier_id=' + (verifierId || '(none)') +
+                    Logger.debug('task_versions verifier_id=' + (verifierId || '(none)') +
                         ' key=' + (verifierKey || '(none)') +
                         ' version=' + (verifierVersion == null ? '(none)' : verifierVersion)
                     );
                 }
             } catch (e) {
-                Logger.debug('ops-tab: task_versions lookup failed', e);
+                Logger.debug('task_versions lookup failed', e);
             }
         } else {
-            Logger.debug('ops-tab: tasks had no current_version_id');
+            Logger.debug('tasks had no current_version_id');
         }
 
         return {
@@ -1233,7 +1228,7 @@ const plugin = {
         if (taskKey) taskParams.key = 'eq.' + taskKey;
         else taskParams.id = 'eq.' + taskId;
 
-        Logger.debug('ops-tab: user story task lookup', {
+        Logger.debug('user story task lookup', {
             taskKey: taskKey || '(none)',
             taskId: taskId ? taskId.slice(0, 8) + '…' : '(none)'
         });
@@ -1307,7 +1302,7 @@ const plugin = {
             const row = Array.isArray(rows) ? rows[0] : rows;
             if (row && row.id) return { verifierId: row.id, verifierKey: row.key || '' };
         } catch (e) {
-            Logger.debug('ops-tab: verifiers task-key like-query failed', e);
+            Logger.debug('verifiers task-key like-query failed', e);
         }
         return null;
     },
@@ -1348,12 +1343,12 @@ const plugin = {
     async _resolveOpsTeamId(pageWindow) {
         const fromCookie = this._getOpsCookieValue('current-team-id');
         if (fromCookie && OPS_UUID_RE.test(fromCookie)) {
-            Logger.debug('ops-tab: resolved team_id from current-team-id cookie: ' + fromCookie);
+            Logger.debug('resolved team_id from current-team-id cookie: ' + fromCookie);
             return fromCookie;
         }
         const catalog = this.getUserTeamCatalog();
         if (catalog.length > 0 && catalog[0][0]) {
-            Logger.debug('ops-tab: resolved team_id from user team catalog: ' + catalog[0][0]);
+            Logger.debug('resolved team_id from user team catalog: ' + catalog[0][0]);
             return catalog[0][0];
         }
         return '';
@@ -1403,7 +1398,7 @@ const plugin = {
             fetchedAt: new Date().toISOString(),
             teams
         };
-        Logger.info('ops-tab: user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
+        Logger.log('user team catalog fetched (' + teams.length + ' teams, profile=' + id.slice(0, 8) + '…)');
         return teams;
     },
 
@@ -1451,7 +1446,7 @@ const plugin = {
                 }
             }
         } catch (e) {
-            Logger.debug('ops-tab: cookie read failed for ' + name, e);
+            Logger.debug('cookie read failed for ' + name, e);
         }
         return '';
     },
@@ -1461,10 +1456,10 @@ const plugin = {
             const userId = Storage.getData(OPS_CURRENT_USER_ID_STORAGE_KEY, null);
             if (userId && OPS_UUID_RE.test(userId)) {
                 this._opsCurrentUserIdCache = userId;
-                Logger.debug('ops-tab: current user id hydrated from script storage (' + userId.slice(0, 8) + '…)');
+                Logger.debug('current user id hydrated from script storage (' + userId.slice(0, 8) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: current user id script storage hydration failed', e);
+            Logger.debug('current user id script storage hydration failed', e);
         }
     },
 
@@ -1478,10 +1473,10 @@ const plugin = {
         try {
             Storage.setData(OPS_CURRENT_USER_ID_STORAGE_KEY, userId);
         } catch (e) {
-            Logger.debug('ops-tab: current user id persist failed', e);
+            Logger.debug('current user id persist failed', e);
         }
         if (changed) {
-            Logger.log('ops-tab: current user id captured (' + userId.slice(0, 8) + '…, source=' + (source || 'unknown') + ')');
+            Logger.log('current user id captured (' + userId.slice(0, 8) + '…, source=' + (source || 'unknown') + ')');
         }
     },
 
@@ -1519,7 +1514,7 @@ const plugin = {
                 if (userId) return userId;
             }
         } catch (e) {
-            Logger.debug('ops-tab: __next_f script scan failed', e);
+            Logger.debug('__next_f script scan failed', e);
         }
         return '';
     },
@@ -1542,7 +1537,7 @@ const plugin = {
             return origPush.apply(this, args);
         };
         pageWindow.__next_f.__wfOpsUserIdHooked = true;
-        Logger.debug('ops-tab: __next_f user id capture hook installed');
+        Logger.debug('__next_f user id capture hook installed');
         return true;
     },
 
@@ -1557,7 +1552,7 @@ const plugin = {
             self._hookOpsNextFUserIdCapture(pageWindow);
             self._scanOpsCurrentUserIdFromNextFScripts(pageWindow);
         } catch (e) {
-            Logger.debug('ops-tab: initial current user id capture failed', e);
+            Logger.debug('initial current user id capture failed', e);
         }
 
         try {
@@ -1580,9 +1575,9 @@ const plugin = {
                 }
             });
             observer.observe(doc.documentElement, { childList: true, subtree: true });
-            Logger.debug('ops-tab: current user id script watcher registered');
+            Logger.debug('current user id script watcher registered');
         } catch (e) {
-            Logger.debug('ops-tab: current user id script watcher failed', e);
+            Logger.debug('current user id script watcher failed', e);
         }
     },
 
@@ -1620,7 +1615,7 @@ const plugin = {
             const nd = win.__NEXT_DATA__;
             if (nd && nd.deploymentId && typeof nd.deploymentId === 'string') return nd.deploymentId;
         } catch (e) {
-            Logger.debug('ops-tab: __NEXT_DATA__ deploymentId read failed', e);
+            Logger.debug('__NEXT_DATA__ deploymentId read failed', e);
         }
         return '';
     },
@@ -1652,7 +1647,7 @@ const plugin = {
             const secure = pageWindow.location && pageWindow.location.protocol === 'https:' ? '; Secure' : '';
             doc.cookie = name + '=' + encodeURIComponent(value) + '; path=/' + secure + '; SameSite=Lax';
         } catch (e) {
-            Logger.warn('ops-tab: cookie write failed for ' + name, e);
+            Logger.warn('cookie write failed for ' + name, e);
         }
     },
 
@@ -1737,10 +1732,10 @@ const plugin = {
             const routerState = Storage.getData(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsExpertStatsActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: expert stats action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('expert stats action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: expert stats action script storage hydration failed', e);
+            Logger.debug('expert stats action script storage hydration failed', e);
         }
     },
 
@@ -1754,10 +1749,10 @@ const plugin = {
                 Storage.setData(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
-            Logger.debug('ops-tab: expert stats action persist failed', e);
+            Logger.debug('expert stats action persist failed', e);
         }
         if (changed) {
-            Logger.log('ops-tab: expert stats action updated (' + nextAction.slice(0, 12) + '…)');
+            Logger.log('expert stats action updated (' + nextAction.slice(0, 12) + '…)');
             this._broadcastOpsSync({ type: 'expertStatsActionUpdated' });
         }
     },
@@ -1768,9 +1763,9 @@ const plugin = {
             Storage.deleteData(OPS_EXPERT_STATS_ACTION_STORAGE_KEY);
             Storage.deleteData(OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
-            Logger.debug('ops-tab: expert stats action cache clear failed', e);
+            Logger.debug('expert stats action cache clear failed', e);
         }
-        Logger.info('ops-tab: expert stats action cache cleared (will re-discover on expert profile visit)');
+        Logger.log('expert stats action cache cleared (will re-discover on expert profile visit)');
     },
 
     _opsExpertStatsActionStaleError() {
@@ -1785,7 +1780,7 @@ const plugin = {
 
     _subscribeOpsExpertActionCapture() {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.debug('ops-tab: NetworkObserver unavailable; passive expert action capture skipped');
+            Logger.debug('NetworkObserver unavailable; passive expert action capture skipped');
             return;
         }
         const self = this;
@@ -1805,7 +1800,7 @@ const plugin = {
                     const credRefreshTab = self._isOpsExpertCredRefreshTab();
                     if (nextAction !== self._opsExpertStatsActionCache.nextAction) {
                         self._persistOpsExpertStatsAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                        Logger.debug('expert stats action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                     if (credRefreshTab) {
                         self._signalOpsExpertCredRefreshComplete();
@@ -1814,7 +1809,7 @@ const plugin = {
                 }
             }
         });
-        Logger.debug('ops-tab: expert dashboard action passive watcher registered');
+        Logger.debug('expert dashboard action passive watcher registered');
     },
 
     async _fetchOpsExpertRsc(expertId, bodyPayload, actionCache, logLabel) {
@@ -1839,7 +1834,7 @@ const plugin = {
         if (deploymentId) headers['x-deployment-id'] = deploymentId;
 
         const body = JSON.stringify(bodyPayload);
-        Logger.debug('ops-tab: ' + logLabel + ' fetch', {
+        Logger.debug('' + logLabel + ' fetch', {
             expertId: id.slice(0, 8) + '…',
             action: nextAction.slice(0, 12) + '…',
             hasDeploymentId: !!deploymentId
@@ -1854,7 +1849,7 @@ const plugin = {
         const text = await res.text().catch(() => '');
 
         if (res.status === 404) {
-            Logger.warn('ops-tab: ' + logLabel + ' got 404 — server action stale, clearing cache');
+            Logger.warn('' + logLabel + ' got 404 — server action stale, clearing cache');
             this._clearOpsExpertStatsActionCache();
             throw this._opsExpertStatsActionStaleError();
         }
@@ -2076,10 +2071,10 @@ const plugin = {
                     ]);
                     if (gen !== this._opsExpertStatsHydrateGen) return;
                     this._opsExpertStatsCache.set(id, { creator, qa });
-                    Logger.debug('ops-tab: expert card data loaded for ' + id.slice(0, 8) + '…');
+                    Logger.debug('expert card data loaded for ' + id.slice(0, 8) + '…');
                 } catch (e) {
                     if (gen !== this._opsExpertStatsHydrateGen) return;
-                    Logger.warn('ops-tab: expert card data failed for ' + id.slice(0, 8) + '…', e);
+                    Logger.warn('expert card data failed for ' + id.slice(0, 8) + '…', e);
                     this._opsExpertStatsCache.set(id, { error: e.message || String(e) });
                 }
                 this._patchOpsTeamMemberCard(modal, id);
@@ -2144,7 +2139,7 @@ const plugin = {
             preserveSelections: opts.preserveSelections !== false,
             modal
         });
-        Logger.debug('ops-tab: team member filters indexed — ' + teamItems.length + ' teams, ' + permItems.length + ' permissions');
+        Logger.debug('team member filters indexed — ' + teamItems.length + ' teams, ' + permItems.length + ' permissions');
     },
 
     _loadOpsTeamSearchActionFromStorage() {
@@ -2153,10 +2148,10 @@ const plugin = {
             const routerState = Storage.getData(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsTeamSearchActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: team search action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('team search action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: team search action script storage hydration failed', e);
+            Logger.debug('team search action script storage hydration failed', e);
         }
     },
 
@@ -2166,10 +2161,10 @@ const plugin = {
             const routerState = Storage.getData(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsTeamAddMemberActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: team add-member action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('team add-member action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: team add-member action script storage hydration failed', e);
+            Logger.debug('team add-member action script storage hydration failed', e);
         }
     },
 
@@ -2186,7 +2181,7 @@ const plugin = {
         try {
             this._opsSyncChannel = new BroadcastChannel(OPS_SYNC_CHANNEL_NAME);
         } catch (e) {
-            Logger.debug('ops-tab: BroadcastChannel unavailable', e);
+            Logger.debug('BroadcastChannel unavailable', e);
             this._opsSyncChannel = null;
         }
         return this._opsSyncChannel;
@@ -2199,7 +2194,7 @@ const plugin = {
                 channel.postMessage(message);
             }
         } catch (e) {
-            Logger.debug('ops-tab: ops sync broadcast failed', e);
+            Logger.debug('ops sync broadcast failed', e);
         }
     },
 
@@ -2220,25 +2215,25 @@ const plugin = {
                 }
                 if (data.type === 'teamSearchActionUpdated') {
                     self._loadOpsTeamSearchActionFromStorage();
-                    Logger.debug('ops-tab: team search action synced from BroadcastChannel');
+                    Logger.debug('team search action synced from BroadcastChannel');
                     self._onOpsTeamCredRefreshComplete();
                 } else if (data.type === 'teamAddMemberActionUpdated') {
                     self._loadOpsTeamAddMemberActionFromStorage();
-                    Logger.debug('ops-tab: team add-member action synced from BroadcastChannel');
+                    Logger.debug('team add-member action synced from BroadcastChannel');
                 } else if (data.type === 'credRefreshDone') {
                     self._onOpsTeamCredRefreshComplete();
                 } else if (data.type === 'expertStatsActionUpdated') {
                     self._loadOpsExpertStatsActionFromStorage();
-                    Logger.debug('ops-tab: expert stats action synced from BroadcastChannel');
+                    Logger.debug('expert stats action synced from BroadcastChannel');
                 } else if (data.type === 'expertCredRefreshDone') {
                     self._loadOpsExpertStatsActionFromStorage();
                     self._onOpsExpertCredRefreshComplete();
                 }
             };
             this._opsSyncChannelSubscribed = true;
-            Logger.debug('ops-tab: team dashboard action BroadcastChannel sync listener installed');
+            Logger.debug('team dashboard action BroadcastChannel sync listener installed');
         } catch (e) {
-            Logger.debug('ops-tab: team dashboard action BroadcastChannel sync failed', e);
+            Logger.debug('team dashboard action BroadcastChannel sync failed', e);
         }
     },
 
@@ -2266,7 +2261,7 @@ const plugin = {
 
     _tryCloseOpsTeamCredRefreshTab() {
         if (!this._isOpsTeamCredRefreshTab()) return;
-        Logger.log('ops-tab: team cred refresh complete — closing Team tab');
+        Logger.log('team cred refresh complete — closing Team tab');
         const pageWindow = this._getOpsPageWindow();
         pageWindow.setTimeout(() => {
             try {
@@ -2284,11 +2279,11 @@ const plugin = {
         if (!this._opsTeamSearchActionCache.nextAction) {
             this._setOpsTeamSearchStaleRetryStatus(modal,
                 'Credentials not ready yet — try Refresh credentials again.');
-            Logger.warn('ops-tab: team cred refresh signaled but search action still missing');
+            Logger.warn('team cred refresh signaled but search action still missing');
             return;
         }
         this._setOpsTeamSearchStaleRetryStatus(modal, 'Credentials refreshed — retrying search…');
-        Logger.log('ops-tab: team cred refresh captured — auto-retrying search');
+        Logger.log('team cred refresh captured — auto-retrying search');
         void this._handleOpsTeamSearchCredentialRetry(modal);
     },
 
@@ -2302,7 +2297,7 @@ const plugin = {
                 this._setOpsTeamSearchStaleRetryStatus(modal,
                     'Popup blocked — allow popups for Fleet, then try again.');
             }
-            Logger.warn('ops-tab: team cred refresh tab blocked (popup blocker)');
+            Logger.warn('team cred refresh tab blocked (popup blocker)');
             return null;
         }
         if (modal) {
@@ -2315,10 +2310,10 @@ const plugin = {
                 self._clearOpsTeamCredRefreshPending();
                 self._setOpsTeamSearchStaleRetryStatus(pendingModal,
                     'Credential refresh timed out — try Refresh credentials again.');
-                Logger.warn('ops-tab: team cred refresh timed out');
+                Logger.warn('team cred refresh timed out');
             }, OPS_TEAM_CRED_REFRESH_TIMEOUT_MS);
         }
-        Logger.log('ops-tab: team page opened for credential refresh');
+        Logger.log('team page opened for credential refresh');
         return opened;
     },
 
@@ -2348,7 +2343,7 @@ const plugin = {
 
     _tryCloseOpsExpertCredRefreshTab() {
         if (!this._isOpsExpertCredRefreshTab()) return;
-        Logger.log('ops-tab: expert cred refresh complete — closing expert profile tab');
+        Logger.log('expert cred refresh complete — closing expert profile tab');
         const pageWindow = this._getOpsPageWindow();
         pageWindow.setTimeout(() => {
             try {
@@ -2378,7 +2373,7 @@ const plugin = {
                 }
             }
             this._clearOpsExpertCredRefreshPending();
-            Logger.warn('ops-tab: expert cred refresh signaled but stats action still missing');
+            Logger.warn('expert cred refresh signaled but stats action still missing');
             return;
         }
 
@@ -2387,12 +2382,12 @@ const plugin = {
         if (this._opsTeamSearchMemberCache) {
             if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
             this._opsExpertStatsHydrateGen++;
-            Logger.log('ops-tab: expert cred refresh captured — re-hydrating stats for visible members');
+            Logger.log('expert cred refresh captured — re-hydrating stats for visible members');
             void this._hydrateOpsTeamMemberStatsForVisible(modal);
             return;
         }
 
-        Logger.log('ops-tab: expert cred refresh captured — no results on screen');
+        Logger.log('expert cred refresh captured — no results on screen');
     },
 
     _openOpsExpertProfileForCredRefresh(modal, expertId) {
@@ -2403,7 +2398,7 @@ const plugin = {
         const url = this._opsExpertProfileUrl(id, true);
         const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
         if (!opened) {
-            Logger.warn('ops-tab: expert cred refresh tab blocked (popup blocker)');
+            Logger.warn('expert cred refresh tab blocked (popup blocker)');
             return null;
         }
         if (modal) {
@@ -2412,10 +2407,10 @@ const plugin = {
             this._opsExpertCredRefreshTimeout = pageWindow.setTimeout(() => {
                 if (!self._opsExpertCredRefreshPending) return;
                 self._clearOpsExpertCredRefreshPending();
-                Logger.warn('ops-tab: expert cred refresh timed out');
+                Logger.warn('expert cred refresh timed out');
             }, OPS_EXPERT_CRED_REFRESH_TIMEOUT_MS);
         }
-        Logger.log('ops-tab: expert profile opened for stats credential refresh (' + id.slice(0, 8) + '…)');
+        Logger.log('expert profile opened for stats credential refresh (' + id.slice(0, 8) + '…)');
         return opened;
     },
 
@@ -2429,10 +2424,10 @@ const plugin = {
                 Storage.setData(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
-            Logger.debug('ops-tab: team search action persist failed', e);
+            Logger.debug('team search action persist failed', e);
         }
         if (changed) {
-            Logger.log('ops-tab: team search action updated (' + nextAction.slice(0, 12) + '…)');
+            Logger.log('team search action updated (' + nextAction.slice(0, 12) + '…)');
             this._broadcastOpsSync({ type: 'teamSearchActionUpdated' });
         }
     },
@@ -2443,9 +2438,9 @@ const plugin = {
             Storage.deleteData(OPS_TEAM_SEARCH_ACTION_STORAGE_KEY);
             Storage.deleteData(OPS_TEAM_SEARCH_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
-            Logger.debug('ops-tab: team search action cache clear failed', e);
+            Logger.debug('team search action cache clear failed', e);
         }
-        Logger.info('ops-tab: team search action cache cleared (will re-discover on next search)');
+        Logger.log('team search action cache cleared (will re-discover on next search)');
     },
 
     _persistOpsTeamAddMemberAction({ nextAction, routerState }) {
@@ -2458,10 +2453,10 @@ const plugin = {
                 Storage.setData(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
-            Logger.debug('ops-tab: team add-member action persist failed', e);
+            Logger.debug('team add-member action persist failed', e);
         }
         if (changed) {
-            Logger.log('ops-tab: team add-member action updated (' + nextAction.slice(0, 12) + '…)');
+            Logger.log('team add-member action updated (' + nextAction.slice(0, 12) + '…)');
             this._broadcastOpsSync({ type: 'teamAddMemberActionUpdated' });
         }
     },
@@ -2472,9 +2467,9 @@ const plugin = {
             Storage.deleteData(OPS_TEAM_ADD_MEMBER_ACTION_STORAGE_KEY);
             Storage.deleteData(OPS_TEAM_ADD_MEMBER_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
-            Logger.debug('ops-tab: team add-member action cache clear failed', e);
+            Logger.debug('team add-member action cache clear failed', e);
         }
-        Logger.info('ops-tab: team add-member action cache cleared (will re-discover on next add)');
+        Logger.log('team add-member action cache cleared (will re-discover on next add)');
     },
 
     _loadOpsTaskDataActionFromStorage() {
@@ -2483,10 +2478,10 @@ const plugin = {
             const routerState = Storage.getData(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY, null);
             if (nextAction) {
                 this._opsTaskDataActionCache = { nextAction, routerState: routerState || '' };
-                Logger.debug('ops-tab: task data action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
+                Logger.debug('task data action hydrated from script storage (' + nextAction.slice(0, 12) + '…)');
             }
         } catch (e) {
-            Logger.debug('ops-tab: task data action script storage hydration failed', e);
+            Logger.debug('task data action script storage hydration failed', e);
         }
     },
 
@@ -2500,10 +2495,10 @@ const plugin = {
                 Storage.setData(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY, routerState);
             }
         } catch (e) {
-            Logger.debug('ops-tab: task data action persist failed', e);
+            Logger.debug('task data action persist failed', e);
         }
         if (changed) {
-            Logger.log('ops-tab: task data action updated (' + nextAction.slice(0, 12) + '…)');
+            Logger.log('task data action updated (' + nextAction.slice(0, 12) + '…)');
         }
     },
 
@@ -2513,9 +2508,9 @@ const plugin = {
             Storage.deleteData(OPS_TASK_DATA_ACTION_STORAGE_KEY);
             Storage.deleteData(OPS_TASK_DATA_ROUTER_STATE_STORAGE_KEY);
         } catch (e) {
-            Logger.debug('ops-tab: task data action cache clear failed', e);
+            Logger.debug('task data action cache clear failed', e);
         }
-        Logger.info('ops-tab: task data action cache cleared (will re-discover on next task page load)');
+        Logger.log('task data action cache cleared (will re-discover on next task page load)');
     },
 
     async _fetchOpsTaskDataRsc(taskKey, taskUuid) {
@@ -2523,7 +2518,7 @@ const plugin = {
         const uuid = String(taskUuid || '').trim();
         if (!key || !uuid) return '';
         if (!this._opsTaskDataActionCache.nextAction) {
-            Logger.debug('ops-tab: task data RSC skipped — no captured next-action for ' + key);
+            Logger.debug('task data RSC skipped — no captured next-action for ' + key);
             return '';
         }
 
@@ -2542,7 +2537,7 @@ const plugin = {
         if (deploymentId) headers['x-deployment-id'] = deploymentId;
 
         const body = JSON.stringify([uuid]);
-        Logger.debug('ops-tab: task data RSC fetch', {
+        Logger.debug('task data RSC fetch', {
             taskKey: key.slice(0, 24) + (key.length > 24 ? '…' : ''),
             taskUuid: uuid.slice(0, 8) + '…',
             action: nextAction.slice(0, 12) + '…',
@@ -2558,12 +2553,12 @@ const plugin = {
         const text = await res.text().catch(() => '');
 
         if (res.status === 404) {
-            Logger.warn('ops-tab: task data RSC got 404 — server action stale, clearing cache');
+            Logger.warn('task data RSC got 404 — server action stale, clearing cache');
             this._clearOpsTaskDataActionCache();
             return '';
         }
         if (!res.ok) {
-            Logger.warn('ops-tab: task data RSC HTTP ' + res.status + ': ' + text.slice(0, 200));
+            Logger.warn('task data RSC HTTP ' + res.status + ': ' + text.slice(0, 200));
             return '';
         }
         return text;
@@ -2571,7 +2566,7 @@ const plugin = {
 
     _subscribeOpsTeamDashboardActionCapture() {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.debug('ops-tab: NetworkObserver unavailable; passive team action capture skipped');
+            Logger.debug('NetworkObserver unavailable; passive team action capture skipped');
             return;
         }
         const self = this;
@@ -2592,7 +2587,7 @@ const plugin = {
                     const credRefreshTab = self._isOpsTeamCredRefreshTab();
                     if (nextAction !== self._opsTeamSearchActionCache.nextAction) {
                         self._persistOpsTeamSearchAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                        Logger.debug('team search action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                     if (credRefreshTab) {
                         self._signalOpsTeamCredRefreshComplete();
@@ -2601,17 +2596,17 @@ const plugin = {
                 } else if (kind === 'add-member') {
                     if (nextAction !== self._opsTeamAddMemberActionCache.nextAction) {
                         self._persistOpsTeamAddMemberAction({ nextAction, routerState: routerState || '' });
-                        Logger.info('ops-tab: team add-member action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                        Logger.debug('team add-member action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                     }
                 }
             }
         });
-        Logger.debug('ops-tab: team dashboard action passive watcher registered');
+        Logger.debug('team dashboard action passive watcher registered');
     },
 
     _subscribeOpsTaskDataActionCapture() {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.debug('ops-tab: NetworkObserver unavailable; passive task data action capture skipped');
+            Logger.debug('NetworkObserver unavailable; passive task data action capture skipped');
             return;
         }
         const self = this;
@@ -2629,11 +2624,11 @@ const plugin = {
                 if (!self._opsClassifyTaskDataPostBody(meta.body)) return;
                 if (nextAction !== self._opsTaskDataActionCache.nextAction) {
                     self._persistOpsTaskDataAction({ nextAction, routerState: routerState || '' });
-                    Logger.info('ops-tab: task data action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
+                    Logger.debug('task data action captured from live traffic (' + nextAction.slice(0, 12) + '…)');
                 }
             }
         });
-        Logger.debug('ops-tab: task data action passive watcher registered');
+        Logger.debug('task data action passive watcher registered');
     },
 
     _opsTeamSearchActionStaleError() {
@@ -2759,12 +2754,12 @@ const plugin = {
                 false,
                 false
             );
-            Logger.warn('ops-tab: team search refresh banner fallback — output wrap missing');
-            Logger.info('ops-tab: team search refresh banner shown — open Team page then retry');
+            Logger.warn('team search refresh banner fallback — output wrap missing');
+            Logger.info('team search refresh banner shown — open Team page then retry');
             return;
         }
         this._setOpsTeamSearchStatus(modal, '', false, false, false);
-        Logger.info('ops-tab: team search refresh banner shown — open Team page then retry');
+        Logger.info('team search refresh banner shown — open Team page then retry');
     },
 
     _opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams) {
@@ -2780,10 +2775,10 @@ const plugin = {
         if (!hasSearchAction) {
             this._setOpsTeamSearchStaleRetryStatus(modal,
                 'Credentials not ready yet — wait for the Team page to finish loading, then retry.');
-            Logger.debug('ops-tab: team search credential retry — no action in storage yet');
+            Logger.debug('team search credential retry — no action in storage yet');
             return;
         }
-        Logger.log('ops-tab: team search credentials reloaded from storage — retrying search');
+        Logger.log('team search credentials reloaded from storage — retrying search');
         await this._handleOpsTeamSearch(modal);
     },
 
@@ -2811,7 +2806,7 @@ const plugin = {
 
         const body = JSON.stringify([teamId, userId, pageOffset, OPS_TEAM_SEARCH_PAGE_LIMIT, query || '']);
 
-        Logger.debug('ops-tab: team search fetch', {
+        Logger.debug('team search fetch', {
             teamId: teamId.slice(0, 8) + '...',
             userId: userId.slice(0, 8) + '...',
             query: query || '(empty)',
@@ -2831,7 +2826,7 @@ const plugin = {
         const text = await res.text().catch(() => '');
 
         if (res.status === 404) {
-            Logger.warn('ops-tab: team search got 404 — server action stale, clearing cache');
+            Logger.warn('team search got 404 — server action stale, clearing cache');
             this._clearOpsTeamSearchActionCache();
             throw this._opsTeamSearchActionStaleError();
         }
@@ -2863,7 +2858,7 @@ const plugin = {
         if (deploymentId) headers['x-deployment-id'] = deploymentId;
 
         const body = JSON.stringify(bodyPayload);
-        Logger.debug('ops-tab: ' + logLabel + ' fetch', {
+        Logger.debug('' + logLabel + ' fetch', {
             action: nextAction.slice(0, 12) + '…',
             hasDeploymentId: !!deploymentId
         });
@@ -2878,7 +2873,7 @@ const plugin = {
         const text = await res.text().catch(() => '');
 
         if (res.status === 404) {
-            Logger.warn('ops-tab: ' + logLabel + ' got 404 — server action stale, clearing cache');
+            Logger.warn('' + logLabel + ' got 404 — server action stale, clearing cache');
             if (actionKind === 'search') {
                 this._clearOpsTeamSearchActionCache();
                 throw this._opsTeamSearchActionStaleError();
@@ -2911,14 +2906,14 @@ const plugin = {
                 'add-member'
             )
         );
-        Logger.debug('ops-tab: added ' + email + ' to team ' + teamId.slice(0, 8) + '… (' + perms.length + ' permissions)');
+        Logger.debug('added ' + email + ' to team ' + teamId.slice(0, 8) + '… (' + perms.length + ' permissions)');
     },
 
     _abortOpsTeamSearchInFlight(reason) {
         if (this._opsTeamSearchAbortController) {
             this._opsTeamSearchAbortController.abort();
             this._opsTeamSearchAbortController = null;
-            Logger.debug('ops-tab: team search in-flight requests aborted — ' + reason);
+            Logger.debug('team search in-flight requests aborted — ' + reason);
         }
     },
 
@@ -2936,7 +2931,7 @@ const plugin = {
 
         while (hasMore && pageCount < maxPages) {
             if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
-                Logger.debug('ops-tab: team search pagination stopped — session superseded');
+                Logger.debug('team search pagination stopped — session superseded');
                 break;
             }
             if (signal && signal.aborted) break;
@@ -2947,14 +2942,14 @@ const plugin = {
                 raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset, signal);
             } catch (e) {
                 if (this._isOpsTeamSearchAbortError(e)) {
-                    Logger.debug('ops-tab: team search page fetch aborted');
+                    Logger.debug('team search page fetch aborted');
                     break;
                 }
                 throw e;
             }
 
             if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
-                Logger.debug('ops-tab: team search pagination stopped after fetch — session superseded');
+                Logger.debug('team search pagination stopped after fetch — session superseded');
                 break;
             }
 
@@ -2974,7 +2969,7 @@ const plugin = {
             }
 
             if (newCount === 0) {
-                Logger.debug('ops-tab: team search pagination stopped — page had no new members');
+                Logger.debug('team search pagination stopped — page had no new members');
                 break;
             }
 
@@ -2983,7 +2978,7 @@ const plugin = {
             offset += OPS_TEAM_SEARCH_PAGE_LIMIT;
 
             if (hasMore) {
-                Logger.debug('ops-tab: team search page ' + pageCount + ' fetched ' + pageMembers.length +
+                Logger.debug('team search page ' + pageCount + ' fetched ' + pageMembers.length +
                     ' members (' + newCount + ' new, total ' + allMembers.length + ', hasMore)');
             }
         }
@@ -3155,7 +3150,7 @@ const plugin = {
         if (placeholder) placeholder.style.display = '';
         if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
         this._captureOpsTabState(modal);
-        Logger.log('ops-tab: team search results cleared');
+        Logger.log('team search results cleared');
     },
 
     _onOpsModalClosed() {
@@ -3315,7 +3310,7 @@ const plugin = {
     _applyOpsTeamFilters(modal) {
         const cache = this._opsTeamSearchMemberCache;
         if (!cache) {
-            Logger.warn('ops-tab: team filters apply skipped — no search cache');
+            Logger.warn('team filters apply skipped — no search cache');
             return;
         }
         const dash = Context.dashboard;
@@ -3336,7 +3331,7 @@ const plugin = {
         if (dash && typeof dash.resetTeamMembersPage === 'function') dash.resetTeamMembersPage();
         this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
         void this._hydrateOpsTeamMemberStatsForVisible(modal);
-        Logger.log('ops-tab: team filters applied — '
+        Logger.log('team filters applied — '
             + this._opsTeamActiveFilters.numericFilters.length + ' numeric, mode '
             + this._opsTeamActiveFilters.andOr
             + ', team constraints ' + (teamC.include.size + teamC.exclude.size)
@@ -3457,14 +3452,14 @@ const plugin = {
             applying: false
         };
         this._opsMemberEditStateMap().set(memberId, session);
-        Logger.log('ops-tab: member edit started for ' + (member.email || memberId));
+        Logger.log('member edit started for ' + (member.email || memberId));
         return session;
     },
 
     _cancelOpsMemberEdit(memberId) {
         if (this._opsMemberEditStateMap().has(memberId)) {
             this._opsMemberEditStateMap().delete(memberId);
-            Logger.log('ops-tab: member edit cancelled for ' + memberId);
+            Logger.log('member edit cancelled for ' + memberId);
         }
     },
 
@@ -3520,7 +3515,7 @@ const plugin = {
         });
         if (!res.ok) {
             const text = await res.text().catch(() => '');
-            Logger.debug('ops-tab: orchestrator-private ' + res.status + ' body: ' + text.slice(0, 400));
+            Logger.debug('orchestrator-private ' + res.status + ' body: ' + text.slice(0, 400));
             throw new Error('HTTP ' + res.status + (text ? ': ' + text.slice(0, 200) : ''));
         }
         return res.json().catch(() => null);
@@ -3532,7 +3527,7 @@ const plugin = {
             team_id: teamId,
             emails: [email]
         });
-        Logger.debug('ops-tab: removed ' + email + ' from team ' + teamId.slice(0, 8) + '…');
+        Logger.debug('removed ' + email + ' from team ' + teamId.slice(0, 8) + '…');
     },
 
     async _opsModifyMemberPermission(profileId, permission, action) {
@@ -3544,7 +3539,7 @@ const plugin = {
             permission,
             action
         });
-        Logger.debug('ops-tab: permission ' + action + ' ' + permission + ' for ' + profileId.slice(0, 8) + '…');
+        Logger.debug('permission ' + action + ' ' + permission + ' for ' + profileId.slice(0, 8) + '…');
     },
 
     _getOpsMemberFromCache(memberId) {
@@ -3626,7 +3621,7 @@ const plugin = {
             member.permissions = [...session.stagedPerms];
             this._cancelOpsMemberEdit(memberId);
 
-            Logger.log('ops-tab: member edit applied for ' + session.email +
+            Logger.log('member edit applied for ' + session.email +
                 ' (teams +' + teamAdds.length + ' -' + teamRemovals.length +
                 ', perms +' + permAddsToApply.length + ' -' + permRemovals.length + ')');
 
@@ -3635,7 +3630,7 @@ const plugin = {
             this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0, openIds);
         } catch (e) {
             session.applying = false;
-            Logger.error('ops-tab: member edit failed for ' + memberId, e);
+            Logger.error('member edit failed for ' + memberId, e);
             this._setOpsTeamSearchStatus(modal,
                 'Failed to apply changes: ' + (e && e.message ? e.message : String(e)), true, false, true);
             this._updateOpsMemberTileDom(modal, memberId, true);
@@ -3661,7 +3656,7 @@ const plugin = {
 
         const member = this._getOpsMemberFromCache(memberId);
         if (!member) {
-            Logger.warn('ops-tab: member edit action skipped — member not in cache');
+            Logger.warn('member edit action skipped — member not in cache');
             return;
         }
 
@@ -3731,6 +3726,13 @@ const plugin = {
         return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>';
     },
 
+    _opsEyeIconSvg() {
+        return '<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
+            + '<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>'
+            + '<circle cx="13" cy="13.2" r="3.2"></circle>'
+            + '</svg>';
+    },
+
     _opsProfileLinkHtml(profileUrl, title) {
         const url = String(profileUrl || '').trim();
         if (!url) return '';
@@ -3743,7 +3745,7 @@ const plugin = {
     _opsSearchWorkerOutputBtnHtml(memberId) {
         const attrId = this._opsEscapeAttr(memberId);
         return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;white-space:nowrap;">Search Worker Output 🔦</button>';
+            'style="flex-shrink:0;white-space:nowrap;gap:6px;">Search Worker Output' + this._opsEyeIconSvg() + '</button>';
     },
 
     _opsMemberToAuthorPerson(member) {
@@ -3758,15 +3760,15 @@ const plugin = {
     _openMemberInWorkerSearch(member) {
         const person = this._opsMemberToAuthorPerson(member);
         if (!person) {
-            Logger.warn('ops-tab: Search Worker Output skipped — missing member id');
+            Logger.warn('Search Worker Output skipped — missing member id');
             return;
         }
         const dash = Context.dashboard;
         if (!dash || typeof dash.runContributorWorkerOutputDeepDive !== 'function') {
-            Logger.warn('ops-tab: Search Worker Output skipped — dashboard deep dive unavailable');
+            Logger.warn('Search Worker Output skipped — dashboard deep dive unavailable');
             return;
         }
-        Logger.log('ops-tab: Search Worker Output deep dive for ' + (person.full_name || person.id));
+        Logger.log('Search Worker Output deep dive for ' + (person.full_name || person.id));
         void dash.runContributorWorkerOutputDeepDive(person, { activeTab: 'search-output' });
     },
 
@@ -4025,7 +4027,7 @@ const plugin = {
                 await this.fetchUserTeamCatalog(userId);
                 allTeams = this.getUserTeamCatalog();
             } catch (e) {
-                Logger.warn('ops-tab: team search — failed to load user team catalog', e);
+                Logger.warn('team search — failed to load user team catalog', e);
                 this._setOpsTeamSearchStatus(modal, 'Failed to load your teams: ' + (e.message || String(e)), true);
                 return;
             }
@@ -4101,7 +4103,7 @@ const plugin = {
                 this._setOpsTeamSearchStatus(modal,
                     memberMap.size + ' unique member' + (memberMap.size !== 1 ? 's' : '') + ' across ' + allTeams.length + ' teams.',
                     false, false, true);
-                Logger.log('ops-tab: team search complete — ' + memberMap.size + ' unique members, ' + allTeams.length + ' teams');
+                Logger.log('team search complete — ' + memberMap.size + ' unique members, ' + allTeams.length + ' teams');
             }
         };
 
@@ -4112,14 +4114,14 @@ const plugin = {
                 if (this._opsTeamSearchActive !== sessionId) return;
                 if (staleActionDetected) return;
                 this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
-                Logger.debug('ops-tab: team search got ' + members.length + ' members from ' + teamLabel);
+                Logger.debug('team search got ' + members.length + ' members from ' + teamLabel);
             } catch (e) {
                 if (this._isOpsTeamSearchAbortError(e)) return;
                 if (this._isOpsTeamSearchActionStaleError(e)) {
                     staleActionDetected = true;
-                    Logger.warn('ops-tab: team search credentials stale for ' + teamLabel);
+                    Logger.warn('team search credentials stale for ' + teamLabel);
                 } else {
-                    Logger.warn('ops-tab: team search failed for ' + teamLabel, e);
+                    Logger.warn('team search failed for ' + teamLabel, e);
                 }
             } finally {
                 finishTeamSearch(teamLabel);
@@ -4133,7 +4135,7 @@ const plugin = {
             if (!staleActionDetected && this._opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams)) {
                 staleActionDetected = true;
                 this._clearOpsTeamSearchActionCache();
-                Logger.warn('ops-tab: team search returned zero members for all teams — treating credentials as stale');
+                Logger.warn('team search returned zero members for all teams — treating credentials as stale');
             }
             if (staleActionDetected) {
                 this._showOpsTeamSearchActionRefreshBanner(modal);
@@ -4183,27 +4185,27 @@ const plugin = {
         const pageWindow = this._getOpsPageWindow();
         const jwt = this._getOpsFleetUserJwt(pageWindow);
         if (!jwt) {
-            Logger.warn('ops-tab: orchestrator skipped — no Fleet user JWT (open Fleet on a data page)');
+            Logger.warn('orchestrator skipped — no Fleet user JWT (open Fleet on a data page)');
             return null;
         }
         if (!resolved.verifierId) {
-            Logger.debug('ops-tab: orchestrator skipped — no verifier_id');
+            Logger.debug('orchestrator skipped — no verifier_id');
             return null;
         }
         let teamId = resolved.teamId;
         if (!teamId) {
-            Logger.debug('ops-tab: orchestrator — no teamId in resolved, attempting team discovery');
+            Logger.debug('orchestrator — no teamId in resolved, attempting team discovery');
             teamId = await this._resolveOpsTeamId(pageWindow);
         }
         if (!teamId) {
-            Logger.debug('ops-tab: orchestrator — no team_id after discovery, will attempt without it');
+            Logger.debug('orchestrator — no team_id after discovery, will attempt without it');
         }
         const requestFetch = pageWindow.fetch || fetch;
         const versionQuery = resolved.verifierVersion != null ? '?version=' + encodeURIComponent(resolved.verifierVersion) : '';
         const url = 'https://orchestrator.fleetai.com/v1/verifiers/' + encodeURIComponent(resolved.verifierId) + versionQuery;
         const requestHeaders = { accept: 'application/json', 'x-jwt-token': jwt };
         if (teamId) requestHeaders['x-team-id'] = teamId;
-        Logger.debug('ops-tab: orchestrator fetch ' + url, {
+        Logger.debug('orchestrator fetch ' + url, {
             teamId: teamId || '(none)'
         });
         try {
@@ -4214,7 +4216,7 @@ const plugin = {
             });
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
-                Logger.warn('ops-tab: orchestrator HTTP ' + res.status, {
+                Logger.warn('orchestrator HTTP ' + res.status, {
                     verifierId: resolved.verifierId,
                     teamId: teamId || '(none)',
                     body: text.slice(0, 200)
@@ -4222,13 +4224,13 @@ const plugin = {
                 return null;
             }
             const body = await res.json().catch(() => null);
-            Logger.debug('ops-tab: orchestrator response keys', body ? Object.keys(body).join(', ') : 'null');
+            Logger.debug('orchestrator response keys', body ? Object.keys(body).join(', ') : 'null');
             const parsedSource = this._extractOpsOrchestratorVerifierSource(body);
             if (!parsedSource || !parsedSource.source) {
-                Logger.debug('ops-tab: orchestrator response had no display_src');
+                Logger.debug('orchestrator response had no display_src');
                 return null;
             }
-            Logger.debug('ops-tab: orchestrator got source (' + parsedSource.source.length + ' chars) v' + parsedSource.version);
+            Logger.debug('orchestrator got source (' + parsedSource.source.length + ' chars) v' + parsedSource.version);
             return {
                 ...resolved,
                 teamId: teamId || resolved.teamId,
@@ -4238,7 +4240,7 @@ const plugin = {
                 source: parsedSource.source
             };
         } catch (e) {
-            Logger.debug('ops-tab: orchestrator fetch threw', e);
+            Logger.debug('orchestrator fetch threw', e);
             return null;
         }
     },
@@ -4266,7 +4268,7 @@ const plugin = {
                     createdAt: row.created_at || ''
                 }));
         } catch (e) {
-            Logger.debug('ops-tab: list verifier versions failed', e);
+            Logger.debug('list verifier versions failed', e);
             return [];
         }
     },
@@ -4287,7 +4289,7 @@ const plugin = {
             params.version = 'eq.' + version;
             delete params.order;
         }
-        Logger.debug('ops-tab: verifier_versions fetch params', JSON.stringify(params));
+        Logger.debug('verifier_versions fetch params', JSON.stringify(params));
         const rows = await this._opsPostgrestQuery('verifier_versions.select_source', params);
         const row = Array.isArray(rows) ? rows[0] : rows;
         if (!row) {
@@ -4313,7 +4315,7 @@ const plugin = {
     },
 
     async _fetchOpsVerifierCode(parsed) {
-        Logger.debug('ops-tab: verifier fetch start', {
+        Logger.debug('verifier fetch start', {
             taskKey: parsed.taskKey || '(none)',
             taskId: parsed.taskId || '(none)',
             verifierId: parsed.verifierId || '(none)',
@@ -4322,14 +4324,14 @@ const plugin = {
             verifierVersion: parsed.verifierVersion != null ? parsed.verifierVersion : '(none)'
         });
         const resolved = await this._resolveOpsVerifierId(parsed);
-        Logger.debug('ops-tab: verifier resolved', {
+        Logger.debug('verifier resolved', {
             verifierId: resolved.verifierId || '(none)',
             verifierKey: resolved.verifierKey || '(none)',
             teamId: resolved.teamId || '(none)'
         });
 
         const versions = await this._listOpsVerifierVersions(resolved);
-        Logger.debug('ops-tab: verifier versions listed: ' + versions.length);
+        Logger.debug('verifier versions listed: ' + versions.length);
 
         const defaultVersion = parsed.verifierVersion != null
             ? parsed.verifierVersion
@@ -4578,7 +4580,7 @@ const plugin = {
         if (contentInput) contentInput.value = '';
         this._applyVerifierContentSearch(modal, '');
         this._captureOpsTabState(modal);
-        Logger.log('ops-tab: verifier content search cleared');
+        Logger.log('verifier content search cleared');
     },
 
     _scrollVerifierActiveContentMatchInElement(codeEl) {
@@ -4674,7 +4676,7 @@ const plugin = {
         const q = this._opsVerifierContentSearch.query.trim();
         if (q) {
             const n = this._opsVerifierContentSearch.matchStarts.length;
-            Logger.log('ops-tab: verifier content search — ' + n + ' match(es) for "' + q + '"');
+            Logger.log('verifier content search — ' + n + ' match(es) for "' + q + '"');
         }
     },
 
@@ -4689,7 +4691,7 @@ const plugin = {
             this._opsVerifierContentSearch = nextSearch;
             this._updateVerifierContentSearchUi(modal);
             requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
-            Logger.debug('ops-tab: verifier content match ' + (nextSearch.index + 1) + '/' + count);
+            Logger.debug('verifier content match ' + (nextSearch.index + 1) + '/' + count);
         });
     },
 
@@ -4755,7 +4757,7 @@ const plugin = {
 
         select.style.display = 'block';
         this._opsVerifierFetchState = { resolved, versions: list, selectedVersion: Number(select.value) };
-        Logger.debug('ops-tab: verifier version picker shown (' + list.length + ' versions)');
+        Logger.debug('verifier version picker shown (' + list.length + ' versions)');
     },
 
     _captureOpsTabState(modal) {
@@ -4806,14 +4808,14 @@ const plugin = {
         const password = input.value;
         if (!password) {
             this._setOpsPasswordError(modal, 'Enter a password.');
-            Logger.warn('ops-tab: password empty');
+            Logger.warn('password empty');
             return false;
         }
 
         const ok = await this._verifyOpsPassword(password);
         if (!ok) {
             this._setOpsPasswordError(modal, 'Incorrect password.');
-            Logger.warn('ops-tab: password rejected');
+            Logger.warn('password rejected');
             return false;
         }
 
@@ -4828,14 +4830,14 @@ const plugin = {
                 settingsPlugin.handleToggleChange({ target: toggle });
             }
         }
-        Logger.log('ops-tab: password saved on device');
+        Logger.log('password saved on device');
         this._persistOpsPasswordHashSeen(this._getOpsPasswordHash());
         void this._loadOpsSecrets(true);
         if (typeof Context.ensureOpsDashboardPluginsLoaded === 'function') {
             try {
                 await Context.ensureOpsDashboardPluginsLoaded();
             } catch (e) {
-                Logger.warn('ops-tab: ensureOpsDashboardPluginsLoaded after unlock failed', e);
+                Logger.warn('ensureOpsDashboardPluginsLoaded after unlock failed', e);
             }
         }
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
@@ -4860,7 +4862,7 @@ const plugin = {
         if (settingsPlugin && typeof settingsPlugin.rebuildSettingsTabRow === 'function') {
             settingsPlugin.rebuildSettingsTabRow(modal, 'information');
         }
-        Logger.debug('ops-tab: cleared invalid stored password');
+        Logger.debug('cleared invalid stored password');
     },
 
     _renderOpsSettingsSection() {
@@ -4894,9 +4896,14 @@ const plugin = {
                     ${externalHostNotice}
                     <div id="wf-ops-dashboard-suboptions-wrap" style="display: ${suboptionsDisplay}; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0 4px 12px;">
-                            <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; flex: 1; min-width: 0;">
-                                Open dashboard when opening settings
-                            </label>
+                            <div style="flex: 1; min-width: 0;">
+                                <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; display: block;">
+                                    Open dashboard when opening settings
+                                </label>
+                                <div style="font-size: 11px; color: var(--muted-foreground, #666); margin-top: 2px; line-height: 1.35;">
+                                    Ctrl+click the gear icon to open this smaller modal.
+                                </div>
+                            </div>
                             ${submoduleSwitchHTML}
                         </div>
                         <button type="button" id="wf-ops-open-dashboard-btn" class="${this._opsDashBtnClass('secondary', 'regular')} wf-dash-btn--full" style="
@@ -4911,24 +4918,26 @@ const plugin = {
                 </div>
                 </div>
                 <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: ${theme.card};">
-                    <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
-                    <div style="display: flex; gap: 8px; align-items: stretch;">
-                        <input type="password" id="wf-ops-password-input" autocomplete="current-password" style="
-                            flex: 1;
-                            min-width: 0;
-                            padding: 8px 12px;
-                            font-size: 13px;
-                            border: 1px solid var(--border, #e5e5e5);
-                            border-radius: 6px;
-                            background: ${theme.bg};
-                            color: var(--foreground, #333);
-                            box-sizing: border-box;
-                        ">
-                        <button type="button" id="wf-ops-password-submit" class="${this._opsDashBtnClass('primary', 'regular')}" style="
-                            flex-shrink: 0;
-                        ">Unlock</button>
-                    </div>
-                    <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
+                    <form id="wf-ops-password-form" style="margin: 0;">
+                        <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
+                        <div style="display: flex; gap: 8px; align-items: stretch;">
+                            <input type="password" id="wf-ops-password-input" name="ops-password" autocomplete="current-password" style="
+                                flex: 1;
+                                min-width: 0;
+                                padding: 8px 12px;
+                                font-size: 13px;
+                                border: 1px solid var(--border, #e5e5e5);
+                                border-radius: 6px;
+                                background: ${theme.bg};
+                                color: var(--foreground, #333);
+                                box-sizing: border-box;
+                            ">
+                            <button type="submit" id="wf-ops-password-submit" class="${this._opsDashBtnClass('primary', 'regular')}" style="
+                                flex-shrink: 0;
+                            ">Unlock</button>
+                        </div>
+                        <div id="wf-ops-password-error" style="display: none; margin-top: 8px; font-size: 12px; color: #dc2626; line-height: 1.45;"></div>
+                    </form>
                 </div>
             </div>`;
     },
@@ -4958,7 +4967,7 @@ const plugin = {
             && !Context.dashboard.isReady();
         el.style.display = show ? 'block' : 'none';
         if (show) {
-            Logger.warn('ops-tab: dashboard modules incomplete — Search Output may be unavailable');
+            Logger.warn('dashboard modules incomplete — Search Output may be unavailable');
         }
     },
 
@@ -5068,7 +5077,7 @@ const plugin = {
         try {
             ui.setChatFetchContext(modal, ctx || null);
         } catch (err) {
-            Logger.warn('ops-tab: verifier chat fetch context notify failed', err);
+            Logger.warn('verifier chat fetch context notify failed', err);
         }
     },
 
@@ -5100,7 +5109,7 @@ const plugin = {
         this._clearOpsVerifierVersionPicker(modal);
         void this._setOpsVerifierOutput(modal, '');
         this._notifyVerifierChatFetchContext(modal, null);
-        Logger.debug('ops-tab: handle verifier fetch', {
+        Logger.debug('handle verifier fetch', {
             input: (input.value || '').slice(0, 120),
             parsed: {
                 taskKey: parsed.taskKey || '',
@@ -5117,12 +5126,12 @@ const plugin = {
             this._setOpsVerifierStatus(modal, '');
             this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext(result));
             const versionText = result.version != null ? 'v' + result.version : 'latest version';
-            Logger.log('ops-tab: verifier fetched ' + result.verifierId + ' ' + versionText);
+            Logger.log('verifier fetched ' + result.verifierId + ' ' + versionText);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             this._setOpsVerifierStatus(modal, message, true);
             this._notifyVerifierChatFetchContext(modal, null);
-            Logger.warn('ops-tab: verifier fetch failed', e);
+            Logger.warn('verifier fetch failed', e);
         } finally {
             if (fetchBtn) {
                 fetchBtn.disabled = false;
@@ -5149,12 +5158,12 @@ const plugin = {
             await this._setOpsVerifierOutput(modal, result.source);
             this._setOpsVerifierStatus(modal, '');
             this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext(result));
-            Logger.log('ops-tab: verifier version selected ' + result.verifierId + ' v' + (result.version != null ? result.version : version));
+            Logger.log('verifier version selected ' + result.verifierId + ' v' + (result.version != null ? result.version : version));
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             this._setOpsVerifierStatus(modal, message, true);
             this._notifyVerifierChatFetchContext(modal, null);
-            Logger.warn('ops-tab: verifier version change failed', e);
+            Logger.warn('verifier version change failed', e);
         } finally {
             select.disabled = false;
             this._captureOpsTabState(modal);
@@ -5165,23 +5174,13 @@ const plugin = {
         if (!modal || modal.dataset.wfOpsPasswordListenersAttached === '1') return;
         modal.dataset.wfOpsPasswordListenersAttached = '1';
 
-        const submitBtn = this._opsQuery(modal, '#wf-ops-password-submit', 'opsPasswordSubmit');
-        const input = this._opsQuery(modal, '#wf-ops-password-input', 'opsPasswordInputAttach');
+        const form = this._opsQuery(modal, '#wf-ops-password-form', 'opsPasswordForm');
         const toggle = this._opsQuery(modal, '#wf-ops-tab-enabled', 'opsTabTogglePassword');
 
-        const submit = () => {
-            void this._submitOpsPassword(modal, toggle, settingsPlugin);
-        };
-
-        if (submitBtn) {
-            submitBtn.addEventListener('click', submit);
-        }
-        if (input) {
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    submit();
-                }
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                void this._submitOpsPassword(modal, toggle, settingsPlugin);
             });
         }
     },
@@ -5205,14 +5204,14 @@ const plugin = {
                 if (Context.dashboard && typeof Context.dashboard.close === 'function' && Context.dashboard.isOpen()) {
                     Context.dashboard.close();
                 }
-                Logger.log('ops-tab: Ops dashboard disabled');
+                Logger.log('Ops dashboard disabled');
                 return;
             }
             self._setOpsTabWanted(true);
             self._syncOpsSettingsSubmoduleVisibility(modal);
             if (self._hasOpsStoredPassword()) {
                 handleToggleChange(e);
-                Logger.log('ops-tab: Ops dashboard enabled');
+                Logger.log('Ops dashboard enabled');
                 return;
             }
             e.target.checked = false;
@@ -5223,7 +5222,7 @@ const plugin = {
             if (passwordInput) {
                 passwordInput.focus();
             }
-            Logger.log('ops-tab: unlock required');
+            Logger.log('unlock required');
         });
     },
 
@@ -5234,7 +5233,7 @@ const plugin = {
         toggle.addEventListener('change', (e) => {
             this._syncOpsToggleVisual(e.target);
             this._setOpsDashboardOpenOnSettings(e.target.checked);
-            Logger.log('ops-tab: open dashboard on settings ' + (e.target.checked ? 'enabled' : 'disabled'));
+            Logger.log('open dashboard on settings ' + (e.target.checked ? 'enabled' : 'disabled'));
         });
     },
 
@@ -5244,11 +5243,11 @@ const plugin = {
         btn.dataset.wfOpsOpenDashboardBound = '1';
         btn.addEventListener('click', () => {
             if (!this._isOpsDashboardAllowedOnHost()) {
-                Logger.warn('ops-tab: Open Dashboard skipped — not allowed on external env instances');
+                Logger.warn('Open Dashboard skipped — not allowed on external env instances');
                 return;
             }
             if (!this._getOpsTabWanted() || !this._hasOpsStoredPassword()) {
-                Logger.warn('ops-tab: Open Dashboard skipped — not unlocked');
+                Logger.warn('Open Dashboard skipped — not unlocked');
                 return;
             }
             const self = this;
@@ -5257,15 +5256,15 @@ const plugin = {
                     try {
                         await Context.ensureOpsDashboardPluginsLoaded();
                     } catch (e) {
-                        Logger.warn('ops-tab: ensureOpsDashboardPluginsLoaded before open failed', e);
+                        Logger.warn('ensureOpsDashboardPluginsLoaded before open failed', e);
                     }
                 }
                 self._syncOpsDashboardIncompleteMessage(modal);
                 if (Context.dashboard && typeof Context.dashboard.open === 'function') {
                     Context.dashboard.open();
-                    Logger.log('ops-tab: opened Ops dashboard from settings');
+                    Logger.log('opened Ops dashboard from settings');
                 } else {
-                    Logger.warn('ops-tab: Open Dashboard skipped — Context.dashboard unavailable');
+                    Logger.warn('Open Dashboard skipped — Context.dashboard unavailable');
                 }
             })();
         });
@@ -5387,16 +5386,16 @@ const plugin = {
         const value = this._opsVerifierSourceText || '';
         if (!value) {
             this._showOpsCopyFailurePulse(verifierCopyBtn);
-            Logger.warn('ops-tab: verifier copy skipped (no code)');
+            Logger.warn('verifier copy skipped (no code)');
             return;
         }
         const ok = await this._copyOpsTextToClipboard(value);
         if (ok) {
             this._showOpsCopySuccessFlash(verifierCopyBtn);
-            Logger.log('ops-tab: verifier code copied (' + value.length + ' chars)');
+            Logger.log('verifier code copied (' + value.length + ' chars)');
         } else {
             this._showOpsCopyFailurePulse(verifierCopyBtn);
-            Logger.warn('ops-tab: verifier copy failed');
+            Logger.warn('verifier copy failed');
         }
     },
 
@@ -5417,7 +5416,7 @@ const plugin = {
             else this._opsMemberDetailsOpenIds.delete(memberId);
         });
         this._syncOpsExpandAllBtn(modal);
-        Logger.log('ops-tab: team member cards ' + (shouldOpen ? 'expanded' : 'collapsed') + ' (' + details.length + ')');
+        Logger.log('team member cards ' + (shouldOpen ? 'expanded' : 'collapsed') + ' (' + details.length + ')');
     },
 
     _attachOpsTeamMemberDetailsToggle(modal) {
@@ -5503,17 +5502,17 @@ const plugin = {
             copyBtn.addEventListener('click', async () => {
                 const url = copyBtn.getAttribute('data-wf-ops-url');
                 if (!url) {
-                    Logger.warn('ops-tab: copy skipped (no URL)');
+                    Logger.warn('copy skipped (no URL)');
                     this._showOpsCopyFailurePulse(copyBtn);
                     return;
                 }
                 const ok = await this._copyOpsTextToClipboard(url);
                 if (ok) {
                     this._showOpsCopySuccessFlash(copyBtn);
-                    Logger.log('ops-tab: link copied (' + url.length + ' chars)');
+                    Logger.log('link copied (' + url.length + ' chars)');
                 } else {
                     this._showOpsCopyFailurePulse(copyBtn);
-                    Logger.warn('ops-tab: link copy failed');
+                    Logger.warn('link copy failed');
                 }
             });
         }
@@ -5521,7 +5520,7 @@ const plugin = {
         const gradeAssessmentsLink = this._opsQuery(modal, '#wf-ops-grade-assessments', 'opsGradeAssessmentsAttach');
         if (gradeAssessmentsLink) {
             gradeAssessmentsLink.addEventListener('click', () => {
-                Logger.log('ops-tab: grade assessments opened');
+                Logger.log('grade assessments opened');
             });
         }
     },

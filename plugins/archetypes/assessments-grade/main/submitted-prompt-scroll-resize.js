@@ -11,7 +11,7 @@ const plugin = {
     name: 'Submitted Prompt Full Text',
     description:
         'Expands submitted prompts in the grading queue so the full text is visible instead of line-clamped',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -108,7 +108,7 @@ const plugin = {
         const promptBoxes = this.findPromptBoxes();
         if (!promptBoxes.length) {
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: submitted prompt cells not found yet`);
+                Logger.debug(`submitted prompt cells not found yet`);
                 state.missingLogged = true;
             }
             return;

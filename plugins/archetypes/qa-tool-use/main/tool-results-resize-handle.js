@@ -6,7 +6,7 @@ const plugin = {
     id: 'toolResultsResizeHandle',
     name: 'Tool Results Resize Handle',
     description: 'Adds a resize handle to tool result boxes so their height can be adjusted by dragging',
-    _version: '2.2',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { panelId: null, missingLogged: false },
@@ -21,7 +21,7 @@ const plugin = {
         const panel = this.findWorkflowPanel();
         if (!panel) {
             if (!state.missingLogged) {
-                Logger.warn(`${this.id}: workflow panel not found`);
+                Logger.warn(`workflow panel not found`);
                 state.missingLogged = true;
             }
             return;
@@ -36,7 +36,7 @@ const plugin = {
         const toolsContainer = this.findToolsArea(panel);
         if (!toolsContainer) {
             if (!state.missingLogged) {
-                Logger.warn(`${this.id}: tools container not found`);
+                Logger.warn(`tools container not found`);
                 state.missingLogged = true;
             }
             return;
@@ -69,7 +69,7 @@ const plugin = {
         });
 
         if (handlesAdded > 0) {
-            Logger.log(`✓ Added ${handlesAdded} result resize handle(s)`);
+            Logger.debug(`Added ${handlesAdded} result resize handle(s)`);
         }
     },
 
@@ -206,7 +206,7 @@ const plugin = {
             if (!isResizing) return;
             const endH = resultDiv.offsetHeight;
             if (endH !== startHeight) {
-                Logger.debug(`${this.id}: user finished resizing result box`, { fromPx: startHeight, toPx: endH });
+                Logger.debug(`user finished resizing result box`, { fromPx: startHeight, toPx: endH });
             }
             isResizing = false;
 
@@ -242,7 +242,7 @@ const plugin = {
             e.stopPropagation();
             e.preventDefault();
             resultDiv.style.maxHeight = '';
-            Logger.log(`${this.id}: user reset result box height to default`);
+            Logger.log(`user reset result box height to default`);
         });
 
         // Insert after the divider in the result toolbar

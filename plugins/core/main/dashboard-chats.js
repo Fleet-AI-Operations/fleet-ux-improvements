@@ -82,7 +82,7 @@ function chatsWriteSidebarWidth(width) {
     try {
         Storage.setData(CHATS_SIDEBAR_WIDTH_KEY, String(Math.round(width)));
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': failed to save sidebar width', err);
+        Logger.warn('failed to save sidebar width', err);
     }
 }
 
@@ -137,7 +137,7 @@ function chatsReadIndex() {
         const list = Array.isArray(parsed.conversations) ? parsed.conversations : [];
         return { version: 1, conversations: list.filter((c) => c && c.id) };
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': failed to read chats index', err);
+        Logger.warn('failed to read chats index', err);
         return { version: 1, conversations: [] };
     }
 }
@@ -169,7 +169,7 @@ function chatsRecordTurn(opts) {
     const titleHint = o.titleHint != null ? String(o.titleHint) : '';
 
     if (!source || !conversationKey) {
-        Logger.warn(PLUGIN_ID + ': recordTurn skipped — missing source/conversationKey');
+        Logger.warn('recordTurn skipped — missing source/conversationKey');
         return null;
     }
     if (!generationId) {
@@ -194,7 +194,7 @@ function chatsRecordTurn(opts) {
             generationIds: [],
         };
         index.conversations.push(conv);
-        Logger.log(PLUGIN_ID + ': created conversation — ' + source + ' · ' + conv.id);
+        Logger.debug('created conversation — ' + source + ' · ' + conv.id);
     }
     if (generationId) {
         const last = conv.generationIds[conv.generationIds.length - 1];
@@ -207,10 +207,10 @@ function chatsRecordTurn(opts) {
     }
     conv.updatedAt = now;
     chatsWriteIndex(index);
-    Logger.log(PLUGIN_ID + ': recorded turn — ' + source + ' · ' + conv.id
+    Logger.log('recorded turn — ' + source + ' · ' + conv.id
         + (generationId ? ' · gen ' + generationId : ''));
     if (generationId && generationId.indexOf('gen-') !== 0) {
-        Logger.warn(PLUGIN_ID + ': generation id does not look like an OpenRouter gen- id — '
+        Logger.warn('generation id does not look like an OpenRouter gen- id — '
             + generationId + ' (hydrate may 404; prefer X-Generation-Id)');
     }
     return conv;
@@ -239,7 +239,7 @@ function chatsRenameConversation(id, title) {
     conv.titleUserSet = true;
     conv.updatedAt = new Date().toISOString();
     chatsWriteIndex(index);
-    Logger.log(PLUGIN_ID + ': renamed conversation — ' + conv.id);
+    Logger.log('renamed conversation — ' + conv.id);
     return true;
 }
 
@@ -253,7 +253,7 @@ function chatsDeleteConversation(id) {
         chatsUi.activeId = null;
         chatsUi.chatState = null;
     }
-    Logger.log(PLUGIN_ID + ': deleted conversation — ' + id);
+    Logger.log('deleted conversation — ' + id);
     return true;
 }
 
@@ -304,7 +304,7 @@ function chatsParseRatingPayload(message) {
         }
         return payload;
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': archived rating payload could not be parsed', err);
+        Logger.warn('archived rating payload could not be parsed', err);
         return null;
     }
 }
@@ -319,7 +319,7 @@ function chatsPrepareArchivedRatingCard(conv, state) {
         if (!payload) continue;
         message.hideInUi = true;
         state._archivedRatingPayload = payload;
-        Logger.log(PLUGIN_ID + ': reconstructed archived rating payload — '
+        Logger.log('reconstructed archived rating payload — '
             + String((payload.worker && payload.worker.name) || 'unknown contributor'));
         return;
     }
@@ -468,7 +468,7 @@ function chatsArchivedRatingCardHtml(payload) {
     const loader = Context.dashboard && Context.dashboard._loader;
     if (!loader || typeof loader._ratingScoreBlockCompactHtml !== 'function') {
         if (!chatsRatingRendererMissingLogged) {
-            Logger.warn(PLUGIN_ID + ': rating card renderer unavailable for archived conversation');
+            Logger.warn('rating card renderer unavailable for archived conversation');
             chatsRatingRendererMissingLogged = true;
         }
         return '';
@@ -563,19 +563,19 @@ async function chatsFetchMessagesForConversation(conv) {
     for (let i = ids.length - 1; i >= 0; i--) {
         const genId = ids[i];
         try {
-            Logger.debug(PLUGIN_ID + ': hydrating via generation id — ' + genId);
+            Logger.debug('hydrating via generation id — ' + genId);
             const data = await ai.generationContent(genId);
             const messages = chatsMessagesFromGenerationContent(data);
             if (!messages.length) {
                 lastErr = new Error('Generation ' + genId + ' had no recoverable messages');
                 continue;
             }
-            Logger.log(PLUGIN_ID + ': hydrated conversation — ' + conv.id + ' · gen ' + genId
+            Logger.log('hydrated conversation — ' + conv.id + ' · gen ' + genId
                 + ' · ' + messages.length + ' message(s)');
             return { messages, generationId: genId };
         } catch (err) {
             lastErr = err instanceof Error ? err : new Error(String(err));
-            Logger.warn(PLUGIN_ID + ': hydrate failed for gen ' + genId + ' — '
+            Logger.warn('hydrate failed for gen ' + genId + ' — '
                 + lastErr.message);
         }
     }
@@ -726,7 +726,7 @@ function chatsStartNewChat(panel) {
     const chat = Context.aiChat;
     if (!chat) return;
     if (!chatsHasAiKey()) {
-        Logger.warn(PLUGIN_ID + ': new chat skipped — no OpenRouter key stored');
+        Logger.warn('new chat skipped — no OpenRouter key stored');
         return;
     }
     chatsUi.activeId = null;
@@ -739,7 +739,7 @@ function chatsStartNewChat(panel) {
     chatsRenderSidebar(panel);
     chat.wireComposer(panel, chatsUi.chatState, Object.assign({}, chatsChatOpts(), chatsComposerHandlers(panel)));
     chatsRenderMessages(panel, chatsUi.chatState);
-    Logger.log(PLUGIN_ID + ': new chat started');
+    Logger.log('new chat started');
 }
 
 function chatsComposerHandlers(panel) {
@@ -779,7 +779,7 @@ async function chatsOpenConversation(panel, conversationId) {
     const chat = Context.aiChat;
     const conv = chatsGetConversation(conversationId);
     if (!chat || !conv) {
-        Logger.warn(PLUGIN_ID + ': open skipped — conversation not found');
+        Logger.warn('open skipped — conversation not found');
         return;
     }
     chatsUi.activeId = conv.id;
@@ -801,10 +801,10 @@ async function chatsOpenConversation(panel, conversationId) {
         chatsPrepareArchivedRatingCard(conv, state);
         chatsRenderMessages(panel, state);
         chatsSetStatus(panel, '', false);
-        Logger.log(PLUGIN_ID + ': opened conversation — ' + conv.id);
+        Logger.log('opened conversation — ' + conv.id);
     } catch (err) {
         chatsSetStatus(panel, (err && err.message) || String(err), true);
-        Logger.error(PLUGIN_ID + ': open failed — ' + conv.id, err);
+        Logger.error('open failed — ' + conv.id, err);
     } finally {
         chatsUi.hydrating = false;
         chatsRenderSidebar(panel);
@@ -849,7 +849,7 @@ async function chatsSendMessage(panel, userText) {
             },
         }));
         if (isNew && chatsUi.activeId) {
-            Logger.log(PLUGIN_ID + ': first turn saved — ' + chatsUi.activeId);
+            Logger.log('first turn saved — ' + chatsUi.activeId);
         }
     } catch (_err) {
         // sendTurn already logged
@@ -875,7 +875,7 @@ function chatsAttachSidebarResize(panel) {
             onUp: () => {
                 const finalWidth = chatsApplySidebarWidth(panel, sidebar.getBoundingClientRect().width);
                 chatsWriteSidebarWidth(finalWidth);
-                Logger.log(PLUGIN_ID + ': sidebar resized — ' + Math.round(startWidth) + 'px→' + finalWidth + 'px');
+                Logger.log('sidebar resized — ' + Math.round(startWidth) + 'px→' + finalWidth + 'px');
             },
         });
     });
@@ -887,7 +887,7 @@ function chatsAttachSidebarResize(panel) {
         const previous = chatsApplySidebarWidth(panel);
         const next = chatsApplySidebarWidth(panel, previous + (e.key === 'ArrowLeft' ? -20 : 20));
         chatsWriteSidebarWidth(next);
-        Logger.log(PLUGIN_ID + ': sidebar resized — ' + previous + 'px→' + next + 'px');
+        Logger.log('sidebar resized — ' + previous + 'px→' + next + 'px');
     });
 }
 
@@ -1021,7 +1021,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '4.0',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1029,7 +1029,7 @@ const plugin = {
     init(state) {
         const loader = Context.dashboard && Context.dashboard._loader;
         if (!loader) {
-            Logger.error(PLUGIN_ID + ': dashboard loader not registered');
+            Logger.error('dashboard loader not registered');
             return;
         }
         Context.dashboardChats = DashboardChatsApi;
@@ -1044,11 +1044,11 @@ const plugin = {
             onActivate(modal) {
                 const panel = modal && modal.querySelector(CHATS_SCOPE);
                 chatsSyncPanel(panel);
-                Logger.debug(PLUGIN_ID + ': tab activated');
+                Logger.debug('tab activated');
             },
         });
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': tab registered (Context.dashboardChats) v4.0');
+            Logger.log('tab registered (Context.dashboardChats) v4.0');
             state.registered = true;
         }
     },

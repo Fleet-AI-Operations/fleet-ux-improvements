@@ -14,7 +14,7 @@ const plugin = {
     name: 'Expert Datasets Task Actions',
     description:
         'On expert profile Datasets tab, copy task IDs from task titles and open dashboard task view in a new tab',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -32,11 +32,11 @@ const plugin = {
 
         if (!tables.length) {
             if (!state.missingLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for Datasets task table');
+                Logger.debug('waiting for Datasets task table');
                 state.missingLogged = true;
             }
             if (state.activationLogged) {
-                Logger.debug(PLUGIN_ID + ': Datasets task table no longer present');
+                Logger.debug('Datasets task table no longer present');
                 state.activationLogged = false;
                 state.enhancedCount = 0;
             }
@@ -53,10 +53,10 @@ const plugin = {
         if (newlyEnhanced > 0) {
             state.enhancedCount += newlyEnhanced;
             if (!state.activationLogged) {
-                Logger.log(PLUGIN_ID + ': enhancing Datasets task rows');
+                Logger.log('enhancing Datasets task rows');
                 state.activationLogged = true;
             }
-            Logger.debug(PLUGIN_ID + ': enhanced ' + newlyEnhanced + ' row(s), total ' + state.enhancedCount);
+            Logger.debug('enhanced ' + newlyEnhanced + ' row(s), total ' + state.enhancedCount);
         }
     },
 
@@ -198,11 +198,11 @@ const plugin = {
     _openTaskInNewTab(taskKey) {
         const url = this._buildTaskUrl(taskKey);
         if (!url) {
-            Logger.warn(PLUGIN_ID + ': could not build task URL for ' + taskKey);
+            Logger.warn('could not build task URL for ' + taskKey);
             return;
         }
         window.open(url, '_blank', 'noopener,noreferrer');
-        Logger.log(PLUGIN_ID + ': opened task in new tab');
+        Logger.log('opened task in new tab');
     },
 
     _copyFeedbackTarget(button) {
@@ -270,10 +270,10 @@ const plugin = {
         const ok = await this._copyTextToClipboard(taskKey);
         if (ok) {
             this._showCopySuccessFlash(button);
-            Logger.log(PLUGIN_ID + ': copied task ID (' + taskKey.length + ' chars)');
+            Logger.log('copied task ID (' + taskKey.length + ' chars)');
         } else {
             this._showCopyFailurePulse(button);
-            Logger.warn(PLUGIN_ID + ': task ID copy failed');
+            Logger.warn('task ID copy failed');
         }
     }
 };

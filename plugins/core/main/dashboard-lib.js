@@ -220,8 +220,11 @@ function dashLibFormatCreatedAt(iso) {
 
 function dashLibCopyIconHtml(text) {
     const value = String(text == null ? '' : text);
-    return '<button type="button" data-wf-dash-copy="' + dashLibEscHtml(value) + '" title="Copy" aria-label="Copy" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; border: none; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">'
-        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+    const cls = (typeof Context !== 'undefined' && Context.uiLib && typeof Context.uiLib.btnClass === 'function')
+        ? Context.uiLib.btnClass('basic', 'icon')
+        : 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon';
+    return '<button type="button" class="' + cls + '" data-wf-dash-copy="' + dashLibEscHtml(value) + '" title="Copy" aria-label="Copy">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
         + '</button>';
 }
 
@@ -801,7 +804,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.1',
+    _version: '8.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -968,7 +971,7 @@ const plugin = {
             itemDisputeResolutionTimeMinutesBuckets: bind(self._itemDisputeResolutionTimeMinutesBuckets),
             itemTaskCreatedBuckets: bind(self._itemTaskCreatedBuckets)
         };
-        Logger.log('dashboard-lib: module registered (Context.dashboardLib)');
+        Logger.log('module registered (Context.dashboardLib)');
     },
 
     _computeDisplayVersions(rawVersions) {

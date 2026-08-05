@@ -13,7 +13,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
     description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
-    _version: '2.1',
+    _version: '2.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -53,11 +53,11 @@ const plugin = {
         const cards = this._findPromptHistoryCards();
         if (!cards.length) {
             if (!state.missingHistoryLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for Prompt history section');
+                Logger.debug('waiting for Prompt history section');
                 state.missingHistoryLogged = true;
             }
             if (state.activationLogged) {
-                Logger.debug(PLUGIN_ID + ': Prompt history section no longer present');
+                Logger.debug('Prompt history section no longer present');
                 state.activationLogged = false;
                 state.enhancedCount = 0;
             }
@@ -68,7 +68,7 @@ const plugin = {
         if (!state.versionRows || !state.evalTaskId) {
             if (state.fetchFailed || state.bundleUnavailable) return;
             if (!state.missingVersionsLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for prompt version fetch');
+                Logger.debug('waiting for prompt version fetch');
                 state.missingVersionsLogged = true;
             }
             return;
@@ -86,10 +86,10 @@ const plugin = {
         if (newlyEnhanced > 0) {
             state.enhancedCount += newlyEnhanced;
             if (!state.activationLogged) {
-                Logger.log(PLUGIN_ID + ': enhancing prompt history version rows');
+                Logger.log('enhancing prompt history version rows');
                 state.activationLogged = true;
             }
-            Logger.debug(PLUGIN_ID + ': enhanced ' + newlyEnhanced + ' row(s), total ' + state.enhancedCount);
+            Logger.debug('enhanced ' + newlyEnhanced + ' row(s), total ' + state.enhancedCount);
         }
     },
 
@@ -143,7 +143,7 @@ const plugin = {
             .catch((err) => {
                 state.bundleWaitStarted = false;
                 state.bundleUnavailable = true;
-                Logger.warn(PLUGIN_ID + ': ops bundle unavailable', err);
+                Logger.warn('ops bundle unavailable', err);
             });
     },
 
@@ -156,19 +156,19 @@ const plugin = {
     async _fetchVersionRows(state, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab) {
-            Logger.warn(PLUGIN_ID + ': Context.opsTab unavailable');
+            Logger.warn('Context.opsTab unavailable');
             state.fetchFailed = true;
             return;
         }
 
-        Logger.log(PLUGIN_ID + ': fetching prompt versions for ' + taskKey);
+        Logger.debug('fetching prompt versions for ' + taskKey);
         try {
             if (typeof opsTab.whenOpsBundleReady === 'function') {
                 await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
             }
             const taskRow = await this._lookupTaskRow(opsTab, taskKey);
             if (!taskRow || !taskRow.id) {
-                Logger.warn(PLUGIN_ID + ': task not found for key ' + taskKey);
+                Logger.warn('task not found for key ' + taskKey);
                 state.versionRows = [];
                 state.fetchFailed = true;
                 return;
@@ -180,8 +180,8 @@ const plugin = {
             state.evalTaskId = String(taskRow.id).trim();
             state.versionRows = rows;
             state.fetchFailed = false;
-            Logger.log(PLUGIN_ID + ': loaded ' + rows.length + ' raw version row(s) for ' + taskKey);
-            Logger.log(PLUGIN_ID + ': eval task id captured for view links');
+            Logger.debug('loaded ' + rows.length + ' raw version row(s) for ' + taskKey);
+            Logger.debug('eval task id captured for view links');
         } catch (err) {
             if (state.taskKey !== taskKey) return;
             if (this._isTransientBundleError(err)) {
@@ -194,9 +194,9 @@ const plugin = {
             state.fetchFailed = true;
             const refresh = opsTab.isSessionRefreshRequiredError && opsTab.isSessionRefreshRequiredError(err);
             if (refresh) {
-                Logger.warn(PLUGIN_ID + ': session refresh required — reload Fleet and retry');
+                Logger.warn('session refresh required — reload Fleet and retry');
             } else {
-                Logger.warn(PLUGIN_ID + ': version fetch failed for ' + taskKey, err);
+                Logger.warn('version fetch failed for ' + taskKey, err);
             }
         }
     },
@@ -359,7 +359,7 @@ const plugin = {
         const versionId = matched && String(matched.id || '').trim();
         const taskId = String(evalTaskId || '').trim();
         if (!displayNo || !versionId || !UUID_RE.test(versionId) || !UUID_RE.test(taskId)) {
-            Logger.debug(PLUGIN_ID + ': no version id for card'
+            Logger.debug('no version id for card'
                 + (displayNo ? ' v' + displayNo : '')
                 + (matched && matched.displayVersionNo != null && displayNo !== matched.displayVersionNo
                     ? ' (text matched v' + matched.displayVersionNo + ')'
@@ -368,7 +368,7 @@ const plugin = {
         }
 
         if (matched.displayVersionNo !== displayNo) {
-            Logger.debug(PLUGIN_ID + ': prompt text matched v' + matched.displayVersionNo
+            Logger.debug('prompt text matched v' + matched.displayVersionNo
                 + ' for card badge v' + displayNo);
         }
 
@@ -493,10 +493,10 @@ const plugin = {
         const ok = await this._copyTextToClipboard(versionId);
         if (ok) {
             this._showCopySuccessFlash(button);
-            Logger.log(PLUGIN_ID + ': copied version v' + displayNo + ' id (' + versionId.length + ' chars)');
+            Logger.log('copied version v' + displayNo + ' id (' + versionId.length + ' chars)');
         } else {
             this._showCopyFailurePulse(button);
-            Logger.warn(PLUGIN_ID + ': copy failed for version v' + displayNo);
+            Logger.warn('copy failed for version v' + displayNo);
         }
     }
 };

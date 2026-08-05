@@ -444,7 +444,7 @@ const searchOutputResultsPaneMethods = {
         if (!dashApi || typeof dashApi.readResultsPanelHiddenPref !== 'function') return;
         const next = !dashApi.readResultsPanelHiddenPref();
         dashApi.writeResultsPanelHiddenPref(next);
-        Logger.log('search-output-results-pane: results panel ' + (next ? 'hidden' : 'shown'));
+        Logger.log('results panel ' + (next ? 'hidden' : 'shown'));
         const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
         if (root && typeof dashApi.applyResultsPanelLayout === 'function') {
             dashApi.applyResultsPanelLayout(root);
@@ -1311,7 +1311,7 @@ const searchOutputResultsPaneMethods = {
         try {
             return JSON.parse(JSON.stringify(value));
         } catch (e) {
-            Logger.error('search-output-results-pane: JSON clone failed', e);
+            Logger.error('JSON clone failed', e);
             return null;
         }
     },
@@ -1535,21 +1535,21 @@ const searchOutputResultsPaneMethods = {
 
     async _exportFilteredUserStories() {
         if (!Context.isDevBranch) {
-            Logger.warn('search-output-results-pane: user story export skipped — not a dev build');
+            Logger.warn('user story export skipped — not a dev build');
             return;
         }
         if (this._state.userStoryExportRunning) {
-            Logger.debug('search-output-results-pane: user story export already running');
+            Logger.debug('user story export already running');
             return;
         }
         const items = this._getViewItems();
         if (!items || items.length === 0) {
-            Logger.warn('search-output-results-pane: user story export skipped — no filtered items');
+            Logger.warn('user story export skipped — no filtered items');
             return;
         }
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
-            Logger.warn('search-output-results-pane: user story export skipped — ops module missing');
+            Logger.warn('user story export skipped — ops module missing');
             return;
         }
 
@@ -1600,8 +1600,7 @@ const searchOutputResultsPaneMethods = {
                     }
                 } catch (err) {
                     stats.failed++;
-                    Logger.warn(
-                        'search-output-results-pane: user story export fetch failed — '
+                    Logger.warn('user story export fetch failed — '
                         + (taskKey || (taskId ? taskId.slice(0, 8) + '…' : '(no key)')),
                         err
                     );
@@ -1623,8 +1622,7 @@ const searchOutputResultsPaneMethods = {
             });
 
             if (stories.length === 0) {
-                Logger.warn(
-                    'search-output-results-pane: user story export finished with no stories — '
+                Logger.warn('user story export finished with no stories — '
                     + 'empty ' + stats.skippedEmpty + ', failed ' + stats.failed
                 );
                 return;
@@ -1637,16 +1635,15 @@ const searchOutputResultsPaneMethods = {
             if (typeof this._downloadTextFile === 'function') {
                 this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
             } else {
-                Logger.error('search-output-results-pane: user story export failed — download helper unavailable');
+                Logger.error('user story export failed — download helper unavailable');
                 return;
             }
             const summary = stories.length + ' unique · ' + items.length + ' item(s)'
                 + (stats.failed ? ' · ' + stats.failed + ' failed' : '')
                 + ' · ' + filename;
-            Logger.log('search-output-results-pane: user stories exported — ' + summary);
+            Logger.log('user stories exported — ' + summary);
             if (stats.failed) {
-                Logger.warn(
-                    'search-output-results-pane: user story export partial failures — '
+                Logger.warn('user story export partial failures — '
                     + stats.failed + ' of ' + items.length
                 );
             }
@@ -1658,12 +1655,12 @@ const searchOutputResultsPaneMethods = {
 
     _exportFilteredTasksJson() {
         if (!Context.isDevBranch) {
-            Logger.warn('search-output-results-pane: task export skipped — not a dev build');
+            Logger.warn('task export skipped — not a dev build');
             return;
         }
         const items = this._getViewItems();
         if (!items || items.length === 0) {
-            Logger.warn('search-output-results-pane: task export skipped — no filtered items');
+            Logger.warn('task export skipped — no filtered items');
             return;
         }
         const payload = this._buildTaskCardsExportPayload(items);
@@ -1673,10 +1670,10 @@ const searchOutputResultsPaneMethods = {
         if (typeof this._downloadTextFile === 'function') {
             this._downloadTextFile(filename, json, 'application/json;charset=utf-8');
         } else {
-            Logger.error('search-output-results-pane: task export failed — download helper unavailable');
+            Logger.error('task export failed — download helper unavailable');
             return;
         }
-        Logger.log('search-output-results-pane: task cards exported — ' + payload.items.length + ' item(s) · ' + filename);
+        Logger.log('task cards exported — ' + payload.items.length + ' item(s) · ' + filename);
     },
 
     _syncDiffIncludedUi() {
@@ -3943,10 +3940,6 @@ const searchOutputResultsPaneMethods = {
         return this._inputStyle() + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
     },
 
-    _iconMicroBtnStyle() {
-        return 'display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer; font-size: 14px; line-height: 1;';
-    },
-
     _segmentBtnStyle(active, variant) {
         const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
         if (variant === 'depth') {
@@ -5598,7 +5591,7 @@ const searchOutputResultsPaneMethods = {
             seeded += 1;
         }
         if (seeded > 0) {
-            Logger.log('dashboard: session QA pre-seeded for ' + seeded + ' card(s)');
+            Logger.debug('dashboard: session QA pre-seeded for ' + seeded + ' card(s)');
         }
     },
 
@@ -5650,10 +5643,41 @@ const searchOutputResultsPaneMethods = {
         return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: ${opacity}; flex-shrink: 0;"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>`;
     },
 
+    _filterFunnelIconSvg() {
+        return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0;">`
+            + `<line x1="4" y1="7" x2="20" y2="7"></line>`
+            + `<line x1="7" y1="12" x2="17" y2="12"></line>`
+            + `<line x1="10" y1="17" x2="14" y2="17"></line>`
+            + `</svg>`;
+    },
+
+    _eyeIconSvg() {
+        return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
+            + `<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>`
+            + `<circle cx="13" cy="13.2" r="3.2"></circle>`
+            + `</svg>`;
+    },
+
+    _flagIconSvg() {
+        return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
+            + `<line x1="7.5" y1="2" x2="7.5" y2="24"></line>`
+            + `<path d="M7.5 3.5h11L14 9.5l4.5 6H7.5z" fill="currentColor" stroke="none"></path>`
+            + `</svg>`;
+    },
+
+    _cardMetaFilterBtnHtml(scopeKey, valueId, title) {
+        const id = String(valueId || '').trim();
+        if (!id || !scopeKey) return '';
+        const label = String(title || 'Filter results').trim() || 'Filter results';
+        return `<button type="button" data-wf-dash-meta-filter="1" data-filter-scope="${dashEscHtml(scopeKey)}" data-filter-id="${dashEscHtml(id)}" title="${dashEscHtml(label)}" aria-label="${dashEscHtml(label)}" class="${this._dashBtnClass('basic', 'icon')}">`
+            + `${this._filterFunnelIconSvg()}`
+            + `</button>`;
+    },
+
     _extLinkHtml(href, title) {
         const url = String(href || '').trim();
         if (!url) return '';
-        return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="display: inline-flex; width: 26px; height: 26px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); text-decoration: none;">
+        return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">
             ${this._extLinkIconSvg(true)}
         </a>`;
     },
@@ -5828,6 +5852,9 @@ const searchOutputResultsPaneMethods = {
             ? this._extLinkHtml(dashFleetProjectUrl(task.projectId), 'Open project in Fleet')
             : '';
         const flagBtn = this._flagForSeniorReviewBtnHtml(task, itemId);
+        const envFilterBtn = this._cardMetaFilterBtnHtml('filter-envs', task.envKey, 'Filter by this environment');
+        const teamFilterBtn = this._cardMetaFilterBtnHtml('filter-teams', task.teamId, 'Filter by this team');
+        const projectFilterBtn = this._cardMetaFilterBtnHtml('filter-projects', task.projectId, 'Filter by this project');
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
                         <div style="display: flex; flex-wrap: nowrap; align-items: center; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
@@ -5836,9 +5863,9 @@ const searchOutputResultsPaneMethods = {
                     </div>
                     <div style="flex: 1 1 220px; min-width: 0; overflow: hidden;">
                         <div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 8px 16px; overflow-x: auto; min-width: 0; max-width: 100%; -webkit-overflow-scrolling: touch;">
-                            ${this._fieldGroupHtml('Environment', this._copyChipHtml(task.environment), { nowrap: true })}
-                            ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team), { nowrap: true })}
-                            ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectLink, { nowrap: true })}
+                            ${this._fieldGroupHtml('Environment', this._copyChipHtml(this._envName(task.envKey) || task.environment) + envFilterBtn, { nowrap: true })}
+                            ${this._fieldGroupHtml('Team', this._copyChipHtml(task.team) + teamFilterBtn, { nowrap: true })}
+                            ${this._fieldGroupHtml('Project', this._copyChipHtml(task.project || this._projectName(task.projectId)) + projectFilterBtn + projectLink, { nowrap: true })}
                         </div>
                     </div>
                 </div>`;
@@ -5857,13 +5884,13 @@ const searchOutputResultsPaneMethods = {
         const personId = String(id || '').trim();
         if (!personId || !historyKind || !dashKindLabels()[historyKind]) return '';
         const title = this._contributorDeepDiveTitle(historyKind);
-        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" style="${this._iconMicroBtnStyle()}">🔦</button>`;
+        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">${this._eyeIconSvg()}</button>`;
     },
 
     _flagForSeniorReviewBtnHtml(task, itemId) {
         if (!this._shouldShowFlagCreateBtn(task)) return '';
         const escItemId = dashEscHtml(String(itemId || '').trim());
-        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" style="${this._iconMicroBtnStyle()}">🚩</button>`;
+        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" class="${this._dashBtnClass('basic', 'icon')}">${this._flagIconSvg()}</button>`;
     },
 
     _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive, opts) {
@@ -6739,18 +6766,18 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.1',
+    _version: '6.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug('search-output-results-pane: already registered — skipping re-init');
+            Logger.debug('already registered — skipping re-init');
             return;
         }
         Context.searchOutputResultsPaneMethods = searchOutputResultsPaneMethods;
         if (state) state.registered = true;
-        Logger.log('search-output-results-pane: registered (Context.searchOutputResultsPaneMethods)');
+        Logger.log('registered (Context.searchOutputResultsPaneMethods)');
     }
 };

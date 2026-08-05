@@ -1,12 +1,12 @@
-// ============= action-counter.js =============
-// Revision placement: Task/Notes tab bar via Context.actionCounter library.
+// ============= fos-vm-clipboard.js =============
+// Creation placement: Task/Notes tab bar beside Action Counter via Context.fosVmClipboardBar.
 
 const plugin = {
-    id: 'compUseActionCounter',
-    name: 'Action Counter',
+    id: 'fosVmClipboardBar',
+    name: 'VM Clipboard',
     description:
-        'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
-    _version: '2.1',
+        'Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -14,7 +14,22 @@ const plugin = {
         tabBarMissingLogged: false,
         activationLogged: false,
         hadAnchor: false,
-        migratedLegacy: false
+        uiHostClaimed: false,
+        unsubscribe: null,
+        groupEl: null,
+        readyShownLogged: false,
+        readyHiddenLogged: false,
+        apiMissingLogged: false
+    },
+
+    init(state) {
+        if (Context.fosEmbedded && typeof Context.fosEmbedded.claimUiHost === 'function') {
+            Context.fosEmbedded.claimUiHost(this.id);
+            state.uiHostClaimed = true;
+            Logger.log(`claimed FOS UI host (floating panel suppressed)`);
+        } else {
+            Logger.debug(`Context.fosEmbedded missing at init — will retry on mutation`);
+        }
     },
 
     findContentAnchor() {
@@ -52,16 +67,25 @@ const plugin = {
     },
 
     onMutation(state) {
-        const api = Context.actionCounter;
+        if (!state.uiHostClaimed && Context.fosEmbedded && typeof Context.fosEmbedded.claimUiHost === 'function') {
+            Context.fosEmbedded.claimUiHost(this.id);
+            state.uiHostClaimed = true;
+            Logger.log(`claimed FOS UI host (floating panel suppressed)`);
+        }
+
+        const api = Context.fosVmClipboardBar;
         if (!api || typeof api.run !== 'function') return;
 
-        const marker = api.COUNTER_MARKER || 'data-fleet-action-counter';
+        const marker = api.BAR_MARKER || 'data-fleet-fos-vm-clipboard-bar';
+        const counterMarker = 'data-fleet-action-counter';
         const anchor = this.findContentAnchor();
         if (!anchor) {
             if (state.hadAnchor) {
-                Logger.debug(`Task/Notes tab bar left DOM — counter inactive`);
+                Logger.debug(`Task/Notes tab bar left DOM — clipboard bar inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
+                state.readyShownLogged = false;
+                state.readyHiddenLogged = false;
             }
             if (!state.anchorMissingLogged) {
                 Logger.debug(`content anchor not found yet`);
@@ -75,9 +99,11 @@ const plugin = {
         const tabBar = this.findTaskNotesTabBar(anchor);
         if (!tabBar) {
             if (state.hadAnchor) {
-                Logger.debug(`Task/Notes tab bar left DOM — counter inactive`);
+                Logger.debug(`Task/Notes tab bar left DOM — clipboard bar inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
+                state.readyShownLogged = false;
+                state.readyHiddenLogged = false;
             }
             if (!state.tabBarMissingLogged) {
                 Logger.debug(`Task/Notes tab bar not found yet (anchor present)`);
@@ -89,14 +115,18 @@ const plugin = {
         state.tabBarMissingLogged = false;
         state.hadAnchor = true;
 
+        const counter = tabBar.querySelector(`[${counterMarker}="true"]`);
+        if (!counter) {
+            return;
+        }
+
         api.run(state, {
             pluginId: this.id,
             logTag: this.id,
-            activationDetail: 'counter injected in Task/Notes tab bar',
+            activationDetail: 'VM Clipboard injected in Task/Notes tab bar',
             alreadyMounted: () => Boolean(tabBar.querySelector(`[${marker}="true"]`)),
-            mountCounter: (counter) => {
-                counter.style.marginLeft = 'auto';
-                tabBar.appendChild(counter);
+            mountGroup: (group) => {
+                counter.insertAdjacentElement('afterend', group);
             }
         });
     }

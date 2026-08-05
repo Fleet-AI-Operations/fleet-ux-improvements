@@ -212,7 +212,7 @@ function clearRatingExplainTranscripts() {
         }
     }
     ratingExplainByWorker.clear();
-    Logger.log(PLUGIN_ID + ': cleared explain transcripts (ratings recomputed)');
+    Logger.log('cleared explain transcripts (ratings recomputed)');
 }
 
 function findRatingCard(root, workerId) {
@@ -284,7 +284,7 @@ function ratingExplainWorkerTitleHint(workerId) {
 function ratingExplainRecordTurn(workerId, state, turn) {
     const api = Context.dashboardChats;
     if (!api || typeof api.recordTurn !== 'function') {
-        Logger.warn(PLUGIN_ID + ': dashboardChats unavailable — turn not indexed');
+        Logger.warn('dashboardChats unavailable — turn not indexed');
         return;
     }
     const t = turn || {};
@@ -300,7 +300,7 @@ function ratingExplainRecordTurn(workerId, state, turn) {
 async function startRatingExplainOverview(panel, workerId, state) {
     const chat = ratingExplainChat();
     if (!chat || typeof chat.sendTurn !== 'function') {
-        Logger.error(PLUGIN_ID + ': Context.aiChat unavailable');
+        Logger.error('Context.aiChat unavailable');
         return;
     }
     if (state.overviewStarted || state.streaming) return;
@@ -316,12 +316,12 @@ async function startRatingExplainOverview(panel, workerId, state) {
             content: 'Could not build ratings data: ' + (err && err.message ? err.message : String(err)),
         });
         chat.renderMessages(panel, state, ratingExplainChatOpts());
-        Logger.error(PLUGIN_ID + ': overview payload failed — ' + workerId, err);
+        Logger.error('overview payload failed — ' + workerId, err);
         return;
     }
 
     const userContent = RATING_EXPLAIN_INITIAL_USER_PREFIX + json + RATING_EXPLAIN_INITIAL_USER_SUFFIX;
-    Logger.log(PLUGIN_ID + ': overview request — ' + workerId + ' · ' + userContent.length + ' chars');
+    Logger.debug('overview request — ' + workerId + ' · ' + userContent.length + ' chars');
     try {
         await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
             userContent,
@@ -330,9 +330,9 @@ async function startRatingExplainOverview(panel, workerId, state) {
             systemContent: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT,
             onTurnDone: (turn) => ratingExplainRecordTurn(workerId, state, turn),
         }));
-        Logger.log(PLUGIN_ID + ': overview done — ' + workerId);
+        Logger.log('overview done — ' + workerId);
     } catch (err) {
-        Logger.error(PLUGIN_ID + ': overview stream failed — ' + workerId, err);
+        Logger.error('overview stream failed — ' + workerId, err);
     }
 }
 
@@ -342,10 +342,10 @@ async function sendRatingExplainFollowUp(panel, workerId, state, userText) {
     const text = String(userText || '').trim();
     if (!text || state.streaming) return;
     if (!hasRatingExplainAiKey()) {
-        Logger.warn(PLUGIN_ID + ': follow-up blocked — no OpenRouter key stored');
+        Logger.warn('follow-up blocked — no OpenRouter key stored');
         return;
     }
-    Logger.log(PLUGIN_ID + ': follow-up — ' + workerId + ' · ' + text.length + ' chars');
+    Logger.log('follow-up — ' + workerId + ' · ' + text.length + ' chars');
     try {
         await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
             userText: text,
@@ -353,7 +353,7 @@ async function sendRatingExplainFollowUp(panel, workerId, state, userText) {
             onTurnDone: (turn) => ratingExplainRecordTurn(workerId, state, turn),
         }));
     } catch (err) {
-        Logger.error(PLUGIN_ID + ': follow-up stream failed — ' + workerId, err);
+        Logger.error('follow-up stream failed — ' + workerId, err);
     }
 }
 
@@ -426,7 +426,7 @@ function applyRatingExplainMountHeight(panel, workerId, state) {
             mount._wfExplainResizeLogTimer = null;
             const from = mount._wfExplainResizeFrom;
             if (from && from !== state.mountHeightPx) {
-                Logger.log(PLUGIN_ID + ': chat resized — ' + workerId + ' · '
+                Logger.log('chat resized — ' + workerId + ' · '
                     + from + 'px→' + state.mountHeightPx + 'px');
             }
         }, 400);
@@ -474,7 +474,7 @@ function toggleRatingExplain(root, workerId) {
     const state = getRatingExplainState(workerId);
     if (!state) return;
     state.open = !state.open;
-    Logger.log(PLUGIN_ID + ': explain ' + (state.open ? 'opened' : 'closed') + ' — ' + workerId
+    Logger.log('explain ' + (state.open ? 'opened' : 'closed') + ' — ' + workerId
         + (hasRatingExplainAiKey() ? '' : ' · no OpenRouter key'));
     const card = findRatingCard(root, workerId);
     const btn = card && card.querySelector('[data-wf-dash-rating-explain]');
@@ -506,18 +506,18 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '3.0',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug(PLUGIN_ID + ': already registered — skipping re-init');
+            Logger.debug('already registered — skipping re-init');
             return;
         }
         Context.ratingExplain = RatingExplain;
         if (state) state.registered = true;
-        Logger.log(PLUGIN_ID + ': module registered (Context.ratingExplain) v3.0');
+        Logger.log('module registered (Context.ratingExplain) v3.0');
     }
 };

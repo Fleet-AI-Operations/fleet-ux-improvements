@@ -9,7 +9,7 @@ const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
     description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -19,7 +19,7 @@ const plugin = {
         Context.dashboardData = {
             enrichTasksWithHistory: (taskIds, profilesMap, options) => self._enrichTasksWithHistory(taskIds, profilesMap, options)
         };
-        Logger.log('dashboard-data: module registered (Context.dashboardData)');
+        Logger.log('module registered (Context.dashboardData)');
     },
 
     _pgInFilter(values) {
@@ -158,7 +158,7 @@ const plugin = {
             let pageCount = 0;
             while (true) {
                 if (pageCount >= DASH_DATA_FEEDBACK_MAX_PAGES) {
-                    Logger.warn(`dashboard-data: feedback pagination hit ${DASH_DATA_FEEDBACK_MAX_PAGES}-page cap; stopping early`);
+                    Logger.warn(`feedback pagination hit ${DASH_DATA_FEEDBACK_MAX_PAGES}-page cap; stopping early`);
                     break;
                 }
                 const qs = {
@@ -181,7 +181,7 @@ const plugin = {
             }
         }
         if (prefetched.length > 0) {
-            Logger.debug('dashboard-data: feedback batch — ' + prefetched.length + ' prefetched, '
+            Logger.debug('feedback batch — ' + prefetched.length + ' prefetched, '
                 + (feedbackRows.length - prefetched.length) + ' supplemental');
         }
         return feedbackRows;
@@ -199,7 +199,7 @@ const plugin = {
         const ids = [...new Set((taskIds || []).filter(Boolean))];
         if (ids.length === 0) return new Map();
 
-        Logger.debug('dashboard-data: enriching ' + ids.length + ' task(s) with shell, version + feedback history');
+        Logger.debug('enriching ' + ids.length + ' task(s) with shell, version + feedback history');
 
         const prefetched = Array.isArray(opts.prefetchedFeedbackRows) ? opts.prefetchedFeedbackRows : [];
         const skipFeedbackFetch = Boolean(opts.skipFeedbackFetch);
@@ -253,7 +253,7 @@ const plugin = {
             result.set(taskId, entry);
         }
 
-        Logger.debug('dashboard-data: enrichment complete — '
+        Logger.debug('enrichment complete — '
             + shellRows.length + ' task shell row(s), '
             + versionRows.length + ' version rows, ' + feedbackRows.length + ' feedback rows');
         return result;

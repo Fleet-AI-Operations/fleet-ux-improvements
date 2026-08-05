@@ -11,7 +11,7 @@ const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.9',
+    _version: '1.10',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -33,7 +33,7 @@ const plugin = {
                 this.clearCollapsedMarkers(panels);
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: main panels not found yet`);
+                Logger.debug(`main panels not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -60,7 +60,7 @@ const plugin = {
         this.updateButtonLabels(state);
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: Hide/Unhide toggles attached to both main pane headers`);
+            Logger.log(`Hide/Unhide toggles attached to both main pane headers`);
             state.activationLogged = true;
         }
     },
@@ -289,7 +289,7 @@ const plugin = {
         for (let i = 1; i < buttons.length; i++) {
             buttons[i].remove();
         }
-        Logger.debug(`${this.id}: removed ${buttons.length - 1} duplicate Hide/Unhide button(s) on ${side}`);
+        Logger.debug(`removed ${buttons.length - 1} duplicate Hide/Unhide button(s) on ${side}`);
         return keep;
     },
 
@@ -382,14 +382,14 @@ const plugin = {
         const prev = state.hiddenPane;
         if (state.hiddenPane === side) {
             state.hiddenPane = null;
-            Logger.log(`${this.id}: shown both panes`);
+            Logger.log(`shown both panes`);
         } else {
             state.hiddenPane = side;
             const paneName = side === 'left' ? 'task detail' : 'environment';
             if (prev && prev !== side) {
-                Logger.log(`${this.id}: hidden ${paneName} pane (replaced ${prev})`);
+                Logger.log(`hidden ${paneName} pane (replaced ${prev})`);
             } else {
-                Logger.log(`${this.id}: hidden ${paneName} pane`);
+                Logger.log(`hidden ${paneName} pane`);
             }
         }
         const panels = this.getPanels();

@@ -6,7 +6,7 @@ const plugin = {
     name: 'Action Counter',
     description:
         'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -59,12 +59,12 @@ const plugin = {
         const anchor = this.findContentAnchor();
         if (!anchor) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
+                Logger.debug(`Task/Notes tab bar left DOM — counter inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
             }
             if (!state.anchorMissingLogged) {
-                Logger.debug(`${this.id}: content anchor not found yet`);
+                Logger.debug(`content anchor not found yet`);
                 state.anchorMissingLogged = true;
             }
             state.tabBarMissingLogged = false;
@@ -75,12 +75,12 @@ const plugin = {
         const tabBar = this.findTaskNotesTabBar(anchor);
         if (!tabBar) {
             if (state.hadAnchor) {
-                Logger.debug(`${this.id}: Task/Notes tab bar left DOM — counter inactive`);
+                Logger.debug(`Task/Notes tab bar left DOM — counter inactive`);
                 state.hadAnchor = false;
                 state.activationLogged = false;
             }
             if (!state.tabBarMissingLogged) {
-                Logger.debug(`${this.id}: Task/Notes tab bar not found yet (anchor present)`);
+                Logger.debug(`Task/Notes tab bar not found yet (anchor present)`);
                 state.tabBarMissingLogged = true;
             }
             return;

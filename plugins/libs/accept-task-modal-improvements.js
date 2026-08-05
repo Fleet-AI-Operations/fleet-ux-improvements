@@ -65,8 +65,9 @@ const AcceptTaskModalApi = {
                 state.lastProcessedDialog = null;
                 state.motivateButtonAdded = false;
             }
+            state.warnLogged = false;
             if (!state.missingLogged) {
-                Logger.debug(logTag + ': Approve Task dialog not found');
+                Logger.debug('Approve Task dialog not found');
                 state.missingLogged = true;
             }
             return;
@@ -87,7 +88,7 @@ const AcceptTaskModalApi = {
         const notesSection = this.findOptionalNotesSection(dialog);
         if (!notesSection) {
             if (!state.missingLogged) {
-                Logger.debug(logTag + ': optional notes section not found');
+                Logger.debug('optional notes section not found');
                 state.missingLogged = true;
             }
             return;
@@ -102,9 +103,13 @@ const AcceptTaskModalApi = {
         const labelRow = notesSection.querySelector('.flex.items-center.justify-between.mb-1');
         const textarea = notesSection.querySelector('textarea');
         if (!labelRow || !textarea) {
-            Logger.warn(logTag + ': label or textarea not found in notes section');
+            if (!state.warnLogged) {
+                Logger.warn('label or textarea not found in notes section');
+                state.warnLogged = true;
+            }
             return;
         }
+        state.warnLogged = false;
 
         wrapper = document.createElement('div');
         wrapper.setAttribute('data-fleet-plugin', pluginId);
@@ -119,13 +124,13 @@ const AcceptTaskModalApi = {
         btn.addEventListener('click', () => {
             const blurb = ENCOURAGEMENT_BLURBS[Math.floor(Math.random() * ENCOURAGEMENT_BLURBS.length)];
             this.setTextareaValueReactFriendly(textarea, blurb);
-            Logger.log(logTag + ': set positive comment (React-friendly)');
+            Logger.log('set positive comment (React-friendly)');
         });
         wrapper.appendChild(btn);
 
         textarea.insertAdjacentElement('beforebegin', wrapper);
         state.motivateButtonAdded = true;
-        Logger.log(logTag + ': motivate button added');
+        Logger.log('motivate button added');
     },
 
     setTextareaValueReactFriendly(textarea, blurb) {
@@ -171,7 +176,7 @@ const plugin = {
     id: 'acceptTaskModalImprovementsLib',
     name: '"Accept Task" Modal Improvements (library)',
     description: 'Shared API for the Approve Task motivate-worker button',
-    _version: '2.0',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -181,7 +186,7 @@ const plugin = {
             run: (s, options) => AcceptTaskModalApi.run(s, options)
         };
         if (!state.registered) {
-            Logger.log('acceptTaskModalImprovementsLib: module registered (Context.acceptTaskModalImprovements)');
+            Logger.log('module registered (Context.acceptTaskModalImprovements)');
             state.registered = true;
         }
     }

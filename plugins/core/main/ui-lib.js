@@ -104,6 +104,15 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  border-color: var(--foreground, #0f172a);',
         '  color: var(--foreground, #0f172a);',
         '}',
+        tertiary + '.wf-dash-btn--icon {',
+        '  border: none;',
+        '  background: transparent;',
+        '}',
+        tertiary + '.wf-dash-btn--icon:hover:not(:disabled) {',
+        '  background: var(--muted, #f1f5f9);',
+        '  border: none;',
+        '  color: var(--foreground, #0f172a);',
+        '}',
         primary + ':disabled, ' + secondary + ':disabled {',
         '  cursor: not-allowed;',
         '  border: 1px solid var(--border, #e2e8f0);',
@@ -117,6 +126,10 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  background: var(--muted, #f1f5f9);',
         '  color: var(--muted-foreground, #94a3b8);',
         '  opacity: 0.85;',
+        '}',
+        tertiary + '.wf-dash-btn--icon:disabled {',
+        '  border: none;',
+        '  background: transparent;',
         '}',
         btn + ':disabled[aria-busy="true"] { opacity: 0.65; cursor: wait; }',
         headerBasic + ' { color: var(--muted-foreground, #64748b); }',
@@ -287,7 +300,7 @@ async function fleetUiCopyWithFeedback(el, text, opts) {
     if (!value) {
         fleetUiFlashFailure(el, options);
         if (options.logLabel) {
-            Logger.warn('ui-lib: copy skipped (empty ' + options.logLabel + ')');
+            Logger.warn('copy skipped (empty ' + options.logLabel + ')');
         }
         return false;
     }
@@ -295,12 +308,12 @@ async function fleetUiCopyWithFeedback(el, text, opts) {
     if (ok) {
         fleetUiFlashSuccess(el, options);
         if (options.logLabel) {
-            Logger.log('ui-lib: copied ' + options.logLabel + ' (' + value.length + ' chars)');
+            Logger.log('copied ' + options.logLabel + ' (' + value.length + ' chars)');
         }
     } else {
         fleetUiFlashFailure(el, options);
         if (options.logLabel) {
-            Logger.warn('ui-lib: copy ' + options.logLabel + ' failed');
+            Logger.warn('copy ' + options.logLabel + ' failed');
         }
     }
     return ok;
@@ -329,7 +342,7 @@ function fleetUiFlashTabSuccess(tabEl) {
     tabEl.addEventListener('animationend', () => {
         tabEl.classList.remove('fleet-ui-tab--pulse', 'wf-dash-tab--add-pulse');
     }, { once: true });
-    Logger.debug('ui-lib: tab pulse');
+    Logger.debug('tab pulse');
 }
 
 function fleetUiUserStoryProseCssText() {
@@ -382,7 +395,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '2.5',
+    _version: '2.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -460,7 +473,7 @@ const plugin = {
         };
 
         if (!self.initialState.registered) {
-            Logger.log('ui-lib: module registered (Context.uiLib, Context.buttonFeedback)');
+            Logger.log('module registered (Context.uiLib, Context.buttonFeedback)');
             self.initialState.registered = true;
         }
     }

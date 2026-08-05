@@ -35,7 +35,7 @@ const plugin = {
     id: 'deepChatLib',
     name: 'Deep Chat (library)',
     description: 'Lazy-loads the Deep Chat Web Component for shared AI chat UI',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -50,7 +50,7 @@ const plugin = {
             isReady: () => !!self._ready && !!customElements.get('deep-chat'),
             ensureLoaded: () => self._ensureLoaded()
         };
-        Logger.log(PLUGIN_ID + ': module registered (Context.deepChat) v1.0'
+        Logger.log('module registered (Context.deepChat) v1.0'
             + ' · deep-chat@' + DEEP_CHAT_VERSION);
     },
 
@@ -65,10 +65,10 @@ const plugin = {
             try {
                 if (customElements.get('deep-chat')) {
                     this._ready = true;
-                    Logger.debug(PLUGIN_ID + ': custom element already defined');
+                    Logger.debug('custom element already defined');
                     return true;
                 }
-                Logger.debug(PLUGIN_ID + ': fetching deep-chat@' + DEEP_CHAT_VERSION);
+                Logger.debug('fetching deep-chat@' + DEEP_CHAT_VERSION);
                 const source = await deepChatGmFetchText(DEEP_CHAT_URL);
                 const cleaned = deepChatStripEsmExport(source);
                 if (!cleaned || cleaned.indexOf('customElements.define("deep-chat"') === -1) {
@@ -80,11 +80,11 @@ const plugin = {
                     throw new Error(PLUGIN_ID + ': deep-chat custom element missing after load');
                 }
                 this._ready = true;
-                Logger.info(PLUGIN_ID + ': loaded deep-chat@' + DEEP_CHAT_VERSION);
+                Logger.info('loaded deep-chat@' + DEEP_CHAT_VERSION);
                 return true;
             } catch (err) {
                 this._loadFailed = true;
-                Logger.error(PLUGIN_ID + ': load failed', err);
+                Logger.error('load failed', err);
                 throw err;
             } finally {
                 this._loadPromise = null;

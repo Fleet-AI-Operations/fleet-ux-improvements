@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '10.14',
+    _version: '11.3',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -19,6 +19,8 @@ const plugin = {
     _presenceObserver: null,
     _docPaneCache: {},
     _gearClickHandler: null,
+    _gearContextMenuHandler: null,
+    _gearCtrlOpenHandled: false,
     _updateTabOpenedAutomatically: false,
 
     init(state, context) {
@@ -51,7 +53,7 @@ const plugin = {
             return;
         }
         const routeDashboard = this._shouldOpenOpsDashboard();
-        Logger.log('settings-ui: openModal — routeDashboard=' + routeDashboard + ' forceSettings=' + Boolean(options.forceSettings));
+        Logger.log('openModal — routeDashboard=' + routeDashboard + ' forceSettings=' + Boolean(options.forceSettings));
         if (routeDashboard) {
             void this._openOpsDashboardFromGear();
             return;
@@ -64,19 +66,19 @@ const plugin = {
             try {
                 await Context.ensureOpsDashboardPluginsLoaded();
             } catch (e) {
-                Logger.warn('settings-ui: ensureOpsDashboardPluginsLoaded before gear route failed', e);
+                Logger.warn('ensureOpsDashboardPluginsLoaded before gear route failed', e);
             }
         }
         if (!Context.dashboard || typeof Context.dashboard.open !== 'function') {
-            Logger.warn('settings-ui: Ops dashboard routing requested but Context.dashboard unavailable — opening settings');
+            Logger.warn('Ops dashboard routing requested but Context.dashboard unavailable — opening settings');
             this._openSettingsModal();
             return;
         }
         try {
             Context.dashboard.open();
-            Logger.log('settings-ui: opened Ops dashboard from gear');
+            Logger.log('opened Ops dashboard from gear');
         } catch (err) {
-            Logger.error('settings-ui: dashboard open failed — falling back to settings', err);
+            Logger.error('dashboard open failed — falling back to settings', err);
             this._openSettingsModal();
         }
     },
@@ -112,7 +114,7 @@ const plugin = {
                 modal.showModal();
             }
         } catch (err) {
-            Logger.error('settings-ui: settings dialog showModal failed', err);
+            Logger.error('settings dialog showModal failed', err);
             modal.remove();
             this._modalOpen = false;
             return;
@@ -186,7 +188,7 @@ const plugin = {
             settingsBtn.id = 'wf-settings-btn';
             document.body.appendChild(settingsBtn);
             if (!this._buttonCreated) {
-                Logger.log('✓ Settings UI initialized');
+                Logger.log('Settings UI initialized');
                 this._buttonCreated = true;
             }
         }
@@ -224,7 +226,7 @@ const plugin = {
         if (shouldPulse) {
             settingsBtn.classList.add('wf-settings-outdated');
             if (!wasOutdated) {
-                Logger.log('settings-ui: update indicator pulse started');
+                Logger.log('update indicator pulse started');
             }
         } else {
             settingsBtn.classList.remove('wf-settings-outdated');
@@ -269,14 +271,52 @@ const plugin = {
         if (this._gearClickHandler) {
             settingsBtn.removeEventListener('click', this._gearClickHandler);
         }
-        this._gearClickHandler = () => this.openModal();
+        if (this._gearContextMenuHandler) {
+            settingsBtn.removeEventListener('contextmenu', this._gearContextMenuHandler);
+        }
+        // Ctrl+click always opens the small settings modal (even when Ops routes the gear to the dashboard).
+        // On macOS, Ctrl+click often fires contextmenu instead of (or before) click — handle both, once.
+        this._gearClickHandler = (e) => {
+            if (this._gearCtrlOpenHandled) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            const forceSettings = Boolean(e && e.ctrlKey);
+            if (forceSettings) {
+                e.preventDefault();
+                e.stopPropagation();
+                this._markGearCtrlOpenHandled();
+                Logger.log('opened settings modal (Ctrl+click)');
+                this.openModal({ forceSettings: true });
+                return;
+            }
+            this.openModal();
+        };
+        this._gearContextMenuHandler = (e) => {
+            if (!(e && e.ctrlKey)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (this._gearCtrlOpenHandled) return;
+            this._markGearCtrlOpenHandled();
+            Logger.log('opened settings modal (Ctrl+click)');
+            this.openModal({ forceSettings: true });
+        };
         settingsBtn.addEventListener('click', this._gearClickHandler);
+        settingsBtn.addEventListener('contextmenu', this._gearContextMenuHandler);
+    },
+
+    _markGearCtrlOpenHandled() {
+        this._gearCtrlOpenHandled = true;
+        queueMicrotask(() => {
+            this._gearCtrlOpenHandled = false;
+        });
     },
 
     _updatePulseAnimation() {
         const settingsBtn = document.getElementById('wf-settings-btn');
         if (!settingsBtn) {
-            Logger.debug('settings-ui: settings button not found for pulse animation update');
+            Logger.debug('settings button not found for pulse animation update');
             return;
         }
         this._applySettingsButtonBehavior(settingsBtn);
@@ -547,7 +587,6 @@ const plugin = {
                 </h3>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     ${this._createToggleHTML('wf-debug-enabled', 'Enable Debug Logging', Logger.isDebugEnabled(), 'log')}
-                    ${this._createToggleHTML('wf-verbose-enabled', 'Enable Verbose Logging', Logger.isVerboseEnabled(), 'log')}
                     <div>
                         ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled, 'log')}
                         <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
@@ -575,6 +614,9 @@ const plugin = {
                                 cursor: pointer;
                                 transition: all 0.2s;
                             ">All Off</button>
+                        </div>
+                        <div id="wf-core-lib-module-logging" style="display: ${submoduleLoggingEnabled ? 'block' : 'none'}; margin-top: 12px;">
+                            ${this._createCoreLibModuleLoggingHTML()}
                         </div>
                     </div>
                     ${this._createToggleHTML('wf-pulse-override-enabled', 'Simulate Update Banner', this._getPulseOverrideEnabled(), 'sub')}
@@ -951,7 +993,7 @@ const plugin = {
             const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
             if (content && (path.includes(content) || content.contains(e.target))) return;
 
-            Logger.debug('settings-ui: closing settings modal from backdrop click');
+            Logger.debug('closing settings modal from backdrop click');
             self._closeModal();
         });
 
@@ -964,7 +1006,7 @@ const plugin = {
         if (Context.opsTab && typeof Context.opsTab.attachSettingsListeners === 'function') {
             Context.opsTab.attachSettingsListeners(modal, this);
         } else if (Context.opsTab) {
-            Logger.warn('settings-ui: Context.opsTab.attachSettingsListeners unavailable');
+            Logger.warn('Context.opsTab.attachSettingsListeners unavailable');
         }
         this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
 
@@ -1130,7 +1172,7 @@ const plugin = {
             this._attachPluginReorderListeners(modal, devPlugins, 'dev');
         }
         
-        // Debug toggle
+        // Debug toggle (host Logger.debug only)
         const debugToggle = Context.dom.query('#wf-debug-enabled', {
             root: modal,
             context: `${this.id}.debugToggle`
@@ -1139,19 +1181,6 @@ const plugin = {
             debugToggle.addEventListener('change', (e) => {
                 this._handleToggleChange(e);
                 Logger.setDebugEnabled(e.target.checked);
-                this._updateSettingsMessage(modal, plugins);
-            });
-        }
-        
-        // Verbose toggle
-        const verboseToggle = Context.dom.query('#wf-verbose-enabled', {
-            root: modal,
-            context: `${this.id}.verboseToggle`
-        });
-        if (verboseToggle) {
-            verboseToggle.addEventListener('change', (e) => {
-                this._handleToggleChange(e);
-                Logger.setVerboseEnabled(e.target.checked);
                 this._updateSettingsMessage(modal, plugins);
             });
         }
@@ -1174,18 +1203,21 @@ const plugin = {
                     this._attachPluginToggleListeners(modal, devPlugins, 'dev');
                     this._attachPluginReorderListeners(modal, devPlugins, 'dev');
                 }
+                this._renderCoreLibModuleLoggingList(modal);
                 this._updateSettingsMessage(modal, plugins);
             });
         }
 
-        // All module logging On / Off (only affect log toggles; visible when submodule logging enabled)
+        this._attachCoreLibModuleLoggingListeners(modal, plugins);
+
+        // All module logging On / Off — every loaded plugin (archetype, core, libs, ops, dev)
         const allModuleLogOnBtn = Context.dom.query('#wf-all-module-logging-on', {
             root: modal,
             context: `${this.id}.allModuleLogOnButton`
         });
         if (allModuleLogOnBtn) {
             allModuleLogOnBtn.addEventListener('click', () => {
-                allPlugins.forEach(plugin => {
+                PluginManager.getAll().forEach(plugin => {
                     Logger.setModuleLoggingEnabled(plugin.id, true);
                 });
                 this._renderPluginList(modal, plugins);
@@ -1195,6 +1227,7 @@ const plugin = {
                     this._attachPluginReorderListeners(modal, devPlugins, 'dev');
                 }
                 this._attachPluginToggleListeners(modal, plugins);
+                this._renderCoreLibModuleLoggingList(modal);
                 this._updateSettingsMessage(modal, plugins);
             });
             allModuleLogOnBtn.addEventListener('mouseenter', () => {
@@ -1212,7 +1245,7 @@ const plugin = {
         });
         if (allModuleLogOffBtn) {
             allModuleLogOffBtn.addEventListener('click', () => {
-                allPlugins.forEach(plugin => {
+                PluginManager.getAll().forEach(plugin => {
                     Logger.setModuleLoggingEnabled(plugin.id, false);
                 });
                 this._renderPluginList(modal, plugins);
@@ -1222,6 +1255,7 @@ const plugin = {
                     this._attachPluginReorderListeners(modal, devPlugins, 'dev');
                 }
                 this._attachPluginToggleListeners(modal, plugins);
+                this._renderCoreLibModuleLoggingList(modal);
                 this._updateSettingsMessage(modal, plugins);
             });
             allModuleLogOffBtn.addEventListener('mouseenter', () => {
@@ -1291,7 +1325,7 @@ const plugin = {
                 if (confirmed) {
                     const allPlugins = PluginManager.getAll();
                     const clearedCount = Storage.clearAll(allPlugins);
-                    Logger.log(`✓ Cache cleared: ${clearedCount} keys removed`);
+                    Logger.log(`Cache cleared: ${clearedCount} keys removed`);
                     alert(`Cache cleared successfully. ${clearedCount} storage keys were removed. The page will now reload.`);
                     if (typeof Context.requestExtensionReload === 'function') {
                         Context.requestExtensionReload('settings-ui clear cache');
@@ -1760,8 +1794,11 @@ const plugin = {
             pageRefreshConfirmationEnabled: this._getPageRefreshConfirmationEnabled(),
             extensionRefreshConfirmationEnabled: this._getExtensionRefreshConfirmationEnabled(),
             debug: Logger.isDebugEnabled(),
-            verbose: Logger.isVerboseEnabled(),
             submoduleLogging: Logger.isSubmoduleLoggingEnabled(),
+            coreLibModuleLogging: this._getCoreLibPluginsForLogging().map(plugin => ({
+                id: plugin.id,
+                moduleLogging: Logger.isModuleLoggingEnabled(plugin.id)
+            })),
             pluginStates: sortedPlugins.map(plugin => {
                 const state = {
                     id: plugin.id,
@@ -1965,6 +2002,79 @@ const plugin = {
         if (buttonsContainer) {
             buttonsContainer.style.display = submoduleLoggingEnabled ? 'flex' : 'none';
         }
+        const coreLibContainer = Context.dom.query('#wf-core-lib-module-logging', {
+            root: modal,
+            context: `${this.id}.coreLibModuleLoggingVisibility`
+        });
+        if (coreLibContainer) {
+            coreLibContainer.style.display = submoduleLoggingEnabled ? 'block' : 'none';
+            if (submoduleLoggingEnabled) {
+                this._renderCoreLibModuleLoggingList(modal);
+            }
+        }
+    },
+
+    _getCoreLibPluginsForLogging() {
+        return PluginManager.getAll()
+            .filter((p) => p && p.id && (p.phase === 'core' || p._isLib === true || p._isOps === true))
+            .filter((p) => p._isDev !== true)
+            .slice()
+            .sort((a, b) => (a.name || a.id || '').localeCompare(b.name || b.id || ''));
+    },
+
+    _createCoreLibModuleLoggingHTML() {
+        const plugins = this._getCoreLibPluginsForLogging();
+        if (plugins.length === 0) {
+            return '<p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0;">No core or library modules loaded.</p>';
+        }
+        const rows = plugins.map((plugin) => {
+            const enabled = Logger.isModuleLoggingEnabled(plugin.id);
+            const label = plugin.name || plugin.id;
+            return `
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border, #e5e5e5);">
+                    <label style="font-size: 12px; color: var(--foreground, #333); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px;" for="wf-core-lib-log-${plugin.id}" title="${plugin.id}">
+                        ${label}
+                    </label>
+                    ${this._createSwitchHTML(`wf-core-lib-log-${plugin.id}`, enabled, null, false, { size: 'small', variant: 'log' })}
+                </div>
+            `;
+        }).join('');
+        return `
+            <div style="font-size: 12px; font-weight: 600; color: var(--foreground, #333); margin-bottom: 6px;">Core and libraries</div>
+            <div style="max-height: 180px; overflow-y: auto;">${rows}</div>
+        `;
+    },
+
+    _renderCoreLibModuleLoggingList(modal) {
+        const container = Context.dom.query('#wf-core-lib-module-logging', {
+            root: modal,
+            context: `${this.id}.renderCoreLibModuleLogging`
+        });
+        if (!container) return;
+        const submoduleOn = Logger.isSubmoduleLoggingEnabled();
+        container.style.display = submoduleOn ? 'block' : 'none';
+        if (!submoduleOn) return;
+        container.innerHTML = this._createCoreLibModuleLoggingHTML();
+        this._attachCoreLibModuleLoggingListeners(modal);
+    },
+
+    _attachCoreLibModuleLoggingListeners(modal, pluginsForMessage) {
+        const plugins = this._getCoreLibPluginsForLogging();
+        plugins.forEach((plugin) => {
+            const toggle = Context.dom.query(`#wf-core-lib-log-${plugin.id}`, {
+                root: modal,
+                context: `${this.id}.coreLibLog.${plugin.id}`
+            });
+            if (!toggle || toggle.dataset.wfBound === '1') return;
+            toggle.dataset.wfBound = '1';
+            toggle.addEventListener('change', (e) => {
+                this._handleToggleChange(e);
+                Logger.setModuleLoggingEnabled(plugin.id, e.target.checked);
+                if (pluginsForMessage) {
+                    this._updateSettingsMessage(modal, pluginsForMessage);
+                }
+            });
+        });
     },
     
     _isOpsAccessConfigured() {
@@ -2199,7 +2309,7 @@ const plugin = {
     _mountEnvCodenamesWidget(pane) {
         const root = pane.querySelector('#wf-env-codenames-root');
         if (!root) {
-            Logger.debug('settings-ui: env codenames mount node missing');
+            Logger.debug('env codenames mount node missing');
             return;
         }
         if (root.dataset.wfEnvCodenamesMounted === '1') return;
@@ -2208,13 +2318,13 @@ const plugin = {
             ? Context.settingsModalDocs['information-tab.md'].raw
             : null;
         if (!raw || typeof raw !== 'string') {
-            Logger.debug('settings-ui: information-tab raw missing for codenames widget');
+            Logger.debug('information-tab raw missing for codenames widget');
             return;
         }
         const body = this._settingsModalDocBody(raw);
         const { rows } = this._extractInformationCodenameRows(body);
         if (rows.length === 0) {
-            Logger.debug('settings-ui: no env codename rows parsed for widget');
+            Logger.debug('no env codename rows parsed for widget');
             return;
         }
 
@@ -2301,7 +2411,7 @@ const plugin = {
         });
 
         refresh();
-        Logger.log('settings-ui: mounted interactive environment codenames table');
+        Logger.log('mounted interactive environment codenames table');
     },
 
     _markdownToHtml(md) {
@@ -2502,7 +2612,7 @@ const plugin = {
             this._attachOpsRefreshBannerListeners(modal, 'settings-ui');
         }
         banner.style.display = 'block';
-        Logger.log('settings-ui: ops refresh banner shown');
+        Logger.log('ops refresh banner shown');
     },
 
     _attachOpsRefreshBannerListeners(root, reloadSource) {
@@ -2603,7 +2713,7 @@ const plugin = {
         if (Storage.get(storageKey, null) === latestVersion) return;
 
         if (typeof Context.openInTab !== 'function') {
-            Logger.warn(`${this.id}: could not automatically open update because the tab opener is unavailable`);
+            Logger.warn(`could not automatically open update because the tab opener is unavailable`);
             return;
         }
 
@@ -2611,7 +2721,7 @@ const plugin = {
         this.openModal({ forceSettings: true });
         if (!this._modalOpen) {
             this._updateTabOpenedAutomatically = false;
-            Logger.warn(`${this.id}: could not automatically open update because the Settings modal failed to open`);
+            Logger.warn(`could not automatically open update because the Settings modal failed to open`);
             return;
         }
 
@@ -2619,9 +2729,9 @@ const plugin = {
             try {
                 Context.openInTab(this._getUpdateUrl(), { active: true, insert: true, setParent: true });
                 Storage.set(storageKey, latestVersion);
-                Logger.log(`${this.id}: opened Settings and automatically opened update ${latestVersion} in a new tab`);
+                Logger.log(`opened Settings and automatically opened update ${latestVersion} in a new tab`);
             } catch (error) {
-                Logger.error(`${this.id}: failed to automatically open update ${latestVersion}`, error);
+                Logger.error(`failed to automatically open update ${latestVersion}`, error);
             }
         });
     },

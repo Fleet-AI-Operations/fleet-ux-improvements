@@ -224,7 +224,7 @@ const DisputeScreenshotUploadApi = {
                 }
             }
             if (!files.length) {
-                Logger.info('Dispute screenshot upload improvement: clipboard had no image');
+                Logger.debug('Dispute screenshot upload improvement: clipboard had no image');
                 return;
             }
             this.mergeIntoFileInput(input, files);
@@ -319,7 +319,9 @@ label[${NATIVE_LABEL_ATTR}] {
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        Logger.debug(`Dispute screenshot upload improvement: ${input.files.length} file(s) on native input`);
+        Logger.log(
+            `Dispute screenshot upload improvement: merged paste/upload — ${input.files.length} file(s) on native input`
+        );
     }
 };
 
@@ -328,7 +330,7 @@ const plugin = {
     name: 'Dispute Screenshot Upload Improvement (library)',
     description:
         'Shared API for dispute resolution screenshot drag-drop/upload and paste-image controls',
-    _version: '1.0',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -338,8 +340,7 @@ const plugin = {
             run: (s, options) => DisputeScreenshotUploadApi.run(s, options)
         };
         if (!state.registered) {
-            Logger.log(
-                'disputeScreenshotUploadImprovementLib: module registered (Context.disputeScreenshotUpload)'
+            Logger.log('module registered (Context.disputeScreenshotUpload)'
             );
             state.registered = true;
         }

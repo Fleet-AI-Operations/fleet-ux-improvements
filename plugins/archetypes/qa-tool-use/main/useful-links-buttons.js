@@ -20,7 +20,7 @@ const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
     description: 'Add useful link buttons to the page',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -151,7 +151,7 @@ const plugin = {
             if (allWrappers.length > 1) {
                 for (let i = 1; i < allWrappers.length; i++) {
                     allWrappers[i].remove();
-                    Logger.log('✓ Useful Link Buttons: Removed duplicate wrapper');
+                    Logger.debug('Useful Link Buttons: Removed duplicate wrapper');
                 }
             }
             const remaining = this.findAllWrappersAmongSiblings(scratchpad);
@@ -167,7 +167,7 @@ const plugin = {
         const wrapper = this.createWrapper();
         scratchpad.insertAdjacentElement('afterend', wrapper);
         state.wrapperAdded = true;
-        Logger.log('✓ Useful Link Buttons: wrapper added below QA scratchpad');
+        Logger.log('Useful Link Buttons: wrapper added below QA scratchpad');
         this.syncButtons(wrapper);
     },
 

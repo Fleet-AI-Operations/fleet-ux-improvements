@@ -28,7 +28,7 @@ const plugin = {
     id: 'requestRevisions',
     name: 'Request Revisions Improvements',
     description: 'Improvements to the Request Revisions Workflow',
-    _version: '6.2',
+    _version: '6.4',
     enabledByDefault: true,
     phase: 'mutation',
     
@@ -684,7 +684,7 @@ const plugin = {
 
         const captured = tryCaptureVerifier();
         if (captured) {
-            Logger.log('✓ Verifier container detected');
+            Logger.debug(`Verifier container detected`);
             this.saveVerifierOutput(state, captured);
             return;
         }
@@ -692,7 +692,7 @@ const plugin = {
         const containerObserver = new MutationObserver(() => {
             const next = tryCaptureVerifier();
             if (next) {
-                Logger.log('✓ Verifier container detected');
+                Logger.debug(`Verifier container detected`);
                 containerObserver.disconnect();
                 state.verifierObserver = null;
                 this.saveVerifierOutput(state, next);
@@ -717,13 +717,13 @@ const plugin = {
         state.verifierOutput = getText();
         state.verifierElement = capture.node;
 
-        Logger.log(`✓ Verifier output saved (${state.verifierOutput.length} chars)`);
+        Logger.debug(`Verifier output saved (${state.verifierOutput.length} chars)`);
 
         const changeObserver = new MutationObserver(() => {
             const newOutput = getText();
             if (newOutput !== state.verifierOutput && newOutput.length > 0) {
                 state.verifierOutput = newOutput;
-                Logger.log(`✓ Verifier output updated (${state.verifierOutput.length} chars)`);
+                Logger.debug(`Verifier output updated (${state.verifierOutput.length} chars)`);
             }
         });
 

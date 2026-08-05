@@ -7,7 +7,7 @@ const plugin = {
     id: 'disputeDetailQaFeedbackWhitespace',
     name: 'Dispute QA Feedback Whitespace',
     description: 'Preserves line breaks and spacing in QA feedback blocks on dispute detail',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -18,13 +18,13 @@ const plugin = {
     onMutation(state) {
         this.ensureStyle();
         if (!state.styleLogged) {
-            Logger.debug(`${this.id}: whitespace stylesheet ensured in document head`);
+            Logger.debug(`whitespace stylesheet ensured in document head`);
             state.styleLogged = true;
         }
         if (!state.feedbackUiLogged) {
             const host = document.querySelector('.rounded-lg.border[class*="bg-muted"] .space-y-2.text-sm');
             if (host) {
-                Logger.info(`${this.id}: QA feedback block detected — pre-wrap / line breaks active`);
+                Logger.info(`QA feedback block detected — pre-wrap / line breaks active`);
                 state.feedbackUiLogged = true;
             }
         }

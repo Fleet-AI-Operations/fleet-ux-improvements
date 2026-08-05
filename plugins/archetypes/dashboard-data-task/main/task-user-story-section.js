@@ -18,7 +18,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Task User Story Section',
     description: 'Shows task user story between Project and Contributors with markdown rendering, copy and vertical resize',
-    _version: '2.3',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -52,7 +52,7 @@ const plugin = {
         const anchor = this._findInsertAnchor();
         if (!anchor) {
             if (!state.missingAnchorLogged) {
-                Logger.debug(PLUGIN_ID + ': waiting for Project / Contributors sections');
+                Logger.debug('waiting for Project / Contributors sections');
                 state.missingAnchorLogged = true;
             }
             return;
@@ -94,7 +94,7 @@ const plugin = {
             .catch((err) => {
                 state.bundleWaitStarted = false;
                 state.bundleUnavailable = true;
-                Logger.warn(PLUGIN_ID + ': ops bundle unavailable', err);
+                Logger.warn('ops bundle unavailable', err);
             });
         return false;
     },
@@ -238,10 +238,10 @@ const plugin = {
             const ok = await this._copyTextToClipboard(source);
             if (ok) {
                 this._showCopySuccessFlash(copyBtn);
-                Logger.log(PLUGIN_ID + ': copied ' + (fieldLabel || 'user story') + ' (' + source.length + ' chars)');
+                Logger.log('copied ' + (fieldLabel || 'user story') + ' (' + source.length + ' chars)');
             } else {
                 this._showCopyFailurePulse(copyBtn);
-                Logger.warn(PLUGIN_ID + ': copy failed for ' + (fieldLabel || 'user story'));
+                Logger.warn('copy failed for ' + (fieldLabel || 'user story'));
             }
         });
 
@@ -320,7 +320,7 @@ const plugin = {
             if (!isResizing) return;
             const endHeight = pre.offsetHeight;
             if (endHeight !== startHeight) {
-                Logger.log(PLUGIN_ID + ': resize ' + startHeight + 'px→' + endHeight + 'px');
+                Logger.log('resize ' + startHeight + 'px→' + endHeight + 'px');
             }
             isResizing = false;
             document.removeEventListener('mousemove', handleMouseMove);
@@ -408,20 +408,20 @@ const plugin = {
     async _fetchAndRender(state, shell, taskKey) {
         const opsTab = Context.opsTab;
         if (!opsTab || typeof opsTab.fetchTaskUserStory !== 'function') {
-            Logger.warn(PLUGIN_ID + ': Context.opsTab.fetchTaskUserStory unavailable');
+            Logger.warn('Context.opsTab.fetchTaskUserStory unavailable');
             this._setSectionMessage(shell, 'User story unavailable (ops module not loaded).');
             state.fetchStarted = false;
             return;
         }
 
-        Logger.log(PLUGIN_ID + ': fetching user story for ' + taskKey);
+        Logger.debug('fetching user story for ' + taskKey);
         try {
             if (typeof opsTab.whenOpsBundleReady === 'function') {
                 await opsTab.whenOpsBundleReady({ timeoutMs: OPS_BUNDLE_WAIT_TIMEOUT_MS });
             }
             const result = await opsTab.fetchTaskUserStory({ taskKey });
             if (!shell.isConnected) {
-                Logger.debug(PLUGIN_ID + ': section removed before render');
+                Logger.debug('section removed before render');
                 return;
             }
 
@@ -430,22 +430,23 @@ const plugin = {
                 const reason = result && result.reason ? result.reason : 'empty';
                 this._setSectionMessage(shell, this._scenarioEmptyMessage(reason));
                 state.fetchDone = true;
-                Logger.warn(PLUGIN_ID + ': no user story for ' + taskKey + ' (' + reason + ')');
+                Logger.warn('no user story for ' + taskKey + ' (' + reason + ')');
                 return;
             }
 
             this._renderScenarioContent(shell, fields);
             state.fetchDone = true;
-            if (!state.activationLogged) {
-                Logger.log(PLUGIN_ID + ': user story section active for ' + taskKey);
-                state.activationLogged = true;
-            }
             const summary = [
                 fields.scenarioTitle ? 'title ' + fields.scenarioTitle.length + ' chars' : null,
                 fields.humanAnnotatorInstructions ? 'instructions ' + fields.humanAnnotatorInstructions.length + ' chars' : null,
                 fields.userStory ? 'story ' + fields.userStory.length + ' chars' : null
             ].filter(Boolean).join(', ');
-            Logger.log(PLUGIN_ID + ': rendered scenario content for ' + taskKey + ' (' + summary + ')');
+            if (!state.activationLogged) {
+                Logger.log('user story section active for ' + taskKey + ' (' + summary + ')');
+                state.activationLogged = true;
+            } else {
+                Logger.debug('rendered scenario content for ' + taskKey + ' (' + summary + ')');
+            }
         } catch (err) {
             if (this._isTransientBundleError(err)) {
                 state.fetchStarted = false;
@@ -458,7 +459,7 @@ const plugin = {
                     : 'Could not load user story.';
                 this._setSectionMessage(shell, msg);
             }
-            Logger.warn(PLUGIN_ID + ': user story fetch failed for ' + taskKey, err);
+            Logger.warn('user story fetch failed for ' + taskKey, err);
             state.fetchStarted = false;
         }
     },

@@ -10,7 +10,7 @@ const TopNavHorizontalScrollApi = {
     name: 'Top nav horizontal scroll',
     description:
         'Allows horizontal scrolling on the QA header ([data-ui="qa-header"]) when action buttons exceed the viewport width',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -98,14 +98,14 @@ const TopNavHorizontalScrollApi = {
         const header = this.findQaHeader();
         if (!header) {
             if (state.hadHeader) {
-                Logger.debug(`${this.id}: [data-ui="qa-header"] left DOM — scroll inactive`);
+                Logger.debug(`[data-ui="qa-header"] left DOM — scroll inactive`);
                 state.hadHeader = false;
                 state.activationLogged = false;
                 state.noInnerLogged = false;
                 state.noCenterLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: QA header not found yet`);
+                Logger.debug(`QA header not found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -116,7 +116,7 @@ const TopNavHorizontalScrollApi = {
         const innerRow = this.findHeaderInnerRow(header);
         if (!innerRow) {
             if (!state.noInnerLogged) {
-                Logger.warn(`${this.id}: QA header found but inner flex row missing`);
+                Logger.warn(`QA header found but inner flex row missing`);
                 state.noInnerLogged = true;
             }
             return;
@@ -126,7 +126,7 @@ const TopNavHorizontalScrollApi = {
         const center = this.findCenterCluster(innerRow);
         if (!center) {
             if (!state.noCenterLogged) {
-                Logger.warn(`${this.id}: QA header inner row has no flex-1 center cluster`);
+                Logger.warn(`QA header inner row has no flex-1 center cluster`);
                 state.noCenterLogged = true;
             }
             return;
@@ -136,7 +136,7 @@ const TopNavHorizontalScrollApi = {
         this.applyWrap(header, innerRow, center, state);
 
         if (!state.activationLogged) {
-            Logger.log(`${this.id}: horizontal scroll enabled on QA header action cluster`);
+            Logger.log(`horizontal scroll enabled on QA header action cluster`);
             state.activationLogged = true;
         }
     }

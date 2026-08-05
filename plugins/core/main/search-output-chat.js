@@ -85,7 +85,7 @@ function searchChatCreateState() {
 function searchChatRecordTurn(state, turn) {
     const api = Context.dashboardChats;
     if (!api || typeof api.recordTurn !== 'function') {
-        Logger.warn(PLUGIN_ID + ': dashboardChats unavailable — turn not indexed');
+        Logger.warn('dashboardChats unavailable — turn not indexed');
         return;
     }
     const t = turn || {};
@@ -93,7 +93,7 @@ function searchChatRecordTurn(state, turn) {
         ? String(state.conversationKey)
         : '';
     if (!conversationKey) {
-        Logger.warn(PLUGIN_ID + ': recordTurn skipped — missing conversationKey');
+        Logger.warn('recordTurn skipped — missing conversationKey');
         return;
     }
     const titleHint = (t.userPreview && String(t.userPreview).trim()) || 'Search Chat';
@@ -236,7 +236,7 @@ function searchChatGetSettings() {
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         return searchChatNormalizeSettings(parsed);
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': failed to read settings', err);
+        Logger.warn('failed to read settings', err);
         return searchChatNormalizeSettings(null);
     }
 }
@@ -244,7 +244,7 @@ function searchChatGetSettings() {
 function searchChatSaveSettings(raw) {
     const next = searchChatNormalizeSettings(raw);
     Storage.setData(SEARCH_CHAT_SETTINGS_KEY, JSON.stringify(next));
-    Logger.log(PLUGIN_ID + ': settings saved — rounds=' + next.maxToolRounds
+    Logger.log('settings saved — rounds=' + next.maxToolRounds
         + ' results=' + next.maxResultsPerCall
         + ' promptChars=' + next.maxPromptChars
         + ' bytes=' + next.maxToolResultBytes
@@ -453,7 +453,7 @@ function searchChatLcsSimilarity(textA, textB, granularity) {
         const pct = result && Number.isFinite(result.percent) ? result.percent : null;
         return pct == null ? null : Math.round(pct * 100) / 100;
     } catch (err) {
-        Logger.warn(PLUGIN_ID + ': LCS similarity failed', err);
+        Logger.warn('LCS similarity failed', err);
         return null;
     }
 }
@@ -1290,8 +1290,7 @@ function searchChatClusterSimilarPrompts(dash, args, settings) {
     if (!run.complete) {
         out.partialClustersFromEdgesFound = true;
     }
-    Logger.log(
-        PLUGIN_ID + ': cluster_similar_prompts complete=' + run.complete
+    Logger.log('cluster_similar_prompts complete=' + run.complete
             + ' eligible=' + run.eligibleTasks
             + ' pairs=' + run.pairCount
             + ' clusters=' + clusterCountBeforeTopN
@@ -2721,7 +2720,7 @@ function searchChatAddChartToDashboard(dash, args) {
     if (dash && typeof dash._renderStatsPanel === 'function') {
         void dash._renderStatsPanel();
     }
-    Logger.log(PLUGIN_ID + ': chart added to Stats dashboard — ' + chart.title + ' (' + chart.id + ')');
+    Logger.log('chart added to Stats dashboard — ' + chart.title + ' (' + chart.id + ')');
     return {
         ok: true,
         chartId: chart.id,
@@ -2823,7 +2822,7 @@ async function searchChatRenderChartsUi(panel) {
         Chart = await chartJsApi.ensureLoaded();
     } catch (err) {
         list.textContent = 'Failed to load Chart.js.';
-        Logger.warn(PLUGIN_ID + ': Chart.js load failed', err);
+        Logger.warn('Chart.js load failed', err);
         return;
     }
     for (let i = 0; i < searchChatUi.charts.length; i++) {
@@ -2847,7 +2846,7 @@ async function searchChatRenderChartsUi(panel) {
             const inst = new Chart(canvas, searchChatBuildDisplayChartConfig(entry));
             searchChatUi.chartInstances.push(inst);
         } catch (err) {
-            Logger.warn(PLUGIN_ID + ': chart render failed — ' + entry.id, err);
+            Logger.warn('chart render failed — ' + entry.id, err);
             canvasWrap.textContent = 'Render failed.';
         }
     }
@@ -2910,7 +2909,7 @@ function searchChatRenderChatChart(args) {
         searchChatUi.charts.shift();
     }
     void searchChatRenderChartsUi(searchChatUi.panel);
-    Logger.log(PLUGIN_ID + ': render_chat_chart — ' + entry.title + ' (' + type + ', '
+    Logger.log('render_chat_chart — ' + entry.title + ' (' + type + ', '
         + labels.length + ' labels)');
     return {
         ok: true,
@@ -3465,6 +3464,7 @@ function searchChatCreateExecutor(dash) {
     return function executeTool(name, args) {
         const settings = searchChatGetSettings();
         const toolName = String(name || '').trim();
+        Logger.debug('tool invoke — ' + toolName);
         const limitDefault = (fallback) => searchChatClampInt(
             args && args.limit,
             1,
@@ -3625,11 +3625,14 @@ function searchChatCreateExecutor(dash) {
                 payload = { ok: true };
                 break;
             default:
+                Logger.debug('unknown tool — ' + toolName);
                 payload = { error: 'Unknown tool: ' + toolName };
         }
         let str = typeof payload === 'string' ? payload : JSON.stringify(payload);
         usedBytes += str.length;
         if (usedBytes > settings.maxToolResultBytes) {
+            Logger.debug('tool result budget exceeded — used=' + usedBytes
+                + ' max=' + settings.maxToolResultBytes);
             payload = {
                 error: 'Tool result budget exceeded for this turn',
                 usedBytes,
@@ -4053,7 +4056,7 @@ function searchChatStopTurn(panel) {
     if (!chat || !state) return;
     chat.stopStream(state, searchChatChatOpts());
     searchChatSetStatus(panel, 'Stopped.', false);
-    Logger.log(PLUGIN_ID + ': stop requested');
+    Logger.log('stop requested');
 }
 
 function searchChatRenderActivity(panel) {
@@ -4142,7 +4145,7 @@ function searchChatResetChat(panel, dash) {
         }));
         chat.renderMessages(panel, searchChatUi.chatState, searchChatChatOpts());
     }
-    Logger.log(PLUGIN_ID + ': new chat');
+    Logger.log('new chat');
 }
 
 async function searchChatSend(panel, dash, userText) {
@@ -4150,12 +4153,12 @@ async function searchChatSend(panel, dash, userText) {
     const text = String(userText || '').trim();
     if (!chat || !text) return;
     if (searchChatUi.sendInFlight) {
-        Logger.warn(PLUGIN_ID + ': send skipped — turn already in flight');
+        Logger.warn('send skipped — turn already in flight');
         return;
     }
     let state = searchChatEnsureState();
     if (!state || state.streaming) {
-        Logger.warn(PLUGIN_ID + ': send skipped — streaming or missing state');
+        Logger.warn('send skipped — streaming or missing state');
         return;
     }
     if (!searchChatHasAiKey()) {
@@ -4175,13 +4178,13 @@ async function searchChatSend(panel, dash, userText) {
             'Results changed; start a new chat to use the updated set.',
             false
         );
-        Logger.warn(PLUGIN_ID + ': results fingerprint changed — keeping conversation; tools use current scope');
+        Logger.debug('results fingerprint changed — keeping conversation; tools use current scope');
     }
     searchChatUi.resultsFingerprint = fp;
 
     state = searchChatEnsureState();
     if (!state || state.streaming || searchChatUi.sendInFlight) {
-        Logger.warn(PLUGIN_ID + ': send aborted — state busy after fingerprint check');
+        Logger.warn('send aborted — state busy after fingerprint check');
         return;
     }
 
@@ -4191,6 +4194,8 @@ async function searchChatSend(panel, dash, userText) {
     searchChatUi.sendInFlight = true;
     searchChatSetStopVisible(panel, true);
     searchChatSetStatus(panel, 'Working…', false);
+    Logger.debug('tool turn started — rounds=' + settings.maxToolRounds
+        + ' · scope=' + items.length + ' result(s)');
 
     try {
         await chat.sendToolTurn(panel, state, Object.assign({}, searchChatChatOpts(), {
@@ -4232,9 +4237,9 @@ async function searchChatSend(panel, dash, userText) {
         }));
         if (state && state.stopRequested) {
             searchChatSetStatus(panel, 'Stopped.', false);
-            Logger.log(PLUGIN_ID + ': turn stopped');
+            Logger.log('turn stopped');
         } else {
-            Logger.log(PLUGIN_ID + ': turn complete');
+            Logger.log('turn complete');
         }
     } catch (err) {
         if (state && state.stopRequested) {
@@ -4242,7 +4247,7 @@ async function searchChatSend(panel, dash, userText) {
         } else {
             searchChatSetStatus(panel, (err && err.message) || String(err), true);
         }
-        Logger.error(PLUGIN_ID + ': turn failed', err);
+        Logger.error('turn failed', err);
     } finally {
         searchChatUi.sendInFlight = false;
         searchChatSetStopVisible(panel, false);
@@ -4263,7 +4268,7 @@ function searchChatWirePanel(panel, dash) {
                 e.preventDefault();
                 e.stopPropagation();
                 searchChatClearCharts(panel);
-                Logger.log(PLUGIN_ID + ': charts cleared');
+                Logger.log('charts cleared');
                 return;
             }
             const stopBtn = e.target.closest('[data-wf-dash-search-chat-stop]');
@@ -4454,7 +4459,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '7.0',
+    _version: '7.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -4462,7 +4467,7 @@ const plugin = {
     init(state) {
         Context.searchOutputChat = SearchOutputChatApi;
         if (!state.registered) {
-            Logger.log(PLUGIN_ID + ': module registered (Context.searchOutputChat) v'
+            Logger.log('module registered (Context.searchOutputChat) v'
                 + SEARCH_CHAT_VERSION);
             state.registered = true;
         }

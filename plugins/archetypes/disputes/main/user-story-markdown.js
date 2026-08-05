@@ -20,7 +20,7 @@ const plugin = {
     name: 'User Story Markdown',
     description:
         'Markdown-rendered User Story replica and full-story copy button in the Task Scenario modal',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -171,12 +171,12 @@ const plugin = {
                 if (Context.buttonFeedback) {
                     Context.buttonFeedback.flashSuccess(copyBtn, { restoreStyles: false });
                 }
-                Logger.log(this.id + ': copied scenario story (' + text.length + ' chars)');
+                Logger.log('copied scenario story (' + text.length + ' chars)');
             } else {
                 if (Context.buttonFeedback) {
                     Context.buttonFeedback.flashFailure(copyBtn, { restoreStyles: false });
                 }
-                Logger.warn(this.id + ': scenario story copy failed');
+                Logger.warn('scenario story copy failed');
             }
         });
 
@@ -184,7 +184,7 @@ const plugin = {
         heading.appendChild(copyBtn);
 
         if (!state.copyButtonLogged) {
-            Logger.log(this.id + ': copy button injected in Task Scenario modal');
+            Logger.log('copy button injected in Task Scenario modal');
             state.copyButtonLogged = true;
         }
     }

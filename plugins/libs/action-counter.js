@@ -41,7 +41,7 @@ const ActionCounterApi = {
 
         if (!state.activationLogged) {
             const detail = opts.activationDetail || 'counter injected';
-            Logger.log(`${logTag}: ${detail} (count=${this.getCount()})`);
+            Logger.log(`${detail} (count=${this.getCount()})`);
             state.activationLogged = true;
         }
     },
@@ -57,9 +57,9 @@ const ActionCounterApi = {
             const parsed = parseInt(legacy, 10);
             if (Number.isNaN(parsed)) return;
             Storage.set(this.storageKeys.count, this.clampCount(parsed));
-            Logger.log(`${this.id}: migrated legacy count ${parsed} from standalone script`);
+            Logger.log(`migrated legacy count ${parsed} from standalone script`);
         } catch (error) {
-            Logger.warn(`${this.id}: legacy count migration failed`, error);
+            Logger.warn(`legacy count migration failed`, error);
         }
     },
 
@@ -79,7 +79,7 @@ const ActionCounterApi = {
         const next = this.clampCount(val);
         Storage.set(this.storageKeys.count, next);
         if (reason && prev !== next) {
-            Logger.log(`${this.id}: count ${prev}→${next} (${reason})`);
+            Logger.log(`count ${prev}→${next} (${reason})`);
         }
         return next;
     },
@@ -233,7 +233,7 @@ const plugin = {
     name: 'Action Counter (library)',
     description:
         'Shared API for action counter chrome and storage (archetype modules supply find/mount)',
-    _version: '3.0',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -257,7 +257,7 @@ const plugin = {
             }
         };
         if (!state.registered) {
-            Logger.log('actionCounterLib: module registered (Context.actionCounter)');
+            Logger.log('module registered (Context.actionCounter)');
             state.registered = true;
         }
     }

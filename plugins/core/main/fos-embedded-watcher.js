@@ -1,6 +1,8 @@
 // fos-embedded-watcher.js
-// Parent-page watcher: detects FOS env instances via orchestrator + latch, authorizes embedded
-// iframe clipboard bridge, and hosts VM Clipboard UI (system clipboard I/O stays on the parent).
+// Parent-page watcher: detects FOS desktop envs via orchestrator + latch + noVNC/child shape
+// (not env_key name substrings), authorizes embedded iframe clipboard bridge, and hosts
+// VM Clipboard UI (system clipboard I/O stays on the parent).
+// Bar hosts on CU creation/QA claim UI via Context.fosEmbedded; floating panel mounts only when no host claimed.
 
 const FOS_ENV_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 const FOS_ORCHESTRATOR_INSTANCES_URL = 'https://orchestrator.fleetai.com/v1/env/instances';
@@ -19,11 +21,36 @@ function fosInstanceIdFromHostname(hostname) {
     return String(hostname || '').split('.')[0] || '';
 }
 
-function fosIsFosEnvKey(envKey) {
-    return String(envKey || '').includes('fos');
+/**
+ * FOS desktop / noVNC fetch shape (not env_key names).
+ * Root /api/v1/env/timestamp alone is NOT sufficient — single-app web envs use it too.
+ */
+function fosIsDesktopShapePath(pathname) {
+    const path = String(pathname || '');
+    if (!path) {
+        return false;
+    }
+    if (path === '/websockify' || path.endsWith('/websockify')) {
+        return true;
+    }
+    if (path === '/core/rfb.js' || path.endsWith('/core/rfb.js')) {
+        return true;
+    }
+    if (path === '/app/ui.js' || path.endsWith('/app/ui.js')) {
+        return true;
+    }
+    return false;
 }
 
-/** Any env-subdomain GET whose path includes "timestamp" (readiness probe path varies by FOS env). */
+function fosIsEnvDesktopShapeRequest(meta) {
+    return (
+        !!meta.urlObj &&
+        FOS_ENV_HOST_PATTERN.test(meta.urlObj.hostname) &&
+        fosIsDesktopShapePath(meta.urlObj.pathname)
+    );
+}
+
+/** Any env-subdomain GET whose path includes "timestamp" (readiness probe path varies by env). */
 function fosIsEnvTimestampProbe(meta) {
     return (
         meta.method === 'GET' &&
@@ -164,8 +191,8 @@ const plugin = {
     id: 'fosEmbeddedWatcher',
     name: 'FOS Embedded Watcher',
     description:
-        'Detects embedded FOS env instances, signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '1.3',
+        'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -173,13 +200,17 @@ const plugin = {
         pendingChildren: null,
         clipboardPanels: null,
         pendingRequests: null,
+        readyInstances: null,
+        uiHosts: null,
+        readinessListeners: null,
         messageListenerInstalled: false,
         resultListenerInstalled: false,
         iframeObserverInstalled: false,
         layoutListenersInstalled: false,
         activationLogged: false,
         clipboardPatchedLogged: false,
-        panelMountedLogged: false
+        panelMountedLogged: false,
+        apiRegistered: false
     },
 
     init(state, _context) {
@@ -195,13 +226,222 @@ const plugin = {
         if (!state.pendingRequests) {
             state.pendingRequests = new Map();
         }
+        if (!state.readyInstances) {
+            state.readyInstances = new Map();
+        }
+        if (!state.uiHosts) {
+            state.uiHosts = new Set();
+        }
+        if (!state.readinessListeners) {
+            state.readinessListeners = new Set();
+        }
+        this._state = state;
+        this._exposeApi(state);
         this._subscribeOrchestrator(state);
+        this._subscribeDesktopShape(state);
         this._subscribeLatch(state);
         this._listenChildReady(state);
         this._listenClipboardResults(state);
         this._watchEnvIframes(state);
         this._installLayoutListeners(state);
-        Logger.debug('fosEmbeddedWatcher: parent watchers registered');
+        Logger.debug('parent watchers registered');
+    },
+
+    _exposeApi(state) {
+        const self = this;
+        Context.fosEmbedded = {
+            claimUiHost(ownerId) {
+                const id = String(ownerId || '');
+                if (!id) {
+                    return;
+                }
+                const wasEmpty = state.uiHosts.size === 0;
+                state.uiHosts.add(id);
+                if (wasEmpty && state.uiHosts.size > 0) {
+                    self._teardownAllPanels(state);
+                    Logger.log('UI host claimed — floating VM Clipboard suppressed');
+                }
+            },
+            releaseUiHost(ownerId) {
+                const id = String(ownerId || '');
+                if (!id) {
+                    return;
+                }
+                state.uiHosts.delete(id);
+                if (state.uiHosts.size === 0) {
+                    Logger.log('UI hosts cleared — floating VM Clipboard allowed');
+                    state.readyInstances.forEach((entry, instanceId) => {
+                        if (entry && entry.iframe && entry.child) {
+                            self._mountClipboardPanel(state, instanceId, entry.child, entry.iframe);
+                        }
+                    });
+                }
+            },
+            subscribe(listener) {
+                if (typeof listener !== 'function') {
+                    return () => {};
+                }
+                state.readinessListeners.add(listener);
+                state.readyInstances.forEach((_entry, instanceId) => {
+                    try {
+                        listener({ instanceId, ready: true });
+                    } catch (_e) {
+                        /* ignore */
+                    }
+                });
+                return () => {
+                    state.readinessListeners.delete(listener);
+                };
+            },
+            getReadyInstances() {
+                return self._getReadyInstancesList(state);
+            },
+            overwrite(instanceId) {
+                return self._overwriteInstance(state, instanceId);
+            },
+            extract(instanceId) {
+                return self._extractInstance(state, instanceId);
+            },
+            hasUiHost() {
+                return state.uiHosts.size > 0;
+            }
+        };
+        if (!state.apiRegistered) {
+            state.apiRegistered = true;
+            Logger.log('Context.fosEmbedded registered');
+        }
+    },
+
+    _getReadyInstancesList(state) {
+        const list = [];
+        state.readyInstances.forEach((entry, instanceId) => {
+            if (!entry || !entry.iframe || !entry.iframe.isConnected || !entry.child) {
+                return;
+            }
+            list.push({
+                instanceId,
+                iframe: entry.iframe,
+                child: entry.child
+            });
+        });
+        return list;
+    },
+
+    _notifyReadiness(state, instanceId, ready) {
+        state.readinessListeners.forEach((listener) => {
+            try {
+                listener({ instanceId: String(instanceId), ready: !!ready });
+            } catch (e) {
+                Logger.warn('readiness listener threw', e);
+            }
+        });
+    },
+
+    _markInstanceReady(state, instanceId, child, iframe) {
+        const id = String(instanceId);
+        const prev = state.readyInstances.get(id);
+        const wasReady = !!(prev && prev.iframe && prev.iframe.isConnected);
+        state.readyInstances.set(id, { instanceId: id, child, iframe });
+        if (!wasReady) {
+            this._notifyReadiness(state, id, true);
+        }
+    },
+
+    _unmarkInstanceReady(state, instanceId) {
+        const id = String(instanceId);
+        if (!state.readyInstances.has(id)) {
+            return;
+        }
+        state.readyInstances.delete(id);
+        this._notifyReadiness(state, id, false);
+    },
+
+    _resolveChild(state, instanceId) {
+        const ready = state.readyInstances.get(String(instanceId));
+        if (ready && ready.child && ready.child.source) {
+            return ready.child;
+        }
+        const panel = state.clipboardPanels.get(String(instanceId));
+        if (panel && panel.child && panel.child.source) {
+            return panel.child;
+        }
+        const rec = state.fosInstances.get(String(instanceId));
+        if (rec && rec.child && rec.child.source) {
+            return rec.child;
+        }
+        return null;
+    },
+
+    async _overwriteInstance(state, instanceId) {
+        const id = String(instanceId || '');
+        const child = this._resolveChild(state, id);
+        if (!child || !child.source) {
+            Logger.warn('overwrite failed — child missing for ' + id);
+            return false;
+        }
+        let text;
+        try {
+            text = await navigator.clipboard.readText();
+        } catch (e) {
+            Logger.warn('overwrite failed — could not read system clipboard', e);
+            return false;
+        }
+        if (text == null) {
+            return false;
+        }
+        const requestId = fosNextRequestId();
+        const resultPromise = this._waitForChildResult(state, requestId, 8000);
+        try {
+            child.source.postMessage(
+                { type: FOS_PUSH_TYPE, text: String(text), requestId },
+                child.origin || '*'
+            );
+        } catch (ePost) {
+            state.pendingRequests.delete(requestId);
+            Logger.warn('push postMessage failed', ePost);
+            return false;
+        }
+        const result = await resultPromise;
+        if (result && result.ok) {
+            Logger.log('overwrite ok for ' + id);
+            return true;
+        }
+        Logger.warn('overwrite failed for ' + id);
+        return false;
+    },
+
+    async _extractInstance(state, instanceId) {
+        const id = String(instanceId || '');
+        const child = this._resolveChild(state, id);
+        if (!child || !child.source) {
+            Logger.warn('extract failed — child missing for ' + id);
+            return false;
+        }
+        const requestId = fosNextRequestId();
+        const resultPromise = this._waitForChildResult(state, requestId, 8000);
+        try {
+            child.source.postMessage(
+                { type: FOS_EXTRACT_REQ_TYPE, requestId },
+                child.origin || '*'
+            );
+        } catch (ePost) {
+            state.pendingRequests.delete(requestId);
+            Logger.warn('extract postMessage failed', ePost);
+            return false;
+        }
+        const result = await resultPromise;
+        if (!result || !result.ok || typeof result.text !== 'string' || !result.text) {
+            Logger.warn('extract failed for ' + id);
+            return false;
+        }
+        try {
+            await navigator.clipboard.writeText(result.text);
+            Logger.log('extract ok for ' + id);
+            return true;
+        } catch (eWrite) {
+            Logger.warn('extract failed — could not write system clipboard', eWrite);
+            return false;
+        }
     },
 
     _ensureInstance(state, instanceId) {
@@ -209,19 +449,38 @@ const plugin = {
             state.fosInstances.set(instanceId, {
                 envKey: null,
                 latchReady: false,
+                isFosDesktop: false,
                 child: null
             });
         }
         return state.fosInstances.get(instanceId);
     },
 
+    _markFosDesktop(state, instanceId, reason) {
+        const id = String(instanceId || '');
+        if (!id) {
+            return false;
+        }
+        const rec = this._ensureInstance(state, id);
+        if (rec.isFosDesktop) {
+            return false;
+        }
+        rec.isFosDesktop = true;
+        Logger.log('FOS desktop shape for instance ' +
+                id +
+                (reason ? ' (' + reason + ')' : '')
+        );
+        this._onInstanceProgress(state, id);
+        return true;
+    },
+
     _logClipboardPatched(state, iframe) {
         const host = fosHostnameFromIframe(iframe) || 'unknown';
         if (!state.clipboardPatchedLogged) {
             state.clipboardPatchedLogged = true;
-            Logger.log('fosEmbeddedWatcher: enabled clipboard permissions on env iframe ' + host);
+            Logger.log('enabled clipboard permissions on env iframe ' + host);
         } else {
-            Logger.debug('fosEmbeddedWatcher: clipboard permissions patched on ' + host);
+            Logger.debug('clipboard permissions patched on ' + host);
         }
     },
 
@@ -253,7 +512,7 @@ const plugin = {
             this._patchIframeClipboardAllow(state, frames[i]);
         }
         this._repositionAllPanels(state);
-        this._pruneMissingPanels(state);
+        this._pruneMissingReady(state);
     },
 
     _watchEnvIframes(state) {
@@ -297,7 +556,7 @@ const plugin = {
                 }
             }
             self._repositionAllPanels(state);
-            self._pruneMissingPanels(state);
+            self._pruneMissingReady(state);
         });
         observer.observe(target, {
             childList: true,
@@ -351,15 +610,24 @@ const plugin = {
         });
     },
 
-    _pruneMissingPanels(state) {
+    _pruneMissingReady(state) {
         const toRemove = [];
-        state.clipboardPanels.forEach((entry, instanceId) => {
+        state.readyInstances.forEach((entry, instanceId) => {
             if (!entry || !entry.iframe || !entry.iframe.isConnected) {
                 toRemove.push(instanceId);
             }
         });
+        // Also prune floating panels whose iframe is gone even if not in readyInstances
+        state.clipboardPanels.forEach((entry, instanceId) => {
+            if (!entry || !entry.iframe || !entry.iframe.isConnected) {
+                if (toRemove.indexOf(instanceId) === -1) {
+                    toRemove.push(instanceId);
+                }
+            }
+        });
         toRemove.forEach((id) => {
             this._teardownPanel(state, id);
+            this._unmarkInstanceReady(state, id);
         });
     },
 
@@ -372,7 +640,17 @@ const plugin = {
             entry.root.parentNode.removeChild(entry.root);
         }
         state.clipboardPanels.delete(instanceId);
-        Logger.debug('fosEmbeddedWatcher: VM Clipboard panel removed for ' + instanceId);
+        Logger.debug('VM Clipboard panel removed for ' + instanceId);
+    },
+
+    _teardownAllPanels(state) {
+        const ids = [];
+        state.clipboardPanels.forEach((_entry, instanceId) => {
+            ids.push(instanceId);
+        });
+        ids.forEach((id) => {
+            this._teardownPanel(state, id);
+        });
     },
 
     _waitForChildResult(state, requestId, timeoutMs) {
@@ -391,6 +669,9 @@ const plugin = {
     },
 
     _mountClipboardPanel(state, instanceId, child, iframe) {
+        if (state.uiHosts.size > 0) {
+            return;
+        }
         if (!iframe || !child || !child.source) {
             return;
         }
@@ -478,100 +759,21 @@ const plugin = {
         const bOverwrite = makeBtn('Overwrite');
 
         bOverwrite.addEventListener('click', () => {
-            const entry = state.clipboardPanels.get(instanceId);
-            if (!entry || !entry.child || !entry.child.source) {
-                fosFlashBtn(bOverwrite, false);
-                Logger.warn('fosEmbeddedWatcher: overwrite failed — child missing for ' + instanceId);
-                return;
-            }
-            const requestId = fosNextRequestId();
-            const readPromise = (async () => {
-                try {
-                    return await navigator.clipboard.readText();
-                } catch (e) {
-                    Logger.warn('fosEmbeddedWatcher: overwrite failed — could not read system clipboard', e);
-                    return null;
-                }
-            })();
-            readPromise
-                .then(async (text) => {
-                    if (text == null) {
-                        fosFlashBtn(bOverwrite, false);
-                        return;
-                    }
-                    const resultPromise = self._waitForChildResult(state, requestId, 8000);
-                    try {
-                        entry.child.source.postMessage(
-                            { type: FOS_PUSH_TYPE, text: String(text), requestId },
-                            entry.child.origin || '*'
-                        );
-                    } catch (ePost) {
-                        state.pendingRequests.delete(requestId);
-                        fosFlashBtn(bOverwrite, false);
-                        Logger.warn('fosEmbeddedWatcher: push postMessage failed', ePost);
-                        return;
-                    }
-                    const result = await resultPromise;
-                    fosFlashBtn(bOverwrite, !!(result && result.ok));
-                    if (result && result.ok) {
-                        Logger.log('fosEmbeddedWatcher: overwrite ok for ' + instanceId);
-                    } else {
-                        Logger.warn('fosEmbeddedWatcher: overwrite failed for ' + instanceId);
-                    }
-                })
-                .catch(() => {
-                    fosFlashBtn(bOverwrite, false);
-                });
+            self._overwriteInstance(state, instanceId).then((ok) => {
+                fosFlashBtn(bOverwrite, !!ok);
+            });
         });
 
         bExtract.addEventListener('click', () => {
-            const entry = state.clipboardPanels.get(instanceId);
-            if (!entry || !entry.child || !entry.child.source) {
-                fosFlashBtn(bExtract, false);
-                Logger.warn('fosEmbeddedWatcher: extract failed — child missing for ' + instanceId);
-                return;
-            }
-            const requestId = fosNextRequestId();
-            const resultPromise = self._waitForChildResult(state, requestId, 8000);
-            try {
-                entry.child.source.postMessage(
-                    { type: FOS_EXTRACT_REQ_TYPE, requestId },
-                    entry.child.origin || '*'
-                );
-            } catch (ePost) {
-                state.pendingRequests.delete(requestId);
-                fosFlashBtn(bExtract, false);
-                Logger.warn('fosEmbeddedWatcher: extract postMessage failed', ePost);
-                return;
-            }
-            resultPromise
-                .then(async (result) => {
-                    if (!result || !result.ok || typeof result.text !== 'string' || !result.text) {
-                        fosFlashBtn(bExtract, false);
-                        Logger.warn('fosEmbeddedWatcher: extract failed for ' + instanceId);
-                        return;
-                    }
-                    try {
-                        await navigator.clipboard.writeText(result.text);
-                        fosFlashBtn(bExtract, true);
-                        Logger.log('fosEmbeddedWatcher: extract ok for ' + instanceId);
-                    } catch (eWrite) {
-                        fosFlashBtn(bExtract, false);
-                        Logger.warn(
-                            'fosEmbeddedWatcher: extract failed — could not write system clipboard',
-                            eWrite
-                        );
-                    }
-                })
-                .catch(() => {
-                    fosFlashBtn(bExtract, false);
-                });
+            self._extractInstance(state, instanceId).then((ok) => {
+                fosFlashBtn(bExtract, !!ok);
+            });
         });
 
         closeBtn.addEventListener('click', (ev) => {
             ev.stopPropagation();
             self._teardownPanel(state, instanceId);
-            Logger.log('fosEmbeddedWatcher: VM Clipboard panel dismissed for ' + instanceId);
+            Logger.log('VM Clipboard panel dismissed for ' + instanceId);
         });
 
         btnRow.appendChild(bExtract);
@@ -628,7 +830,6 @@ const plugin = {
                 return userMoved;
             }
         };
-        // Keep userMoved in sync for reposition skip
         Object.defineProperty(entry, 'userMoved', {
             get() {
                 return userMoved;
@@ -643,15 +844,15 @@ const plugin = {
 
         if (!state.panelMountedLogged) {
             state.panelMountedLogged = true;
-            Logger.log('fosEmbeddedWatcher: mounted parent VM Clipboard for ' + instanceId);
+            Logger.log('mounted parent VM Clipboard for ' + instanceId);
         } else {
-            Logger.debug('fosEmbeddedWatcher: mounted VM Clipboard for ' + instanceId);
+            Logger.debug('mounted VM Clipboard for ' + instanceId);
         }
     },
 
     _tryNotifyChild(state, instanceId, child) {
         const rec = state.fosInstances.get(instanceId);
-        if (!rec || !rec.latchReady || !rec.envKey || !fosIsFosEnvKey(rec.envKey)) {
+        if (!rec || !rec.latchReady || !rec.envKey || !rec.isFosDesktop) {
             return false;
         }
         if (!child || !child.source || typeof child.source.postMessage !== 'function') {
@@ -677,23 +878,23 @@ const plugin = {
                 (hostname ? fosFindEnvIframeByHostname(hostname) : null);
             if (iframe) {
                 this._patchIframeClipboardAllow(state, iframe);
+                this._markInstanceReady(state, instanceId, child, iframe);
                 this._mountClipboardPanel(state, instanceId, child, iframe);
             }
             if (!state.activationLogged) {
                 state.activationLogged = true;
-                Logger.log(
-                    'fosEmbeddedWatcher: signaled embedded FOS iframe for instance ' +
+                Logger.log('signaled embedded FOS iframe for instance ' +
                         instanceId +
                         ' (' +
                         rec.envKey +
                         ')'
                 );
             } else {
-                Logger.debug('fosEmbeddedWatcher: signaled instance ' + instanceId);
+                Logger.debug('signaled instance ' + instanceId);
             }
             return true;
         } catch (e) {
-            Logger.warn('fosEmbeddedWatcher: postMessage to child failed for ' + instanceId, e);
+            Logger.warn('postMessage to child failed for ' + instanceId, e);
             return false;
         }
     },
@@ -714,7 +915,7 @@ const plugin = {
 
     _subscribeOrchestrator(state) {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.warn('fosEmbeddedWatcher: NetworkObserver unavailable; orchestrator capture skipped');
+            Logger.warn('NetworkObserver unavailable; orchestrator capture skipped');
             return;
         }
         const self = this;
@@ -734,14 +935,13 @@ const plugin = {
                 response
                     .json()
                     .then((body) => {
-                        if (!body || !body.instance_id || !fosIsFosEnvKey(body.env_key)) {
+                        if (!body || !body.instance_id || body.env_key == null || body.env_key === '') {
                             return;
                         }
                         const instanceId = String(body.instance_id);
                         const rec = self._ensureInstance(state, instanceId);
                         rec.envKey = String(body.env_key);
-                        Logger.log(
-                            'fosEmbeddedWatcher: FOS instance registered ' +
+                        Logger.log('env instance registered ' +
                                 instanceId +
                                 ' env=' +
                                 rec.envKey
@@ -753,9 +953,37 @@ const plugin = {
         });
     },
 
+    _subscribeDesktopShape(state) {
+        if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
+            Logger.warn('NetworkObserver unavailable; desktop shape capture skipped');
+            return;
+        }
+        const self = this;
+        Context.networkObserver.subscribe({
+            id: 'fos-embedded-watcher-desktop-shape',
+            matches(meta) {
+                return fosIsEnvDesktopShapeRequest(meta);
+            },
+            onRequest(meta) {
+                const instanceId = fosInstanceIdFromHostname(meta.urlObj.hostname);
+                if (!instanceId) {
+                    return;
+                }
+                self._markFosDesktop(state, instanceId, meta.urlObj.pathname);
+            },
+            onResponse(meta, _response) {
+                const instanceId = fosInstanceIdFromHostname(meta.urlObj.hostname);
+                if (!instanceId) {
+                    return;
+                }
+                self._markFosDesktop(state, instanceId, meta.urlObj.pathname);
+            }
+        });
+    },
+
     _subscribeLatch(state) {
         if (!Context.networkObserver || typeof Context.networkObserver.subscribe !== 'function') {
-            Logger.warn('fosEmbeddedWatcher: NetworkObserver unavailable; latch capture skipped');
+            Logger.warn('NetworkObserver unavailable; latch capture skipped');
             return;
         }
         const self = this;
@@ -775,8 +1003,7 @@ const plugin = {
                 const rec = self._ensureInstance(state, instanceId);
                 if (!rec.latchReady) {
                     rec.latchReady = true;
-                    Logger.log(
-                        'fosEmbeddedWatcher: env ready for instance ' +
+                    Logger.log('env ready for instance ' +
                             instanceId +
                             ' (' +
                             meta.urlObj.pathname +
@@ -851,10 +1078,11 @@ const plugin = {
             }
             const child = { source: event.source, origin: event.origin };
             self._patchIframeForChild(state, child, hostname);
-            Logger.debug('fosEmbeddedWatcher: child-ready from ' + instanceId);
+            self._markFosDesktop(state, instanceId, 'child-ready');
+            Logger.debug('child-ready from ' + instanceId);
             if (!self._tryNotifyChild(state, instanceId, child)) {
                 state.pendingChildren.set(instanceId, child);
-                Logger.debug('fosEmbeddedWatcher: child queued pending latch for ' + instanceId);
+                Logger.debug('child queued pending latch for ' + instanceId);
             }
         });
     }

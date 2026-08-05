@@ -105,7 +105,7 @@ const plugin = {
     id: 'textSanitizer',
     name: 'Text Sanitizer',
     description: 'Adds a text sanitizer utility for quickly cleaning and transforming text',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: false,
     phase: 'mutation',
 
@@ -284,7 +284,7 @@ const plugin = {
             const duplicates = this.findAllTextSanitizersAmongSiblings(anchor);
             duplicates.forEach((el) => {
                 el.remove();
-                Logger.log('✓ Text Sanitizer: Removed duplicate');
+                Logger.debug('Text Sanitizer: Removed duplicate');
             });
             return;
         }
@@ -295,7 +295,7 @@ const plugin = {
             if (all.length > 1) {
                 for (let i = 1; i < all.length; i++) {
                     all[i].remove();
-                    Logger.log('✓ Text Sanitizer: Removed duplicate');
+                    Logger.debug('Text Sanitizer: Removed duplicate');
                 }
             }
             const remaining = this.findAllTextSanitizersAmongSiblings(anchor);
@@ -309,7 +309,7 @@ const plugin = {
 
         const container = this.createContainer(state);
         anchor.insertAdjacentElement('afterend', container);
-        Logger.log('✓ Text Sanitizer: Inserted below scratchpad area');
+        Logger.log('Text Sanitizer: Inserted below scratchpad area');
     },
 
     createContainer(state) {
@@ -457,7 +457,7 @@ const plugin = {
                 const output = action.run(input);
                 textarea.value = output;
                 updateTextareaHeight();
-                Logger.log('✓ Text Sanitizer: Executed ' + action.label);
+                Logger.log('Text Sanitizer: Executed ' + action.label);
             } catch (e) {
                 Logger.error('Text Sanitizer: Execute failed', e);
                 textarea.value = input;

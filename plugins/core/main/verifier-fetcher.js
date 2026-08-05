@@ -37,6 +37,10 @@ const DECODE_SYSTEM_PROMPT =
     + 'may be grouped into one bullet point for better synthesis. No restating of code. If the '
     + 'output does not match the code, simply state that there seems to be a mismatch. Do not '
     + 'acknowledge checks that passed. If there are no failures, state that there is nothing to analyze. '
+    + 'Match the certainty of what the verifier establishes: when the source and output make a '
+    + 'fact certain, state it as fact — do not hedge with words like "likely", "suggests", '
+    + '"might", or "appears". Reserve uncertainty language only when the code or output '
+    + 'genuinely leave something undetermined. '
     + 'In this current scenario, the only thing that the reviewer can do to attempt to fix the errors '
     + 'is to attempt the task while completing different actions. The reviewer cannot modify the verifier code. '
     + 'Therefore, do not suggest modifications to the code ever; only changes in how the task is '
@@ -84,7 +88,7 @@ function writeVerifierScratchpadWidthPref(widthPx) {
         const clamped = Math.max(VERIFIER_SCRATCHPAD_MIN_WIDTH, Math.round(widthPx));
         Storage.setData(VERIFIER_SCRATCHPAD_WIDTH_KEY, String(clamped));
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write verifier output width pref', err);
+        Logger.warn('failed to write verifier output width pref', err);
     }
 }
 
@@ -100,7 +104,7 @@ function writeVerifierScratchpadOpenPref(open) {
     try {
         Storage.setData(VERIFIER_SCRATCHPAD_OPEN_KEY, open ? '1' : '0');
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write verifier output open pref', err);
+        Logger.warn('failed to write verifier output open pref', err);
     }
 }
 
@@ -108,7 +112,7 @@ function clearLegacyVerifierScratchpadText() {
     try {
         Storage.deleteData(VERIFIER_SCRATCHPAD_LEGACY_TEXT_KEY);
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to clear legacy verifier output text', err);
+        Logger.warn('failed to clear legacy verifier output text', err);
     }
 }
 
@@ -124,7 +128,7 @@ function writeVerifierChatOpenPref(open) {
     try {
         Storage.setData(VERIFIER_CHAT_OPEN_KEY, open ? '1' : '0');
     } catch (err) {
-        Logger.warn('verifier-fetcher: failed to write chat open pref', err);
+        Logger.warn('failed to write chat open pref', err);
     }
 }
 
@@ -168,7 +172,7 @@ function getVerifierChatSessionId(modal) {
 function verifierRecordTurn(modal, turn) {
     const api = Context.dashboardChats;
     if (!api || typeof api.recordTurn !== 'function') {
-        Logger.warn('verifier-fetcher: dashboardChats unavailable — turn not indexed');
+        Logger.warn('dashboardChats unavailable — turn not indexed');
         return;
     }
     const t = turn || {};
@@ -200,7 +204,7 @@ function setVerifierChatFetchContext(modal, ctx) {
     // Source is required; verifierId falls back so uniqueness checks still work.
     if (!ctx || !String(ctx.source || '').trim()) {
         modal._wfVerifierChatPending = null;
-        Logger.debug('verifier-fetcher: chat fetch context cleared');
+        Logger.debug('chat fetch context cleared');
         return;
     }
     const taskId = String(ctx.taskId || '');
@@ -219,7 +223,7 @@ function setVerifierChatFetchContext(modal, ctx) {
         version: ctx.version != null ? ctx.version : null,
         source: String(ctx.source || ''),
     };
-    Logger.debug('verifier-fetcher: chat fetch context set · verifier '
+    Logger.debug('chat fetch context set · verifier '
         + modal._wfVerifierChatPending.verifierId
         + (modal._wfVerifierChatPending.version != null
             ? ' v' + modal._wfVerifierChatPending.version
@@ -279,11 +283,11 @@ function takeVerifierAttachmentForTurn(modal, state) {
     if (modal) modal._wfVerifierChatPending = null;
 
     if (verifierChatHasAttachedId(state, ctx.verifierId)) {
-        Logger.log('verifier-fetcher: skip verifier attach — already in chat · '
+        Logger.debug('skip verifier attach — already in chat · '
             + ctx.verifierId);
         return null;
     }
-    Logger.log('verifier-fetcher: attaching verifier context · '
+    Logger.log('attaching verifier context · '
         + ctx.verifierId
         + (ctx.version != null ? ' v' + ctx.version : '')
         + ' (' + ctx.source.length + ' chars)');
@@ -319,7 +323,7 @@ async function sendVerifierChatMessage(modal, userText) {
     const text = String(userText || '').trim();
     if (!chat || !state || !text || state.streaming) return;
     if (!hasVerifierAiKey()) {
-        Logger.warn('verifier-fetcher: send blocked — no OpenRouter key stored');
+        Logger.warn('send blocked — no OpenRouter key stored');
         return;
     }
 
@@ -330,7 +334,7 @@ async function sendVerifierChatMessage(modal, userText) {
         try {
             await chat.ensureMounted(modal, state, verifierChatOpts());
         } catch (err) {
-            Logger.error('verifier-fetcher: chat mount failed before send', err);
+            Logger.error('chat mount failed before send', err);
             return;
         }
     }
@@ -346,8 +350,10 @@ async function sendVerifierChatMessage(modal, userText) {
             userContent,
             displayContent: text,
             displayAttachment: attachment,
+            systemContent: DECODE_SYSTEM_PROMPT,
             onTurnDone: (turn) => verifierRecordTurn(modal, turn),
         }));
+
     } catch (_err) {
         // sendTurn already logged and finalized the error bubble
     }
@@ -356,7 +362,7 @@ async function sendVerifierChatMessage(modal, userText) {
 async function decodeVerifierOutput(modal) {
     const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
     if (!hasVerifierAiKey()) {
-        Logger.warn('verifier-fetcher: Diagnose Issues blocked — no OpenRouter key stored');
+        Logger.warn('Diagnose Issues blocked — no OpenRouter key stored');
         return;
     }
     const codeEl = modal.querySelector('#wf-ops-verifier-output');
@@ -365,12 +371,12 @@ async function decodeVerifierOutput(modal) {
     const outputText = ta ? String(ta.value || '').trim() : '';
 
     if (!codeText) {
-        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty verifier code');
+        Logger.warn('Diagnose Issues blocked — empty verifier code');
         if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
         return;
     }
     if (!outputText) {
-        Logger.warn('verifier-fetcher: Diagnose Issues blocked — empty Verifier Output');
+        Logger.warn('Diagnose Issues blocked — empty Verifier Output');
         if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
         return;
     }
@@ -378,11 +384,11 @@ async function decodeVerifierOutput(modal) {
     const chat = verifierChatApi();
     const state = getVerifierChatState(modal);
     if (!chat || !state) {
-        Logger.error('verifier-fetcher: Diagnose Issues blocked — Context.aiChat unavailable');
+        Logger.error('Diagnose Issues blocked — Context.aiChat unavailable');
         return;
     }
     if (state.streaming) {
-        Logger.warn('verifier-fetcher: Diagnose Issues blocked — stream in progress');
+        Logger.warn('Diagnose Issues blocked — stream in progress');
         return;
     }
 
@@ -391,7 +397,7 @@ async function decodeVerifierOutput(modal) {
         try {
             await chat.ensureMounted(modal, state, verifierChatOpts());
         } catch (err) {
-            Logger.error('verifier-fetcher: chat mount failed before Diagnose', err);
+            Logger.error('chat mount failed before Diagnose', err);
             if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
             return;
         }
@@ -406,7 +412,7 @@ async function decodeVerifierOutput(modal) {
     parts.push('## Verifier Output\n\n```\n' + outputText + '\n```');
     const userPayload = parts.join('\n\n');
 
-    Logger.log('verifier-fetcher: Diagnose Issues started'
+    Logger.debug('Diagnose Issues started'
         + (attachment ? ' · with verifier attach' : ' · without new verifier attach'));
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
@@ -418,10 +424,10 @@ async function decodeVerifierOutput(modal) {
                 userPreview: 'Diagnose Issues',
             })),
         }));
-        Logger.log('verifier-fetcher: Diagnose Issues done');
+        Logger.log('Diagnose Issues done');
     } catch (err) {
         if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashFailure(decodeBtn);
-        Logger.error('verifier-fetcher: Diagnose Issues failed: ' + ((err && err.message) || err));
+        Logger.error('Diagnose Issues failed: ' + ((err && err.message) || err));
     }
 }
 
@@ -431,13 +437,17 @@ function wireVerifierChatComposer(modal) {
     chat.wireComposer(modal, getVerifierChatState(modal), Object.assign({}, verifierChatOpts(), {
         onSend: (value) => sendVerifierChatMessage(modal, value),
         onStop: () => stopVerifierChatStream(modal),
-        onExport: () => chat.exportConversation(
-            getVerifierChatState(modal),
-            Object.assign({}, verifierChatOpts(), {
-                exportFilename: 'verifier-chat-' + new Date().toISOString().slice(0, 10) + '.json',
-                exportMetadata: { feature: 'verifier-fetcher' },
-            })
-        ),
+        onExport: () => {
+            const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+            chat.exportConversation(
+                getVerifierChatState(modal),
+                Object.assign({}, verifierChatOpts(), {
+                    exportFilename: 'verifier-chat-' + stamp + '.json',
+                    exportMetadata: { feature: 'verifier-fetcher' },
+                })
+            );
+        },
+
     }));
 }
 
@@ -539,7 +549,7 @@ function syncVerifierAiUi(modal) {
             });
         }
     }
-    Logger.debug('verifier-fetcher: syncAiUi ai=' + ai + ' chatOpen=' + chatOpen);
+    Logger.debug('syncAiUi ai=' + ai + ' chatOpen=' + chatOpen);
 }
 
 function attachVerifierScratchpadResize(modal) {
@@ -571,7 +581,7 @@ function attachVerifierScratchpadResize(modal) {
                 const finalWidth = clampVerifierScratchpadWidth(outputWrap, scratchpadPane.getBoundingClientRect().width);
                 writeVerifierScratchpadWidthPref(finalWidth);
                 applyVerifierScratchpadLayout(modal, true);
-                Logger.log('verifier-fetcher: verifier output width set to ' + finalWidth + 'px');
+                Logger.log('verifier output width set to ' + finalWidth + 'px');
             }
         });
     });
@@ -887,7 +897,7 @@ function attachVerifierFetcherListeners(modal) {
             const nextOpen = !readVerifierScratchpadOpenPref();
             writeVerifierScratchpadOpenPref(nextOpen);
             applyVerifierScratchpadLayout(modal, nextOpen);
-            Logger.log('verifier-fetcher: verifier output ' + (nextOpen ? 'shown' : 'hidden'));
+            Logger.log('verifier output ' + (nextOpen ? 'shown' : 'hidden'));
             if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
         });
     }
@@ -897,7 +907,7 @@ function attachVerifierFetcherListeners(modal) {
             const nextOpen = !readVerifierChatOpenPref();
             writeVerifierChatOpenPref(nextOpen);
             syncVerifierAiUi(modal);
-            Logger.log('verifier-fetcher: chat ' + (nextOpen ? 'shown' : 'hidden'));
+            Logger.log('chat ' + (nextOpen ? 'shown' : 'hidden'));
             if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
         });
     }
@@ -905,7 +915,7 @@ function attachVerifierFetcherListeners(modal) {
     if (decodeBtn) {
         decodeBtn.addEventListener('click', () => {
             if (!hasVerifierAiKey()) {
-                Logger.warn('verifier-fetcher: Diagnose Issues blocked — no OpenRouter key stored');
+                Logger.warn('Diagnose Issues blocked — no OpenRouter key stored');
                 return;
             }
             void decodeVerifierOutput(modal);
@@ -974,7 +984,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.3',
+    _version: '7.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -983,7 +993,7 @@ const plugin = {
         clearLegacyVerifierScratchpadText();
         const loader = Context.dashboard && Context.dashboard._loader;
         if (!loader) {
-            Logger.error('verifier-fetcher: dashboard loader not registered');
+            Logger.error('dashboard loader not registered');
             return;
         }
         Context.verifierFetcherUi = {
@@ -1001,13 +1011,13 @@ const plugin = {
             onActivate(modal) {
                 syncVerifierOutputToolbar(modal);
                 syncVerifierAiUi(modal);
-                Logger.debug('verifier-fetcher: tab activated');
+                Logger.debug('tab activated');
             },
             captureState(modal, dash) {
                 const ops = Context.opsTab;
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('verifier-fetcher: tab registered v7.3');
+        Logger.log('tab registered v7.3');
     }
 };

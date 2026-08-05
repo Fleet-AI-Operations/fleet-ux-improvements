@@ -4,7 +4,7 @@ const EmbeddedUrlbarFitApi = {
     name: 'Computer Use Revision Embedded URL Bar Fit',
     description:
         'Keeps embedded instance toolbar right-side controls visible by forcing URL segment to shrink/truncate',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, appliedLogged: false, hadToolbarRows: false },
@@ -16,12 +16,12 @@ const EmbeddedUrlbarFitApi = {
 
         if (rows.length === 0) {
             if (state.hadToolbarRows) {
-                Logger.debug(`${this.id}: embedded toolbar rows left DOM — truncation inactive`);
+                Logger.debug(`embedded toolbar rows left DOM — truncation inactive`);
                 state.hadToolbarRows = false;
                 state.appliedLogged = false;
             }
             if (!state.missingLogged) {
-                Logger.debug(`${this.id}: no embedded toolbar rows found yet`);
+                Logger.debug(`no embedded toolbar rows found yet`);
                 state.missingLogged = true;
             }
             return;
@@ -61,7 +61,7 @@ const EmbeddedUrlbarFitApi = {
         });
 
         if (fixedThisPass > 0 && !state.appliedLogged) {
-            Logger.log(`${this.id}: URL bar truncation active (${fixedThisPass} matching row(s) adjusted)`);
+            Logger.log(`URL bar truncation active (${fixedThisPass} matching row(s) adjusted)`);
             state.appliedLogged = true;
         }
     }

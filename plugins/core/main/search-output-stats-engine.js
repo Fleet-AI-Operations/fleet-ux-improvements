@@ -1905,14 +1905,14 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '8.2',
+    _version: '8.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
         if (state && state.registered) {
-            Logger.debug('search-output-stats-engine: already registered — skipping re-init');
+            Logger.debug('already registered — skipping re-init');
             return;
         }
         const self = this;
@@ -1978,7 +1978,7 @@ const plugin = {
             chartSupportsLabelOptions: (type) => statsChartSupportsLabelOptions(type),
         };
         if (state) state.registered = true;
-        Logger.log('search-output-stats-engine: registered (Context.statsEngine)');
+        Logger.log('registered (Context.statsEngine)');
     },
 
     _loadLayout() {
@@ -1988,7 +1988,7 @@ const plugin = {
             const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
             return statsNormalizeStore(parsed);
         } catch (e) {
-            Logger.warn('search-output-stats-engine: loadLayout failed — using defaults', e);
+            Logger.warn('loadLayout failed — using defaults', e);
             return statsDefaultStore();
         }
     },
@@ -1998,15 +1998,14 @@ const plugin = {
             const normalized = statsNormalizeStore(layout);
             Storage.setData(STATS_LAYOUT_STORAGE_KEY, JSON.stringify(normalized));
             const active = statsGetActiveDashboard(normalized);
-            Logger.log(
-                'search-output-stats-engine: layout saved — '
+            Logger.log('layout saved — '
                 + normalized.dashboards.length + ' dashboard(s), active "'
                 + (active && active.name ? active.name : '') + '" has '
                 + ((active && active.charts) ? active.charts.length : 0) + ' chart(s)'
             );
             return normalized;
         } catch (e) {
-            Logger.error('search-output-stats-engine: saveLayout failed', e);
+            Logger.error('saveLayout failed', e);
             return null;
         }
     }
