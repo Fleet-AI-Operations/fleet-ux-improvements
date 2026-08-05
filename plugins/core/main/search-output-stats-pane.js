@@ -4349,6 +4349,24 @@ const searchOutputStatsPaneMethods = {
         this._state.statsRenderGen = renderGen;
 
         let rendered = 0;
+        let skippedValidation = 0;
+        let skippedNoData = 0;
+        for (const { validation } of validations) {
+            if (!validation.ok) skippedValidation += 1;
+        }
+        const formatRenderDebug = () => {
+            const skippedTotal = skippedValidation + skippedNoData;
+            let skipSuffix = '';
+            if (skippedTotal > 0) {
+                const parts = [];
+                if (skippedValidation) parts.push(skippedValidation + ' invalid');
+                if (skippedNoData) parts.push(skippedNoData + ' no data');
+                skipSuffix = ', ' + skippedTotal + ' skipped (' + parts.join(', ') + ')';
+            }
+            return 'search-output-stats-pane: stats dashboard rendered — '
+                + items.length + ' item(s), ' + rendered + ' chart(s)' + skipSuffix;
+        };
+
         for (const { chart, validation } of validations) {
             if (!validation.ok || chart.type !== 'scorecard') continue;
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
@@ -4359,8 +4377,8 @@ const searchOutputStatsPaneMethods = {
         const canvasCharts = validations.filter(({ chart, validation }) => validation.ok && chart.type !== 'scorecard');
         if (!canvasCharts.length) {
             this._state.statsCharts = {};
-            if (rendered > 0) {
-                Logger.debug('search-output-stats-pane: stats dashboard rendered — ' + items.length + ' item(s), ' + rendered + ' chart(s)');
+            if (rendered > 0 || skippedValidation > 0 || skippedNoData > 0) {
+                Logger.debug(formatRenderDebug());
             }
             return;
         }
@@ -4392,7 +4410,10 @@ const searchOutputStatsPaneMethods = {
             const canvas = this._q('#wf-dash-stats-canvas-' + chart.id);
             if (!canvas) continue;
             const aggData = engine.aggregateChart(chart, items, catalog, ctx);
-            if (!this._statsChartHasRenderableData(chart, aggData)) continue;
+            if (!this._statsChartHasRenderableData(chart, aggData)) {
+                skippedNoData += 1;
+                continue;
+            }
             const containerWidth = canvas.parentElement ? canvas.parentElement.clientWidth : 0;
             const config = this._statsFinalizeChartJsConfig(
                 this._buildChartJsConfig(chart, aggData, theme, containerWidth, catalog),
@@ -4406,7 +4427,7 @@ const searchOutputStatsPaneMethods = {
             rendered += 1;
         }
         this._state.statsCharts = charts;
-        Logger.debug('search-output-stats-pane: stats dashboard rendered — ' + items.length + ' item(s), ' + rendered + ' chart(s)');
+        Logger.debug(formatRenderDebug());
     },
 
     _statsTabStyle(active) {
@@ -6058,7 +6079,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.16',
+    _version: '12.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
