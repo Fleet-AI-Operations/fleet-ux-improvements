@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.1
+// @version      13.2
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.1';
+    const VERSION = '13.2';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1322,15 +1322,27 @@
             const resolveModuleId = typeof moduleIdSource === 'function'
                 ? moduleIdSource
                 : () => moduleIdSource;
-            return {
-                log: (msg, ...args) => this._logModule('log', msg, resolveModuleId(), ...args),
-                debug: (msg, ...args) => this._logModule('debug', msg, resolveModuleId(), ...args),
-                info: (msg, ...args) => this._logModule('info', msg, resolveModuleId(), ...args),
-                warn: (msg, ...args) => this._logModule('warn', msg, resolveModuleId(), ...args),
-                error: (msg, ...args) => this._logModule('error', msg, resolveModuleId(), ...args),
-                isVerboseEnabled: () => this._shouldLogModule(resolveModuleId()),
-                isDebugEnabled: () => this._shouldLogModule(resolveModuleId())
+            const host = this;
+            // Level methods are module-scoped; all other Logger APIs (settings toggles,
+            // onLog, etc.) must still reach the host — plugins like settings-ui depend on them.
+            const moduleApi = {
+                log: (msg, ...args) => host._logModule('log', msg, resolveModuleId(), ...args),
+                debug: (msg, ...args) => host._logModule('debug', msg, resolveModuleId(), ...args),
+                info: (msg, ...args) => host._logModule('info', msg, resolveModuleId(), ...args),
+                warn: (msg, ...args) => host._logModule('warn', msg, resolveModuleId(), ...args),
+                error: (msg, ...args) => host._logModule('error', msg, resolveModuleId(), ...args)
             };
+            return new Proxy(moduleApi, {
+                get(target, prop, receiver) {
+                    if (prop in target) return Reflect.get(target, prop, receiver);
+                    const hostVal = host[prop];
+                    if (typeof hostVal === 'function') return hostVal.bind(host);
+                    return hostVal;
+                },
+                has(target, prop) {
+                    return prop in target || prop in host;
+                }
+            });
         },
         
         log(msg, ...args) {
