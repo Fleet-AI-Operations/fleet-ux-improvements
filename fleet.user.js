@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.2
+// @version      13.3
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.2';
+    const VERSION = '13.3';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -733,14 +733,28 @@
                 clipQueue = clipQueue
                     .then(async () => {
                         const ok = await pushOsTextToVmClipboard(event.data.text);
-                        reply(event, { type: MSG_PUSH_RESULT, requestId, ok: !!ok });
                         if (ok) {
+                            reply(event, { type: MSG_PUSH_RESULT, requestId, ok: true });
                             console.log(EMBED_LOG + ': push ok');
+                        } else {
+                            reply(event, {
+                                type: MSG_PUSH_RESULT,
+                                requestId,
+                                ok: false,
+                                reason: 'missing-clipboard-field'
+                            });
                         }
                     })
                     .catch((e) => {
+                        const error = String((e && e.message) || e);
                         console.warn(EMBED_LOG + ': push failed', e);
-                        reply(event, { type: MSG_PUSH_RESULT, requestId, ok: false });
+                        reply(event, {
+                            type: MSG_PUSH_RESULT,
+                            requestId,
+                            ok: false,
+                            reason: 'exception',
+                            error
+                        });
                     });
                 return;
             }
@@ -751,19 +765,37 @@
                     .then(async () => {
                         const text = readVmClipboardText();
                         if (text == null) {
-                            reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: false });
+                            reply(event, {
+                                type: MSG_EXTRACT_RESULT,
+                                requestId,
+                                ok: false,
+                                reason: 'missing-clipboard-field'
+                            });
                             return;
                         }
                         if (!text) {
-                            reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: false, text: '' });
+                            reply(event, {
+                                type: MSG_EXTRACT_RESULT,
+                                requestId,
+                                ok: false,
+                                text: '',
+                                reason: 'empty'
+                            });
                             return;
                         }
                         reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: true, text });
                         console.log(EMBED_LOG + ': extract ok');
                     })
                     .catch((e) => {
+                        const error = String((e && e.message) || e);
                         console.warn(EMBED_LOG + ': extract failed', e);
-                        reply(event, { type: MSG_EXTRACT_RESULT, requestId, ok: false });
+                        reply(event, {
+                            type: MSG_EXTRACT_RESULT,
+                            requestId,
+                            ok: false,
+                            reason: 'exception',
+                            error
+                        });
                     });
             }
         });

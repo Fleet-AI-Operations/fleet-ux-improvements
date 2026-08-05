@@ -192,7 +192,7 @@ const plugin = {
     name: 'FOS Embedded Watcher',
     description:
         'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -372,6 +372,26 @@ const plugin = {
         return null;
     },
 
+    _childFailureDetail(result, emptyFallback) {
+        if (!result) {
+            return 'no result';
+        }
+        if (result.timedOut) {
+            return 'timed out';
+        }
+        if (result.reason) {
+            const err =
+                result.error != null && String(result.error)
+                    ? String(result.error)
+                    : '';
+            return err ? result.reason + ': ' + err : String(result.reason);
+        }
+        if (emptyFallback && result.text === '') {
+            return 'VM clipboard empty';
+        }
+        return 'unknown';
+    },
+
     async _overwriteInstance(state, instanceId) {
         const id = String(instanceId || '');
         const child = this._resolveChild(state, id);
@@ -406,7 +426,7 @@ const plugin = {
             Logger.log('overwrite ok for ' + id);
             return true;
         }
-        Logger.warn('overwrite failed for ' + id);
+        Logger.warn('overwrite failed for ' + id + ' — ' + this._childFailureDetail(result, false));
         return false;
     },
 
@@ -431,7 +451,7 @@ const plugin = {
         }
         const result = await resultPromise;
         if (!result || !result.ok || typeof result.text !== 'string' || !result.text) {
-            Logger.warn('extract failed for ' + id);
+            Logger.warn('extract failed for ' + id + ' — ' + this._childFailureDetail(result, true));
             return false;
         }
         try {

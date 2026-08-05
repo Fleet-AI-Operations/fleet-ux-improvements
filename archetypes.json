@@ -1,7 +1,7 @@
 {
-  "version": "13.2",
+  "version": "13.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.252",
+  "archetypesVersion": "14.253",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -40,8 +40,8 @@
     },
     {
       "name": "fos-embedded-watcher.js",
-      "version": "3.1",
-      "hash": "sha256-832cd5db214e952e7ec2e024e18e11b9b3ead71dc3fc773935e5ec94a71fd0ce",
+      "version": "3.2",
+      "hash": "sha256-c34444b2922cd3d59517f4221db73467937ac4cfb408cb14e28b0eec3b91b5c2",
       "log": false
     }
   ],
@@ -102,8 +102,8 @@
     },
     {
       "name": "fos-vm-clipboard-bar.js",
-      "version": "1.4",
-      "hash": "sha256-eb9daefd6d99697b9fe30fcc7a236d76ca7d743a1e8c839b9aa7b73c2ec17e95",
+      "version": "1.5",
+      "hash": "sha256-4cace907dd80d027562709e795353dfcafc5df8d1aa3e8826b3af2bec5f5b803",
       "log": false
     },
     {
