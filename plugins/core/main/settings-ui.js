@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.9',
+    _version: '11.10',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -627,6 +627,7 @@ const plugin = {
 
         const contentStyle = `
             background: ${c.bg};
+            color: ${c.fg};
             border: 1px solid ${c.border};
             border-radius: 12px;
             padding: 24px;
@@ -793,9 +794,9 @@ const plugin = {
             <div id="wf-settings-sticky-header" style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: ${this._settingsThemeColors().bg}; border-bottom: 1px solid ${c.border}; z-index: 1;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                     <div>
-                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0;">Fleet Enhancer Extension</h2>
+                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0; color: ${c.fg};">Fleet Enhancer Extension</h2>
                         <p style="font-size: 13px; color: ${c.muted}; margin: 0;">
-                            v${version} · a${Context.archetypesVersion || '?'} · <strong>${(archetypeId.replace(/archetype/gi, '').trim() || archetypeId)}</strong>
+                            v${version} · a${Context.archetypesVersion || '?'} · <strong style="color: ${c.fg};">${(archetypeId.replace(/archetype/gi, '').trim() || archetypeId)}</strong>
                         </p>
                     </div>
                     <button id="wf-settings-close" style="
@@ -819,8 +820,8 @@ const plugin = {
                 ${updateNotificationHTML}
                 ${opsRefreshBannerHTML}
                 ${tabRowHTML}
-                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 13px; text-align: center;">
-                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="text-decoration: underline;">Refresh</a> the page for changes to take effect.
+                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 13px; text-align: center; color: ${c.fg};">
+                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: var(--brand, #4f46e5); text-decoration: underline;">Refresh</a> the page for changes to take effect.
                 </div>
             </div>
             
@@ -2690,11 +2691,11 @@ const plugin = {
             if (h2) { out.push(`<h3 style="font-size: 15px; font-weight: 600; margin: 10px 0 6px 0; color: ${c.fg};">${processInlines(h2[1])}</h3>`); continue; }
             if (h1) { out.push(`<h2 style="font-size: 16px; font-weight: 600; margin: 12px 0 6px 0; color: ${c.fg};">${processInlines(h1[1])}</h2>`); continue; }
             if (ul) {
-                if (!inList) { inList = true; out.push('<ul style="margin: 6px 0; padding-left: 24px; list-style-type: disc;">'); }
-                out.push(`<li style="margin: 2px 0; display: list-item;">${processInlines(ul[1])}</li>`);
+                if (!inList) { inList = true; out.push('<ul style="margin: 6px 0; padding-left: 24px; list-style-type: disc; color: inherit;">'); }
+                out.push(`<li style="margin: 2px 0; display: list-item; color: inherit;">${processInlines(ul[1])}</li>`);
                 continue;
             }
-            out.push(`<p style="margin: 6px 0; font-size: 13px; line-height: 1.5;">${processInlines(trimmed)}</p>`);
+            out.push(`<p style="margin: 6px 0; font-size: 13px; line-height: 1.5; color: inherit;">${processInlines(trimmed)}</p>`);
         }
         if (inTable) out.push('</tbody></table>');
         if (inList) out.push('</ul>');
