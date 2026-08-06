@@ -393,7 +393,7 @@ const VerifierSourceTabApi = {
                 const cached = state.cache[cacheKey];
                 if (cached && cached.source) {
                     void this.renderSource(state, cached.source);
-                    this.setStatus(state, this.formatReadyStatus(cacheKey, cached));
+                    this.setReadyStatus(state, cacheKey, cached);
                 }
             }
         }
@@ -636,6 +636,10 @@ const VerifierSourceTabApi = {
         const status = document.createElement('div');
         status.style.flex = '1 1 140px';
         status.style.minWidth = '0';
+        status.style.display = 'flex';
+        status.style.flexWrap = 'wrap';
+        status.style.alignItems = 'center';
+        status.style.gap = '6px';
         status.setAttribute('data-fleet-verifier-status', 'true');
         status.style.fontSize = '12px';
         status.style.color = 'var(--muted-foreground, #6b7280)';
@@ -796,7 +800,7 @@ const VerifierSourceTabApi = {
         const cacheKey = this.resolveCacheKey(state);
         const cached = cacheKey ? state.cache[cacheKey] : null;
         if (cached && cached.source) {
-            this.setStatus(state, this.formatReadyStatus(cacheKey, cached));
+            this.setReadyStatus(state, cacheKey, cached);
             return;
         }
         const verifierId = (state.capture && state.capture.verifierId) || (cached && cached.verifierId) || '';
@@ -814,22 +818,72 @@ const VerifierSourceTabApi = {
         }
     },
 
-    formatReadyStatus(cacheKey, entry) {
-        const bits = [];
-        if (cacheKey) {
-            if (UUID_RE.test(cacheKey)) {
-                bits.push(cacheKey.slice(0, 8) + '…');
-            } else {
-                bits.push(cacheKey);
-            }
-        }
-        if (entry && entry.version != null) bits.push('v' + entry.version);
-        if (entry && entry.source) bits.push(entry.source.length + ' chars');
-        return bits.length ? bits.join(' · ') : 'Ready';
+    resolveDisplayTaskId(state, cacheKey) {
+        const fromCaptureKey = state.capture && state.capture.taskKey;
+        if (fromCaptureKey && this.isPlausibleTaskKey(fromCaptureKey)) return fromCaptureKey;
+        if (cacheKey && this.isPlausibleTaskKey(cacheKey)) return cacheKey;
+        if (cacheKey && UUID_RE.test(cacheKey)) return cacheKey;
+        const taskId = state.capture && state.capture.taskId;
+        if (taskId && UUID_RE.test(taskId)) return taskId;
+        return cacheKey || '';
     },
 
     setStatus(state, text) {
-        if (state.statusEl) state.statusEl.textContent = text || '';
+        if (!state.statusEl) return;
+        state.statusEl.replaceChildren();
+        state.statusEl.textContent = text || '';
+    },
+
+    setReadyStatus(state, cacheKey, entry) {
+        if (!state.statusEl) return;
+        const taskId = this.resolveDisplayTaskId(state, cacheKey);
+        const rest = [];
+        if (entry && entry.version != null) rest.push('v' + entry.version);
+        if (entry && entry.source) rest.push(entry.source.length + ' chars');
+
+        state.statusEl.replaceChildren();
+
+        if (taskId) {
+            const chip = document.createElement('button');
+            chip.type = 'button';
+            chip.setAttribute('data-fleet-verifier-task-copy', 'true');
+            chip.setAttribute('data-wf-copy', taskId);
+            chip.title = 'Copy task ID';
+            chip.setAttribute('aria-label', 'Copy task ID ' + taskId);
+            chip.textContent = taskId;
+            chip.style.cssText =
+                'display:inline-flex;align-items:center;max-width:100%;margin:0;padding:2px 6px;' +
+                'border:none;border-radius:4px;cursor:pointer;font:inherit;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;' +
+                'font-size:11px;line-height:1.3;color:inherit;background:var(--muted,#f3f4f6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            chip.addEventListener('click', (event) => {
+                event.preventDefault();
+                const value = chip.getAttribute('data-wf-copy') || '';
+                if (!value) {
+                    if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(chip);
+                    Logger.warn('copy failed — empty task id');
+                    return;
+                }
+                navigator.clipboard.writeText(value).then(
+                    () => {
+                        Logger.log('copied task id (' + value.length + ' chars)');
+                        if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(chip);
+                    },
+                    (err) => {
+                        Logger.error('clipboard failed', err);
+                        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(chip);
+                    }
+                );
+            });
+            state.statusEl.appendChild(chip);
+        }
+
+        if (rest.length) {
+            const meta = document.createElement('span');
+            meta.textContent = (taskId ? ' · ' : '') + rest.join(' · ');
+            state.statusEl.appendChild(meta);
+        } else if (!taskId) {
+            state.statusEl.textContent = 'Ready';
+        }
     },
 
     updateVersionSelect(state, entry) {
@@ -933,7 +987,7 @@ const VerifierSourceTabApi = {
             state.lastFetchedCacheKey = args.effectiveKey;
             await this.renderSource(state, entry.source);
             this.updateVersionSelect(state, entry);
-            this.setStatus(state, this.formatReadyStatus(args.effectiveKey, entry));
+            this.setReadyStatus(state, args.effectiveKey, entry);
             Logger.log(
                 'loaded ' +
                     entry.source.length +
@@ -985,7 +1039,7 @@ const VerifierSourceTabApi = {
         if (!force && cached.source && state.lastFetchedCacheKey === effectiveKey && versionOverride == null) {
             await this.renderSource(state, cached.source);
             this.updateVersionSelect(state, cached);
-            this.setStatus(state, this.formatReadyStatus(effectiveKey, cached));
+            this.setReadyStatus(state, effectiveKey, cached);
             Logger.debug('using cached source for ' + effectiveKey);
             return;
         }
@@ -1010,7 +1064,7 @@ const VerifierSourceTabApi = {
             if (prefetch) state.prefetchAttemptedFor = effectiveKey;
             await this.renderSource(state, entry.source);
             this.updateVersionSelect(state, entry);
-            this.setStatus(state, this.formatReadyStatus(effectiveKey, entry));
+            this.setReadyStatus(state, effectiveKey, entry);
             Logger.debug('showing captured source for ' + effectiveKey);
             return;
         }
@@ -1104,7 +1158,7 @@ const VerifierSourceTabApi = {
             state.lastFetchedCacheKey = effectiveKey;
             await this.renderSource(state, entry.source);
             this.updateVersionSelect(state, entry);
-            this.setStatus(state, this.formatReadyStatus(effectiveKey, entry));
+            this.setReadyStatus(state, effectiveKey, entry);
             Logger.log(
                 'loaded ' +
                     entry.source.length +
@@ -1243,7 +1297,7 @@ const plugin = {
     name: 'Verifier Source Tab (library)',
     description:
         'Shared primary | Verifier tab shell and searchable verifier source (archetype modules supply placement)',
-    _version: '2.1',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
