@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'core',
 
@@ -65,6 +65,9 @@ const plugin = {
 
     _ensureUI(state, context) {
         if (!document.body) return;
+        if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+            Context.uiLib.ensurePanelStyles();
+        }
         const rootPresent = state.ui && state.ui.root && document.body.contains(state.ui.root);
         const togglePresent = state.ui && state.ui.toggleButton && document.body.contains(state.ui.toggleButton);
         if (rootPresent && togglePresent) return;

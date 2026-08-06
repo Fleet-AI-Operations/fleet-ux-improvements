@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.4',
+    _version: '11.5',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -147,6 +147,114 @@ const plugin = {
             #wf-settings-btn.wf-settings-outdated {
                 border: 2px solid rgba(220, 38, 38, 0.9);
                 animation: wf-settings-update-flash 1.2s ease-in-out infinite;
+            }
+            #wf-update-notification-banner {
+                margin-bottom: 20px;
+                padding: 14px;
+                padding-top: 20px;
+                background: #fee2e2;
+                border: 2px solid #dc2626;
+                border-radius: 8px;
+            }
+            #wf-update-notification-banner .wf-update-banner-title,
+            #wf-update-notification-banner .wf-update-banner-body,
+            #wf-update-notification-banner .wf-update-banner-body a {
+                color: #991b1b;
+            }
+            #wf-update-notification-banner .wf-update-banner-body a {
+                text-decoration: underline;
+                font-weight: 600;
+            }
+            #wf-update-refresh-row {
+                margin-top: 12px;
+                padding-top: 10px;
+                border-top: 1px solid #fecaca;
+                text-align: center;
+            }
+            #wf-update-refresh-btn {
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #991b1b;
+                background: #fef2f2;
+                border: 1px solid #dc2626;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            html.dark #wf-update-notification-banner {
+                background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));
+            }
+            html.dark #wf-update-notification-banner .wf-update-banner-title,
+            html.dark #wf-update-notification-banner .wf-update-banner-body,
+            html.dark #wf-update-notification-banner .wf-update-banner-body a {
+                color: #fca5a5;
+            }
+            html.dark #wf-update-refresh-row {
+                border-top-color: #7f1d1d;
+            }
+            html.dark #wf-update-refresh-btn {
+                color: #fecaca;
+                background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));
+            }
+            .wf-amber-banner {
+                margin-bottom: 20px;
+                padding: 14px;
+                background: #fef3c7;
+                border: 2px solid #f59e0b;
+                border-radius: 8px;
+            }
+            .wf-amber-banner--soft {
+                margin-bottom: 20px;
+                padding: 12px;
+                background: #fef3c7;
+                border: 1px solid #f59e0b;
+                border-radius: 6px;
+            }
+            .wf-amber-banner-title,
+            .wf-amber-banner-body,
+            .wf-amber-banner-body a,
+            #wf-settings-message,
+            #wf-settings-message a {
+                color: #92400e;
+            }
+            #wf-settings-message {
+                background: #fef3c7;
+                border: 1px solid #f59e0b;
+            }
+            #wf-ops-refresh-fetch-btn {
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #92400e;
+                background: #fffbeb;
+                border: 1px solid #f59e0b;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            .wf-amber-banner .wf-amber-banner-footer {
+                margin-top: 12px;
+                padding-top: 10px;
+                border-top: 1px solid #fcd34d;
+                text-align: center;
+            }
+            html.dark .wf-amber-banner,
+            html.dark .wf-amber-banner--soft,
+            html.dark #wf-settings-message {
+                background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));
+            }
+            html.dark .wf-amber-banner-title,
+            html.dark .wf-amber-banner-body,
+            html.dark .wf-amber-banner-body a,
+            html.dark #wf-settings-message,
+            html.dark #wf-settings-message a {
+                color: #fcd34d;
+            }
+            html.dark .wf-amber-banner .wf-amber-banner-footer {
+                border-top-color: #92400e;
+            }
+            html.dark #wf-ops-refresh-fetch-btn {
+                color: #fef3c7;
+                background: color-mix(in srgb, #f59e0b 28%, var(--background, #121212));
             }
         `;
         (document.head || document.documentElement).appendChild(style);
@@ -657,8 +765,8 @@ const plugin = {
                 ${updateNotificationHTML}
                 ${opsRefreshBannerHTML}
                 ${tabRowHTML}
-                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff)); border: 1px solid #f59e0b; border-radius: 6px; font-size: 13px; text-align: center; color: var(--foreground, #92400e);">
-                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.
+                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 13px; text-align: center;">
+                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="text-decoration: underline;">Refresh</a> the page for changes to take effect.
                 </div>
             </div>
             
@@ -915,7 +1023,7 @@ const plugin = {
         // Main toggles: green. Sub-options: blue. Log options: yellow.
         const variant = opts.variant || (isSmall ? 'sub' : 'main');
         const onColor = variant === 'main' ? '#22c55e' : variant === 'log' ? '#ca8a04' : '#6366f1';
-        const sliderBg = isDisabled ? 'var(--border, #d1d5db)' : (isEnabled ? onColor : 'var(--border, #ccc)');
+        const sliderBg = isDisabled ? 'color-mix(in srgb, var(--muted-foreground, #94a3b8) 25%, var(--background, #fff))' : (isEnabled ? onColor : 'color-mix(in srgb, var(--muted-foreground, #94a3b8) 45%, var(--background, #fff))');
         const knobBg = isDisabled ? '#f3f4f6' : 'white';
         const knobShadow = isDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.2)';
         const w = isSmall ? 33 : 44;
@@ -1385,7 +1493,7 @@ const plugin = {
         const onColor = slider.dataset.wfOnColor || 'var(--brand, #4f46e5)';
         const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '23px';
         const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
-        slider.style.backgroundColor = isChecked ? onColor : 'var(--border, #ccc)';
+        slider.style.backgroundColor = isChecked ? onColor : 'color-mix(in srgb, var(--muted-foreground, #94a3b8) 45%, var(--background, #fff))';
         if (knob) {
             knob.style.left = isChecked ? knobLeftOn : knobLeftOff;
         }
@@ -1956,14 +2064,11 @@ const plugin = {
                 display: none;
                 margin-top: 12px;
                 padding: 10px 12px;
-                background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff));
-                border: 1px solid #f59e0b;
                 border-radius: 6px;
                 font-size: 13px;
                 text-align: center;
-                color: #92400e;
             `;
-            msg.innerHTML = 'Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.';
+            msg.innerHTML = 'Settings changed. <a href="#" id="wf-settings-refresh-link" style="text-decoration: underline;">Refresh</a> the page for changes to take effect.';
             const tabRow = modal.querySelector('#wf-settings-tab-row');
             if (tabRow && tabRow.parentElement) {
                 tabRow.parentElement.insertBefore(msg, tabRow.nextSibling);
@@ -2551,29 +2656,23 @@ const plugin = {
         }).join('');
         
         return `
-            <div style="
-                margin-bottom: 20px;
-                padding: 12px;
-                background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff));
-                border: 1px solid #f59e0b;
-                border-radius: 6px;
-            ">
+            <div class="wf-amber-banner--soft">
                 <div style="display: flex; align-items: center; margin-bottom: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px; color: #f59e0b;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                         <line x1="12" y1="9" x2="12" y2="13"></line>
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0; color: #92400e;">
+                    <h3 class="wf-amber-banner-title" style="font-size: 14px; font-weight: 600; margin: 0;">
                         Outdated Plugins (${outdatedPlugins.length})
                     </h3>
                 </div>
-                <p style="font-size: 12px; color: #92400e; margin: 8px 0 0 0; line-height: 1.5;">
+                <p class="wf-amber-banner-body" style="font-size: 12px; margin: 8px 0 0 0; line-height: 1.5;">
                     The following plugins could not be updated to the required version. 
                     This may happen if you're offline, the server is unavailable, or GitHub's CDN 
                     hasn't updated yet (can take up to 5 minutes after a change).
                 </p>
-                <ul style="font-size: 12px; color: #92400e; margin: 8px 0 0 0; padding-left: 20px;">
+                <ul class="wf-amber-banner-body" style="font-size: 12px; margin: 8px 0 0 0; padding-left: 20px;">
                     ${pluginsList}
                 </ul>
             </div>
@@ -2636,13 +2735,7 @@ const plugin = {
 
     _createOpsRefreshBannerHTML() {
         return `
-            <div id="wf-ops-refresh-banner" style="
-                margin-bottom: 20px;
-                padding: 14px;
-                background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff));
-                border: 2px solid #f59e0b;
-                border-radius: 8px;
-            ">
+            <div id="wf-ops-refresh-banner" class="wf-amber-banner">
                 <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #b45309; flex-shrink: 0; margin-top: 2px;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -2650,25 +2743,16 @@ const plugin = {
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
                     <div style="flex: 1;">
-                        <h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #92400e;">
+                        <h3 class="wf-amber-banner-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
                             Ops Tab Unlock Pending
                         </h3>
-                        <p style="font-size: 13px; color: #92400e; margin: 0; line-height: 1.5;">
+                        <p class="wf-amber-banner-body" style="font-size: 13px; margin: 0; line-height: 1.5;">
                             Refresh the page to activate the Ops tab and load the dashboard plugins.
                         </p>
                     </div>
                 </div>
-                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fcd34d; text-align: center;">
-                    <button type="button" id="wf-ops-refresh-fetch-btn" style="
-                        padding: 8px 14px;
-                        font-size: 13px;
-                        font-weight: 600;
-                        color: #92400e;
-                        background: #fffbeb;
-                        border: 1px solid #f59e0b;
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Refresh to Fetch</button>
+                <div class="wf-amber-banner-footer">
+                    <button type="button" id="wf-ops-refresh-fetch-btn">Refresh to Fetch</button>
                 </div>
             </div>
         `;
@@ -2758,14 +2842,7 @@ const plugin = {
         }
         
         return `
-            <div id="wf-update-notification-banner" style="
-                margin-bottom: 20px;
-                padding: 14px;
-                padding-top: 20px;
-                background: color-mix(in srgb, #dc2626 12%, var(--background, #fff));
-                border: 2px solid #dc2626;
-                border-radius: 8px;
-            ">
+            <div id="wf-update-notification-banner">
                 <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -2773,25 +2850,16 @@ const plugin = {
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
                     <div style="flex: 1;">
-                        <h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">
+                        <h3 class="wf-update-banner-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
                             Extension Update Available
                         </h3>
-                        <p style="font-size: 13px; color: #991b1b; margin: 0 0 10px 0; line-height: 1.5;">
-                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="${this._getUpdateUrl()}" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
+                        <p class="wf-update-banner-body" style="font-size: 13px; margin: 0 0 10px 0; line-height: 1.5;">
+                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="${this._getUpdateUrl()}" target="_blank" rel="noopener noreferrer">newest version</a> (<strong>${latestVersion}</strong>).
                         </p>
                     </div>
                 </div>
-                <div id="wf-update-refresh-row" style="display: ${this._updateTabOpenedAutomatically ? 'block' : 'none'}; margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">
-                    <button type="button" id="wf-update-refresh-btn" style="
-                        padding: 8px 14px;
-                        font-size: 13px;
-                        font-weight: 600;
-                        color: #991b1b;
-                        background: #fef2f2;
-                        border: 1px solid #dc2626;
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Refresh Page with New Version</button>
+                <div id="wf-update-refresh-row" style="display: ${this._updateTabOpenedAutomatically ? 'block' : 'none'};">
+                    <button type="button" id="wf-update-refresh-btn">Refresh Page with New Version</button>
                 </div>
             </div>
         `;

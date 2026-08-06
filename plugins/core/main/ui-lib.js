@@ -279,13 +279,28 @@ function fleetUiPanelCssLines(scopePrefix) {
         '  color: var(--foreground, #0f172a);',
         '}',
         'html.dark ' + root + ' {',
+        '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);',
         '}',
+        'html.dark ' + header + ' {',
+        '  background: color-mix(in srgb, var(--foreground, #f5f5f5) 8%, transparent);',
+        '  border-bottom-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
+        '}',
         'html.dark ' + chip + ' {',
+        '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);',
         '}',
         'html.dark ' + toast + ' {',
+        '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);',
+        '}',
+        'html.dark ' + btn + ',',
+        'html.dark ' + textarea + ' {',
+        '  background: var(--background, #121212);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '}',
         p + '.fleet-ui-log--error { color: #dc2626; }',
         'html.dark ' + p + '.fleet-ui-log--error { color: #fca5a5; }',
@@ -658,7 +673,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -706,9 +721,6 @@ const plugin = {
             style.textContent = fleetUiPanelCssLines(prefix).join('\n');
             const target = appendRoot || document.head || document.documentElement;
             target.appendChild(style);
-            if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
-                CleanupRegistry.registerElement(style);
-            }
         }
 
         function ensureUserStoryMarkdownStyles() {
@@ -718,9 +730,6 @@ const plugin = {
             style.id = FLEET_UI_USER_STORY_PROSE_STYLE_ID;
             style.textContent = fleetUiUserStoryProseCssText();
             (document.head || document.documentElement).appendChild(style);
-            if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
-                CleanupRegistry.registerElement(style);
-            }
         }
 
         ensureStyles();

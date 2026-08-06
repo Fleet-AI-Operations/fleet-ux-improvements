@@ -1,7 +1,7 @@
 {
   "version": "13.5",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.262",
+  "archetypesVersion": "14.263",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.0",
-      "hash": "sha256-e69d5157a9ea655e9d8ee6169fc997c5f0567e9cdf73381e1a0e9683f876c593",
+      "version": "3.1",
+      "hash": "sha256-1afa05019d2adcb61df9c0e1b067cc6d5d842b55ce494e2f561c5fa19423b3bc",
       "log": false
     },
     {
@@ -28,14 +28,14 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.18",
-      "hash": "sha256-a7abd0d35a5d061ee4b06a0c17787da25401a9ce9d63399cfeff780684546a98",
+      "version": "9.19",
+      "hash": "sha256-2632c0e06c3fc0bf0c0f83959644cc1a30628cf039f7f9e5aefb54ca33fdcf17",
       "log": false
     },
     {
       "name": "settings-ui.js",
-      "version": "11.4",
-      "hash": "sha256-85090bfaacfefda0ed9c94ff9bb3b34046dc31f20e69dc62cf8471c4363f35af",
+      "version": "11.5",
+      "hash": "sha256-a930fec62f6a151f956b99d14e556d7b2a15f2a16508f03de9a9dffec891a3b9",
       "log": false
     },
     {
@@ -200,8 +200,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "11.18",
-      "hash": "sha256-06d823e73d926345923f23ce34ffc3279ac0b93ab112a2a979946bae37a47d04",
+      "version": "11.19",
+      "hash": "sha256-35ee66bd5b56ddc66ff57800dc2d6eea0583bf8fd571e6e5abcbcdd58ce29441",
       "log": false
     },
     {
@@ -218,8 +218,8 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "5.7",
-      "hash": "sha256-9121ed0ea46e93ebbdaecaf71e96e067e4e1f745bc014ad67ccd0089bcb6e247",
+      "version": "5.8",
+      "hash": "sha256-305b81e2a7b7b27b593f732a905dc67f2296ee0c3ff52bdbe3589df0a9dd5bcc",
       "log": false
     },
     {
@@ -287,8 +287,8 @@
   "devPlugins": [
     {
       "name": "logger-panel.js",
-      "version": "3.0",
-      "hash": "sha256-d7833609e3dfc607ee9529e8d259ce41ed3dffc5439d2854c3bfc474e4b9bb74",
+      "version": "3.1",
+      "hash": "sha256-deb1fbc17de187a3c07989ebbbe861d4cb1178eb9fc8512105ff860fd375e67f",
       "log": false
     }
   ],

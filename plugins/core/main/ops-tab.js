@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.18',
+    _version: '9.19',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2659,15 +2659,56 @@ const plugin = {
         return invoker ? this._opsMemberPermissionKeys(invoker) : [];
     },
 
+    _ensureOpsAlertBannerStyles() {
+        if (document.getElementById('wf-ops-alert-banner-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'wf-ops-alert-banner-styles';
+        style.textContent = [
+            '.wf-ops-alert-banner-red {',
+            '  margin-bottom: 4px; padding: 14px; padding-top: 20px;',
+            '  background: #fee2e2; border: 2px solid #dc2626; border-radius: 8px;',
+            '}',
+            '.wf-ops-alert-banner-red .wf-ops-alert-title,',
+            '.wf-ops-alert-banner-red .wf-ops-alert-body { color: #991b1b; }',
+            '.wf-ops-alert-banner-red .wf-ops-alert-footer {',
+            '  margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca;',
+            '  text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;',
+            '}',
+            '.wf-ops-alert-banner-red .wf-ops-alert-btn-secondary {',
+            '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
+            '  border-radius: 6px; cursor: pointer; border: 1px solid #dc2626;',
+            '  color: #991b1b; background: #fef2f2;',
+            '}',
+            '.wf-ops-alert-banner-red .wf-ops-alert-btn-primary {',
+            '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
+            '  border-radius: 6px; cursor: pointer; border: 1px solid #dc2626;',
+            '  color: #fff; background: #dc2626;',
+            '}',
+            'html.dark .wf-ops-alert-banner-red {',
+            '  background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));',
+            '}',
+            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-title,',
+            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-body { color: #fca5a5; }',
+            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-footer { border-top-color: #7f1d1d; }',
+            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-btn-secondary {',
+            '  color: #fecaca; background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));',
+            '}',
+            '.wf-ops-alert-banner-amber {',
+            '  margin-top: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45;',
+            '  color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px;',
+            '}',
+            'html.dark .wf-ops-alert-banner-amber {',
+            '  color: #fcd34d;',
+            '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));',
+            '}'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(style);
+    },
+
     _renderOpsTeamSearchActionRefreshBannerHtml() {
-        const btnStyle = [
-            'display: inline-block;padding: 8px 14px;font-size: 13px;font-weight: 600;',
-            'border-radius: 6px;cursor: pointer;border: 1px solid #dc2626;'
-        ].join('');
+        this._ensureOpsAlertBannerStyles();
         return [
-            '<div id="wf-ops-team-search-action-refresh-banner" style="',
-            'margin-bottom: 4px;padding: 14px;padding-top: 20px;background: color-mix(in srgb, #dc2626 12%, var(--background, #fff));',
-            'border: 2px solid #dc2626;border-radius: 8px;">',
+            '<div id="wf-ops-team-search-action-refresh-banner" class="wf-ops-alert-banner-red">',
             '<div style="display: flex; align-items: flex-start; margin-bottom: 10px;">',
             '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">',
             '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
@@ -2675,22 +2716,18 @@ const plugin = {
             '<line x1="12" y1="17" x2="12.01" y2="17"></line>',
             '</svg>',
             '<div style="flex: 1;">',
-            '<h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">Team Search Unavailable</h3>',
-            '<p style="font-size: 13px; color: #991b1b; margin: 0; line-height: 1.5;">',
+            '<h3 class="wf-ops-alert-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">Team Search Unavailable</h3>',
+            '<p class="wf-ops-alert-body" style="font-size: 13px; margin: 0; line-height: 1.5;">',
             'Team search credentials are missing or out of date after a Fleet update. ',
             'Click <strong>Refresh credentials</strong> to open the Team page in a new tab — ',
             'credentials refresh automatically and the tab closes on its own.',
             '</p>',
-            '<p id="wf-ops-team-search-stale-retry-status" style="display: none; font-size: 12px; color: #b91c1c; margin: 8px 0 0 0; line-height: 1.45;"></p>',
+            '<p id="wf-ops-team-search-stale-retry-status" class="wf-ops-alert-body" style="display: none; font-size: 12px; margin: 8px 0 0 0; line-height: 1.45;"></p>',
             '</div>',
             '</div>',
-            '<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;">',
-            '<button type="button" id="wf-ops-team-search-open-team" style="',
-            btnStyle,
-            'color: #991b1b;background: #fef2f2;">Refresh credentials</button>',
-            '<button type="button" id="wf-ops-team-search-retry-btn" style="',
-            btnStyle,
-            'color: #fff;background: #dc2626;">Retry search</button>',
+            '<div class="wf-ops-alert-footer">',
+            '<button type="button" id="wf-ops-team-search-open-team" class="wf-ops-alert-btn-secondary">Refresh credentials</button>',
+            '<button type="button" id="wf-ops-team-search-retry-btn" class="wf-ops-alert-btn-primary">Retry search</button>',
             '</div>',
             '</div>'
         ].join('');
@@ -3029,7 +3066,7 @@ const plugin = {
         const knob = slider.querySelector('span');
         const isChecked = checkbox.checked;
         const onColor = slider.dataset.wfOnColor || '#6366f1';
-        slider.style.backgroundColor = isChecked ? onColor : 'var(--border, #ccc)';
+        slider.style.backgroundColor = isChecked ? onColor : 'color-mix(in srgb, var(--muted-foreground, #94a3b8) 45%, var(--background, #fff))';
         if (knob) {
             const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '17px';
             const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
@@ -4882,9 +4919,10 @@ const plugin = {
             : { bg: '#ffffff', card: '#fafafa' };
         const externalHostNotice = hostAllowsDashboard
             ? ''
-            : `<div id="wf-ops-external-host-notice" style="margin-top: 10px; padding: 10px 12px; font-size: 12px; color: var(--foreground, #92400e); background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff)); border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
+            : `<div id="wf-ops-external-host-notice" class="wf-ops-alert-banner-amber">
                     Ops Dashboard cannot open on external env instances. Open it from fleetai.com.
                 </div>`;
+        this._ensureOpsAlertBannerStyles();
         return `
             <div style="margin-bottom: 20px;">
                 <div id="wf-ops-enable-wrap" style="display: ${enableCardDisplay};">
@@ -4911,7 +4949,7 @@ const plugin = {
                             margin-top: 10px;
                             box-sizing: border-box;
                         ">Open Dashboard</button>
-                        <div id="wf-ops-dashboard-incomplete-msg" style="display: none; margin-top: 10px; padding: 10px 12px; font-size: 12px; color: var(--foreground, #92400e); background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff)); border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
+                        <div id="wf-ops-dashboard-incomplete-msg" class="wf-ops-alert-banner-amber" style="display: none;">
                             Search Output module failed to load. Check the console or refresh the page.
                         </div>
                     </div>
@@ -4997,7 +5035,7 @@ const plugin = {
 
     _renderOpsToggleSwitchHTML(id, isEnabled, spec) {
         const onColor = spec.onColor;
-        const sliderBg = isEnabled ? onColor : 'var(--border, #ccc)';
+        const sliderBg = isEnabled ? onColor : 'color-mix(in srgb, var(--muted-foreground, #94a3b8) 45%, var(--background, #fff))';
         const knobLeft = isEnabled ? spec.knobLeftOn : spec.knobLeftOff;
         return `
             <label style="position: relative; display: inline-block; width: ${spec.width}px; height: ${spec.height}px; flex-shrink: 0;">
