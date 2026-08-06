@@ -66,12 +66,14 @@ const VerifierSourceTabApi = {
             cache: {},
             capture: {
                 taskKey: '',
+                taskId: '',
                 verifierId: '',
                 teamId: '',
                 source: '',
                 version: null,
                 versions: []
             },
+            opsBundleWaitStarted: false,
             // last options (labels / compact) for recovery
             _opts: null
         };
@@ -88,6 +90,7 @@ const VerifierSourceTabApi = {
      * @param {Element|null} options.primaryContent
      * @param {Element|null} options.contentParent — append verifier panel here
      * @param {Element[]} [options.chromeToHide] — hidden while Verifier tab active
+     * @param {{ taskId?: string, taskKey?: string, verifierId?: string, teamId?: string }} [options.hints]
      */
     run(state, options) {
         const opts = options || {};
@@ -96,6 +99,7 @@ const VerifierSourceTabApi = {
         impl.id = pluginId;
         state._opts = opts;
 
+        impl.applyHints(state, opts.hints);
         impl.ensureNetworkCapture(state);
         impl.maybeScrapePageVerifierId(state);
 
@@ -145,12 +149,32 @@ const VerifierSourceTabApi = {
         return active ? TAB_CLASS_ACTIVE : TAB_CLASS_INACTIVE;
     },
 
+    applyHints(state, hints) {
+        if (!hints || typeof hints !== 'object') return;
+        state.capture = state.capture || {};
+        const c = state.capture;
+        if (hints.taskId && UUID_RE.test(hints.taskId) && c.taskId !== hints.taskId) {
+            c.taskId = hints.taskId;
+            Logger.debug('hint taskId=' + hints.taskId.slice(0, 8) + '…');
+        }
+        if (hints.taskKey && this.isPlausibleTaskKey(hints.taskKey) && c.taskKey !== hints.taskKey) {
+            c.taskKey = hints.taskKey;
+            Logger.debug('hint taskKey=' + hints.taskKey);
+        }
+        if (hints.verifierId && UUID_RE.test(hints.verifierId) && !c.verifierId) {
+            c.verifierId = hints.verifierId;
+        }
+        if (hints.teamId && UUID_RE.test(hints.teamId) && !c.teamId) {
+            c.teamId = hints.teamId;
+        }
+    },
+
     resolveCacheKey(state) {
         const taskKey = this.resolveTaskKeyFromDom() || (state.capture && state.capture.taskKey) || '';
         if (taskKey) return taskKey;
-        const verifierId =
-            (state.capture && state.capture.verifierId) ||
-            '';
+        const taskId = (state.capture && state.capture.taskId) || '';
+        if (taskId) return taskId;
+        const verifierId = (state.capture && state.capture.verifierId) || '';
         return verifierId || '';
     },
 
@@ -173,7 +197,8 @@ const VerifierSourceTabApi = {
 
         const hasSource = !!(cached.source || capture.source);
         const verifierId = cached.verifierId || capture.verifierId || '';
-        if (!hasSource && !verifierId) return;
+        const taskId = capture.taskId || '';
+        if (!hasSource && !verifierId && !taskId) return;
 
         if (!state.prefetchLogged) {
             Logger.debug(
@@ -319,6 +344,7 @@ const VerifierSourceTabApi = {
         const prev = state.capture || {};
         const next = {
             taskKey: found.taskKey || prev.taskKey || '',
+            taskId: prev.taskId || '',
             verifierId: found.verifierId || prev.verifierId || '',
             teamId: found.teamId || prev.teamId || '',
             source: found.source || prev.source || '',
@@ -344,7 +370,7 @@ const VerifierSourceTabApi = {
             );
         }
 
-        const cacheKey = this.resolveTaskKeyFromDom() || next.taskKey || next.verifierId;
+        const cacheKey = this.resolveTaskKeyFromDom() || next.taskKey || next.taskId || next.verifierId;
         if (cacheKey && (next.verifierId || next.source)) {
             const entry = state.cache[cacheKey] || {};
             state.cache[cacheKey] = {
@@ -779,6 +805,11 @@ const VerifierSourceTabApi = {
             return;
         }
         if (!verifierId) {
+            const taskId = state.capture && state.capture.taskId;
+            if (taskId) {
+                this.setStatus(state, 'Resolving verifier for View Task…');
+                return;
+            }
             this.setStatus(state, 'Waiting for verifier id from page traffic…');
         }
     },
@@ -820,6 +851,109 @@ const VerifierSourceTabApi = {
                 opt.selected = true;
             }
             select.appendChild(opt);
+        }
+    },
+
+    /**
+     * Resolve verifier source from a task id/key via Context.opsTab (PostgREST + orchestrator).
+     * @returns {Promise<boolean>} true if handled (success or hard failure already surfaced)
+     */
+    async fetchVerifierViaOpsTask(state, args) {
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.fetchVerifierCode !== 'function') return false;
+
+        const taskId = args.taskId || '';
+        const taskKey = args.taskKey || '';
+        if (!taskId && !taskKey) return false;
+
+        if (typeof ops.isOpsBundleReady === 'function' && !ops.isOpsBundleReady()) {
+            if (!state.opsBundleWaitStarted && typeof ops.whenOpsBundleReady === 'function') {
+                state.opsBundleWaitStarted = true;
+                void ops
+                    .whenOpsBundleReady({ timeoutMs: 30000 })
+                    .then(() => {
+                        state.opsBundleWaitStarted = false;
+                        state.prefetchAttemptedFor = '';
+                        state.prefetchLogged = false;
+                        Logger.debug('ops bundle ready — retrying verifier prefetch');
+                        void this.fetchVerifier(state, { force: false, prefetch: true });
+                    })
+                    .catch(() => {
+                        state.opsBundleWaitStarted = false;
+                        Logger.debug('ops bundle unavailable for task→verifier lookup');
+                    });
+            }
+            if (!args.quiet) {
+                this.setStatus(state, 'Unlock Ops to load verifier from View Task…');
+            }
+            Logger.debug('ops bundle not ready — deferred task→verifier lookup');
+            return true;
+        }
+
+        if (state.fetchInFlight) return true;
+        state.fetchInFlight = true;
+        if (args.prefetch) state.prefetchAttemptedFor = args.effectiveKey;
+        this.setStatus(state, args.quiet ? 'Prefetching verifier…' : 'Loading verifier…');
+        Logger.debug(
+            (args.quiet ? 'prefetch' : 'fetch') +
+                ' via ops task ' +
+                (taskKey || taskId.slice(0, 8) + '…')
+        );
+
+        try {
+            const parsed = {
+                taskId: taskId || '',
+                taskKey: taskKey || '',
+                verifierId: '',
+                verifierKey: '',
+                teamId: args.teamId || '',
+                verifierVersion: args.versionOverride != null ? args.versionOverride : null
+            };
+            const result = await ops.fetchVerifierCode(parsed);
+            const source = result && result.source ? String(result.source) : '';
+            if (!source) {
+                Logger.warn('ops task→verifier returned no source');
+                this.setStatus(state, 'No verifier source for this task');
+                return true;
+            }
+
+            const entry = {
+                verifierId: (result && result.verifierId) || '',
+                teamId: args.teamId || '',
+                source,
+                version: result && result.selectedVersion != null ? result.selectedVersion : result && result.version,
+                versions: (result && result.versions) || [],
+                sourceFromCapture: false
+            };
+            if (entry.verifierId) {
+                state.capture = state.capture || {};
+                state.capture.verifierId = entry.verifierId;
+            }
+            state.cache[args.effectiveKey] = entry;
+            state.lastFetchedCacheKey = args.effectiveKey;
+            await this.renderSource(state, entry.source);
+            this.updateVersionSelect(state, entry);
+            this.setStatus(state, this.formatReadyStatus(args.effectiveKey, entry));
+            Logger.log(
+                'loaded ' +
+                    entry.source.length +
+                    ' chars' +
+                    (entry.version != null ? ' v' + entry.version : '') +
+                    ' for ' +
+                    args.effectiveKey
+            );
+            return true;
+        } catch (err) {
+            if (ops.isOpsBundleNotLoadedError && ops.isOpsBundleNotLoadedError(err)) {
+                if (!args.quiet) this.setStatus(state, 'Unlock Ops to load verifier from View Task…');
+                Logger.debug('ops bundle not loaded during task→verifier fetch');
+                return true;
+            }
+            Logger.error('ops task→verifier fetch failed', err);
+            this.setStatus(state, 'Fetch error');
+            return true;
+        } finally {
+            state.fetchInFlight = false;
         }
     },
 
@@ -882,6 +1016,22 @@ const VerifierSourceTabApi = {
         }
 
         if (!verifierId) {
+            const taskId = capture.taskId || '';
+            const taskKey = capture.taskKey || this.resolveTaskKeyFromDom() || '';
+            if (taskId || taskKey) {
+                const viaOps = await this.fetchVerifierViaOpsTask(state, {
+                    taskId,
+                    taskKey,
+                    force,
+                    prefetch,
+                    quiet,
+                    versionOverride,
+                    effectiveKey,
+                    cached,
+                    teamId
+                });
+                if (viaOps) return;
+            }
             if (!quiet) this.setStatus(state, 'Waiting for verifier id from page traffic…');
             Logger.debug('fetch deferred — no verifierId yet for ' + effectiveKey);
             return;
@@ -1093,7 +1243,7 @@ const plugin = {
     name: 'Verifier Source Tab (library)',
     description:
         'Shared primary | Verifier tab shell and searchable verifier source (archetype modules supply placement)',
-    _version: '2.0',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

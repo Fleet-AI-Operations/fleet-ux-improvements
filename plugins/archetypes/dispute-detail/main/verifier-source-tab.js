@@ -1,13 +1,16 @@
 // ============= verifier-source-tab.js (dispute-detail) =============
 // Placement: Environment | Verifier on the instance status-bar button row.
 // Shared library: Context.verifierSourceTab. Hides only the iframe stack.
+// Task identity: View Task link (/work/problems/view-task/<uuid>).
+
+const VIEW_TASK_HREF_RE = /\/work\/problems\/view-task\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/i;
 
 const plugin = {
     id: 'disputeVerifierSourceTab',
     name: 'Environment Verifier Tab',
     description:
         'Adds Environment | Verifier tabs on the dispute instance status bar and shows searchable verifier source',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -25,6 +28,27 @@ const plugin = {
             .replace(/\s+/g, ' ')
             .trim()
             .toLowerCase();
+    },
+
+    /** Task UUID from the header "View Task" link. */
+    findViewTaskId() {
+        const links = document.querySelectorAll('a[href*="/work/problems/view-task/"]');
+        for (let i = 0; i < links.length; i++) {
+            const a = links[i];
+            const href = a.getAttribute('href') || '';
+            const match = href.match(VIEW_TASK_HREF_RE);
+            if (!match) continue;
+            const label = this.normalizeLabel(a);
+            if (label.includes('view task') || label.includes('viewtask')) {
+                return match[1];
+            }
+        }
+        for (let i = 0; i < links.length; i++) {
+            const href = links[i].getAttribute('href') || '';
+            const match = href.match(VIEW_TASK_HREF_RE);
+            if (match) return match[1];
+        }
+        return '';
     },
 
     findInstanceIframe() {
@@ -175,6 +199,13 @@ const plugin = {
         }
 
         const placement = this.findPlacement();
+        const taskId = this.findViewTaskId();
+        if (!taskId && !state.viewTaskMissingLogged) {
+            Logger.debug('View Task link not found yet');
+            state.viewTaskMissingLogged = true;
+        }
+        if (taskId) state.viewTaskMissingLogged = false;
+
         api.run(state, {
             pluginId: this.id,
             primaryTabLabel: 'Environment',
@@ -183,6 +214,7 @@ const plugin = {
             primaryContent: placement && placement.primaryContent,
             contentParent: placement && placement.contentParent,
             chromeToHide: [],
+            hints: taskId ? { taskId } : null,
             mountTabs: (host, primaryTab, verifierTab) => this.mountTabs(host, primaryTab, verifierTab)
         });
     }

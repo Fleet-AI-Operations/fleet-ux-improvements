@@ -1,7 +1,7 @@
 {
   "version": "13.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.258",
+  "archetypesVersion": "14.259",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -156,8 +156,8 @@
     },
     {
       "name": "verifier-source-tab.js",
-      "version": "2.0",
-      "hash": "sha256-6458f08af334625209ebbe54e459f5700e0e37d507e3529e2d8f88d72b7c2515",
+      "version": "2.1",
+      "hash": "sha256-b25419c274be1f08361beb3efa814d0336741a7035daf614c60fc3cf4855070e",
       "log": false
     },
     {
@@ -969,8 +969,8 @@
         },
         {
           "name": "verifier-source-tab.js",
-          "version": "1.0",
-          "hash": "sha256-4e7b3b666f1bc4bc6de181e3c14cc47a30cc7e0583db234cb3c495c35049f296",
+          "version": "1.1",
+          "hash": "sha256-ad1915a7ff18fc3a886eb1f42d75ec8f9f42c9b5b06c5136e7fbe4974ce7b175",
           "log": false
         },
         {
