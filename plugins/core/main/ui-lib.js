@@ -124,8 +124,12 @@ function fleetUiThemeChromeRootsSelector() {
 
 function fleetUiThemeOverrideCssText() {
     const roots = fleetUiThemeChromeRootsSelector();
+    const rootsAndDescendants = roots
+        .split(', ')
+        .flatMap((sel) => [sel, sel + ' *'])
+        .join(', ');
     return [
-        'html[data-fleet-ux-theme="light"] ' + roots + ' {',
+        'html[data-fleet-ux-theme="light"] ' + rootsAndDescendants + ' {',
         '  --background: #ffffff;',
         '  --card: #ffffff;',
         '  --foreground: #111111;',
@@ -134,7 +138,7 @@ function fleetUiThemeOverrideCssText() {
         '  --muted-foreground: #6d6d6d;',
         '  --input: #e7e7e7;',
         '}',
-        'html[data-fleet-ux-theme="dark"] ' + roots + ' {',
+        'html[data-fleet-ux-theme="dark"] ' + rootsAndDescendants + ' {',
         '  --background: #121212;',
         '  --card: #1a1a1c;',
         '  --foreground: #f5f5f5;',
@@ -778,7 +782,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
