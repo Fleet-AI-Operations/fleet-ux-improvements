@@ -71,7 +71,7 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsScopeToggleHtml() {
-        return '<div data-wf-dash-stats-scope-wrap="true" class="dv-seg-group" style="flex-shrink: 0;">'
+        return '<div data-wf-dash-stats-scope-wrap="true" class="fleet-ui-seg-group" style="flex-shrink: 0;">'
             + this._statsScopeSegBtn('filtered', 'Filtered', true, true)
             + this._statsScopeSegBtn('all', 'All', false, false)
             + '</div>';
@@ -597,8 +597,21 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsScopeSegBtn(scope, label, active, divider) {
-        const divCls = divider ? ' dv-seg-btn--divider' : '';
-        return '<button type="button" data-wf-dash-stats-scope="' + dashEscHtml(scope) + '" class="dv-seg-btn' + divCls + '" aria-pressed="' + (active ? 'true' : 'false') + '">' + dashEscHtml(label) + '</button>';
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        if (ui && typeof ui.segmentBtnHtml === 'function') {
+            return ui.segmentBtnHtml({
+                valueAttr: 'data-wf-dash-stats-scope',
+                value: scope,
+                label,
+                active,
+                divider
+            });
+        }
+        const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
+        return '<button type="button" data-wf-dash-stats-scope="' + dashEscHtml(scope) + '" class="fleet-ui-seg-btn' + divCls + '" aria-pressed="' + (active ? 'true' : 'false') + '">' + dashEscHtml(label) + '</button>';
     },
 
     _syncRatingsGenerateButtonUi() {
@@ -5766,10 +5779,28 @@ const searchOutputStatsPaneMethods = {
             : '';
         const box = this._panelBoxStyle();
 
-        const toggleHtml = '<div class="dv-seg-group" style="flex-shrink: 0;">'
-            + '<button type="button" class="dv-seg-btn dv-seg-btn--divider" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'true' : 'false') + '">Recency</button>'
-            + '<button type="button" class="dv-seg-btn" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'false' : 'true') + '">Flat</button>'
-            + '</div>';
+        const toggleHtml = (Context.uiLib && typeof Context.uiLib.segmentGroupHtml === 'function')
+            ? Context.uiLib.segmentGroupHtml({
+                value: isRecency ? 'recency' : 'flat',
+                valueAttr: 'data-wf-dash-rating-weighting',
+                style: 'flex-shrink: 0;',
+                options: [
+                    {
+                        value: 'recency',
+                        label: 'Recency',
+                        extraAttrs: 'data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '"'
+                    },
+                    {
+                        value: 'flat',
+                        label: 'Flat',
+                        extraAttrs: 'data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '"'
+                    }
+                ]
+            })
+            : ('<div class="fleet-ui-seg-group" style="flex-shrink: 0;">'
+                + '<button type="button" class="fleet-ui-seg-btn fleet-ui-seg-btn--divider" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'true' : 'false') + '">Recency</button>'
+                + '<button type="button" class="fleet-ui-seg-btn" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'false' : 'true') + '">Flat</button>'
+                + '</div>');
 
         const nameHtml = this._ratingCopyChipHtml(name, 'font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);');
         const emailHtml = worker.email
@@ -6076,7 +6107,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.19',
+    _version: '12.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

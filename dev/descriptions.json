@@ -432,6 +432,11 @@
       "file": "user-story-markdown.js",
       "name": "User Story Markdown",
       "description": "Markdown-rendered Scenario / User Story collapsible and full-story copy control on dispute detail"
+    },
+    {
+      "file": "verifier-source-tab.js",
+      "name": "Environment Verifier Tab",
+      "description": "Adds Environment | Verifier tabs on the instance status bar beside native action buttons and shows searchable verifier source; toggles only the iframe stack"
     }
   ],
   "archetypes/dashboard-data-task/main": [

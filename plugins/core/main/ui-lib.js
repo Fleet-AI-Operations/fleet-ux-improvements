@@ -3,7 +3,16 @@
 
 const FLEET_UI_STYLE_ID = 'fleet-ui-styles';
 const FLEET_UI_SCOPED_STYLE_PREFIX = 'fleet-ui-btn-scope-';
+const FLEET_UI_PANEL_STYLE_ID = 'fleet-ui-panel-styles';
+const FLEET_UI_PANEL_SCOPED_PREFIX = 'fleet-ui-panel-scope-';
+const FLEET_UI_SEGMENT_STYLE_ID = 'fleet-ui-segment-styles';
+const FLEET_UI_SEGMENT_SCOPED_PREFIX = 'fleet-ui-seg-scope-';
+const FLEET_UI_FILTER_TOGGLE_STYLE_ID = 'fleet-ui-filter-toggle-styles';
+const FLEET_UI_FILTER_TOGGLE_SCOPED_PREFIX = 'fleet-ui-ft-scope-';
 const FLEET_UI_USER_STORY_PROSE_STYLE_ID = 'fleet-ui-user-story-prose';
+const FLEET_UI_THEME_OVERRIDE_STYLE_ID = 'fleet-ui-theme-overrides';
+const FLEET_UI_THEME_MODE_KEY = 'extension-theme-mode';
+const FLEET_UI_THEME_MODES = ['match', 'light', 'dark'];
 
 const FLASH_PULSE_MS = 600;
 const FLASH_PULSE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -15,6 +24,41 @@ const SPIN_DURATION = '0.7s';
 const TAB_PULSE_MS = FLASH_PULSE_MS;
 const FLASH_CLASS_SUCCESS = 'fleet-ui-flash--success';
 const FLASH_CLASS_FAILURE = 'fleet-ui-flash--failure';
+
+/** Panel kit class names (theme-aware floating chrome). */
+const PANEL_CLASSES = {
+    root: 'fleet-ui-panel',
+    header: 'fleet-ui-panel__header',
+    title: 'fleet-ui-panel__title',
+    sectionLabel: 'fleet-ui-panel__section-label',
+    muted: 'fleet-ui-panel__muted',
+    strong: 'fleet-ui-panel__strong',
+    btn: 'fleet-ui-panel__btn',
+    textarea: 'fleet-ui-panel__textarea',
+    chip: 'fleet-ui-panel__chip',
+    chipSep: 'fleet-ui-panel__chip-sep',
+    toast: 'fleet-ui-panel__toast',
+    resize: 'fleet-ui-panel__resize',
+    divider: 'fleet-ui-panel__divider',
+    ghostBtn: 'fleet-ui-panel__ghost-btn'
+};
+
+/** Exclusive connected segment control (Match/Light/Dark, Diff Viewer On/Off, Clear/Add). */
+const SEGMENT_CLASSES = {
+    group: 'fleet-ui-seg-group',
+    groupFill: 'fleet-ui-seg-group--fill',
+    btn: 'fleet-ui-seg-btn',
+    btnDivider: 'fleet-ui-seg-btn--divider'
+};
+
+/** Multi-select filter pills (Ops Dashboard Task Creation / QA / …). */
+const FILTER_TOGGLE_CLASSES = {
+    btn: 'fleet-ui-filter-toggle'
+};
+
+let _fleetThemeListeners = [];
+let _fleetThemeObserverStarted = false;
+let _fleetLastDark = null;
 
 const BTN_VARIANTS = {
     primary: 'wf-dash-btn--primary',
@@ -38,6 +82,407 @@ function fleetUiScopeStyleId(scopeSelector) {
     return FLEET_UI_SCOPED_STYLE_PREFIX + slug;
 }
 
+function fleetUiPanelScopeStyleId(scopeSelector) {
+    const slug = String(scopeSelector || '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'root';
+    return FLEET_UI_PANEL_SCOPED_PREFIX + slug;
+}
+
+function fleetUiSegmentScopeStyleId(scopeSelector) {
+    const slug = String(scopeSelector || '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'root';
+    return FLEET_UI_SEGMENT_SCOPED_PREFIX + slug;
+}
+
+function fleetUiFilterToggleScopeStyleId(scopeSelector) {
+    const slug = String(scopeSelector || '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'root';
+    return FLEET_UI_FILTER_TOGGLE_SCOPED_PREFIX + slug;
+}
+
+function fleetUiSiteIsDark() {
+    return document.documentElement.classList.contains('dark');
+}
+
+function fleetUiNormalizeThemeMode(mode) {
+    const m = String(mode || '').toLowerCase();
+    return FLEET_UI_THEME_MODES.includes(m) ? m : 'match';
+}
+
+function fleetUiGetThemeMode() {
+    try {
+        if (typeof Storage !== 'undefined' && Storage.get) {
+            return fleetUiNormalizeThemeMode(Storage.get(FLEET_UI_THEME_MODE_KEY, 'match'));
+        }
+    } catch (_) { /* ignore */ }
+    return 'match';
+}
+
+function fleetUiResolveTheme() {
+    const mode = fleetUiGetThemeMode();
+    if (mode === 'light') return 'light';
+    if (mode === 'dark') return 'dark';
+    return fleetUiSiteIsDark() ? 'dark' : 'light';
+}
+
+function fleetUiIsFleetDark() {
+    return fleetUiResolveTheme() === 'dark';
+}
+
+function fleetUiGetFleetTheme() {
+    return fleetUiResolveTheme();
+}
+
+/** Opaque Preferred-mode palette for Settings / injected chrome (not host CSS vars). */
+function fleetUiChromeColors() {
+    if (fleetUiIsFleetDark()) {
+        return {
+            bg: '#18181b',
+            card: '#27272a',
+            hover: '#3f3f46',
+            border: '#3f3f46',
+            borderHover: '#52525b',
+            fg: '#e4e4e7',
+            muted: '#a1a1aa'
+        };
+    }
+    return {
+        bg: '#ffffff',
+        card: '#fafafa',
+        hover: '#f0f0f0',
+        border: '#e5e5e5',
+        borderHover: '#d1d5db',
+        fg: '#333333',
+        muted: '#666666'
+    };
+}
+
+function fleetUiThemeChromeRootsSelector() {
+    return [
+        '.fleet-ui-panel',
+        '.fleet-ui-panel__chip',
+        '.fleet-ui-panel__toast',
+        '#wf-settings-modal',
+        '#wf-dash-modal',
+        '#wf-dev-log-panel',
+        '#wf-dev-log-toggle',
+        '#fleet-vnc-helper',
+        '#fleet-vnc-helper-tab',
+        '#fleet-env-helper',
+        '#fleet-env-helper-tab'
+    ].join(', ');
+}
+
+function fleetUiThemeOverrideCssText() {
+    const roots = fleetUiThemeChromeRootsSelector();
+    const rootsAndDescendants = roots
+        .split(', ')
+        .flatMap((sel) => [sel, sel + ' *'])
+        .join(', ');
+    return [
+        'html[data-fleet-ux-theme="light"] ' + rootsAndDescendants + ' {',
+        '  --background: #ffffff !important;',
+        '  --card: #ffffff !important;',
+        '  --foreground: #111111 !important;',
+        '  --border: #e7e7e7 !important;',
+        '  --muted: #f7f7f7 !important;',
+        '  --muted-foreground: #6d6d6d !important;',
+        '  --input: #e7e7e7 !important;',
+        '}',
+        'html[data-fleet-ux-theme="dark"] ' + rootsAndDescendants + ' {',
+        '  --background: #121212 !important;',
+        '  --card: #1a1a1c !important;',
+        '  --foreground: #f5f5f5 !important;',
+        '  --border: #262626 !important;',
+        '  --muted: #171717 !important;',
+        '  --muted-foreground: #8c8c8c !important;',
+        '  --input: #262626 !important;',
+        '}'
+    ].join('\n');
+}
+
+function fleetUiEnsureThemeOverrideStyles() {
+    let style = document.getElementById(FLEET_UI_THEME_OVERRIDE_STYLE_ID);
+    if (!style) {
+        style = document.createElement('style');
+        style.id = FLEET_UI_THEME_OVERRIDE_STYLE_ID;
+    }
+    style.textContent = fleetUiThemeOverrideCssText();
+    // Keep after site CSS so Preferred tokens win cascade order as well as specificity.
+    (document.head || document.documentElement).appendChild(style);
+}
+
+function fleetUiSyncThemeDataset(forceNotify) {
+    const theme = fleetUiResolveTheme();
+    const dark = theme === 'dark';
+    try {
+        document.documentElement.dataset.fleetUxTheme = theme;
+    } catch (_) { /* ignore */ }
+    fleetUiEnsureThemeOverrideStyles();
+    if (forceNotify || _fleetLastDark !== dark) {
+        _fleetLastDark = dark;
+        const payload = { theme, dark };
+        for (const fn of _fleetThemeListeners) {
+            try {
+                fn(payload);
+            } catch (err) {
+                Logger.warn('theme listener failed', err);
+            }
+        }
+    }
+}
+
+function fleetUiSetThemeMode(mode) {
+    const next = fleetUiNormalizeThemeMode(mode);
+    try {
+        if (typeof Storage !== 'undefined' && Storage.set) {
+            Storage.set(FLEET_UI_THEME_MODE_KEY, next);
+        }
+    } catch (err) {
+        Logger.warn('failed to persist theme mode', err);
+    }
+    fleetUiSyncThemeDataset(true);
+    Logger.log('preferred mode → ' + next);
+    return next;
+}
+
+function fleetUiNotifyThemeChange() {
+    fleetUiSyncThemeDataset(false);
+}
+
+function fleetUiEnsureThemeObserver() {
+    if (_fleetThemeObserverStarted) return;
+    _fleetThemeObserverStarted = true;
+    fleetUiSyncThemeDataset(true);
+    try {
+        const observer = new MutationObserver(() => {
+            if (fleetUiGetThemeMode() !== 'match') return;
+            fleetUiNotifyThemeChange();
+        });
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerObserver) {
+            CleanupRegistry.registerObserver(observer);
+        }
+    } catch (err) {
+        Logger.warn('fleet theme observer failed', err);
+    }
+}
+
+function fleetUiOnThemeChange(callback) {
+    if (typeof callback !== 'function') return () => {};
+    fleetUiEnsureThemeObserver();
+    _fleetThemeListeners.push(callback);
+    return () => {
+        _fleetThemeListeners = _fleetThemeListeners.filter((fn) => fn !== callback);
+    };
+}
+
+function fleetUiPanelCssLines(scopePrefix) {
+    const p = scopePrefix || '';
+    const root = p + '.fleet-ui-panel';
+    const header = p + '.fleet-ui-panel__header';
+    const title = p + '.fleet-ui-panel__title';
+    const sectionLabel = p + '.fleet-ui-panel__section-label';
+    const muted = p + '.fleet-ui-panel__muted';
+    const strong = p + '.fleet-ui-panel__strong';
+    const btn = p + '.fleet-ui-panel__btn';
+    const textarea = p + '.fleet-ui-panel__textarea';
+    const chip = p + '.fleet-ui-panel__chip';
+    const chipSep = p + '.fleet-ui-panel__chip-sep';
+    const toast = p + '.fleet-ui-panel__toast';
+    const resize = p + '.fleet-ui-panel__resize';
+    const divider = p + '.fleet-ui-panel__divider';
+    const ghostBtn = p + '.fleet-ui-panel__ghost-btn';
+
+    return [
+        root + ' {',
+        '  color: var(--foreground, #0f172a);',
+        '  background: var(--card, var(--background, #ffffff));',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  border-radius: 10px;',
+        '  box-shadow: 0 12px 40px color-mix(in srgb, var(--foreground, #0f172a) 18%, transparent);',
+        '  overflow: hidden;',
+        '  font: 13px/1.45 system-ui, Segoe UI, sans-serif;',
+        '}',
+        header + ' {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  gap: 8px;',
+        '  padding: 8px 10px 8px 12px;',
+        '  font-weight: 600;',
+        '  font-size: 12px;',
+        '  letter-spacing: 0.02em;',
+        '  color: var(--foreground, #0f172a);',
+        '  background: color-mix(in srgb, var(--muted, #f1f5f9) 80%, transparent);',
+        '  border-bottom: 1px solid var(--border, #e2e8f0);',
+        '  flex-shrink: 0;',
+        '}',
+        title + ' {',
+        '  flex: 1;',
+        '  min-width: 0;',
+        '  font-weight: 600;',
+        '  font-size: 12px;',
+        '}',
+        sectionLabel + ' {',
+        '  font-size: 11px;',
+        '  font-weight: 600;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  letter-spacing: 0.03em;',
+        '  text-transform: uppercase;',
+        '  user-select: none;',
+        '}',
+        muted + ' {',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        strong + ' {',
+        '  color: var(--foreground, #0f172a);',
+        '  font-weight: 600;',
+        '}',
+        btn + ' {',
+        '  margin: 0;',
+        '  padding: 6px 8px;',
+        '  border-radius: 6px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: var(--background, #fff);',
+        '  color: var(--foreground, #0f172a);',
+        '  font: inherit;',
+        '  font-size: 11px;',
+        '  font-weight: 500;',
+        '  cursor: pointer;',
+        '  transition: background 0.15s, border-color 0.15s, color 0.15s;',
+        '}',
+        btn + ':hover:not(:disabled) {',
+        '  background: var(--muted, #f1f5f9);',
+        '  border-color: var(--foreground, #0f172a);',
+        '}',
+        textarea + ' {',
+        '  box-sizing: border-box;',
+        '  width: 100%;',
+        '  padding: 8px;',
+        '  border-radius: 6px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: var(--background, #fff);',
+        '  color: var(--foreground, #0f172a);',
+        '  font: inherit;',
+        '  resize: vertical;',
+        '  overflow-y: auto;',
+        '}',
+        chip + ' {',
+        '  display: flex;',
+        '  align-items: stretch;',
+        '  padding: 0;',
+        '  font-size: 12px;',
+        '  border-radius: 10px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: var(--card, var(--background, #fff));',
+        '  color: var(--foreground, #0f172a);',
+        '  box-shadow: 0 6px 18px color-mix(in srgb, var(--foreground, #0f172a) 14%, transparent);',
+        '  overflow: hidden;',
+        '}',
+        chip + ' button {',
+        '  margin: 0;',
+        '  padding: 6px 10px;',
+        '  border: none;',
+        '  background: transparent;',
+        '  color: inherit;',
+        '  font: inherit;',
+        '  font-size: 12px;',
+        '  cursor: pointer;',
+        '}',
+        chipSep + ' {',
+        '  border-left: 1px solid var(--border, #e2e8f0) !important;',
+        '  padding: 6px 8px !important;',
+        '  font-size: 13px !important;',
+        '  line-height: 1 !important;',
+        '}',
+        toast + ' {',
+        '  background: var(--card, var(--background, #fff));',
+        '  color: var(--foreground, #0f172a);',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  font: 12px/1.4 system-ui, Segoe UI, sans-serif;',
+        '  padding: 10px 12px;',
+        '  border-radius: 8px;',
+        '  box-shadow: 0 4px 16px color-mix(in srgb, var(--foreground, #0f172a) 16%, transparent);',
+        '  max-width: min(420px, 92vw);',
+        '  word-break: break-word;',
+        '  white-space: pre-wrap;',
+        '}',
+        resize + ' {',
+        '  position: absolute;',
+        '  right: 2px;',
+        '  bottom: 2px;',
+        '  width: 14px;',
+        '  height: 14px;',
+        '  cursor: se-resize;',
+        '  background: transparent;',
+        '  border-right: 2px solid var(--muted-foreground, #94a3b8);',
+        '  border-bottom: 2px solid var(--muted-foreground, #94a3b8);',
+        '  border-radius: 0 0 8px 0;',
+        '  z-index: 1;',
+        '}',
+        divider + ' {',
+        '  border-top: 1px solid var(--border, #e2e8f0);',
+        '}',
+        ghostBtn + ' {',
+        '  margin: 0;',
+        '  padding: 2px 8px;',
+        '  border-radius: 6px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: transparent;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  font: inherit;',
+        '  font-size: 10px;',
+        '  font-weight: 500;',
+        '  cursor: pointer;',
+        '}',
+        ghostBtn + ':hover:not(:disabled) {',
+        '  background: var(--muted, #f1f5f9);',
+        '  color: var(--foreground, #0f172a);',
+        '}',
+        'html[data-fleet-ux-theme="dark"] ' + root + ' {',
+        '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
+        '  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);',
+        '}',
+        'html[data-fleet-ux-theme="dark"] ' + header + ' {',
+        '  background: color-mix(in srgb, var(--foreground, #f5f5f5) 8%, transparent);',
+        '  border-bottom-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
+        '}',
+        'html[data-fleet-ux-theme="dark"] ' + chip + ' {',
+        '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
+        '  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);',
+        '}',
+        'html[data-fleet-ux-theme="dark"] ' + toast + ' {',
+        '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
+        '  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);',
+        '}',
+        'html[data-fleet-ux-theme="dark"] ' + btn + ',',
+        'html[data-fleet-ux-theme="dark"] ' + textarea + ' {',
+        '  background: var(--background, #121212);',
+        '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
+        '}',
+        p + '.fleet-ui-log--error { color: #dc2626; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--error { color: #fca5a5; }',
+        p + '.fleet-ui-log--warn { color: #ca8a04; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--warn { color: #facc15; }',
+        p + '.fleet-ui-log--debug { color: #2563eb; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--debug { color: #93c5fd; }',
+        p + '.fleet-ui-log--info { color: #059669; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--info { color: #6ee7b7; }',
+        p + '.fleet-ui-log-entry:hover {',
+        '  background: color-mix(in srgb, var(--foreground, #0f172a) 6%, transparent);',
+        '}'
+    ];
+}
+
 function fleetUiBtnBaseCssLines(scopePrefix) {
     const p = scopePrefix ? scopePrefix + ' ' : '';
     const btn = p + '.wf-dash-btn';
@@ -50,6 +495,8 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
     const secondary = p + '.wf-dash-btn--secondary';
     const tertiary = p + '.wf-dash-btn--basic';
     const headerBasic = p + '.wf-dash-header-btn.wf-dash-btn--basic';
+    const light = (sel) => 'html[data-fleet-ux-theme="light"] ' + sel;
+    const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
 
     return [
         btn + ' {',
@@ -86,13 +533,13 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '}',
         secondary + ' {',
         '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-        '  background: #000;',
-        '  color: var(--muted-foreground, #64748b);',
+        '  background: var(--background, #fff);',
+        '  color: var(--foreground, #0f172a);',
         '}',
         secondary + ':hover:not(:disabled) {',
         '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
         '  border-color: var(--brand, var(--primary, #2563eb));',
-        '  color: #ffffff;',
+        '  color: var(--foreground, #0f172a);',
         '}',
         tertiary + ' {',
         '  border: 1px solid var(--border, #e2e8f0);',
@@ -136,7 +583,70 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         headerBasic + ':hover:not(:disabled) {',
         '  color: var(--foreground, #0f172a);',
         '  border-color: var(--foreground, #0f172a);',
-        '}'
+        '}',
+        // Preferred-opaque recipes (do not trust host CSS vars alone)
+        light(secondary) + ' {',
+        '  border-color: #2563eb;',
+        '  background: #ffffff;',
+        '  color: #111111;',
+        '}',
+        light(secondary) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, #2563eb 10%, #ffffff);',
+        '  border-color: #2563eb;',
+        '  color: #111111;',
+        '}',
+        light(tertiary) + ' {',
+        '  border-color: #e5e5e5;',
+        '  background: #ffffff;',
+        '  color: #666666;',
+        '}',
+        light(tertiary) + ':hover:not(:disabled) {',
+        '  background: #f0f0f0;',
+        '  border-color: #333333;',
+        '  color: #333333;',
+        '}',
+        light(tertiary + '.wf-dash-btn--icon:hover:not(:disabled)') + ' {',
+        '  background: #f0f0f0;',
+        '  color: #333333;',
+        '}',
+        light(primary + ':disabled') + ', ' + light(secondary + ':disabled') + ', ' + light(tertiary + ':disabled') + ' {',
+        '  border-color: #e5e5e5;',
+        '  background: #f0f0f0;',
+        '  color: #999999;',
+        '}',
+        light(headerBasic) + ' { color: #666666; }',
+        light(headerBasic) + ':hover:not(:disabled) { color: #111111; border-color: #111111; }',
+        dark(secondary) + ' {',
+        '  border-color: #2563eb;',
+        '  background: #18181b;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(secondary) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, #2563eb 14%, #18181b);',
+        '  border-color: #2563eb;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(tertiary) + ' {',
+        '  border-color: #3f3f46;',
+        '  background: #18181b;',
+        '  color: #a1a1aa;',
+        '}',
+        dark(tertiary) + ':hover:not(:disabled) {',
+        '  background: #27272a;',
+        '  border-color: #e4e4e7;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(tertiary + '.wf-dash-btn--icon:hover:not(:disabled)') + ' {',
+        '  background: #27272a;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(primary + ':disabled') + ', ' + dark(secondary + ':disabled') + ', ' + dark(tertiary + ':disabled') + ' {',
+        '  border-color: #3f3f46;',
+        '  background: #27272a;',
+        '  color: #71717a;',
+        '}',
+        dark(headerBasic) + ' { color: #a1a1aa; }',
+        dark(headerBasic) + ':hover:not(:disabled) { color: #e4e4e7; border-color: #e4e4e7; }'
     ];
 }
 
@@ -325,6 +835,218 @@ function fleetUiBtnClass(variant, size) {
     return 'wf-dash-btn ' + v + ' ' + s;
 }
 
+function fleetUiEscapeAttr(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function fleetUiEscapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function fleetUiSegmentCssLines(prefix) {
+    const p = prefix || '';
+    const light = (sel) => 'html[data-fleet-ux-theme="light"] ' + sel;
+    const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
+    const group = p + '.fleet-ui-seg-group';
+    const btn = p + '.fleet-ui-seg-btn';
+    return [
+        group + ' {',
+        '  display: inline-flex;',
+        '  border-radius: 6px;',
+        '  overflow: hidden;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: color-mix(in srgb, var(--foreground, #0f172a) 6%, var(--card, #fff));',
+        '}',
+        p + '.fleet-ui-seg-group--fill {',
+        '  display: flex;',
+        '  width: 100%;',
+        '}',
+        btn + ' {',
+        '  padding: 5px 12px;',
+        '  font-size: 12px;',
+        '  font-weight: 600;',
+        '  border: none;',
+        '  cursor: pointer;',
+        '  background: transparent;',
+        '  color: var(--foreground, #0f172a);',
+        '  transition: background-color 0.15s, color 0.15s;',
+        '  line-height: 1.4;',
+        '}',
+        p + '.fleet-ui-seg-group--fill .fleet-ui-seg-btn {',
+        '  flex: 1;',
+        '  padding: 8px 10px;',
+        '}',
+        p + '.fleet-ui-seg-btn--divider {',
+        '  border-right: 1px solid var(--border, #e2e8f0);',
+        '}',
+        btn + '[aria-pressed="true"] {',
+        '  background: var(--brand, #2563eb);',
+        '  color: #ffffff;',
+        '}',
+        btn + ':not([aria-pressed="true"]):hover {',
+        '  background: color-mix(in srgb, var(--foreground, #0f172a) 10%, transparent);',
+        '  color: var(--foreground, #0f172a);',
+        '}',
+        light(group) + ' {',
+        '  border-color: #e5e5e5;',
+        '  background: #f0f0f0;',
+        '}',
+        light(btn) + ' {',
+        '  color: #333333;',
+        '  background: transparent;',
+        '}',
+        light(p + '.fleet-ui-seg-btn--divider') + ' { border-right-color: #e5e5e5; }',
+        light(btn + '[aria-pressed="true"]') + ' {',
+        '  background: #2563eb;',
+        '  color: #ffffff;',
+        '}',
+        light(btn + ':not([aria-pressed="true"]):hover') + ' {',
+        '  background: #e5e5e5;',
+        '  color: #111111;',
+        '}',
+        dark(group) + ' {',
+        '  border-color: #3f3f46;',
+        '  background: #18181b;',
+        '}',
+        dark(btn) + ' {',
+        '  color: #a1a1aa;',
+        '  background: transparent;',
+        '}',
+        dark(p + '.fleet-ui-seg-btn--divider') + ' { border-right-color: #3f3f46; }',
+        dark(btn + '[aria-pressed="true"]') + ' {',
+        '  background: #2563eb;',
+        '  color: #ffffff;',
+        '}',
+        dark(btn + ':not([aria-pressed="true"]):hover') + ' {',
+        '  background: #27272a;',
+        '  color: #e4e4e7;',
+        '}'
+    ];
+}
+
+function fleetUiFilterToggleCssLines(prefix) {
+    const p = prefix || '';
+    return [
+        p + '.fleet-ui-filter-toggle {',
+        '  padding: 7px 14px;',
+        '  font-size: 12px;',
+        '  font-weight: 600;',
+        '  border-radius: 6px;',
+        '  cursor: pointer;',
+        '  border: 2px solid var(--border, #e2e8f0);',
+        '  color: var(--muted-foreground, #64748b);',
+        '  background: transparent;',
+        '  opacity: 0.6;',
+        '}',
+        p + '.fleet-ui-filter-toggle[aria-pressed="true"] {',
+        '  opacity: 1;',
+        '}'
+    ];
+}
+
+function fleetUiSegmentBtnClass(divider) {
+    return SEGMENT_CLASSES.btn + (divider ? ' ' + SEGMENT_CLASSES.btnDivider : '');
+}
+
+function fleetUiSegmentBtnHtml(opts) {
+    const o = opts || {};
+    const valueAttr = o.valueAttr || 'data-value';
+    const divider = !!o.divider;
+    const active = !!o.active;
+    const idAttr = o.id ? ' id="' + fleetUiEscapeAttr(o.id) + '"' : '';
+    const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
+    return '<button type="button" class="' + fleetUiSegmentBtnClass(divider) + '" '
+        + valueAttr + '="' + fleetUiEscapeAttr(o.value) + '" aria-pressed="'
+        + (active ? 'true' : 'false') + '"' + idAttr + extra + '>'
+        + fleetUiEscapeHtml(o.label) + '</button>';
+}
+
+function fleetUiSegmentGroupHtml(opts) {
+    const o = opts || {};
+    const options = Array.isArray(o.options) ? o.options : [];
+    const valueAttr = o.valueAttr || 'data-value';
+    const value = o.value;
+    const fill = o.fill === true;
+    const groupClass = SEGMENT_CLASSES.group + (fill ? ' ' + SEGMENT_CLASSES.groupFill : '');
+    const buttons = options.map((opt, i) => fleetUiSegmentBtnHtml({
+        value: opt.value,
+        label: opt.label,
+        id: opt.id,
+        extraAttrs: opt.extraAttrs,
+        valueAttr,
+        active: String(opt.value) === String(value),
+        divider: i < options.length - 1
+    })).join('');
+    const labelAttr = o.ariaLabel ? ' aria-label="' + fleetUiEscapeAttr(o.ariaLabel) + '"' : '';
+    const styleAttr = o.style ? ' style="' + fleetUiEscapeAttr(o.style) + '"' : '';
+    const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
+    return '<div class="' + groupClass + '" role="group"' + labelAttr + styleAttr + extra + '>'
+        + buttons + '</div>';
+}
+
+function fleetUiSyncSegmentGroup(root, value, valueAttr) {
+    if (!root) return;
+    const attr = valueAttr || 'data-value';
+    root.querySelectorAll('.' + SEGMENT_CLASSES.btn).forEach((btn) => {
+        const v = btn.getAttribute(attr);
+        const active = String(v) === String(value);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+function fleetUiBindSegmentGroup(root, options) {
+    if (!root) return;
+    const opts = options || {};
+    const valueAttr = opts.valueAttr || 'data-value';
+    if (root.dataset.fleetUiSegBound === '1') return;
+    root.dataset.fleetUiSegBound = '1';
+    root.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest
+            ? e.target.closest('.' + SEGMENT_CLASSES.btn)
+            : null;
+        if (!btn || !root.contains(btn)) return;
+        const next = btn.getAttribute(valueAttr);
+        if (next == null) return;
+        fleetUiSyncSegmentGroup(root, next, valueAttr);
+        if (typeof opts.onChange === 'function') {
+            opts.onChange(next, btn);
+        }
+    });
+}
+
+function fleetUiFilterToggleClass() {
+    return FILTER_TOGGLE_CLASSES.btn;
+}
+
+function fleetUiFilterToggleHtml(opts) {
+    const o = opts || {};
+    const pressed = !!o.pressed;
+    const idAttr = o.id ? ' id="' + fleetUiEscapeAttr(o.id) + '"' : '';
+    const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
+    const css = pressed && o.activeCss
+        ? String(o.activeCss).replace(/"/g, '&quot;')
+        : '';
+    const styleAttr = css ? ' style="' + css + '"' : '';
+    return '<button type="button" class="' + fleetUiFilterToggleClass() + '" aria-pressed="'
+        + (pressed ? 'true' : 'false') + '"' + idAttr + styleAttr + extra + '>'
+        + fleetUiEscapeHtml(o.label) + '</button>';
+}
+
+function fleetUiApplyFilterToggle(btn, pressed, activeCss) {
+    if (!btn) return;
+    btn.classList.add(FILTER_TOGGLE_CLASSES.btn);
+    btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    btn.style.cssText = pressed && activeCss ? activeCss : '';
+}
+
 function fleetUiSpinnerHtml(sizePx) {
     const size = sizePx || 16;
     return '<span class="fleet-ui-spinner" aria-hidden="true" style="width: ' + size + 'px; height: ' + size + 'px;"></span>';
@@ -394,8 +1116,8 @@ function fleetUiUserStoryProseCssText() {
 const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
-    description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '2.7',
+    description: 'Shared UI tokens, buttons, segments, filter toggles, panels, and copy feedback',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -418,12 +1140,32 @@ const plugin = {
             }
             const styleId = fleetUiScopeStyleId(scopeSelector);
             const root = appendRoot || document;
+            ensureStyles();
+            let style = (root.getElementById && root.getElementById(styleId))
+                || (root.querySelector && root.querySelector('#' + styleId))
+                || document.getElementById(styleId);
+            if (!style) {
+                style = document.createElement('style');
+                style.id = styleId;
+            }
+            style.textContent = fleetUiBtnBaseCssLines(scopeSelector + ' ').join('\n');
+            const target = appendRoot || document.head || document.documentElement;
+            target.appendChild(style);
+        }
+
+        function ensurePanelStyles(scopeSelector, appendRoot) {
+            ensureStyles();
+            const styleId = scopeSelector
+                ? fleetUiPanelScopeStyleId(scopeSelector)
+                : FLEET_UI_PANEL_STYLE_ID;
+            const root = appendRoot || document;
             if (root.getElementById && root.getElementById(styleId)) return;
             if (root.querySelector && root.querySelector('#' + styleId)) return;
-            ensureStyles();
+            if (document.getElementById(styleId)) return;
             const style = document.createElement('style');
             style.id = styleId;
-            style.textContent = fleetUiBtnBaseCssLines(scopeSelector + ' ').join('\n');
+            const prefix = scopeSelector ? scopeSelector + ' ' : '';
+            style.textContent = fleetUiPanelCssLines(prefix).join('\n');
             const target = appendRoot || document.head || document.documentElement;
             target.appendChild(style);
         }
@@ -435,12 +1177,46 @@ const plugin = {
             style.id = FLEET_UI_USER_STORY_PROSE_STYLE_ID;
             style.textContent = fleetUiUserStoryProseCssText();
             (document.head || document.documentElement).appendChild(style);
-            if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
-                CleanupRegistry.registerElement(style);
+        }
+
+        function ensureSegmentStyles(scopeSelector, appendRoot) {
+            ensureStyles();
+            const styleId = scopeSelector
+                ? fleetUiSegmentScopeStyleId(scopeSelector)
+                : FLEET_UI_SEGMENT_STYLE_ID;
+            const root = appendRoot || document;
+            let style = (root.getElementById && root.getElementById(styleId))
+                || (root.querySelector && root.querySelector('#' + styleId))
+                || document.getElementById(styleId);
+            if (!style) {
+                style = document.createElement('style');
+                style.id = styleId;
             }
+            const prefix = scopeSelector ? scopeSelector + ' ' : '';
+            style.textContent = fleetUiSegmentCssLines(prefix).join('\n');
+            const target = appendRoot || document.head || document.documentElement;
+            target.appendChild(style);
+        }
+
+        function ensureFilterToggleStyles(scopeSelector, appendRoot) {
+            ensureStyles();
+            const styleId = scopeSelector
+                ? fleetUiFilterToggleScopeStyleId(scopeSelector)
+                : FLEET_UI_FILTER_TOGGLE_STYLE_ID;
+            const root = appendRoot || document;
+            if (root.getElementById && root.getElementById(styleId)) return;
+            if (root.querySelector && root.querySelector('#' + styleId)) return;
+            if (document.getElementById(styleId)) return;
+            const style = document.createElement('style');
+            style.id = styleId;
+            const prefix = scopeSelector ? scopeSelector + ' ' : '';
+            style.textContent = fleetUiFilterToggleCssLines(prefix).join('\n');
+            const target = appendRoot || document.head || document.documentElement;
+            target.appendChild(style);
         }
 
         ensureStyles();
+        fleetUiEnsureThemeObserver();
 
         Context.uiLib = {
             FLASH_PULSE_MS,
@@ -451,13 +1227,38 @@ const plugin = {
             COPY_FAILURE_BG,
             SPIN_DURATION,
             TAB_PULSE_MS,
+            PANEL_CLASSES,
+            SEGMENT_CLASSES,
+            FILTER_TOGGLE_CLASSES,
 
             ensureStyles,
             ensureButtonStyles,
+            ensurePanelStyles,
             ensureUserStoryMarkdownStyles,
+            ensureSegmentStyles,
+            ensureFilterToggleStyles,
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,
+
+            segmentBtnClass: fleetUiSegmentBtnClass,
+            segmentBtnHtml: fleetUiSegmentBtnHtml,
+            segmentGroupHtml: fleetUiSegmentGroupHtml,
+            syncSegmentGroup: fleetUiSyncSegmentGroup,
+            bindSegmentGroup: fleetUiBindSegmentGroup,
+
+            filterToggleClass: fleetUiFilterToggleClass,
+            filterToggleHtml: fleetUiFilterToggleHtml,
+            applyFilterToggle: fleetUiApplyFilterToggle,
+
+            isFleetDark: fleetUiIsFleetDark,
+            getFleetTheme: fleetUiGetFleetTheme,
+            chromeColors: fleetUiChromeColors,
+            onThemeChange: fleetUiOnThemeChange,
+            getThemeMode: fleetUiGetThemeMode,
+            setThemeMode: fleetUiSetThemeMode,
+            resolveTheme: fleetUiResolveTheme,
+            syncThemeDataset: () => fleetUiSyncThemeDataset(true),
 
             clearCopyFeedback: fleetUiClearCopyFeedback,
             flashSuccess: fleetUiFlashSuccess,

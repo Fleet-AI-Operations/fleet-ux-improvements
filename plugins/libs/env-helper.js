@@ -1,13 +1,14 @@
 // ============= env-helper.js (library) =============
-// Env Helper for non-VNC external env pages (no-vnc archetype when #noVNC_clipboard_text is absent).
+// External Env Helper for non-VNC external env pages (no-vnc when #noVNC_clipboard_text is absent).
 // Floating modal: Prompt (from qa-comp-use cache) + scratchpad. No clipboard / RFB bridging.
 
 const ROOT_ID = 'fleet-env-helper';
 const TAB_ID = 'fleet-env-helper-tab';
 const Z_INDEX = '2147483646';
 const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
+const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
 const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
-/** Shared with vnc-helper / vnc-prompt-writer so QA prompt cache fills Env Helper too. */
+/** Shared with vnc-helper / vnc-prompt-writer so QA prompt cache fills External Env Helper too. */
 const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
 const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
 /** 'qa' | 'non-qa' — host sets from last Fleet archetype; helpers only prefill when 'qa'. */
@@ -33,18 +34,25 @@ const LAYOUT_STORAGE_KEYS = {
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
-    description: 'When off, hides the Env Helper modal.',
+    description: 'When off, hides the External Env Helper modal.',
     enabledByDefault: true
+};
+
+const FORCE_DARK_SUBOPTION = {
+    id: FORCE_DARK_SUBOPTION_ID,
+    name: 'Force dark mode',
+    description: 'When off, helper chrome stays light. When on, helper chrome stays dark.',
+    enabledByDefault: false
 };
 
 const EnvHelperApi = {
     id: 'envHelper',
-    name: 'Env Helper',
-    description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.8',
+    name: 'External Env Helper',
+    description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
-    subOptions: [SHOW_PANEL_SUBOPTION],
+    subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
     initialState: {
         panelStarted: false,
         waitObserverAttached: false,
@@ -54,6 +62,90 @@ const EnvHelperApi = {
 
     isPanelEnabled() {
         return Storage.getSubOptionEnabled(this.id, SHOW_PANEL_SUBOPTION_ID, true);
+    },
+
+    isForceDarkEnabled() {
+        return Storage.getSubOptionEnabled(this.id, FORCE_DARK_SUBOPTION_ID, false);
+    },
+
+    helperChromeColors(forceDark) {
+        if (forceDark) {
+            return {
+                bg: '#1c1c1e',
+                fg: '#e5e7eb',
+                border: '#3f3f46',
+                headerBg: 'rgba(255,255,255,0.06)',
+                inputBg: '#121212',
+                dark: true
+            };
+        }
+        return {
+            bg: '#ffffff',
+            fg: '#0f172a',
+            border: '#e2e8f0',
+            headerBg: '#f1f5f9',
+            inputBg: '#ffffff',
+            dark: false
+        };
+    },
+
+    applyHelperChrome(root, chip) {
+        const forceDark = this.isForceDarkEnabled();
+        const c = this.helperChromeColors(forceDark);
+        const theme = forceDark ? 'dark' : 'light';
+        const shadow = forceDark
+            ? '0 12px 40px rgba(0,0,0,0.55)'
+            : '0 12px 40px rgba(15,23,42,0.18)';
+        const chipShadow = forceDark
+            ? '0 6px 18px rgba(0,0,0,0.35)'
+            : '0 6px 18px rgba(15,23,42,0.14)';
+        if (root) {
+            root.dataset.fleetHelperTheme = theme;
+            root.style.background = c.bg;
+            root.style.color = c.fg;
+            root.style.border = '1px solid ' + c.border;
+            root.style.borderRadius = '10px';
+            root.style.boxShadow = shadow;
+            const header = root.querySelector('.fleet-ui-panel__header') || root.firstElementChild;
+            if (header) {
+                header.style.background = c.headerBg;
+                header.style.borderBottom = '1px solid ' + c.border;
+                header.style.color = c.fg;
+            }
+            root.querySelectorAll('textarea, input').forEach((el) => {
+                el.style.background = c.inputBg;
+                el.style.color = c.fg;
+                el.style.border = '1px solid ' + c.border;
+            });
+            root.querySelectorAll('button').forEach((el) => {
+                if (!el.style.background || el.style.background === 'transparent' || el.style.background === '') {
+                    el.style.background = c.bg;
+                }
+                el.style.color = c.fg;
+                if (!el.style.border || el.style.border === 'none') {
+                    el.style.border = '1px solid ' + c.border;
+                }
+            });
+        }
+        if (chip) {
+            chip.dataset.fleetHelperTheme = theme;
+            chip.style.background = c.bg;
+            chip.style.color = c.fg;
+            chip.style.border = '1px solid ' + c.border;
+            chip.style.borderRadius = '10px';
+            chip.style.boxShadow = chipShadow;
+            chip.querySelectorAll('button').forEach((el) => {
+                el.style.background = 'transparent';
+                el.style.color = c.fg;
+            });
+        }
+    },
+
+    applyHelperChromeToMounted() {
+        this.applyHelperChrome(
+            document.getElementById(ROOT_ID),
+            document.getElementById(TAB_ID)
+        );
     },
 
     hasNovncClipboard() {
@@ -102,19 +194,13 @@ const EnvHelperApi = {
         btn.type = 'button';
         btn.textContent = label;
         btn.setAttribute('aria-label', ariaLabel);
-        btn.style.cssText =
-            'margin:0;padding:2px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#d0d0d8;font:inherit;font-size:10px;font-weight:500;cursor:pointer;';
-        btn.onmouseenter = () => {
-            btn.style.background = 'rgba(255,255,255,0.14)';
-        };
-        btn.onmouseleave = () => {
-            btn.style.background = 'rgba(255,255,255,0.08)';
-        };
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        btn.className = pc.ghostBtn || '';
         return btn;
     },
 
     /**
-     * Inverse of VNC Helper: start when noVNC clipboard is absent; tear down if it appears later.
+     * Inverse of External VNC Helper: start when noVNC clipboard is absent; tear down if it appears later.
      */
     installWaitObserver(state) {
         if (state.waitObserverAttached) {
@@ -126,7 +212,7 @@ const EnvHelperApi = {
         const sync = () => {
             if (self.hasNovncClipboard()) {
                 if (state.panelStarted) {
-                    Logger.log('noVNC clipboard appeared — tearing down Env Helper');
+                    Logger.log('noVNC clipboard appeared — tearing down External Env Helper');
                     self.destroy(state);
                     self.installWaitObserver(state);
                 }
@@ -192,48 +278,35 @@ const EnvHelperApi = {
 
     applyPromptTextareaSizing(textarea, promptText) {
         const initialLines = promptText ? PROMPT_DEFAULT_LINES : DEFAULT_LINES;
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
         textarea.style.height = this.textareaHeightForLines(initialLines);
         textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
-        textarea.style.overflowY = 'auto';
-        textarea.style.resize = 'vertical';
-        textarea.style.boxSizing = 'border-box';
-        textarea.style.width = '100%';
-        textarea.style.padding = '8px';
-        textarea.style.borderRadius = '6px';
-        textarea.style.border = '1px solid rgba(255,255,255,0.15)';
-        textarea.style.background = 'rgba(0,0,0,0.25)';
-        textarea.style.color = '#f2f2f2';
-        textarea.style.font = 'inherit';
         textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
     },
 
     applyScratchpadTextareaSizing(textarea) {
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
         textarea.style.height = this.textareaHeightForLines(DEFAULT_LINES);
         textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
-        textarea.style.overflowY = 'auto';
-        textarea.style.resize = 'vertical';
-        textarea.style.boxSizing = 'border-box';
-        textarea.style.width = '100%';
-        textarea.style.padding = '8px';
-        textarea.style.borderRadius = '6px';
-        textarea.style.border = '1px solid rgba(255,255,255,0.15)';
-        textarea.style.background = 'rgba(0,0,0,0.25)';
-        textarea.style.color = '#f2f2f2';
-        textarea.style.font = 'inherit';
         textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
     },
 
     makeSectionHeader(label, onToggle, trailingEl) {
         const header = document.createElement('div');
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        header.className = pc.sectionLabel || '';
         header.style.cssText =
-            'display:flex;align-items:center;gap:6px;padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#b0b0b8;letter-spacing:0.03em;text-transform:uppercase;user-select:none;';
+            'display:flex;align-items:center;gap:6px;padding:8px 12px 4px 12px;';
 
         const toggleBtn = document.createElement('button');
         toggleBtn.type = 'button';
         toggleBtn.textContent = '▼';
         toggleBtn.setAttribute('aria-label', `Toggle ${label} section`);
+        toggleBtn.className = pc.muted || '';
         toggleBtn.style.cssText =
-            'margin:0;padding:0 4px;border:none;background:transparent;color:#b0b0b8;font:inherit;font-size:11px;cursor:pointer;line-height:1;';
+            'margin:0;padding:0 4px;border:none;background:transparent;font:inherit;font-size:11px;cursor:pointer;line-height:1;color:inherit;';
 
         const title = document.createElement('span');
         title.textContent = label;
@@ -298,7 +371,7 @@ const EnvHelperApi = {
         state.waitObserverAttached = true;
 
         state.panelStarted = true;
-        Logger.debug('non-VNC env page detected, initialising Env Helper');
+        Logger.debug('non-VNC env page detected, initialising External Env Helper');
 
         const oldRoot = document.getElementById(ROOT_ID);
         const oldTab = document.getElementById(TAB_ID);
@@ -331,17 +404,20 @@ const EnvHelperApi = {
             if (restoreTab) {
                 return;
             }
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
             restoreTab = document.createElement('div');
             restoreTab.id = TAB_ID;
+            restoreTab.className = pc.chip || '';
             restoreTab.style.cssText =
-                'position:fixed;left:20px;bottom:124px;z-index:2147483646;display:flex;align-items:stretch;padding:0;font-size:12px;border-radius:10px;border:1px solid rgba(0,0,0,0.2);background:#111827;color:#f9fafb;box-shadow:0 6px 18px rgba(0,0,0,0.35);overflow:hidden;';
+                'position:fixed;left:20px;bottom:124px;z-index:2147483646;';
 
             const openBtn = document.createElement('button');
             openBtn.type = 'button';
-            openBtn.textContent = 'Env Helper';
-            openBtn.setAttribute('aria-label', 'Toggle Env Helper');
-            openBtn.style.cssText =
-                'margin:0;padding:6px 10px;border:none;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;';
+            openBtn.textContent = 'External Env Helper';
+            openBtn.setAttribute('aria-label', 'Toggle External Env Helper');
             openBtn.addEventListener('click', () => {
                 if (!root) {
                     return;
@@ -358,10 +434,9 @@ const EnvHelperApi = {
             const refreshBtn = document.createElement('button');
             refreshBtn.type = 'button';
             refreshBtn.textContent = '\u21BB';
-            refreshBtn.setAttribute('aria-label', 'Reset Env Helper to default position');
+            refreshBtn.setAttribute('aria-label', 'Reset External Env Helper to default position');
             refreshBtn.title = 'Reset to default position';
-            refreshBtn.style.cssText =
-                'margin:0;padding:6px 8px;border:none;border-left:1px solid rgba(255,255,255,0.15);background:transparent;color:inherit;font:inherit;font-size:13px;line-height:1;cursor:pointer;';
+            refreshBtn.className = pc.chipSep || '';
             refreshBtn.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 if (!root) {
@@ -377,6 +452,7 @@ const EnvHelperApi = {
             restoreTab.appendChild(openBtn);
             restoreTab.appendChild(refreshBtn);
             document.body.appendChild(restoreTab);
+            self.applyHelperChrome(root, restoreTab);
         };
 
         const minimizeModal = () => {
@@ -390,30 +466,29 @@ const EnvHelperApi = {
         };
 
         if (showPanel) {
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
             const savedLayout = this.loadSavedLayout();
             root = document.createElement('div');
             root.id = ROOT_ID;
-            root.style.cssText = `position:fixed;left:${savedLayout.left ?? DEFAULT_MODAL_LEFT}px;top:${savedLayout.top ?? DEFAULT_MODAL_TOP}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
+            root.className = pc.root || '';
+            root.style.cssText = `position:fixed;left:${savedLayout.left ?? DEFAULT_MODAL_LEFT}px;top:${savedLayout.top ?? DEFAULT_MODAL_TOP}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};user-select:none;`;
 
             const headerEl = document.createElement('div');
-            headerEl.style.cssText =
-                'display:flex;align-items:center;gap:8px;padding:8px 10px 8px 12px;font-weight:600;font-size:12px;letter-spacing:0.02em;color:#fff;background:rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;';
+            headerEl.className = pc.header || '';
             const headerTitle = document.createElement('div');
-            headerTitle.textContent = 'Env Helper';
-            headerTitle.style.cssText =
-                'flex:1;min-width:0;cursor:grab;padding:2px 0;font-weight:600;font-size:12px;';
+            headerTitle.textContent = 'External Env Helper';
+            headerTitle.className = pc.title || '';
+            headerTitle.style.cursor = 'grab';
+            headerTitle.style.padding = '2px 0';
             const minimizeBtn = document.createElement('button');
             minimizeBtn.type = 'button';
             minimizeBtn.textContent = 'Minimize';
-            minimizeBtn.setAttribute('aria-label', 'Minimize Env Helper');
-            minimizeBtn.style.cssText =
-                'flex-shrink:0;margin:0;padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:#e8e8e8;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
-            minimizeBtn.onmouseenter = () => {
-                minimizeBtn.style.background = 'rgba(255,255,255,0.16)';
-            };
-            minimizeBtn.onmouseleave = () => {
-                minimizeBtn.style.background = 'rgba(255,255,255,0.1)';
-            };
+            minimizeBtn.setAttribute('aria-label', 'Minimize External Env Helper');
+            minimizeBtn.className = pc.btn || '';
+            minimizeBtn.style.flexShrink = '0';
             headerEl.appendChild(headerTitle);
             headerEl.appendChild(minimizeBtn);
 
@@ -467,14 +542,14 @@ const EnvHelperApi = {
             bodyEl.appendChild(scratchBody);
 
             const resizeHandle = document.createElement('div');
-            resizeHandle.setAttribute('aria-label', 'Resize Env Helper');
-            resizeHandle.style.cssText =
-                'position:absolute;right:2px;bottom:2px;width:14px;height:14px;cursor:se-resize;background:transparent;border-right:2px solid rgba(255,255,255,0.25);border-bottom:2px solid rgba(255,255,255,0.25);border-radius:0 0 8px 0;z-index:1;';
+            resizeHandle.setAttribute('aria-label', 'Resize External Env Helper');
+            resizeHandle.className = pc.resize || '';
 
             root.appendChild(headerEl);
             root.appendChild(bodyEl);
             root.appendChild(resizeHandle);
             document.body.appendChild(root);
+            self.applyHelperChrome(root, null);
 
             minimizeBtn.addEventListener('click', (ev) => {
                 ev.stopPropagation();
@@ -585,7 +660,7 @@ const EnvHelperApi = {
         if (showPanel) {
             minimizeModal();
             Logger.log('modal active (starts minimized)');
-            toast('Env Helper ready — open from the tab.');
+            toast('External Env Helper ready — open from the tab.');
         } else {
             Logger.debug('panel hidden via settings');
         }
@@ -593,6 +668,7 @@ const EnvHelperApi = {
 
     run(state) {
         if (state.panelStarted) {
+            this.applyHelperChromeToMounted();
             return;
         }
         this.installWaitObserver(state);
@@ -624,9 +700,9 @@ const EnvHelperApi = {
 
 const plugin = {
     id: 'envHelperLib',
-    name: 'Env Helper (library)',
-    description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '1.7',
+    name: 'External Env Helper (library)',
+    description: 'Shared API for External Env Helper panel on non-VNC env pages',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -656,9 +732,14 @@ const plugin = {
 };
 
 function toast(message) {
+    if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+        Context.uiLib.ensurePanelStyles();
+    }
+    const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
     const d = document.createElement('div');
     d.textContent = message;
-    d.style.cssText = `position:fixed;top:12px;right:12px;z-index:${Z_INDEX};background:rgba(0,0,0,0.88);color:#fff;font:12px/1.4 system-ui,Segoe UI,sans-serif;padding:10px 12px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.35);max-width:min(420px,92vw);word-break:break-word;white-space:pre-wrap;`;
+    d.className = pc.toast || '';
+    d.style.cssText = `position:fixed;top:12px;right:12px;z-index:${Z_INDEX};`;
     document.body.appendChild(d);
     setTimeout(() => {
         d.remove();

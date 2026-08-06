@@ -298,7 +298,7 @@ const SourceDataExplorerApi = {
                     Cancel
                 </button>
                 <button type="button" id="fleet-explore-gui-ack-continue" disabled
-                    style="padding: 8px 16px; border-radius: 6px; border: none; background: #171717; color: #fafafa; font-size: 13px; font-weight: 500; cursor: not-allowed; opacity: 0.5;">
+                    style="padding: 8px 16px; border-radius: 6px; border: 1px solid var(--brand, var(--primary, #2563eb)); background: var(--brand, var(--primary, #2563eb)); color: var(--primary-foreground, #ffffff); font-size: 13px; font-weight: 500; cursor: not-allowed; opacity: 0.5;">
                     Acknowledge and continue
                 </button>
             </div>
@@ -397,7 +397,7 @@ const plugin = {
     id: 'sourceDataExplorerLib',
     name: 'Explore GUI (library)',
     description: 'Shared Explore GUI API: mcp-proxy capture, acknowledgment modal, and button chrome (archetype modules supply placement)',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

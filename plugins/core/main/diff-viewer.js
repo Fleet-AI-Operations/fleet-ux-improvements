@@ -1251,8 +1251,18 @@ function _dvApplyAllFinal(modal) {
 // ── Panel HTML (built once) ──
 
 function _dvSegBtn(attrName, value, label, active, divider) {
-    const divCls = divider ? ' dv-seg-btn--divider' : '';
-    return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
+    const ui = Context.uiLib;
+    if (ui && typeof ui.segmentBtnHtml === 'function') {
+        return ui.segmentBtnHtml({
+            valueAttr: attrName,
+            value,
+            label,
+            active,
+            divider
+        });
+    }
+    const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
+    return `<button type="button" ${attrName}="${value}" class="fleet-ui-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
 }
 
 function _dvToggleCell(labelStyle, title, innerHtml) {
@@ -1276,14 +1286,14 @@ function _dvPanelHtml(dash) {
     const leftHtml = `
     <div style="${box}display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;gap:12px;">
         <div id="dv-universal-toggles" class="dv-universal-toggles">
-            ${_dvToggleCell(label, 'Highlights', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}</div>`)}
-            ${_dvToggleCell(label, 'Type', `<div class="dv-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
-            ${_dvToggleCell(label, 'Modality', `<div class="dv-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
-            ${_dvToggleCell(label, 'Granularity', `<div class="dv-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
-            ${_dvToggleCell(label, 'Punctuation', `<div class="dv-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
+            ${_dvToggleCell(label, 'Highlights', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}</div>`)}
+            ${_dvToggleCell(label, 'Type', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
+            ${_dvToggleCell(label, 'Modality', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
+            ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
+            ${_dvToggleCell(label, 'Punctuation', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
             <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Link Splits</div>
-                <div class="dv-seg-group" role="group" aria-label="Link split similarity matches">
+                <div class="fleet-ui-seg-group" role="group" aria-label="Link split similarity matches">
                     ${_dvSegBtn('data-dv-link-splits', 'off', 'Off', !linkSplits, true)}
                     ${_dvSegBtn('data-dv-link-splits', 'on', 'On', linkSplits, false)}
                 </div>
@@ -1300,7 +1310,7 @@ function _dvPanelHtml(dash) {
         <div id="dv-tasks-controls" style="display:${_dvState.mode==='tasks'?'flex':'none'};flex-direction:column;gap:12px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;">
             <div id="dv-comp-mode-section" style="flex-shrink:0;">
                 <div style="${label}margin-bottom:6px;">Mode</div>
-                <div class="dv-seg-group">
+                <div class="fleet-ui-seg-group">
                     ${_dvSegBtn('data-dv-comp-mode', 'base', 'Base Comparison', compMode === 'base', true)}
                     ${_dvSegBtn('data-dv-comp-mode', 'rolling', 'Rolling Comparison', compMode === 'rolling', false)}
                 </div>
@@ -1526,7 +1536,7 @@ function _dvSlotHtml(slot, slotIdx) {
 
     const btnStyle = _dvIconBtnStyle();
     const minimizeBtn = `<button type="button" data-dv-minimize="${slotIdx}" title="Minimize to stash" style="${btnStyle}background:var(--muted,rgba(0,0,0,0.08));color:var(--muted-foreground,#64748b);">−</button>`;
-    const removeBtn = `<button type="button" data-dv-remove="${slotIdx}" title="Remove from comparison and stash" aria-label="Remove from comparison and stash" style="${btnStyle}background:#fee2e2;color:#dc2626;">×</button>`;
+    const removeBtn = `<button type="button" data-dv-remove="${slotIdx}" title="Remove from comparison and stash" aria-label="Remove from comparison and stash" style="${btnStyle}background:color-mix(in srgb, #dc2626 12%, var(--background, #fff));color:#dc2626;">×</button>`;
 
     let bodyHtml = '';
     if (slot.loading) {
@@ -2513,6 +2523,9 @@ function _dvInjectStyles() {
     if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
         Context.uiLib.ensureStyles();
     }
+    if (Context.uiLib && typeof Context.uiLib.ensureSegmentStyles === 'function') {
+        Context.uiLib.ensureSegmentStyles('#wf-dash-modal');
+    }
     let style = document.getElementById('dv-styles');
     if (!style) {
         style = document.createElement('style');
@@ -2553,41 +2566,12 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-toggle-cell {',
         '  flex-shrink: 0;',
         '}',
-        '#wf-dash-modal .dv-seg-group {',
-        '  display: inline-flex;',
-        '  border-radius: 6px;',
-        '  overflow: hidden;',
-        '  border: 1px solid var(--border, #475569);',
-        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 6%, var(--card, #1e293b));',
-        '}',
-        '#wf-dash-modal .dv-seg-btn {',
-        '  padding: 5px 12px;',
-        '  font-size: 12px;',
-        '  font-weight: 600;',
-        '  border: none;',
-        '  cursor: pointer;',
-        '  background: transparent;',
-        '  color: var(--foreground, #e2e8f0);',
-        '  transition: background-color 0.15s, color 0.15s;',
-        '  line-height: 1.4;',
-        '}',
-        '#wf-dash-modal .dv-seg-btn--divider {',
-        '  border-right: 1px solid var(--border, #475569);',
-        '}',
-        '#wf-dash-modal .dv-seg-btn[aria-pressed="true"] {',
-        '  background: var(--brand, #2563eb);',
-        '  color: #ffffff;',
-        '}',
-        '#wf-dash-modal .dv-seg-btn:not([aria-pressed="true"]):hover {',
-        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 10%, transparent);',
-        '  color: var(--foreground, #f8fafc);',
-        '}',
         '#wf-dash-modal [data-dv-drag] { cursor: grab; }',
         '#wf-dash-modal [data-dv-drag]:active { cursor: grabbing; }',
         '#wf-dash-modal .dv-drag-placeholder {',
-        '  border: 2px dashed var(--border, #475569);',
+        '  border: 2px dashed var(--border, #e2e8f0);',
         '  border-radius: 8px;',
-        '  background: color-mix(in srgb, var(--foreground, #e2e8f0) 4%, transparent);',
+        '  background: color-mix(in srgb, var(--foreground, #0f172a) 4%, transparent);',
         '  opacity: 0.5;',
         '  box-sizing: border-box;',
         '  flex: 1;',
@@ -2634,7 +2618,7 @@ function _dvInjectStyles() {
         '  font-size: 9px;',
         '  font-weight: 700;',
         '  color: var(--muted-foreground, #94a3b8);',
-        '  border: 1px solid var(--border, #475569);',
+        '  border: 1px solid var(--border, #e2e8f0);',
         '  border-radius: 3px;',
         '  padding: 1px 5px;',
         '  letter-spacing: 0.04em;',
@@ -2726,7 +2710,7 @@ function _dvInjectStyles() {
         '  white-space: nowrap;',
         '}',
         '#wf-dash-modal .dv-version-count-num {',
-        '  color: var(--foreground, #f8fafc);',
+        '  color: var(--foreground, #0f172a);',
         '  font-weight: 600;',
         '}',
         '#wf-dash-modal .dv-version-count-label {',
@@ -2985,7 +2969,7 @@ function _dvInjectStyles() {
         '#wf-dash-modal .dv-reel-version-label--current {',
         '  font-size: 9px;',
         '  font-weight: 700;',
-        '  color: var(--foreground, #f8fafc);',
+        '  color: var(--foreground, #0f172a);',
         '}',
         '#wf-dash-modal .dv-reel-copy {',
         '  position: absolute;',
@@ -3111,7 +3095,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '4.2',
+    _version: '4.4',
     phase: 'core',
     enabledByDefault: true,
 

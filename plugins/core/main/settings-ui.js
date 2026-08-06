@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.3',
+    _version: '11.11',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -124,9 +124,12 @@ const plugin = {
     },
 
     _ensureDialogBackdropStyles() {
-        if (document.getElementById('wf-settings-dialog-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'wf-settings-dialog-styles';
+        let style = document.getElementById('wf-settings-dialog-styles');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'wf-settings-dialog-styles';
+            (document.head || document.documentElement).appendChild(style);
+        }
         style.textContent = `
             #wf-settings-modal {
                 margin: 0;
@@ -148,22 +151,180 @@ const plugin = {
                 border: 2px solid rgba(220, 38, 38, 0.9);
                 animation: wf-settings-update-flash 1.2s ease-in-out infinite;
             }
+            #wf-update-notification-banner {
+                margin-bottom: 20px;
+                padding: 14px;
+                padding-top: 20px;
+                background: #fee2e2;
+                border: 2px solid #dc2626;
+                border-radius: 8px;
+            }
+            #wf-update-notification-banner .wf-update-banner-title,
+            #wf-update-notification-banner .wf-update-banner-body,
+            #wf-update-notification-banner .wf-update-banner-body a {
+                color: #991b1b;
+            }
+            #wf-update-notification-banner .wf-update-banner-body a {
+                text-decoration: underline;
+                font-weight: 600;
+            }
+            #wf-update-refresh-row {
+                margin-top: 12px;
+                padding-top: 10px;
+                border-top: 1px solid #fecaca;
+                text-align: center;
+            }
+            #wf-update-refresh-btn {
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #991b1b;
+                background: #fef2f2;
+                border: 1px solid #dc2626;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner {
+                background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));
+            }
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-title,
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-body,
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-body a {
+                color: #fca5a5;
+            }
+            html[data-fleet-ux-theme="dark"] #wf-update-refresh-row {
+                border-top-color: #7f1d1d;
+            }
+            html[data-fleet-ux-theme="dark"] #wf-update-refresh-btn {
+                color: #fecaca;
+                background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));
+            }
+            .wf-amber-banner {
+                margin-bottom: 20px;
+                padding: 14px;
+                background: #fef3c7;
+                border: 2px solid #f59e0b;
+                border-radius: 8px;
+            }
+            .wf-amber-banner--soft {
+                margin-bottom: 20px;
+                padding: 12px;
+                background: #fef3c7;
+                border: 1px solid #f59e0b;
+                border-radius: 6px;
+            }
+            .wf-amber-banner-title,
+            .wf-amber-banner-body,
+            .wf-amber-banner-body a,
+            #wf-settings-message,
+            #wf-settings-message a {
+                color: #92400e;
+            }
+            #wf-settings-message {
+                background: #fef3c7;
+                border: 1px solid #f59e0b;
+            }
+            #wf-ops-refresh-fetch-btn {
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: 600;
+                color: #92400e;
+                background: #fffbeb;
+                border: 1px solid #f59e0b;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+            .wf-amber-banner .wf-amber-banner-footer {
+                margin-top: 12px;
+                padding-top: 10px;
+                border-top: 1px solid #fcd34d;
+                text-align: center;
+            }
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner,
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner--soft,
+            html[data-fleet-ux-theme="dark"] #wf-settings-message {
+                background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));
+            }
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner-title,
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner-body,
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner-body a,
+            html[data-fleet-ux-theme="dark"] #wf-settings-message,
+            html[data-fleet-ux-theme="dark"] #wf-settings-message a {
+                color: #fcd34d;
+            }
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner .wf-amber-banner-footer {
+                border-top-color: #92400e;
+            }
+            html[data-fleet-ux-theme="dark"] #wf-ops-refresh-fetch-btn {
+                color: #fef3c7;
+                background: color-mix(in srgb, #f59e0b 28%, var(--background, #121212));
+            }
         `;
-        (document.head || document.documentElement).appendChild(style);
     },
 
     _isFleetDark() {
+        if (Context.uiLib && typeof Context.uiLib.isFleetDark === 'function') {
+            return Context.uiLib.isFleetDark();
+        }
         return document.documentElement.classList.contains('dark');
+    },
+
+    _getPreferredThemeMode() {
+        if (Context.uiLib && typeof Context.uiLib.getThemeMode === 'function') {
+            return Context.uiLib.getThemeMode();
+        }
+        return 'match';
+    },
+
+    _setPreferredThemeMode(mode) {
+        if (Context.uiLib && typeof Context.uiLib.setThemeMode === 'function') {
+            return Context.uiLib.setThemeMode(mode);
+        }
+        return mode;
+    },
+
+    _createPreferredModeHTML() {
+        const mode = this._getPreferredThemeMode();
+        const c = this._settingsThemeColors();
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-settings-modal');
+        }
+        const groupHtml = ui && typeof ui.segmentGroupHtml === 'function'
+            ? ui.segmentGroupHtml({
+                value: mode,
+                valueAttr: 'data-theme-mode',
+                fill: true,
+                ariaLabel: 'Preferred mode',
+                options: [
+                    { value: 'match', label: 'Match site', id: 'wf-theme-mode-match' },
+                    { value: 'light', label: 'Light', id: 'wf-theme-mode-light' },
+                    { value: 'dark', label: 'Dark', id: 'wf-theme-mode-dark' }
+                ]
+            })
+            : '';
+        return `
+            <div style="margin-bottom: 20px;">
+                <div style="padding: 12px 14px; border: 1px solid ${c.border}; border-radius: 8px; background: ${c.card};">
+                    <div style="font-size: 14px; font-weight: 600; color: ${c.fg}; margin-bottom: 10px;">Preferred mode</div>
+                    ${groupHtml}
+                </div>
+            </div>
+        `;
     },
 
     /** Opaque light/dark palette for Settings modal surfaces (avoids fragile host CSS vars). */
     _settingsThemeColors() {
+        if (Context.uiLib && typeof Context.uiLib.chromeColors === 'function') {
+            return Context.uiLib.chromeColors();
+        }
         if (this._isFleetDark()) {
             return {
                 bg: '#18181b',
                 card: '#27272a',
                 hover: '#3f3f46',
                 border: '#3f3f46',
+                borderHover: '#52525b',
                 fg: '#e4e4e7',
                 muted: '#a1a1aa'
             };
@@ -173,6 +334,7 @@ const plugin = {
             card: '#fafafa',
             hover: '#f0f0f0',
             border: '#e5e5e5',
+            borderHover: '#d1d5db',
             fg: '#333333',
             muted: '#666666'
         };
@@ -212,7 +374,7 @@ const plugin = {
             height: 48px;
             border-radius: 50%;
             background: ${shouldPulse ? bgOpaque : bgTranslucent};
-            border: 1px solid #60a5fa;
+            border: 1px solid var(--brand, #60a5fa);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             display: flex;
             align-items: center;
@@ -465,6 +627,7 @@ const plugin = {
 
         const contentStyle = `
             background: ${c.bg};
+            color: ${c.fg};
             border: 1px solid ${c.border};
             border-radius: 12px;
             padding: 24px;
@@ -496,18 +659,24 @@ const plugin = {
             ? Context.opsTab.renderSettingsSection()
             : '';
         const defaultTab = this._getDefaultSettingsTabId();
-        const paneDisplay = (tabId) => (tabId === defaultTab ? 'block' : 'none');
+        const openTab = (() => {
+            const pending = this._pendingSettingsTabId;
+            if (!pending) return defaultTab;
+            const valid = this._getSettingsTabs().some((t) => t.id === pending);
+            return valid ? pending : defaultTab;
+        })();
+        const paneDisplay = (tabId) => (tabId === openTab ? 'block' : 'none');
         const noPluginsMsg = Context.isOutdated
             ? 'No plugins will load until you update the userscript.'
             : 'No plugins loaded for this page.';
         const pluginTogglesHTML = orderedPlugins.length > 0 
             ? orderedPlugins.map(plugin => this._createPluginToggleHTML(plugin, submoduleLoggingEnabled, globalEnabled)).join('')
-            : `<p style="color: #666; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
+            : `<p style="color: ${c.muted}; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
         
         // Build dev plugin toggles HTML
         const devPluginTogglesHTML = orderedDevPlugins.length > 0 
             ? orderedDevPlugins.map(plugin => this._createPluginToggleHTML(plugin, submoduleLoggingEnabled, globalEnabled)).join('')
-            : '<p style="color: #666; font-size: 13px; font-style: italic;">No dev plugins loaded.</p>';
+            : `<p style="color: ${c.muted}; font-size: 13px; font-style: italic;">No dev plugins loaded.</p>`;
         
         // Build outdated plugins warning HTML
         const outdatedPluginsHTML = Context.outdatedPlugins && Context.outdatedPlugins.length > 0
@@ -525,7 +694,7 @@ const plugin = {
         
         const hasDevSettings = this._hasActiveDevSettings();
         const tabs = this._getSettingsTabs();
-        const tabRowHTML = this._createTabRowHTML(tabs, defaultTab);
+        const tabRowHTML = this._createTabRowHTML(tabs, openTab);
         
         // Build the Dev pane content
         const devGlobalEnabled = this._getDevGlobalEnabled();
@@ -533,10 +702,10 @@ const plugin = {
             <div id="wf-settings-pane-dev" data-tab="dev" class="wf-settings-pane" style="display: none;">
             <!-- Dev Global Toggle -->
             <div style="margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: ${this._settingsThemeColors().card};">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid ${c.border}; border-radius: 8px; background: ${this._settingsThemeColors().card};">
                     <div>
-                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Dev Plugins</div>
-                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px;">
+                        <div style="font-size: 14px; font-weight: 600; color: ${c.fg};">Enable Dev Plugins</div>
+                        <div style="font-size: 12px; color: ${c.muted}; margin-top: 4px;">
                             Disables all dev plugins on refresh when turned off.
                         </div>
                     </div>
@@ -548,9 +717,9 @@ const plugin = {
                         padding: 8px 12px;
                         font-size: 13px;
                         font-weight: 500;
-                        color: var(--foreground, #333);
+                        color: ${c.fg};
                         background: ${this._settingsThemeColors().card};
-                        border: 1px solid var(--border, #e5e5e5);
+                        border: 1px solid ${c.border};
                         border-radius: 6px;
                         cursor: pointer;
                         transition: all 0.2s;
@@ -560,9 +729,9 @@ const plugin = {
                         padding: 8px 12px;
                         font-size: 13px;
                         font-weight: 500;
-                        color: var(--foreground, #333);
+                        color: ${c.fg};
                         background: ${this._settingsThemeColors().card};
-                        border: 1px solid var(--border, #e5e5e5);
+                        border: 1px solid ${c.border};
                         border-radius: 6px;
                         cursor: pointer;
                         transition: all 0.2s;
@@ -572,7 +741,7 @@ const plugin = {
 
             <!-- Dev Plugins Section -->
             <div style="margin-bottom: 20px;">
-                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
+                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: ${c.fg};">
                     Dev Plugins (${devPlugins.length})
                 </h3>
                 <div id="wf-dev-plugin-list">
@@ -581,8 +750,8 @@ const plugin = {
             </div>
             
             <!-- Debug Section -->
-            <div style="border-top: 1px solid var(--border, #e5e5e5); padding-top: 16px; margin-bottom: 16px;">
-                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
+            <div style="border-top: 1px solid ${c.border}; padding-top: 16px; margin-bottom: 16px;">
+                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: ${c.fg};">
                     Debug Options
                 </h3>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
@@ -595,9 +764,9 @@ const plugin = {
                                 padding: 6px 10px;
                                 font-size: 12px;
                                 font-weight: 500;
-                                color: var(--foreground, #333);
+                                color: ${c.fg};
                                 background: ${this._settingsThemeColors().card};
-                                border: 1px solid var(--border, #e5e5e5);
+                                border: 1px solid ${c.border};
                                 border-radius: 6px;
                                 cursor: pointer;
                                 transition: all 0.2s;
@@ -607,9 +776,9 @@ const plugin = {
                                 padding: 6px 10px;
                                 font-size: 12px;
                                 font-weight: 500;
-                                color: var(--foreground, #333);
+                                color: ${c.fg};
                                 background: ${this._settingsThemeColors().card};
-                                border: 1px solid var(--border, #e5e5e5);
+                                border: 1px solid ${c.border};
                                 border-radius: 6px;
                                 cursor: pointer;
                                 transition: all 0.2s;
@@ -628,12 +797,12 @@ const plugin = {
         modal.innerHTML = `
             <div id="wf-settings-content" style="${contentStyle}">
             <!-- Sticky Header -->
-            <div id="wf-settings-sticky-header" style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: ${this._settingsThemeColors().bg}; border-bottom: 1px solid var(--border, #e5e5e5); z-index: 1;">
+            <div id="wf-settings-sticky-header" style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: ${this._settingsThemeColors().bg}; border-bottom: 1px solid ${c.border}; z-index: 1;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                     <div>
-                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0;">Fleet Enhancer Extension</h2>
-                        <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0;">
-                            v${version} · a${Context.archetypesVersion || '?'} · <strong>${(archetypeId.replace(/archetype/gi, '').trim() || archetypeId)}</strong>
+                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0; color: ${c.fg};">Fleet Enhancer Extension</h2>
+                        <p style="font-size: 13px; color: ${c.muted}; margin: 0;">
+                            v${version} · a${Context.archetypesVersion || '?'} · <strong style="color: ${c.fg};">${(archetypeId.replace(/archetype/gi, '').trim() || archetypeId)}</strong>
                         </p>
                     </div>
                     <button id="wf-settings-close" style="
@@ -647,7 +816,7 @@ const plugin = {
                         background: transparent;
                         cursor: pointer;
                         transition: background 0.2s;
-                        color: var(--foreground, #333);
+                        color: ${c.fg};
                     ">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 6L6 18M6 6l12 12"/>
@@ -657,8 +826,8 @@ const plugin = {
                 ${updateNotificationHTML}
                 ${opsRefreshBannerHTML}
                 ${tabRowHTML}
-                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; font-size: 13px; text-align: center; color: #92400e;">
-                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.
+                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 13px; text-align: center; color: ${c.fg};">
+                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: var(--brand, #4f46e5); text-decoration: underline;">Refresh</a> the page for changes to take effect.
                 </div>
             </div>
             
@@ -666,10 +835,10 @@ const plugin = {
             <div id="wf-settings-pane-settings" data-tab="settings" class="wf-settings-pane" style="display: none;">
             <!-- Global Toggle -->
             <div style="margin-bottom: 20px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: ${this._settingsThemeColors().card};">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border: 1px solid ${c.border}; border-radius: 8px; background: ${this._settingsThemeColors().card};">
                     <div>
-                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Plugins</div>
-                        <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 4px;">
+                        <div style="font-size: 14px; font-weight: 600; color: ${c.fg};">Enable Plugins</div>
+                        <div style="font-size: 12px; color: ${c.muted}; margin-top: 4px;">
                             Disables all plugins on refresh when turned off.
                         </div>
                     </div>
@@ -681,9 +850,9 @@ const plugin = {
                         padding: 8px 12px;
                         font-size: 13px;
                         font-weight: 500;
-                        color: var(--foreground, #333);
+                        color: ${c.fg};
                         background: ${this._settingsThemeColors().card};
-                        border: 1px solid var(--border, #e5e5e5);
+                        border: 1px solid ${c.border};
                         border-radius: 6px;
                         cursor: pointer;
                         transition: all 0.2s;
@@ -693,15 +862,17 @@ const plugin = {
                         padding: 8px 12px;
                         font-size: 13px;
                         font-weight: 500;
-                        color: var(--foreground, #333);
+                        color: ${c.fg};
                         background: ${this._settingsThemeColors().card};
-                        border: 1px solid var(--border, #e5e5e5);
+                        border: 1px solid ${c.border};
                         border-radius: 6px;
                         cursor: pointer;
                         transition: all 0.2s;
                     ">All Off</button>
                 </div>
             </div>
+
+            ${this._createPreferredModeHTML()}
 
             ${opsSettingsHTML}
 
@@ -710,7 +881,7 @@ const plugin = {
             
             <!-- Plugins Section -->
             <div style="margin-bottom: 20px;">
-                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--foreground, #333);">
+                <h3 style="font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: ${c.fg};">
                     Plugins (${archetypePlugins.length})
                 </h3>
                 <div id="wf-plugin-list">
@@ -719,13 +890,13 @@ const plugin = {
             </div>
             
             <!-- Footer -->
-            <div style="font-size: 11px; color: var(--muted-foreground, #888); text-align: center; padding-top: 12px; border-top: 1px solid var(--border, #e5e5e5);">
+            <div style="font-size: 11px; color: ${c.muted}; text-align: center; padding-top: 12px; border-top: 1px solid ${c.border};">
                 Fleet Workflow Enhancer · 
                 <a href="#" id="wf-reload-plugins" style="color: var(--brand, #4f46e5); text-decoration: none;">Reload Plugins</a>
             </div>
             
             <!-- Clear Cache Button -->
-            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border, #e5e5e5);">
+            <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid ${c.border};">
                 <button id="wf-clear-cache" style="
                     width: 100%;
                     padding: 10px 16px;
@@ -744,32 +915,32 @@ const plugin = {
             <div id="wf-settings-pane-information" data-tab="information" class="wf-settings-pane" style="display: ${paneDisplay('information')}; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-features" data-tab="features" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;"></div>
             <div id="wf-settings-pane-feedback" data-tab="feedback" class="wf-settings-pane" style="display: none; overflow-y: auto; min-height: 200px;">
-                <p style="font-size: 13px; color: var(--muted-foreground, #666); margin: 0 0 16px 0; line-height: 1.5;">
+                <p style="font-size: 13px; color: ${c.muted}; margin: 0 0 16px 0; line-height: 1.5;">
                     We’d love to hear from you. Send feedback, suggest a feature, or report a bug—your input helps improve the extension.
                 </p>
                 <div style="margin-bottom: 12px;">
-                    <label for="wf-feedback-title" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Title</label>
+                    <label for="wf-feedback-title" style="display: block; font-size: 12px; font-weight: 500; color: ${c.fg}; margin-bottom: 4px;">Title</label>
                     <input type="text" id="wf-feedback-title" placeholder="Short summary" maxlength="256" style="
                         width: 100%;
                         padding: 8px 12px;
                         font-size: 13px;
-                        border: 1px solid var(--border, #e5e5e5);
+                        border: 1px solid ${c.border};
                         border-radius: 6px;
                         background: ${this._settingsThemeColors().bg};
-                        color: var(--foreground, #333);
+                        color: ${c.fg};
                         box-sizing: border-box;
                     ">
                 </div>
                 <div style="margin-bottom: 16px;">
-                    <label for="wf-feedback-description" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 4px;">Description</label>
+                    <label for="wf-feedback-description" style="display: block; font-size: 12px; font-weight: 500; color: ${c.fg}; margin-bottom: 4px;">Description</label>
                     <textarea id="wf-feedback-description" placeholder="Describe your feedback, feature request, or bug in as much detail as you’d like." rows="5" style="
                         width: 100%;
                         padding: 8px 12px;
                         font-size: 13px;
-                        border: 1px solid var(--border, #e5e5e5);
+                        border: 1px solid ${c.border};
                         border-radius: 6px;
                         background: ${this._settingsThemeColors().bg};
-                        color: var(--foreground, #333);
+                        color: ${c.fg};
                         resize: vertical;
                         box-sizing: border-box;
                         font-family: inherit;
@@ -817,6 +988,7 @@ const plugin = {
     },
 
     _createPluginToggleHTML(plugin, submoduleLoggingEnabled, globalEnabled) {
+        const c = this._settingsThemeColors();
         const isEnabled = PluginManager.isEnabled(plugin.id);
         const isDisabled = !globalEnabled;
         const moduleLoggingEnabled = Logger.isModuleLoggingEnabled(plugin.id);
@@ -825,18 +997,18 @@ const plugin = {
         const subOptionsHTML = this._createSubOptionsHTML(plugin, isEnabled, isDisabled);
         
         const moduleToggleHTML = Context.isDevBranch && submoduleLoggingEnabled && isEnabled ? `
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
-                    <label style="font-size: 12px; color: var(--muted-foreground, #666);" for="wf-plugin-log-${plugin.id}">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px dashed ${c.border};">
+                    <label style="font-size: 12px; color: ${c.muted};" for="wf-plugin-log-${plugin.id}">
                         Module Logging
                     </label>
                     ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small', variant: 'log' })}
                 </div>
         ` : '';
         return `
-            <div class="wf-plugin-item" data-plugin-id="${plugin.id}" style="position: relative; display: flex; flex-direction: column; padding: 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; margin-bottom: 10px; background: ${this._settingsThemeColors().card}; will-change: transform;">
+            <div class="wf-plugin-item" data-plugin-id="${plugin.id}" style="position: relative; display: flex; flex-direction: column; padding: 12px; border: 1px solid ${c.border}; border-radius: 8px; margin-bottom: 10px; background: ${this._settingsThemeColors().card}; will-change: transform;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
-                        <div class="wf-drag-handle" title="Drag to reorder" style="width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: grab; color: var(--muted-foreground, #888); user-select: none;">
+                        <div class="wf-drag-handle" title="Drag to reorder" style="width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: grab; color: ${c.muted}; user-select: none;">
                             <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                                 <line x1="4" y1="5" x2="16" y2="5"></line>
                                 <line x1="4" y1="10" x2="16" y2="10"></line>
@@ -844,15 +1016,15 @@ const plugin = {
                             </svg>
                         </div>
                         <div style="display: flex; align-items: baseline; gap: 4px; min-width: 0; overflow: hidden;">
-                            <label style="font-size: 14px; font-weight: 500; cursor: pointer; color: var(--foreground, #333); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" for="wf-plugin-${plugin.id}">
+                            <label style="font-size: 14px; font-weight: 500; cursor: pointer; color: ${c.fg}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" for="wf-plugin-${plugin.id}">
                                 ${plugin.name || plugin.id}
                             </label>
-                            ${plugin._version ? `<span style="font-size: 11px; font-weight: 400; color: var(--muted-foreground, #666); flex-shrink: 0;">(${plugin._version})</span>` : ''}
+                            ${plugin._version ? `<span style="font-size: 11px; font-weight: 400; color: ${c.muted}; flex-shrink: 0;">(${plugin._version})</span>` : ''}
                         </div>
                     </div>
                     ${this._createSwitchHTML(`wf-plugin-${plugin.id}`, isEnabled, plugin.id, isDisabled)}
                 </div>
-                <div style="font-size: 12px; color: var(--muted-foreground, #666); margin-top: 6px; line-height: 1.4;">
+                <div style="font-size: 12px; color: ${c.muted}; margin-top: 6px; line-height: 1.4;">
                     ${plugin.description || 'No description available'}
                 </div>
                 ${subOptionsHTML}
@@ -862,6 +1034,7 @@ const plugin = {
     },
     
     _createSubOptionsHTML(plugin, pluginEnabled, globalDisabled) {
+        const c = this._settingsThemeColors();
         if (!plugin.subOptions || !Array.isArray(plugin.subOptions) || plugin.subOptions.length === 0) {
             return '';
         }
@@ -880,10 +1053,10 @@ const plugin = {
             return `
                 <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0;">
                     <div style="flex: 1; min-width: 0;">
-                        <label style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer;" for="${subOptionId}">
+                        <label style="font-size: 12px; color: ${c.muted}; cursor: pointer;" for="${subOptionId}">
                             ${subOption.name || subOption.id}
                         </label>
-                        ${subOption.description ? `<div style="font-size: 11px; color: var(--muted-foreground, #888); margin-top: 2px;">${subOption.description}</div>` : ''}
+                        ${subOption.description ? `<div style="font-size: 11px; color: ${c.muted}; margin-top: 2px;">${subOption.description}</div>` : ''}
                     </div>
                     ${this._createSwitchHTML(subOptionId, isSubOptionEnabled, null, isDisabled, { size: 'small', variant: 'sub' })}
                 </div>
@@ -891,7 +1064,7 @@ const plugin = {
         }).join('');
         
         return `
-            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
+            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed ${c.border};">
                 <div style="margin-left: 12px;">
                     ${subOptionItems}
                 </div>
@@ -900,9 +1073,10 @@ const plugin = {
     },
     
     _createToggleHTML(id, label, isEnabled, variant = 'main') {
+        const c = this._settingsThemeColors();
         return `
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; background: ${this._settingsThemeColors().card};">
-                <label style="font-size: 13px; color: var(--foreground, #333);" for="${id}">${label}</label>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid ${c.border}; border-radius: 6px; background: ${this._settingsThemeColors().card};">
+                <label style="font-size: 13px; color: ${c.fg};" for="${id}">${label}</label>
                 ${this._createSwitchHTML(id, isEnabled, null, false, { variant })}
             </div>
         `;
@@ -915,7 +1089,10 @@ const plugin = {
         // Main toggles: green. Sub-options: blue. Log options: yellow.
         const variant = opts.variant || (isSmall ? 'sub' : 'main');
         const onColor = variant === 'main' ? '#22c55e' : variant === 'log' ? '#ca8a04' : '#6366f1';
-        const sliderBg = isDisabled ? '#d1d5db' : (isEnabled ? onColor : '#ccc');
+        const theme = this._settingsThemeColors();
+        const offTrack = theme.hover;
+        const disabledTrack = theme.border;
+        const sliderBg = isDisabled ? disabledTrack : (isEnabled ? onColor : offTrack);
         const knobBg = isDisabled ? '#f3f4f6' : 'white';
         const knobShadow = isDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.2)';
         const w = isSmall ? 33 : 44;
@@ -1008,7 +1185,14 @@ const plugin = {
         } else if (Context.opsTab) {
             Logger.warn('Context.opsTab.attachSettingsListeners unavailable');
         }
-        this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
+        this._switchSettingsTab(modal, (() => {
+            const pending = this._pendingSettingsTabId;
+            this._pendingSettingsTabId = null;
+            if (pending && this._getSettingsTabs().some((t) => t.id === pending)) {
+                return pending;
+            }
+            return this._getDefaultSettingsTabId();
+        })());
 
         // Global toggle (regular plugins only)
         const globalToggle = Context.dom.query('#wf-global-enabled', {
@@ -1036,6 +1220,33 @@ const plugin = {
             });
         }
 
+        const themeModeGroup = Context.dom.query('.fleet-ui-seg-group[aria-label="Preferred mode"]', {
+            root: modal,
+            context: `${this.id}.themeModeGroup`
+        });
+        if (themeModeGroup) {
+            const ui = Context.uiLib;
+            if (ui && typeof ui.bindSegmentGroup === 'function') {
+                ui.bindSegmentGroup(themeModeGroup, {
+                    valueAttr: 'data-theme-mode',
+                    onChange: (next) => {
+                        const prev = this._getPreferredThemeMode();
+                        if (next === prev) return;
+                        this._pendingSettingsTabId = this._getActiveSettingsTabId(modal);
+                        this._setPreferredThemeMode(next);
+                        Logger.log(`Preferred mode → ${next}`);
+                        this._captureOpsState(modal);
+                        const wasOpen = this._modalOpen;
+                        modal.remove();
+                        this._modalOpen = false;
+                        if (wasOpen) {
+                            this._openSettingsModal();
+                        }
+                    }
+                });
+            }
+        }
+
         // All On / All Off buttons (regular plugins only)
         const allOnBtn = Context.dom.query('#wf-all-plugins-on', {
             root: modal,
@@ -1053,11 +1264,11 @@ const plugin = {
             });
             allOnBtn.addEventListener('mouseenter', () => {
                 allOnBtn.style.background = this._settingsThemeColors().hover;
-                allOnBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                allOnBtn.style.borderColor = this._settingsThemeColors().borderHover;
             });
             allOnBtn.addEventListener('mouseleave', () => {
                 allOnBtn.style.background = this._settingsThemeColors().card;
-                allOnBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                allOnBtn.style.borderColor = this._settingsThemeColors().border;
             });
         }
 
@@ -1077,11 +1288,11 @@ const plugin = {
             });
             allOffBtn.addEventListener('mouseenter', () => {
                 allOffBtn.style.background = this._settingsThemeColors().hover;
-                allOffBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                allOffBtn.style.borderColor = this._settingsThemeColors().borderHover;
             });
             allOffBtn.addEventListener('mouseleave', () => {
                 allOffBtn.style.background = this._settingsThemeColors().card;
-                allOffBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                allOffBtn.style.borderColor = this._settingsThemeColors().border;
             });
         }
 
@@ -1129,11 +1340,11 @@ const plugin = {
                 });
                 allDevOnBtn.addEventListener('mouseenter', () => {
                     allDevOnBtn.style.background = this._settingsThemeColors().hover;
-                    allDevOnBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                    allDevOnBtn.style.borderColor = this._settingsThemeColors().borderHover;
                 });
                 allDevOnBtn.addEventListener('mouseleave', () => {
                     allDevOnBtn.style.background = this._settingsThemeColors().card;
-                    allDevOnBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                    allDevOnBtn.style.borderColor = this._settingsThemeColors().border;
                 });
             }
 
@@ -1153,11 +1364,11 @@ const plugin = {
                 });
                 allDevOffBtn.addEventListener('mouseenter', () => {
                     allDevOffBtn.style.background = this._settingsThemeColors().hover;
-                    allDevOffBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                    allDevOffBtn.style.borderColor = this._settingsThemeColors().borderHover;
                 });
                 allDevOffBtn.addEventListener('mouseleave', () => {
                     allDevOffBtn.style.background = this._settingsThemeColors().card;
-                    allDevOffBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                    allDevOffBtn.style.borderColor = this._settingsThemeColors().border;
                 });
             }
         }
@@ -1232,11 +1443,11 @@ const plugin = {
             });
             allModuleLogOnBtn.addEventListener('mouseenter', () => {
                 allModuleLogOnBtn.style.background = this._settingsThemeColors().hover;
-                allModuleLogOnBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                allModuleLogOnBtn.style.borderColor = this._settingsThemeColors().borderHover;
             });
             allModuleLogOnBtn.addEventListener('mouseleave', () => {
                 allModuleLogOnBtn.style.background = this._settingsThemeColors().card;
-                allModuleLogOnBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                allModuleLogOnBtn.style.borderColor = this._settingsThemeColors().border;
             });
         }
         const allModuleLogOffBtn = Context.dom.query('#wf-all-module-logging-off', {
@@ -1260,11 +1471,11 @@ const plugin = {
             });
             allModuleLogOffBtn.addEventListener('mouseenter', () => {
                 allModuleLogOffBtn.style.background = this._settingsThemeColors().hover;
-                allModuleLogOffBtn.style.borderColor = 'var(--border-hover, #d1d5db)';
+                allModuleLogOffBtn.style.borderColor = this._settingsThemeColors().borderHover;
             });
             allModuleLogOffBtn.addEventListener('mouseleave', () => {
                 allModuleLogOffBtn.style.background = this._settingsThemeColors().card;
-                allModuleLogOffBtn.style.borderColor = 'var(--border, #e5e5e5)';
+                allModuleLogOffBtn.style.borderColor = this._settingsThemeColors().border;
             });
         }
         
@@ -1385,13 +1596,14 @@ const plugin = {
         const onColor = slider.dataset.wfOnColor || 'var(--brand, #4f46e5)';
         const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '23px';
         const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
-        slider.style.backgroundColor = isChecked ? onColor : '#ccc';
+        slider.style.backgroundColor = isChecked ? onColor : this._settingsThemeColors().hover;
         if (knob) {
             knob.style.left = isChecked ? knobLeftOn : knobLeftOff;
         }
     },
 
     _renderPluginList(modal, plugins) {
+        const c = this._settingsThemeColors();
         const container = Context.dom.query('#wf-plugin-list', {
             root: modal,
             context: `${this.id}.pluginList`
@@ -1401,7 +1613,7 @@ const plugin = {
             const noPluginsMsg = Context.isOutdated
                 ? 'No plugins will load until you update the userscript.'
                 : 'No plugins loaded for this page.';
-            container.innerHTML = `<p style="color: #666; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
+            container.innerHTML = `<p style="color: ${c.muted}; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
             return;
         }
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
@@ -1413,13 +1625,14 @@ const plugin = {
     },
 
     _renderDevPluginList(modal, devPlugins) {
+        const c = this._settingsThemeColors();
         const container = Context.dom.query('#wf-dev-plugin-list', {
             root: modal,
             context: `${this.id}.devPluginList`
         });
         if (!container) return;
         if (!devPlugins || devPlugins.length === 0) {
-            container.innerHTML = '<p style="color: #666; font-size: 13px; font-style: italic;">No dev plugins loaded.</p>';
+            container.innerHTML = `<p style="color: ${c.muted}; font-size: 13px; font-style: italic;">No dev plugins loaded.</p>`;
             return;
         }
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
@@ -1956,14 +2169,11 @@ const plugin = {
                 display: none;
                 margin-top: 12px;
                 padding: 10px 12px;
-                background: #fef3c7;
-                border: 1px solid #f59e0b;
                 border-radius: 6px;
                 font-size: 13px;
                 text-align: center;
-                color: #92400e;
             `;
-            msg.innerHTML = 'Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.';
+            msg.innerHTML = 'Settings changed. <a href="#" id="wf-settings-refresh-link" style="text-decoration: underline;">Refresh</a> the page for changes to take effect.';
             const tabRow = modal.querySelector('#wf-settings-tab-row');
             if (tabRow && tabRow.parentElement) {
                 tabRow.parentElement.insertBefore(msg, tabRow.nextSibling);
@@ -2023,16 +2233,17 @@ const plugin = {
     },
 
     _createCoreLibModuleLoggingHTML() {
+        const c = this._settingsThemeColors();
         const plugins = this._getCoreLibPluginsForLogging();
         if (plugins.length === 0) {
-            return '<p style="font-size: 12px; color: var(--muted-foreground, #666); margin: 0;">No core or library modules loaded.</p>';
+            return `<p style="font-size: 12px; color: ${c.muted}; margin: 0;">No core or library modules loaded.</p>`;
         }
         const rows = plugins.map((plugin) => {
             const enabled = Logger.isModuleLoggingEnabled(plugin.id);
             const label = plugin.name || plugin.id;
             return `
-                <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border, #e5e5e5);">
-                    <label style="font-size: 12px; color: var(--foreground, #333); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px;" for="wf-core-lib-log-${plugin.id}" title="${plugin.id}">
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid ${c.border};">
+                    <label style="font-size: 12px; color: ${c.fg}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px;" for="wf-core-lib-log-${plugin.id}" title="${plugin.id}">
                         ${label}
                     </label>
                     ${this._createSwitchHTML(`wf-core-lib-log-${plugin.id}`, enabled, null, false, { size: 'small', variant: 'log' })}
@@ -2040,7 +2251,7 @@ const plugin = {
             `;
         }).join('');
         return `
-            <div style="font-size: 12px; font-weight: 600; color: var(--foreground, #333); margin-bottom: 6px;">Core and libraries</div>
+            <div style="font-size: 12px; font-weight: 600; color: ${c.fg}; margin-bottom: 6px;">Core and libraries</div>
             <div style="max-height: 180px; overflow-y: auto;">${rows}</div>
         `;
     },
@@ -2116,6 +2327,7 @@ const plugin = {
     },
 
     _syncTabRowActiveState(modal, tabId) {
+        const c = this._settingsThemeColors();
         const tabRow = Context.dom.query('#wf-settings-tab-row', {
             root: modal,
             context: `${this.id}.tabRowSync`
@@ -2124,10 +2336,10 @@ const plugin = {
         tabRow.querySelectorAll('.wf-settings-tab').forEach(btn => {
             const id = btn.getAttribute('data-tab');
             const isActive = id === tabId;
-            btn.style.color = isActive ? 'var(--foreground, #333)' : 'var(--muted-foreground, #666)';
-            btn.style.background = isActive ? this._settingsThemeColors().card : 'transparent';
-            btn.style.border = isActive ? '1px solid var(--border, #e5e5e5)' : '1px solid transparent';
-                    });
+            btn.style.color = isActive ? c.fg : c.muted;
+            btn.style.background = isActive ? c.card : 'transparent';
+            btn.style.border = isActive ? `1px solid ${c.border}` : '1px solid transparent';
+        });
     },
 
     _rebuildSettingsTabRow(modal, preferredTabId, options = {}) {
@@ -2179,6 +2391,7 @@ const plugin = {
     },
 
     _createTabRowHTML(tabs, activeTabId) {
+        const c = this._settingsThemeColors();
         const activeTab = activeTabId || this._getDefaultSettingsTabId();
         const buttons = tabs.map(t => {
             const isActive = t.id === activeTab;
@@ -2188,9 +2401,9 @@ const plugin = {
                 padding: 6px 14px;
                 font-size: 13px;
                 font-weight: 500;
-                color: ${isActive ? 'var(--foreground, #333)' : 'var(--muted-foreground, #666)'};
+                color: ${isActive ? c.fg : c.muted};
                 background: ${isActive ? this._settingsThemeColors().card : 'transparent'};
-                border: 1px solid ${isActive ? 'var(--border, #e5e5e5)' : 'transparent'};
+                border: 1px solid ${isActive ? c.border : 'transparent'};
                 border-radius: 6px;
                 cursor: pointer;
                 transition: all 0.2s;
@@ -2307,6 +2520,7 @@ const plugin = {
     },
 
     _mountEnvCodenamesWidget(pane) {
+        const c = this._settingsThemeColors();
         const root = pane.querySelector('#wf-env-codenames-root');
         if (!root) {
             Logger.debug('env codenames mount node missing');
@@ -2329,15 +2543,15 @@ const plugin = {
         }
 
         root.dataset.wfEnvCodenamesMounted = '1';
-        const tableCellStyle = 'padding: 6px 10px; font-size: 13px; text-align: left; border: 1px solid var(--border, #e5e5e5);';
+        const tableCellStyle = `padding: 6px 10px; font-size: 13px; text-align: left; border: 1px solid ${c.border};`;
         const tableStyle = 'border-collapse: collapse; width: 100%; margin: 8px 0 0 0; font-size: 13px;';
         const thBtnStyle = 'cursor: pointer; user-select: none; text-align: left; width: 100%; font: inherit; color: inherit; background: transparent; border: none; padding: 0;';
         const esc = (t) => this._escapeHtmlCell(t);
 
         root.innerHTML = `
             <div style="margin: 8px 0 12px 0;">
-                <label for="wf-env-codenames-search" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--foreground, #333);">Search codenames or apps</label>
-                <input type="search" id="wf-env-codenames-search" autocomplete="off" placeholder="Type to filter…" style="width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; margin-bottom: 10px; background: ${this._settingsThemeColors().card}; color: var(--foreground, #333);" />
+                <label for="wf-env-codenames-search" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: ${c.fg};">Search codenames or apps</label>
+                <input type="search" id="wf-env-codenames-search" autocomplete="off" placeholder="Type to filter…" style="width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; border: 1px solid ${c.border}; border-radius: 6px; margin-bottom: 10px; background: ${this._settingsThemeColors().card}; color: ${c.fg};" />
                 <table style="${tableStyle}" aria-label="Environment codenames">
                     <thead>
                         <tr>
@@ -2416,6 +2630,7 @@ const plugin = {
 
     _markdownToHtml(md) {
         if (!md || typeof md !== 'string') return '';
+        const c = this._settingsThemeColors();
         const lines = md.trim().split(/\r?\n/);
         const out = [];
         let inList = false;
@@ -2439,7 +2654,7 @@ const plugin = {
             return a.slice(start, end);
         };
         const isTableSeparator = (cells) => cells.length > 0 && cells.every(c => /^[\s\-:]+$/.test(c));
-        const tableCellStyle = 'padding: 6px 10px; font-size: 13px; text-align: left; border: 1px solid var(--border, #e5e5e5);';
+        const tableCellStyle = `padding: 6px 10px; font-size: 13px; text-align: left; border: 1px solid ${c.border};`;
         const tableStyle = 'border-collapse: collapse; width: 100%; margin: 8px 0 12px 0; font-size: 13px;';
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -2469,14 +2684,14 @@ const plugin = {
                     out.push(`<table style="${tableStyle}"><thead><tr>`);
                 }
                 if (tableRowIndex === 0) {
-                    out.push(cells.map(c => `<th style="${tableCellStyle} font-weight: 600;">${processInlines(c)}</th>`).join(''));
+                    out.push(cells.map(cell => `<th style="${tableCellStyle} font-weight: 600;">${processInlines(cell)}</th>`).join(''));
                     out.push('</tr></thead><tbody>');
                     tableRowIndex = 1;
                 } else if (tableRowIndex === 1 && isTableSeparator(cells)) {
                     tableRowIndex = 2;
                 } else {
                     if (tableRowIndex === 1) tableRowIndex = 2;
-                    out.push('<tr>' + cells.map(c => `<td style="${tableCellStyle}">${processInlines(c)}</td>`).join('') + '</tr>');
+                    out.push('<tr>' + cells.map(cell => `<td style="${tableCellStyle}">${processInlines(cell)}</td>`).join('') + '</tr>');
                 }
                 continue;
             }
@@ -2485,16 +2700,16 @@ const plugin = {
             const h2 = /^##\s+(.+)$/.exec(trimmed);
             const h1 = /^#\s+(.+)$/.exec(trimmed);
             const ul = /^-\s+(.+)$/.exec(trimmed);
-            if (h4) { out.push(`<h5 style="font-size: 13px; font-weight: 600; margin: 8px 0 4px 0; color: var(--foreground, #333);">${processInlines(h4[1])}</h5>`); continue; }
-            if (h3) { out.push(`<h4 style="font-size: 14px; font-weight: 600; margin: 8px 0 4px 0; color: var(--foreground, #333);">${processInlines(h3[1])}</h4>`); continue; }
-            if (h2) { out.push(`<h3 style="font-size: 15px; font-weight: 600; margin: 10px 0 6px 0; color: var(--foreground, #333);">${processInlines(h2[1])}</h3>`); continue; }
-            if (h1) { out.push(`<h2 style="font-size: 16px; font-weight: 600; margin: 12px 0 6px 0; color: var(--foreground, #333);">${processInlines(h1[1])}</h2>`); continue; }
+            if (h4) { out.push(`<h5 style="font-size: 13px; font-weight: 600; margin: 8px 0 4px 0; color: ${c.fg};">${processInlines(h4[1])}</h5>`); continue; }
+            if (h3) { out.push(`<h4 style="font-size: 14px; font-weight: 600; margin: 8px 0 4px 0; color: ${c.fg};">${processInlines(h3[1])}</h4>`); continue; }
+            if (h2) { out.push(`<h3 style="font-size: 15px; font-weight: 600; margin: 10px 0 6px 0; color: ${c.fg};">${processInlines(h2[1])}</h3>`); continue; }
+            if (h1) { out.push(`<h2 style="font-size: 16px; font-weight: 600; margin: 12px 0 6px 0; color: ${c.fg};">${processInlines(h1[1])}</h2>`); continue; }
             if (ul) {
-                if (!inList) { inList = true; out.push('<ul style="margin: 6px 0; padding-left: 24px; list-style-type: disc;">'); }
-                out.push(`<li style="margin: 2px 0; display: list-item;">${processInlines(ul[1])}</li>`);
+                if (!inList) { inList = true; out.push('<ul style="margin: 6px 0; padding-left: 24px; list-style-type: disc; color: inherit;">'); }
+                out.push(`<li style="margin: 2px 0; display: list-item; color: inherit;">${processInlines(ul[1])}</li>`);
                 continue;
             }
-            out.push(`<p style="margin: 6px 0; font-size: 13px; line-height: 1.5;">${processInlines(trimmed)}</p>`);
+            out.push(`<p style="margin: 6px 0; font-size: 13px; line-height: 1.5; color: inherit;">${processInlines(trimmed)}</p>`);
         }
         if (inTable) out.push('</tbody></table>');
         if (inList) out.push('</ul>');
@@ -2502,6 +2717,7 @@ const plugin = {
     },
 
     _loadAndRenderDocTab(modal, tabId, docFilename, pane) {
+        const c = this._settingsThemeColors();
         const cacheKey = tabId;
         if (this._docPaneCache[cacheKey]) {
             pane.innerHTML = this._docPaneCache[cacheKey];
@@ -2512,7 +2728,7 @@ const plugin = {
             return;
         }
         if (!Context.settingsModalDocs || !Context.settingsModalDocs[docFilename]) {
-            pane.innerHTML = '<p style="font-size: 13px; color: var(--muted-foreground, #666);">Could not load content.</p>';
+            pane.innerHTML = `<p style="font-size: 13px; color: ${c.muted};">Could not load content.</p>`;
             pane.dataset.wfDocLoaded = 'true';
             return;
         }
@@ -2524,8 +2740,8 @@ const plugin = {
             mdBody = prep.markdown;
         }
         const html = this._markdownToHtml(mdBody);
-        const docStyles = `<style>.wf-settings-doc-content h2{font-size:16px !important}.wf-settings-doc-content h3{font-size:15px !important;margin-top:12px !important}.wf-settings-doc-content h4{font-size:14px !important;margin-top:12px !important}.wf-settings-doc-content h5{font-size:13px !important;margin-top:12px !important}.wf-settings-doc-content ul{list-style-type:disc !important;padding-left:24px !important}.wf-settings-doc-content li{display:list-item !important}.wf-settings-doc-content strong{color:var(--foreground,#333) !important}</style>`;
-        const wrapped = `${docStyles}<div class="wf-settings-doc-content" style="font-size: 13px; color: var(--muted-foreground, #666); padding: 4px 0;">${html}</div>`;
+        const docStyles = `<style>.wf-settings-doc-content h2{font-size:16px !important}.wf-settings-doc-content h3{font-size:15px !important;margin-top:12px !important}.wf-settings-doc-content h4{font-size:14px !important;margin-top:12px !important}.wf-settings-doc-content h5{font-size:13px !important;margin-top:12px !important}.wf-settings-doc-content ul{list-style-type:disc !important;padding-left:24px !important}.wf-settings-doc-content li{display:list-item !important}.wf-settings-doc-content strong{color:${c.fg} !important}</style>`;
+        const wrapped = `${docStyles}<div class="wf-settings-doc-content" style="font-size: 13px; color: ${c.muted}; padding: 4px 0;">${html}</div>`;
         this._docPaneCache[cacheKey] = wrapped;
         pane.innerHTML = wrapped;
         pane.dataset.wfDocLoaded = 'true';
@@ -2551,29 +2767,23 @@ const plugin = {
         }).join('');
         
         return `
-            <div style="
-                margin-bottom: 20px;
-                padding: 12px;
-                background: #fef3c7;
-                border: 1px solid #f59e0b;
-                border-radius: 6px;
-            ">
+            <div class="wf-amber-banner--soft">
                 <div style="display: flex; align-items: center; margin-bottom: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px; color: #f59e0b;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                         <line x1="12" y1="9" x2="12" y2="13"></line>
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
-                    <h3 style="font-size: 14px; font-weight: 600; margin: 0; color: #92400e;">
+                    <h3 class="wf-amber-banner-title" style="font-size: 14px; font-weight: 600; margin: 0;">
                         Outdated Plugins (${outdatedPlugins.length})
                     </h3>
                 </div>
-                <p style="font-size: 12px; color: #92400e; margin: 8px 0 0 0; line-height: 1.5;">
+                <p class="wf-amber-banner-body" style="font-size: 12px; margin: 8px 0 0 0; line-height: 1.5;">
                     The following plugins could not be updated to the required version. 
                     This may happen if you're offline, the server is unavailable, or GitHub's CDN 
                     hasn't updated yet (can take up to 5 minutes after a change).
                 </p>
-                <ul style="font-size: 12px; color: #92400e; margin: 8px 0 0 0; padding-left: 20px;">
+                <ul class="wf-amber-banner-body" style="font-size: 12px; margin: 8px 0 0 0; padding-left: 20px;">
                     ${pluginsList}
                 </ul>
             </div>
@@ -2636,13 +2846,7 @@ const plugin = {
 
     _createOpsRefreshBannerHTML() {
         return `
-            <div id="wf-ops-refresh-banner" style="
-                margin-bottom: 20px;
-                padding: 14px;
-                background: #fef3c7;
-                border: 2px solid #f59e0b;
-                border-radius: 8px;
-            ">
+            <div id="wf-ops-refresh-banner" class="wf-amber-banner">
                 <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #b45309; flex-shrink: 0; margin-top: 2px;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -2650,25 +2854,16 @@ const plugin = {
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
                     <div style="flex: 1;">
-                        <h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #92400e;">
+                        <h3 class="wf-amber-banner-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
                             Ops Tab Unlock Pending
                         </h3>
-                        <p style="font-size: 13px; color: #92400e; margin: 0; line-height: 1.5;">
+                        <p class="wf-amber-banner-body" style="font-size: 13px; margin: 0; line-height: 1.5;">
                             Refresh the page to activate the Ops tab and load the dashboard plugins.
                         </p>
                     </div>
                 </div>
-                <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #fcd34d; text-align: center;">
-                    <button type="button" id="wf-ops-refresh-fetch-btn" style="
-                        padding: 8px 14px;
-                        font-size: 13px;
-                        font-weight: 600;
-                        color: #92400e;
-                        background: #fffbeb;
-                        border: 1px solid #f59e0b;
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Refresh to Fetch</button>
+                <div class="wf-amber-banner-footer">
+                    <button type="button" id="wf-ops-refresh-fetch-btn">Refresh to Fetch</button>
                 </div>
             </div>
         `;
@@ -2758,14 +2953,7 @@ const plugin = {
         }
         
         return `
-            <div id="wf-update-notification-banner" style="
-                margin-bottom: 20px;
-                padding: 14px;
-                padding-top: 20px;
-                background: #fee2e2;
-                border: 2px solid #dc2626;
-                border-radius: 8px;
-            ">
+            <div id="wf-update-notification-banner">
                 <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -2773,25 +2961,16 @@ const plugin = {
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
                     <div style="flex: 1;">
-                        <h3 style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0; color: #991b1b;">
+                        <h3 class="wf-update-banner-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
                             Extension Update Available
                         </h3>
-                        <p style="font-size: 13px; color: #991b1b; margin: 0 0 10px 0; line-height: 1.5;">
-                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="${this._getUpdateUrl()}" target="_blank" rel="noopener noreferrer" style="color: #991b1b; text-decoration: underline; font-weight: 600;">newest version</a> (<strong>${latestVersion}</strong>).
+                        <p class="wf-update-banner-body" style="font-size: 13px; margin: 0 0 10px 0; line-height: 1.5;">
+                            Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="${this._getUpdateUrl()}" target="_blank" rel="noopener noreferrer">newest version</a> (<strong>${latestVersion}</strong>).
                         </p>
                     </div>
                 </div>
-                <div id="wf-update-refresh-row" style="display: ${this._updateTabOpenedAutomatically ? 'block' : 'none'}; margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">
-                    <button type="button" id="wf-update-refresh-btn" style="
-                        padding: 8px 14px;
-                        font-size: 13px;
-                        font-weight: 600;
-                        color: #991b1b;
-                        background: #fef2f2;
-                        border: 1px solid #dc2626;
-                        border-radius: 6px;
-                        cursor: pointer;
-                    ">Refresh Page with New Version</button>
+                <div id="wf-update-refresh-row" style="display: ${this._updateTabOpenedAutomatically ? 'block' : 'none'};">
+                    <button type="button" id="wf-update-refresh-btn">Refresh Page with New Version</button>
                 </div>
             </div>
         `;

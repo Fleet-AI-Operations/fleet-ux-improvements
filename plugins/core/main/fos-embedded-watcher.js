@@ -16,7 +16,6 @@ const FOS_EXTRACT_RESULT_TYPE = 'fleet-fos-extract-result';
 const FOS_CLIPBOARD_ALLOW_TOKENS = ['clipboard-read *', 'clipboard-write *'];
 const FOS_PANEL_ATTR = 'data-fleet-fos-vm-clipboard';
 const FOS_CLIP_FLASH_MS = 600;
-const FOS_CLIP_BTN_BG = 'rgba(255,255,255,0.08)';
 
 function fosInstanceIdFromHostname(hostname) {
     return String(hostname || '').split('.')[0] || '';
@@ -159,32 +158,25 @@ function fosFlashBtn(btn, ok) {
     if (!btn) {
         return;
     }
+    if (Context.buttonFeedback) {
+        if (ok && typeof Context.buttonFeedback.flashSuccess === 'function') {
+            Context.buttonFeedback.flashSuccess(btn);
+            return;
+        }
+        if (!ok && typeof Context.buttonFeedback.flashFailure === 'function') {
+            Context.buttonFeedback.flashFailure(btn);
+            return;
+        }
+    }
     if (btn._fosClipResetTimeout) {
         clearTimeout(btn._fosClipResetTimeout);
     }
-    if (ok) {
-        btn.style.transition = '';
-        btn.style.background = 'rgb(34, 197, 94)';
-        btn.style.color = '#ffffff';
-        btn._fosClipResetTimeout = setTimeout(() => {
-            btn._fosClipResetTimeout = null;
-            btn.style.background = FOS_CLIP_BTN_BG;
-            btn.style.color = '#f2f2f2';
-        }, FOS_CLIP_FLASH_MS);
-        return;
-    }
-    const prevT = btn.style.transition;
-    btn.style.transition = 'none';
-    btn.style.background = 'rgb(239, 68, 68)';
+    btn.style.background = ok ? 'rgb(34, 197, 94)' : 'rgb(239, 68, 68)';
     btn.style.color = '#ffffff';
-    void btn.offsetHeight;
-    btn.style.transition =
-        'background ' + FOS_CLIP_FLASH_MS + 'ms ease-out, color ' + FOS_CLIP_FLASH_MS + 'ms ease-out';
-    btn.style.background = FOS_CLIP_BTN_BG;
-    btn.style.color = '#f2f2f2';
     btn._fosClipResetTimeout = setTimeout(() => {
-        btn.style.transition = prevT || '';
         btn._fosClipResetTimeout = null;
+        btn.style.background = '';
+        btn.style.color = '';
     }, FOS_CLIP_FLASH_MS);
 }
 
@@ -193,7 +185,7 @@ const plugin = {
     name: 'FOS Embedded Watcher',
     description:
         'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '4.0',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -714,39 +706,35 @@ const plugin = {
         }
 
         const self = this;
+        if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+            Context.uiLib.ensurePanelStyles();
+        }
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
         const root = document.createElement('div');
         root.setAttribute(FOS_PANEL_ATTR, instanceId);
+        root.className = pc.root || '';
         root.style.cssText =
-            'position:fixed;z-index:2147483646;min-width:220px;max-width:280px;padding:0;' +
-            'border-radius:10px;border:1px solid rgba(255,255,255,0.14);' +
-            'background:rgba(28,28,32,0.96);color:#f2f2f2;' +
-            'font:500 12px/1.4 system-ui,-apple-system,sans-serif;' +
-            'box-shadow:0 8px 32px rgba(0,0,0,0.45);user-select:none;';
+            'position:fixed;z-index:2147483646;min-width:220px;max-width:280px;padding:0;user-select:none;';
 
         const clipHeader = document.createElement('div');
+        clipHeader.className = pc.header || '';
         clipHeader.style.cssText =
             'display:flex;align-items:center;justify-content:space-between;' +
             'padding:6px 8px 4px 12px;cursor:grab;';
 
         const clipTitle = document.createElement('div');
         clipTitle.textContent = 'VM Clipboard';
-        clipTitle.style.cssText =
-            'font-size:11px;font-weight:600;color:#b0b0b8;' +
-            'letter-spacing:0.03em;text-transform:uppercase;flex:1;min-width:0;';
+        clipTitle.className = pc.sectionLabel || '';
+        clipTitle.style.cssText = 'flex:1;min-width:0;';
 
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.setAttribute('aria-label', 'Close VM Clipboard');
-        closeBtn.textContent = '\u00d7';
+        closeBtn.textContent = '×';
+        closeBtn.className = pc.muted || '';
         closeBtn.style.cssText =
             'margin:0;padding:0 4px;border:none;background:transparent;' +
-            'color:#a5a5ad;font:inherit;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;';
-        closeBtn.onmouseenter = () => {
-            closeBtn.style.color = '#f2f2f2';
-        };
-        closeBtn.onmouseleave = () => {
-            closeBtn.style.color = '#a5a5ad';
-        };
+            'font:inherit;font-size:16px;line-height:1;cursor:pointer;border-radius:4px;color:inherit;';
 
         clipHeader.appendChild(clipTitle);
         clipHeader.appendChild(closeBtn);
@@ -761,20 +749,8 @@ const plugin = {
             const b = document.createElement('button');
             b.type = 'button';
             b.textContent = label;
-            b.style.cssText =
-                'flex:1;margin:0;padding:6px 8px;border-radius:6px;' +
-                'border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);' +
-                'color:#f2f2f2;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
-            b.onmouseenter = () => {
-                if (!b._fosClipResetTimeout) {
-                    b.style.background = 'rgba(255,255,255,0.14)';
-                }
-            };
-            b.onmouseleave = () => {
-                if (!b._fosClipResetTimeout) {
-                    b.style.background = FOS_CLIP_BTN_BG;
-                }
-            };
+            b.className = pc.btn || '';
+            b.style.flex = '1';
             return b;
         }
 

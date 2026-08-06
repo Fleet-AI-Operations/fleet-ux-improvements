@@ -2,21 +2,28 @@
 // Thin wrapper: shared Context.envHelper library.
 
 const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
+const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
-    description: 'When off, hides the Env Helper modal.',
+    description: 'When off, hides the External Env Helper modal.',
     enabledByDefault: true
+};
+const FORCE_DARK_SUBOPTION = {
+    id: FORCE_DARK_SUBOPTION_ID,
+    name: 'Force dark mode',
+    description: 'When off, helper chrome stays light. When on, helper chrome stays dark.',
+    enabledByDefault: false
 };
 
 const plugin = {
     id: 'envHelper',
-    name: 'Env Helper',
-    description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.1',
+    name: 'External Env Helper',
+    description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
-    subOptions: [SHOW_PANEL_SUBOPTION],
+    subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
     initialState: {
         panelStarted: false,
         waitObserverAttached: false,

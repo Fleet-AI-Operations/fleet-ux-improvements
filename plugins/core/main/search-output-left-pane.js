@@ -20,7 +20,7 @@ const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
-const DASH_TASK_CARD_BG = '#121212';
+const DASH_TASK_CARD_BG = 'var(--card, #ffffff)';
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HYDRATE_BATCH_CONCURRENCY = 5;
 const DASH_SEARCH_FETCH_CONCURRENCY = 8;
@@ -328,6 +328,13 @@ function dashFirstEmbed(embed) {
 
 const searchOutputLeftPaneMethods = {
     _leftPanelHtml() {
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        if (ui && typeof ui.ensureFilterToggleStyles === 'function') {
+            ui.ensureFilterToggleStyles('#wf-dash-modal');
+        }
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
         const hint = this._hintStyle();
@@ -358,11 +365,11 @@ const searchOutputLeftPaneMethods = {
                                 <div id="wf-dash-search-fields" style="display: flex; flex-direction: column; gap: 14px;">
                                     <div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                            <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true, 'task_creation')}">Task Creation</button>
-                                            <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
-                                            <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
-                                            <button type="button" id="wf-dash-toggle-senior-review" aria-pressed="false" style="${this._btnToggleStyle(false, 'senior_review')}">Sr Review</button>
-                                            <button type="button" id="wf-dash-toggle-sessions" aria-pressed="false" style="${this._btnToggleStyle(false, 'sessions')}">Sessions</button>
+                                            ${this._filterToggleHtml('wf-dash-toggle-tasks', 'Task Creation', true, 'task_creation')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-qa', 'QA', true, 'qa')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-disputes', 'Disputes', false, 'dispute')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-senior-review', 'Sr Review', false, 'senior_review')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-sessions', 'Sessions', false, 'sessions')}
                                         </div>
                                     </div>
                                     <div>
@@ -586,10 +593,6 @@ const searchOutputLeftPaneMethods = {
         return filtered.length > 0 ? filtered : catalog.projects;
     },
 
-    _btnDepthSegmentStyle(active) {
-        return this._segmentBtnStyle(active, 'depth');
-    },
-
     _readResultsModePref() {
         try {
             const v = Storage.getData(DASH_RESULTS_MODE_STORAGE_KEY, null);
@@ -615,12 +618,26 @@ const searchOutputLeftPaneMethods = {
 
     _resultsModeToggleHtml(hintKey) {
         const label = this._labelStyle();
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        const mode = (this._state && this._state.resultsMode) || 'clear';
+        const groupHtml = ui && typeof ui.segmentGroupHtml === 'function'
+            ? ui.segmentGroupHtml({
+                value: mode === 'add' ? 'add' : 'clear',
+                valueAttr: 'data-wf-dash-results-mode',
+                fill: true,
+                ariaLabel: 'Results mode',
+                options: [
+                    { value: 'clear', label: 'Clear' },
+                    { value: 'add', label: 'Add' }
+                ]
+            })
+            : '';
         return `<div style="margin-top: 4px; margin-bottom: 10px;">
             <div style="${label} margin-bottom: 6px; font-weight: 600;">Results mode</div>
-            <div style="display: flex; width: 100%; gap: 8px;">
-                <button type="button" data-wf-dash-results-mode="clear" aria-pressed="true" style="${this._btnDepthSegmentStyle(true)}">Clear</button>
-                <button type="button" data-wf-dash-results-mode="add" aria-pressed="false" style="${this._btnDepthSegmentStyle(false)}">Add</button>
-            </div>
+            ${groupHtml}
             <div data-wf-dash-results-mode-hint="${dashEscHtml(hintKey)}" style="margin-top: 8px;"></div>
         </div>`;
     },
@@ -641,11 +658,17 @@ const searchOutputLeftPaneMethods = {
         this._state.resultsMode = mode === 'add' ? 'add' : 'clear';
         const modal = this._modal;
         if (!modal) return;
-        modal.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
-            const btnMode = btn.getAttribute('data-wf-dash-results-mode');
-            const active = btnMode === this._state.resultsMode;
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            btn.style.cssText = this._btnDepthSegmentStyle(active);
+        const ui = Context.uiLib;
+        modal.querySelectorAll('.fleet-ui-seg-group[aria-label="Results mode"]').forEach((group) => {
+            if (ui && typeof ui.syncSegmentGroup === 'function') {
+                ui.syncSegmentGroup(group, this._state.resultsMode, 'data-wf-dash-results-mode');
+            } else {
+                group.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
+                    const btnMode = btn.getAttribute('data-wf-dash-results-mode');
+                    const active = btnMode === this._state.resultsMode;
+                    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
+            }
         });
         this._syncResultsModeHint();
     },
@@ -779,13 +802,34 @@ const searchOutputLeftPaneMethods = {
         Logger.log('search-output: @everyone author token added — bulk ratings mode');
     },
 
-    _btnToggleStyle(active, colorKind) {
-        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
-        if (active) {
-            const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
-            return base + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
+    _filterToggleHtml(id, label, pressed, colorKind) {
+        const ui = Context.uiLib;
+        const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
+        const activeCss = cfg ? cfg.toggleActive : '';
+        if (ui && typeof ui.filterToggleHtml === 'function') {
+            return ui.filterToggleHtml({ id, label, pressed, activeCss });
         }
-        return base + ' ' + DASH_TOGGLE_INACTIVE;
+        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
+        const style = pressed
+            ? base + ' ' + (activeCss || DASH_TOGGLE_INACTIVE)
+            : base + ' ' + DASH_TOGGLE_INACTIVE;
+        return `<button type="button" id="${id}" aria-pressed="${pressed ? 'true' : 'false'}" style="${style}">${label}</button>`;
+    },
+
+    _applyFilterToggleBtn(btn, pressed, colorKind) {
+        if (!btn) return;
+        const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
+        const activeCss = cfg ? cfg.toggleActive : '';
+        const ui = Context.uiLib;
+        if (ui && typeof ui.applyFilterToggle === 'function') {
+            ui.applyFilterToggle(btn, pressed, activeCss);
+            return;
+        }
+        btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
+        btn.style.cssText = pressed
+            ? base + ' ' + (activeCss || DASH_TOGGLE_INACTIVE)
+            : base + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
     _leftTabStyle(active) {
@@ -888,26 +932,11 @@ const searchOutputLeftPaneMethods = {
         const disputesBtn = this._q('#wf-dash-toggle-disputes');
         const seniorReviewBtn = this._q('#wf-dash-toggle-senior-review');
         const sessionsBtn = this._q('#wf-dash-toggle-sessions');
-        if (tasksBtn) {
-            tasksBtn.setAttribute('aria-pressed', this._state.includeTasks ? 'true' : 'false');
-            tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks, 'task_creation');
-        }
-        if (qaBtn) {
-            qaBtn.setAttribute('aria-pressed', this._state.includeQa ? 'true' : 'false');
-            qaBtn.style.cssText = this._btnToggleStyle(this._state.includeQa, 'qa');
-        }
-        if (disputesBtn) {
-            disputesBtn.setAttribute('aria-pressed', this._state.includeDisputes ? 'true' : 'false');
-            disputesBtn.style.cssText = this._btnToggleStyle(this._state.includeDisputes, 'dispute');
-        }
-        if (seniorReviewBtn) {
-            seniorReviewBtn.setAttribute('aria-pressed', this._state.includeSeniorReview ? 'true' : 'false');
-            seniorReviewBtn.style.cssText = this._btnToggleStyle(this._state.includeSeniorReview, 'senior_review');
-        }
-        if (sessionsBtn) {
-            sessionsBtn.setAttribute('aria-pressed', this._state.includeSessions ? 'true' : 'false');
-            sessionsBtn.style.cssText = this._btnToggleStyle(this._state.includeSessions, 'sessions');
-        }
+        this._applyFilterToggleBtn(tasksBtn, this._state.includeTasks, 'task_creation');
+        this._applyFilterToggleBtn(qaBtn, this._state.includeQa, 'qa');
+        this._applyFilterToggleBtn(disputesBtn, this._state.includeDisputes, 'dispute');
+        this._applyFilterToggleBtn(seniorReviewBtn, this._state.includeSeniorReview, 'senior_review');
+        this._applyFilterToggleBtn(sessionsBtn, this._state.includeSessions, 'sessions');
     },
 
     _readSearchLimitFromUi() {
@@ -1184,24 +1213,64 @@ const searchOutputLeftPaneMethods = {
         return true;
     },
 
+    _ensureDashSessionRefreshBannerStyles() {
+        if (document.getElementById('wf-dash-session-refresh-banner-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'wf-dash-session-refresh-banner-styles';
+        style.textContent = [
+            '.wf-dash-session-refresh-banner-inner {',
+            '  padding: 12px;',
+            '  background: #fee2e2;',
+            '  border: 2px solid #dc2626;',
+            '  border-radius: 8px;',
+            '}',
+            '.wf-dash-session-refresh-banner-inner .wf-dash-session-title {',
+            '  font-size: 13px; font-weight: 600; color: #991b1b; margin-bottom: 6px;',
+            '}',
+            '.wf-dash-session-refresh-banner-inner .wf-dash-session-body {',
+            '  font-size: 12px; color: #991b1b; margin: 0; line-height: 1.45;',
+            '}',
+            '.wf-dash-session-refresh-banner-inner .wf-dash-session-footer {',
+            '  margin-top: 10px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;',
+            '}',
+            '#wf-dash-session-reload {',
+            '  display: inline-block; padding: 8px 14px; font-size: 12px; font-weight: 600;',
+            '  color: #991b1b; background: #fef2f2; border: 1px solid #dc2626; border-radius: 6px;',
+            '  cursor: pointer; text-decoration: none;',
+            '}',
+            'html.dark .wf-dash-session-refresh-banner-inner {',
+            '  background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));',
+            '}',
+            'html.dark .wf-dash-session-refresh-banner-inner .wf-dash-session-title,',
+            'html.dark .wf-dash-session-refresh-banner-inner .wf-dash-session-body {',
+            '  color: #fca5a5;',
+            '}',
+            'html.dark .wf-dash-session-refresh-banner-inner .wf-dash-session-footer {',
+            '  border-top-color: #7f1d1d;',
+            '}',
+            'html.dark #wf-dash-session-reload {',
+            '  color: #fecaca;',
+            '  background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));',
+            '}'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(style);
+    },
+
     _renderDashSessionRefreshBannerHtml() {
+        this._ensureDashSessionRefreshBannerStyles();
         return [
-            '<div style="',
-            'padding: 12px;background: #fee2e2;border: 2px solid #dc2626;border-radius: 8px;">',
+            '<div class="wf-dash-session-refresh-banner-inner">',
             '<div style="display: flex; align-items: flex-start; gap: 10px;">',
             '<span style="color: #dc2626; font-size: 16px; line-height: 1.2;" aria-hidden="true">⚠</span>',
             '<div style="flex: 1; min-width: 0;">',
-            '<div style="font-size: 13px; font-weight: 600; color: #991b1b; margin-bottom: 6px;">Fleet session token not yet captured</div>',
-            '<p style="font-size: 12px; color: #991b1b; margin: 0; line-height: 1.45;">',
+            '<div class="wf-dash-session-title">Fleet session token not yet captured</div>',
+            '<p class="wf-dash-session-body">',
             'Navigate to a Fleet data page (e.g. Tasks or QA), then close and reopen the dashboard or retry your search.',
             '</p>',
             '</div>',
             '</div>',
-            '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">',
-            '<a href="', dashEscHtml(dashFleetOrigin()), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload" style="',
-            'display: inline-block;padding: 8px 14px;font-size: 12px;font-weight: 600;',
-            'color: #991b1b;background: #fef2f2;border: 1px solid #dc2626;border-radius: 6px;',
-            'cursor: pointer;text-decoration: none;">Reload Fleet</a>',
+            '<div class="wf-dash-session-footer">',
+            '<a href="', dashEscHtml(dashFleetOrigin()), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload">Reload Fleet</a>',
             '</div>',
             '</div>'
         ].join('');
@@ -2510,7 +2579,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.6',
+    _version: '5.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

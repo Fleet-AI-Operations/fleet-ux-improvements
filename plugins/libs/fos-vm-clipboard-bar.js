@@ -152,7 +152,7 @@ const FosVmClipboardBarApi = {
         const label = document.createElement('span');
         label.textContent = 'VM Clipboard';
         label.style.cssText =
-            'font-size:11px;font-weight:600;color:#6b7280;letter-spacing:0.02em;white-space:nowrap;';
+            'font-size:11px;font-weight:600;color:var(--muted-foreground, #6b7280);letter-spacing:0.02em;white-space:nowrap;';
 
         const btnClass =
             Context.uiLib && typeof Context.uiLib.btnClass === 'function'
@@ -218,7 +218,7 @@ const plugin = {
     name: 'FOS VM Clipboard Bar (library)',
     description:
         'Shared VM Clipboard Extract/Overwrite bar chrome (archetype modules supply find/mount)',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

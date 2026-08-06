@@ -35,7 +35,7 @@ const plugin = {
     id: 'promptDisplayStyle',
     name: 'Prompt Display Style',
     description: 'Adjust prompt font size, text color, and background in view mode',
-    _version: '1.7',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -368,7 +368,7 @@ const plugin = {
             width: 20px;
             height: 20px;
             font-size: 13px;
-            color: #888;
+            color: var(--muted-foreground, #888);
         `;
         btn.addEventListener('mouseenter', () => {
             btn.style.background = 'var(--accent-foreground, #d4d8de)';

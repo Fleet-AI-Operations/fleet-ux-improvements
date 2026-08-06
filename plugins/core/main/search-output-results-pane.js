@@ -20,7 +20,7 @@ const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
-const DASH_TASK_CARD_BG = '#121212';
+const DASH_TASK_CARD_BG = 'var(--card, #ffffff)';
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HYDRATE_BATCH_CONCURRENCY = 5;
 const DASH_SEARCH_FETCH_CONCURRENCY = 8;
@@ -2272,31 +2272,94 @@ const searchOutputResultsPaneMethods = {
             this._screenshotLightboxEl.parentNode.removeChild(this._screenshotLightboxEl);
         }
         this._screenshotLightboxEl = null;
+        this._screenshotLightboxUrls = null;
+        this._screenshotLightboxIndex = 0;
         if (this._screenshotLightboxKeyHandler) {
             document.removeEventListener('keydown', this._screenshotLightboxKeyHandler);
             this._screenshotLightboxKeyHandler = null;
         }
     },
 
-    _openScreenshotLightbox(url, alt) {
+    _screenshotLightboxGalleryFromThumb(thumbEl, fallbackUrl) {
+        const urls = [];
+        let index = 0;
+        const root = thumbEl && thumbEl.closest
+            ? thumbEl.closest('[data-wf-dash-screenshots]')
+            : null;
+        if (root) {
+            const thumbs = root.querySelectorAll('[data-wf-dash-screenshot-thumb]');
+            for (let i = 0; i < thumbs.length; i++) {
+                const u = String(thumbs[i].getAttribute('data-screenshot-url') || '').trim();
+                if (!u) continue;
+                if (thumbs[i] === thumbEl) index = urls.length;
+                urls.push(u);
+            }
+        }
+        if (urls.length === 0) {
+            const single = String(fallbackUrl || '').trim();
+            if (single) urls.push(single);
+            index = 0;
+        }
+        return { urls, index };
+    },
+
+    _setScreenshotLightboxImage(index) {
+        const urls = this._screenshotLightboxUrls || [];
+        if (!urls.length || !this._screenshotLightboxEl) return;
+        const total = urls.length;
+        const next = ((index % total) + total) % total;
+        this._screenshotLightboxIndex = next;
+        const img = this._screenshotLightboxEl.querySelector('img');
+        if (img) {
+            img.src = urls[next];
+            img.alt = 'Screenshot ' + (next + 1);
+        }
+        const counter = this._screenshotLightboxEl.querySelector('[data-wf-dash-screenshot-lightbox-counter]');
+        if (counter) {
+            counter.textContent = (next + 1) + ' / ' + total;
+        }
+    },
+
+    _openScreenshotLightbox(url, alt, thumbEl) {
         this._closeScreenshotLightbox();
         const modal = this._modal;
-        const imageUrl = String(url || '').trim();
+        const gallery = this._screenshotLightboxGalleryFromThumb(thumbEl, url);
+        const urls = gallery.urls;
+        const startIndex = gallery.index;
+        const imageUrl = urls[startIndex] || String(url || '').trim();
         if (!modal || !imageUrl) return;
+        this._screenshotLightboxUrls = urls;
+        this._screenshotLightboxIndex = startIndex;
         const overlay = document.createElement('div');
         overlay.setAttribute('data-wf-dash-screenshot-lightbox', '1');
         overlay.style.cssText = 'position: fixed; inset: 0; z-index: 100000; background: rgba(0, 0, 0, 0.85); display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box;';
         const escUrl = dashEscHtml(imageUrl);
-        const escAlt = dashEscHtml(String(alt || 'Screenshot'));
+        const escAlt = dashEscHtml(String(alt || ('Screenshot ' + (startIndex + 1))));
+        const counterHtml = urls.length > 1
+            ? `<div data-wf-dash-screenshot-lightbox-counter="1" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.85); font-size: 13px; letter-spacing: 0.02em; pointer-events: none;">${startIndex + 1} / ${urls.length}</div>`
+            : '';
         overlay.innerHTML = `<button type="button" data-wf-dash-screenshot-lightbox-close="1" aria-label="Close" style="position: absolute; top: 16px; right: 16px; padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.45); color: #fff; font-size: 12px; cursor: pointer;">Close</button>`
-            + `<img src="${escUrl}" alt="${escAlt}" style="max-width: 95vw; max-height: 90vh; object-fit: contain; border-radius: 4px;">`;
+            + `<img src="${escUrl}" alt="${escAlt}" style="max-width: 95vw; max-height: 90vh; object-fit: contain; border-radius: 4px;">`
+            + counterHtml;
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay || e.target.closest('[data-wf-dash-screenshot-lightbox-close]')) {
                 this._closeScreenshotLightbox();
             }
         });
         this._screenshotLightboxKeyHandler = (e) => {
-            if (e.key === 'Escape') this._closeScreenshotLightbox();
+            if (e.key === 'Escape') {
+                this._closeScreenshotLightbox();
+                return;
+            }
+            const galleryUrls = this._screenshotLightboxUrls || [];
+            if (galleryUrls.length < 2) return;
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                this._setScreenshotLightboxImage(this._screenshotLightboxIndex + 1);
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                this._setScreenshotLightboxImage(this._screenshotLightboxIndex - 1);
+            }
         };
         document.addEventListener('keydown', this._screenshotLightboxKeyHandler);
         modal.appendChild(overlay);
@@ -3940,17 +4003,6 @@ const searchOutputResultsPaneMethods = {
         return this._inputStyle() + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
     },
 
-    _segmentBtnStyle(active, variant) {
-        const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
-        if (variant === 'depth') {
-            if (active) {
-                return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
-            }
-            return base + ' ' + DASH_TOGGLE_INACTIVE;
-        }
-        return base;
-    },
-
     _textareaFocusSnapshot(wrap, selector) {
         const ta = wrap && wrap.querySelector(selector);
         const hadFocus = ta && this._pageWindow().document.activeElement === ta;
@@ -4152,8 +4204,21 @@ const searchOutputResultsPaneMethods = {
     },
 
     _rollingSegBtn(attrName, value, label, active, divider) {
-        const divCls = divider ? ' dv-seg-btn--divider' : '';
-        return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${dashEscHtml(label)}</button>`;
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        if (ui && typeof ui.segmentBtnHtml === 'function') {
+            return ui.segmentBtnHtml({
+                valueAttr: attrName,
+                value,
+                label,
+                active,
+                divider
+            });
+        }
+        const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
+        return `<button type="button" ${attrName}="${value}" class="fleet-ui-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${dashEscHtml(label)}</button>`;
     },
 
     _rollingSimilarityLabelHtml(leftText, rightText, rollingUi) {
@@ -4185,11 +4250,11 @@ const searchOutputResultsPaneMethods = {
         const showHighlights = rollingUi.showHighlights;
         return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
             ${this._labelSpan('Diff Viewer')}
-            <div class="dv-seg-group" role="group" aria-label="Diff highlights">
+            <div class="fleet-ui-seg-group" role="group" aria-label="Diff highlights">
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'on', 'On', showHighlights, true)}
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'off', 'Off', !showHighlights, false)}
             </div>
-            <div class="dv-seg-group" role="group" aria-label="Diff modality">
+            <div class="fleet-ui-seg-group" role="group" aria-label="Diff modality">
                 ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
                 ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
             </div>
@@ -4294,8 +4359,8 @@ const searchOutputResultsPaneMethods = {
             '  font-size: 10px;',
             '  font-weight: 700;',
             '  white-space: nowrap;',
-            '  background: #f1f5f9;',
-            '  color: #0f172a;',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--foreground, #0f172a);',
             '}',
             '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-sim,',
             '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-nodiff {',
@@ -6766,7 +6831,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.7',
+    _version: '6.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

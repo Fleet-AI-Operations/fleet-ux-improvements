@@ -220,7 +220,7 @@ const ActionCounterApi = {
             '↺',
             'Reset to 0',
             () => this.applyCountDisplay(input, this.setCount(0, 'reset')),
-            'width: 20px; height: 20px; font-size: 13px; color: #888;'
+            'width: 20px; height: 20px; font-size: 13px; color: var(--muted-foreground, #888);'
         );
 
         counter.append(btnReset, input, btnMinus, btnPlus);
@@ -233,7 +233,7 @@ const plugin = {
     name: 'Action Counter (library)',
     description:
         'Shared API for action counter chrome and storage (archetype modules supply find/mount)',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
