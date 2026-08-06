@@ -139,6 +139,30 @@ function fleetUiGetFleetTheme() {
     return fleetUiResolveTheme();
 }
 
+/** Opaque Preferred-mode palette for Settings / injected chrome (not host CSS vars). */
+function fleetUiChromeColors() {
+    if (fleetUiIsFleetDark()) {
+        return {
+            bg: '#18181b',
+            card: '#27272a',
+            hover: '#3f3f46',
+            border: '#3f3f46',
+            borderHover: '#52525b',
+            fg: '#e4e4e7',
+            muted: '#a1a1aa'
+        };
+    }
+    return {
+        bg: '#ffffff',
+        card: '#fafafa',
+        hover: '#f0f0f0',
+        border: '#e5e5e5',
+        borderHover: '#d1d5db',
+        fg: '#333333',
+        muted: '#666666'
+    };
+}
+
 function fleetUiThemeChromeRootsSelector() {
     return [
         '.fleet-ui-panel',
@@ -989,7 +1013,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, segments, filter toggles, panels, and copy feedback',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1120,6 +1144,7 @@ const plugin = {
 
             isFleetDark: fleetUiIsFleetDark,
             getFleetTheme: fleetUiGetFleetTheme,
+            chromeColors: fleetUiChromeColors,
             onThemeChange: fleetUiOnThemeChange,
             getThemeMode: fleetUiGetThemeMode,
             setThemeMode: fleetUiSetThemeMode,

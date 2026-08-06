@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.19',
+    _version: '9.20',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2684,20 +2684,20 @@ const plugin = {
             '  border-radius: 6px; cursor: pointer; border: 1px solid #dc2626;',
             '  color: #fff; background: #dc2626;',
             '}',
-            'html.dark .wf-ops-alert-banner-red {',
+            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red {',
             '  background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));',
             '}',
-            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-title,',
-            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-body { color: #fca5a5; }',
-            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-footer { border-top-color: #7f1d1d; }',
-            'html.dark .wf-ops-alert-banner-red .wf-ops-alert-btn-secondary {',
+            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-title,',
+            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-body { color: #fca5a5; }',
+            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-footer { border-top-color: #7f1d1d; }',
+            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-btn-secondary {',
             '  color: #fecaca; background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));',
             '}',
             '.wf-ops-alert-banner-amber {',
             '  margin-top: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45;',
             '  color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px;',
             '}',
-            'html.dark .wf-ops-alert-banner-amber {',
+            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-amber {',
             '  color: #fcd34d;',
             '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));',
             '}'
@@ -3066,7 +3066,10 @@ const plugin = {
         const knob = slider.querySelector('span');
         const isChecked = checkbox.checked;
         const onColor = slider.dataset.wfOnColor || '#6366f1';
-        slider.style.backgroundColor = isChecked ? onColor : 'color-mix(in srgb, var(--muted-foreground, #94a3b8) 45%, var(--background, #fff))';
+        const c = (Context.uiLib && typeof Context.uiLib.chromeColors === 'function')
+            ? Context.uiLib.chromeColors()
+            : { hover: '#f0f0f0' };
+        slider.style.backgroundColor = isChecked ? onColor : c.hover;
         if (knob) {
             const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '17px';
             const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
@@ -4913,10 +4916,9 @@ const plugin = {
         const passwordPanelDisplay = opsHasStoredPassword ? 'none' : 'block';
         const suboptionsDisplay = opsHasStoredPassword && opsWantsEnabled && hostAllowsDashboard ? 'block' : 'none';
         const openDashboardBtnDisplay = opsHasStoredPassword && opsWantsEnabled && hostAllowsDashboard ? 'block' : 'none';
-        const dark = document.documentElement.classList.contains('dark');
-        const theme = dark
-            ? { bg: '#18181b', card: '#27272a' }
-            : { bg: '#ffffff', card: '#fafafa' };
+        const c = (Context.uiLib && typeof Context.uiLib.chromeColors === 'function')
+            ? Context.uiLib.chromeColors()
+            : { bg: '#ffffff', card: '#fafafa', border: '#e5e5e5', fg: '#333333', muted: '#666666' };
         const externalHostNotice = hostAllowsDashboard
             ? ''
             : `<div id="wf-ops-external-host-notice" class="wf-ops-alert-banner-amber">
@@ -4926,19 +4928,19 @@ const plugin = {
         return `
             <div style="margin-bottom: 20px;">
                 <div id="wf-ops-enable-wrap" style="display: ${enableCardDisplay};">
-                <div style="padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: ${theme.card};">
+                <div style="padding: 12px 14px; border: 1px solid ${c.border}; border-radius: 8px; background: ${c.card};">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
-                        <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333);">Enable Ops Dashboard</div>
+                        <div style="font-size: 14px; font-weight: 600; color: ${c.fg};">Enable Ops Dashboard</div>
                         ${switchHTML}
                     </div>
                     ${externalHostNotice}
-                    <div id="wf-ops-dashboard-suboptions-wrap" style="display: ${suboptionsDisplay}; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border, #e5e5e5);">
+                    <div id="wf-ops-dashboard-suboptions-wrap" style="display: ${suboptionsDisplay}; margin-top: 10px; padding-top: 10px; border-top: 1px dashed ${c.border};">
                         <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0 4px 12px;">
                             <div style="flex: 1; min-width: 0;">
-                                <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: var(--muted-foreground, #666); cursor: pointer; display: block;">
+                                <label for="wf-ops-dashboard-open-on-settings" style="font-size: 12px; color: ${c.muted}; cursor: pointer; display: block;">
                                     Open dashboard when opening settings
                                 </label>
-                                <div style="font-size: 11px; color: var(--muted-foreground, #666); margin-top: 2px; line-height: 1.35;">
+                                <div style="font-size: 11px; color: ${c.muted}; margin-top: 2px; line-height: 1.35;">
                                     Ctrl+click the gear icon to open this smaller modal.
                                 </div>
                             </div>
@@ -4955,19 +4957,19 @@ const plugin = {
                     </div>
                 </div>
                 </div>
-                <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: ${theme.card};">
+                <div id="wf-ops-password-panel" style="display: ${passwordPanelDisplay}; margin-top: 10px; padding: 12px 14px; border: 1px solid ${c.border}; border-radius: 8px; background: ${c.card};">
                     <form id="wf-ops-password-form" style="margin: 0;">
-                        <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: var(--foreground, #333); margin-bottom: 6px;">Ops Dashboard</label>
+                        <label for="wf-ops-password-input" style="display: block; font-size: 12px; font-weight: 500; color: ${c.fg}; margin-bottom: 6px;">Ops Dashboard</label>
                         <div style="display: flex; gap: 8px; align-items: stretch;">
                             <input type="password" id="wf-ops-password-input" name="ops-password" autocomplete="current-password" style="
                                 flex: 1;
                                 min-width: 0;
                                 padding: 8px 12px;
                                 font-size: 13px;
-                                border: 1px solid var(--border, #e5e5e5);
+                                border: 1px solid ${c.border};
                                 border-radius: 6px;
-                                background: ${theme.bg};
-                                color: var(--foreground, #333);
+                                background: ${c.bg};
+                                color: ${c.fg};
                                 box-sizing: border-box;
                             ">
                             <button type="submit" id="wf-ops-password-submit" class="${this._opsDashBtnClass('primary', 'regular')}" style="
@@ -5035,7 +5037,10 @@ const plugin = {
 
     _renderOpsToggleSwitchHTML(id, isEnabled, spec) {
         const onColor = spec.onColor;
-        const sliderBg = isEnabled ? onColor : 'color-mix(in srgb, var(--muted-foreground, #94a3b8) 45%, var(--background, #fff))';
+        const c = (Context.uiLib && typeof Context.uiLib.chromeColors === 'function')
+            ? Context.uiLib.chromeColors()
+            : { hover: '#f0f0f0', border: '#e5e5e5' };
+        const sliderBg = isEnabled ? onColor : c.hover;
         const knobLeft = isEnabled ? spec.knobLeftOn : spec.knobLeftOff;
         return `
             <label style="position: relative; display: inline-block; width: ${spec.width}px; height: ${spec.height}px; flex-shrink: 0;">

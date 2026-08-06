@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.8',
+    _version: '11.9',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -315,6 +315,9 @@ const plugin = {
 
     /** Opaque light/dark palette for Settings modal surfaces (avoids fragile host CSS vars). */
     _settingsThemeColors() {
+        if (Context.uiLib && typeof Context.uiLib.chromeColors === 'function') {
+            return Context.uiLib.chromeColors();
+        }
         if (this._isFleetDark()) {
             return {
                 bg: '#18181b',

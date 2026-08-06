@@ -1,7 +1,7 @@
 {
   "version": "13.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.267",
+  "archetypesVersion": "14.268",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.4",
-      "hash": "sha256-2fb8a668e1e00d903bb7618ebcea295ebb220dea2459289e71af287743c87ecf",
+      "version": "3.5",
+      "hash": "sha256-2887e7df62b6fb7cbe9042f5333860b8b7572ff99c8fab5944b59e75d41610ba",
       "log": false
     },
     {
@@ -28,14 +28,14 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.19",
-      "hash": "sha256-2632c0e06c3fc0bf0c0f83959644cc1a30628cf039f7f9e5aefb54ca33fdcf17",
+      "version": "9.20",
+      "hash": "sha256-795b8c7e38b9fd8aab3475da8c978b49fcae9d40637c8e7bbe76af294bd99e6d",
       "log": false
     },
     {
       "name": "settings-ui.js",
-      "version": "11.8",
-      "hash": "sha256-622e45237b57a02222a9e2a77ac0adee98a337f8af7c48b70a9891fa3beddfbb",
+      "version": "11.9",
+      "hash": "sha256-75d42d97aa02fb31d9c6d58323fa56384227381d6ccbe6787d2a2c7a3b3f61b8",
       "log": false
     },
     {
