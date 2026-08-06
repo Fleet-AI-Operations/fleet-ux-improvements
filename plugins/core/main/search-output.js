@@ -5763,7 +5763,7 @@ function attachSearchOutputListeners(modal, dash) {
                 const url = screenshotThumb.getAttribute('data-screenshot-url');
                 const img = screenshotThumb.querySelector('img');
                 const alt = img && img.getAttribute('alt');
-                if (url) dash._openScreenshotLightbox(url, alt);
+                if (url) dash._openScreenshotLightbox(url, alt, screenshotThumb);
                 return;
             }
     });
@@ -5908,7 +5908,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.31',
+    _version: '9.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
