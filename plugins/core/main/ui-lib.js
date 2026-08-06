@@ -187,22 +187,22 @@ function fleetUiThemeOverrideCssText() {
         .join(', ');
     return [
         'html[data-fleet-ux-theme="light"] ' + rootsAndDescendants + ' {',
-        '  --background: #ffffff;',
-        '  --card: #ffffff;',
-        '  --foreground: #111111;',
-        '  --border: #e7e7e7;',
-        '  --muted: #f7f7f7;',
-        '  --muted-foreground: #6d6d6d;',
-        '  --input: #e7e7e7;',
+        '  --background: #ffffff !important;',
+        '  --card: #ffffff !important;',
+        '  --foreground: #111111 !important;',
+        '  --border: #e7e7e7 !important;',
+        '  --muted: #f7f7f7 !important;',
+        '  --muted-foreground: #6d6d6d !important;',
+        '  --input: #e7e7e7 !important;',
         '}',
         'html[data-fleet-ux-theme="dark"] ' + rootsAndDescendants + ' {',
-        '  --background: #121212;',
-        '  --card: #1a1a1c;',
-        '  --foreground: #f5f5f5;',
-        '  --border: #262626;',
-        '  --muted: #171717;',
-        '  --muted-foreground: #8c8c8c;',
-        '  --input: #262626;',
+        '  --background: #121212 !important;',
+        '  --card: #1a1a1c !important;',
+        '  --foreground: #f5f5f5 !important;',
+        '  --border: #262626 !important;',
+        '  --muted: #171717 !important;',
+        '  --muted-foreground: #8c8c8c !important;',
+        '  --input: #262626 !important;',
         '}'
     ].join('\n');
 }
@@ -212,9 +212,10 @@ function fleetUiEnsureThemeOverrideStyles() {
     if (!style) {
         style = document.createElement('style');
         style.id = FLEET_UI_THEME_OVERRIDE_STYLE_ID;
-        (document.head || document.documentElement).appendChild(style);
     }
     style.textContent = fleetUiThemeOverrideCssText();
+    // Keep after site CSS so Preferred tokens win cascade order as well as specificity.
+    (document.head || document.documentElement).appendChild(style);
 }
 
 function fleetUiSyncThemeDataset(forceNotify) {
@@ -494,6 +495,8 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
     const secondary = p + '.wf-dash-btn--secondary';
     const tertiary = p + '.wf-dash-btn--basic';
     const headerBasic = p + '.wf-dash-header-btn.wf-dash-btn--basic';
+    const light = (sel) => 'html[data-fleet-ux-theme="light"] ' + sel;
+    const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
 
     return [
         btn + ' {',
@@ -580,7 +583,70 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         headerBasic + ':hover:not(:disabled) {',
         '  color: var(--foreground, #0f172a);',
         '  border-color: var(--foreground, #0f172a);',
-        '}'
+        '}',
+        // Preferred-opaque recipes (do not trust host CSS vars alone)
+        light(secondary) + ' {',
+        '  border-color: #2563eb;',
+        '  background: #ffffff;',
+        '  color: #111111;',
+        '}',
+        light(secondary) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, #2563eb 10%, #ffffff);',
+        '  border-color: #2563eb;',
+        '  color: #111111;',
+        '}',
+        light(tertiary) + ' {',
+        '  border-color: #e5e5e5;',
+        '  background: #ffffff;',
+        '  color: #666666;',
+        '}',
+        light(tertiary) + ':hover:not(:disabled) {',
+        '  background: #f0f0f0;',
+        '  border-color: #333333;',
+        '  color: #333333;',
+        '}',
+        light(tertiary + '.wf-dash-btn--icon:hover:not(:disabled)') + ' {',
+        '  background: #f0f0f0;',
+        '  color: #333333;',
+        '}',
+        light(primary + ':disabled') + ', ' + light(secondary + ':disabled') + ', ' + light(tertiary + ':disabled') + ' {',
+        '  border-color: #e5e5e5;',
+        '  background: #f0f0f0;',
+        '  color: #999999;',
+        '}',
+        light(headerBasic) + ' { color: #666666; }',
+        light(headerBasic) + ':hover:not(:disabled) { color: #111111; border-color: #111111; }',
+        dark(secondary) + ' {',
+        '  border-color: #2563eb;',
+        '  background: #18181b;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(secondary) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, #2563eb 14%, #18181b);',
+        '  border-color: #2563eb;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(tertiary) + ' {',
+        '  border-color: #3f3f46;',
+        '  background: #18181b;',
+        '  color: #a1a1aa;',
+        '}',
+        dark(tertiary) + ':hover:not(:disabled) {',
+        '  background: #27272a;',
+        '  border-color: #e4e4e7;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(tertiary + '.wf-dash-btn--icon:hover:not(:disabled)') + ' {',
+        '  background: #27272a;',
+        '  color: #e4e4e7;',
+        '}',
+        dark(primary + ':disabled') + ', ' + dark(secondary + ':disabled') + ', ' + dark(tertiary + ':disabled') + ' {',
+        '  border-color: #3f3f46;',
+        '  background: #27272a;',
+        '  color: #71717a;',
+        '}',
+        dark(headerBasic) + ' { color: #a1a1aa; }',
+        dark(headerBasic) + ':hover:not(:disabled) { color: #e4e4e7; border-color: #e4e4e7; }'
     ];
 }
 
@@ -787,8 +853,12 @@ function fleetUiEscapeHtml(value) {
 
 function fleetUiSegmentCssLines(prefix) {
     const p = prefix || '';
+    const light = (sel) => 'html[data-fleet-ux-theme="light"] ' + sel;
+    const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
+    const group = p + '.fleet-ui-seg-group';
+    const btn = p + '.fleet-ui-seg-btn';
     return [
-        p + '.fleet-ui-seg-group {',
+        group + ' {',
         '  display: inline-flex;',
         '  border-radius: 6px;',
         '  overflow: hidden;',
@@ -799,7 +869,7 @@ function fleetUiSegmentCssLines(prefix) {
         '  display: flex;',
         '  width: 100%;',
         '}',
-        p + '.fleet-ui-seg-btn {',
+        btn + ' {',
         '  padding: 5px 12px;',
         '  font-size: 12px;',
         '  font-weight: 600;',
@@ -817,13 +887,47 @@ function fleetUiSegmentCssLines(prefix) {
         p + '.fleet-ui-seg-btn--divider {',
         '  border-right: 1px solid var(--border, #e2e8f0);',
         '}',
-        p + '.fleet-ui-seg-btn[aria-pressed="true"] {',
+        btn + '[aria-pressed="true"] {',
         '  background: var(--brand, #2563eb);',
         '  color: #ffffff;',
         '}',
-        p + '.fleet-ui-seg-btn:not([aria-pressed="true"]):hover {',
+        btn + ':not([aria-pressed="true"]):hover {',
         '  background: color-mix(in srgb, var(--foreground, #0f172a) 10%, transparent);',
         '  color: var(--foreground, #0f172a);',
+        '}',
+        light(group) + ' {',
+        '  border-color: #e5e5e5;',
+        '  background: #f0f0f0;',
+        '}',
+        light(btn) + ' {',
+        '  color: #333333;',
+        '  background: transparent;',
+        '}',
+        light(p + '.fleet-ui-seg-btn--divider') + ' { border-right-color: #e5e5e5; }',
+        light(btn + '[aria-pressed="true"]') + ' {',
+        '  background: #2563eb;',
+        '  color: #ffffff;',
+        '}',
+        light(btn + ':not([aria-pressed="true"]):hover') + ' {',
+        '  background: #e5e5e5;',
+        '  color: #111111;',
+        '}',
+        dark(group) + ' {',
+        '  border-color: #3f3f46;',
+        '  background: #18181b;',
+        '}',
+        dark(btn) + ' {',
+        '  color: #a1a1aa;',
+        '  background: transparent;',
+        '}',
+        dark(p + '.fleet-ui-seg-btn--divider') + ' { border-right-color: #3f3f46; }',
+        dark(btn + '[aria-pressed="true"]') + ' {',
+        '  background: #2563eb;',
+        '  color: #ffffff;',
+        '}',
+        dark(btn + ':not([aria-pressed="true"]):hover') + ' {',
+        '  background: #27272a;',
+        '  color: #e4e4e7;',
         '}'
     ];
 }
@@ -1013,7 +1117,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, segments, filter toggles, panels, and copy feedback',
-    _version: '3.5',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1036,11 +1140,14 @@ const plugin = {
             }
             const styleId = fleetUiScopeStyleId(scopeSelector);
             const root = appendRoot || document;
-            if (root.getElementById && root.getElementById(styleId)) return;
-            if (root.querySelector && root.querySelector('#' + styleId)) return;
             ensureStyles();
-            const style = document.createElement('style');
-            style.id = styleId;
+            let style = (root.getElementById && root.getElementById(styleId))
+                || (root.querySelector && root.querySelector('#' + styleId))
+                || document.getElementById(styleId);
+            if (!style) {
+                style = document.createElement('style');
+                style.id = styleId;
+            }
             style.textContent = fleetUiBtnBaseCssLines(scopeSelector + ' ').join('\n');
             const target = appendRoot || document.head || document.documentElement;
             target.appendChild(style);
@@ -1078,11 +1185,13 @@ const plugin = {
                 ? fleetUiSegmentScopeStyleId(scopeSelector)
                 : FLEET_UI_SEGMENT_STYLE_ID;
             const root = appendRoot || document;
-            if (root.getElementById && root.getElementById(styleId)) return;
-            if (root.querySelector && root.querySelector('#' + styleId)) return;
-            if (document.getElementById(styleId)) return;
-            const style = document.createElement('style');
-            style.id = styleId;
+            let style = (root.getElementById && root.getElementById(styleId))
+                || (root.querySelector && root.querySelector('#' + styleId))
+                || document.getElementById(styleId);
+            if (!style) {
+                style = document.createElement('style');
+                style.id = styleId;
+            }
             const prefix = scopeSelector ? scopeSelector + ' ' : '';
             style.textContent = fleetUiSegmentCssLines(prefix).join('\n');
             const target = appendRoot || document.head || document.documentElement;
