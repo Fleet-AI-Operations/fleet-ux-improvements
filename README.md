@@ -176,6 +176,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 Click the Tampermonkey icon and select "Fleet UX Enhancer" to access the settings panel. From there you can:
 
+- Choose Preferred mode (match site, light, or dark) for extension chrome
 - Enable or disable individual features
 - Configure feature-specific options
 - View debug logs (dev builds only)
