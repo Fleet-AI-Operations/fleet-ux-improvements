@@ -61,7 +61,7 @@ function _deEnsureFleetThemeObserver() {
     try {
         const observer = new MutationObserver(() => _deNotifyFleetThemeChange());
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        CleanupRegistry.register(() => observer.disconnect());
+        CleanupRegistry.registerObserver(observer);
     } catch (err) {
         Logger.warn('fleet theme observer failed', err);
     }
@@ -702,7 +702,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

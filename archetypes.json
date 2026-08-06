@@ -1,7 +1,7 @@
 {
   "version": "13.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.260",
+  "archetypesVersion": "14.261",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -212,8 +212,8 @@
     },
     {
       "name": "diff-engine.js",
-      "version": "3.6",
-      "hash": "sha256-7891912a7115ea275cbcb2afaf7d728b66e6ead956568b074a7b7ba1850fc559",
+      "version": "3.7",
+      "hash": "sha256-7a93707a548d3df37b6e6c7d05e3634103f590eb7b55eb5cd4f7bd65aa0ee521",
       "log": false
     },
     {
