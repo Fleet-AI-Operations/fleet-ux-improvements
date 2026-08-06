@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '3.1',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'core',
 
@@ -63,6 +63,91 @@ const plugin = {
         state.presenceObserver = obs;
     },
 
+    _isFleetDark() {
+        if (Context.uiLib && typeof Context.uiLib.isFleetDark === 'function') {
+            return Context.uiLib.isFleetDark();
+        }
+        return document.documentElement.classList.contains('dark');
+    },
+
+    _panelChromeColors() {
+        if (this._isFleetDark()) {
+            return {
+                bg: '#1c1c1e',
+                fg: '#e5e7eb',
+                border: '#3f3f46',
+                headerBg: 'rgba(255,255,255,0.06)',
+                inputBg: '#121212'
+            };
+        }
+        return {
+            bg: '#ffffff',
+            fg: '#0f172a',
+            border: '#e2e8f0',
+            headerBg: '#f1f5f9',
+            inputBg: '#ffffff'
+        };
+    },
+
+    _applyInlinePanelChrome(root, toggleButton, header, searchInput) {
+        const c = this._panelChromeColors();
+        if (root) {
+            root.style.background = c.bg;
+            root.style.color = c.fg;
+            root.style.border = '1px solid ' + c.border;
+            root.style.borderRadius = '10px';
+            root.style.boxShadow = this._isFleetDark()
+                ? '0 12px 40px rgba(0,0,0,0.55)'
+                : '0 12px 40px rgba(15,23,42,0.18)';
+        }
+        if (header) {
+            header.style.background = c.headerBg;
+            header.style.borderBottom = '1px solid ' + c.border;
+            header.style.color = c.fg;
+        }
+        if (searchInput) {
+            searchInput.style.background = c.inputBg;
+            searchInput.style.color = c.fg;
+            searchInput.style.border = '1px solid ' + c.border;
+        }
+        if (toggleButton) {
+            toggleButton.style.background = c.bg;
+            toggleButton.style.color = c.fg;
+            toggleButton.style.border = '1px solid ' + c.border;
+            toggleButton.style.borderRadius = '10px';
+            toggleButton.style.boxShadow = this._isFleetDark()
+                ? '0 6px 18px rgba(0,0,0,0.35)'
+                : '0 6px 18px rgba(15,23,42,0.14)';
+        }
+    },
+
+    _applyPanelClasses(ui) {
+        if (!ui || !Context.uiLib || !Context.uiLib.PANEL_CLASSES) return false;
+        const pc = Context.uiLib.PANEL_CLASSES;
+        if (ui.root && pc.root && !ui.root.classList.contains(pc.root)) {
+            ui.root.classList.add(pc.root);
+        }
+        if (ui.header && pc.header && !ui.header.classList.contains(pc.header)) {
+            ui.header.classList.add(pc.header);
+        }
+        if (ui.searchInput && pc.textarea && !ui.searchInput.classList.contains(pc.textarea)) {
+            ui.searchInput.classList.add(pc.textarea);
+        }
+        if (ui.toggleButton && pc.chip && !ui.toggleButton.classList.contains(pc.chip)) {
+            ui.toggleButton.classList.add(pc.chip);
+        }
+        if (ui.resizeHandle && pc.resize && !ui.resizeHandle.classList.contains(pc.resize)) {
+            ui.resizeHandle.classList.add(pc.resize);
+        }
+        ['clearButton', 'copyButton', 'refreshButton', 'minimizeButton'].forEach((key) => {
+            const el = ui[key];
+            if (el && pc.ghostBtn && !el.classList.contains(pc.ghostBtn)) {
+                el.classList.add(pc.ghostBtn);
+            }
+        });
+        return true;
+    },
+
     _ensureUI(state, context) {
         if (!document.body) return;
         if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
@@ -70,7 +155,17 @@ const plugin = {
         }
         const rootPresent = state.ui && state.ui.root && document.body.contains(state.ui.root);
         const togglePresent = state.ui && state.ui.toggleButton && document.body.contains(state.ui.toggleButton);
-        if (rootPresent && togglePresent) return;
+        if (rootPresent && togglePresent) {
+            // Dev plugins init before ui-lib in registration order; upgrade chrome once uiLib exists.
+            this._applyPanelClasses(state.ui);
+            this._applyInlinePanelChrome(
+                state.ui.root,
+                state.ui.toggleButton,
+                state.ui.header,
+                state.ui.searchInput
+            );
+            return;
+        }
 
         this._teardownUI(state);
         state.ui = this._buildUI(state, context);
@@ -254,6 +349,8 @@ const plugin = {
         toggleButton.style.padding = '6px 10px';
         toggleButton.style.fontSize = '12px';
         toggleButton.style.cursor = 'pointer';
+
+        this._applyInlinePanelChrome(root, toggleButton, header, searchInput);
 
         const resizeHandle = document.createElement('div');
         resizeHandle.className = pc.resize || '';

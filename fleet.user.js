@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.5
+// @version      13.6
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.5';
+    const VERSION = '13.6';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -3714,16 +3714,23 @@
         },
         
         runCorePlugins() {
-            this.getCorePlugins()
-                .filter(p => p._isOps !== true && p._isLib !== true && this.isEnabled(p.id))
-                .forEach(plugin => {
-                    try {
-                        if (plugin.init) plugin.init(plugin.state, Context);
-                        Logger.debug(`Core plugin initialized: ${plugin.id}`);
-                    } catch (e) {
-                        Logger.error(`Error in core plugin ${plugin.id}:`, e);
-                    }
-                });
+            const plugins = this.getCorePlugins()
+                .filter(p => p._isOps !== true && p._isLib !== true && this.isEnabled(p.id));
+            // ui-lib must init first: other core/dev plugins (e.g. logger) depend on Context.uiLib.
+            // Dev plugins are registered before core, so registration order alone is wrong.
+            plugins.sort((a, b) => {
+                if (a.id === 'ui-lib') return -1;
+                if (b.id === 'ui-lib') return 1;
+                return 0;
+            });
+            plugins.forEach(plugin => {
+                try {
+                    if (plugin.init) plugin.init(plugin.state, Context);
+                    Logger.debug(`Core plugin initialized: ${plugin.id}`);
+                } catch (e) {
+                    Logger.error(`Error in core plugin ${plugin.id}:`, e);
+                }
+            });
         },
 
         runLibraryPluginInit(plugin) {
