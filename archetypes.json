@@ -1,7 +1,7 @@
 {
   "version": "13.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.257",
+  "archetypesVersion": "14.258",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -152,6 +152,12 @@
       "name": "user-story-collapse.js",
       "version": "1.4",
       "hash": "sha256-4faf4681f14d913695bb57ab174637fd4351b9a4fe201870dcd7f11cb6e0dfcb",
+      "log": false
+    },
+    {
+      "name": "verifier-source-tab.js",
+      "version": "2.0",
+      "hash": "sha256-6458f08af334625209ebbe54e459f5700e0e37d507e3529e2d8f88d72b7c2515",
       "log": false
     },
     {
@@ -621,7 +627,8 @@
         "source-data-explorer.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
-        "user-story-collapse.js"
+        "user-story-collapse.js",
+        "verifier-source-tab.js"
       ],
       "plugins": [
         {
@@ -644,8 +651,8 @@
         },
         {
           "name": "workflow-verifier-tab.js",
-          "version": "1.4",
-          "hash": "sha256-67eb073e01e54b218c8107245068daf5eac75e391d1ca04866086023a29fb2fe",
+          "version": "2.0",
+          "hash": "sha256-bab51206740a13a33f20b0cda272f6b2542d2afe257cdcd60c8c82803bf2df4f",
           "log": false
         },
         {
@@ -908,7 +915,8 @@
         "vnc-helper.js",
         "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
-        "user-story-markdown.js"
+        "user-story-markdown.js",
+        "verifier-source-tab.js"
       ],
       "plugins": [
         {
@@ -957,6 +965,12 @@
           "name": "verifier-expand-mismatch-rows.js",
           "version": "1.3",
           "hash": "sha256-f8ef0e0a9226fec713dfd3ccd87002ba80918e0c7a0e150af20ab8faa35e3064",
+          "log": false
+        },
+        {
+          "name": "verifier-source-tab.js",
+          "version": "1.0",
+          "hash": "sha256-4e7b3b666f1bc4bc6de181e3c14cc47a30cc7e0583db234cb3c495c35049f296",
           "log": false
         },
         {

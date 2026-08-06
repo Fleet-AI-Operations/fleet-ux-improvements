@@ -157,6 +157,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear
 - **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages
+- **Environment Verifier Tab**: Adds Environment | Verifier tabs on the instance status bar (beside Start Recording / Reset / Run Verifier) and shows searchable verifier source; switches only the iframe stack
 - **Tool Favorites**: Add favorite stars to tools list
 - **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
