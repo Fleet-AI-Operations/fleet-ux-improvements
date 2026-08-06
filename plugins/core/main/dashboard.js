@@ -42,7 +42,7 @@ const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-m
 const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_TASK_CARD_BG = '#121212';
+const DASH_TASK_CARD_BG = 'var(--card, #ffffff)';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_MS_HOVER_CLOSE_MS = 300;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.17',
+    _version: '11.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1213,7 +1213,7 @@ const plugin = {
                 </div>
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
-                <div id="wf-dash-incomplete-banner" style="display: none; margin-bottom: 12px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; flex-shrink: 0;"></div>
+                <div id="wf-dash-incomplete-banner" style="display: none; margin-bottom: 12px; padding: 10px 12px; font-size: 12px; color: var(--foreground, #92400e); background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff)); border: 1px solid #f59e0b; border-radius: 8px; flex-shrink: 0;"></div>
                 ${panelHtml}
             </div>
         `;
@@ -2014,7 +2014,7 @@ const plugin = {
             '  width: auto;',
             '  min-width: 0;',
             '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  background: #000;',
+            '  background: var(--background, #fff);',
             '  color: var(--muted-foreground, #64748b);',
             '  padding: 0 8px;',
             '}',
@@ -2031,7 +2031,7 @@ const plugin = {
             '  width: auto;',
             '  min-width: 0;',
             '  border: 1px solid #b45309;',
-            '  background: #92400e;',
+            '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #fff));',
             '  color: #fff7ed;',
             '  padding: 0 8px;',
             '}',

@@ -20,7 +20,7 @@ const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
-const DASH_TASK_CARD_BG = '#121212';
+const DASH_TASK_CARD_BG = 'var(--card, #ffffff)';
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HYDRATE_BATCH_CONCURRENCY = 5;
 const DASH_SEARCH_FETCH_CONCURRENCY = 8;
@@ -4357,8 +4357,8 @@ const searchOutputResultsPaneMethods = {
             '  font-size: 10px;',
             '  font-weight: 700;',
             '  white-space: nowrap;',
-            '  background: #f1f5f9;',
-            '  color: #0f172a;',
+            '  background: var(--muted, #f1f5f9);',
+            '  color: var(--foreground, #0f172a);',
             '}',
             '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-sim,',
             '#wf-dash-modal .so-rolling-sim-badge .dv-slot-above-label-nodiff {',
@@ -6829,7 +6829,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.8',
+    _version: '6.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

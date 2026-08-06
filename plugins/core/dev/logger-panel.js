@@ -5,7 +5,7 @@ const plugin = {
     id: 'dev-logger-panel',
     name: 'Dev Logger Panel',
     description: 'Floating panel to view Fleet UX Enhancer logs',
-    _version: '2.18',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'core',
 
@@ -99,13 +99,13 @@ const plugin = {
             root.style.bottom = '80px';
         }
         
+        if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+            Context.uiLib.ensurePanelStyles();
+        }
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        root.className = (root.className ? root.className + ' ' : '') + (pc.root || '');
         root.style.width = `${savedWidth}px`;
         root.style.height = `${savedHeight}px`;
-        root.style.background = 'rgba(16, 18, 24, 0.95)';
-        root.style.color = '#e5e7eb';
-        root.style.border = '1px solid rgba(255,255,255,0.12)';
-        root.style.borderRadius = '10px';
-        root.style.boxShadow = '0 8px 24px rgba(0,0,0,0.4)';
         root.style.display = 'flex';
         root.style.flexDirection = 'column';
         root.style.zIndex = '2147483646';
@@ -116,12 +116,9 @@ const plugin = {
 
         const header = document.createElement('div');
         header.id = 'wf-dev-log-panel-header';
+        header.className = pc.header || '';
         header.style.flex = '0 0 auto';
         header.style.padding = '6px 10px';
-        header.style.fontSize = '12px';
-        header.style.fontWeight = '600';
-        header.style.background = 'rgba(255,255,255,0.06)';
-        header.style.borderBottom = '1px solid rgba(255,255,255,0.1)';
         header.style.cursor = 'move';
         header.style.userSelect = 'none';
         header.style.display = 'flex';
@@ -140,63 +137,49 @@ const plugin = {
         const clearButton = document.createElement('button');
         clearButton.type = 'button';
         clearButton.textContent = 'Clear';
+        clearButton.className = pc.ghostBtn || '';
         clearButton.style.fontSize = '11px';
         clearButton.style.padding = '2px 6px';
-        clearButton.style.borderRadius = '6px';
-        clearButton.style.border = '1px solid rgba(255,255,255,0.2)';
-        clearButton.style.background = 'transparent';
-        clearButton.style.color = 'inherit';
         clearButton.style.cursor = 'pointer';
 
         const copyButton = document.createElement('button');
         copyButton.type = 'button';
         copyButton.textContent = 'Copy';
+        copyButton.className = pc.ghostBtn || '';
         copyButton.style.fontSize = '11px';
         copyButton.style.padding = '2px 6px';
-        copyButton.style.borderRadius = '6px';
-        copyButton.style.border = '1px solid rgba(255,255,255,0.2)';
-        copyButton.style.background = 'transparent';
-        copyButton.style.color = 'inherit';
         copyButton.style.cursor = 'pointer';
 
         const refreshButton = document.createElement('button');
         refreshButton.type = 'button';
         refreshButton.textContent = 'Refresh';
         refreshButton.title = 'Reload the page';
+        refreshButton.className = pc.ghostBtn || '';
         refreshButton.style.fontSize = '11px';
         refreshButton.style.padding = '2px 6px';
-        refreshButton.style.borderRadius = '6px';
-        refreshButton.style.border = '1px solid rgba(255,255,255,0.2)';
-        refreshButton.style.background = 'transparent';
-        refreshButton.style.color = 'inherit';
         refreshButton.style.cursor = 'pointer';
 
         const minimizeButton = document.createElement('button');
         minimizeButton.type = 'button';
         minimizeButton.textContent = 'Minimize';
+        minimizeButton.className = pc.ghostBtn || '';
         minimizeButton.style.fontSize = '11px';
         minimizeButton.style.padding = '2px 6px';
-        minimizeButton.style.borderRadius = '6px';
-        minimizeButton.style.border = '1px solid rgba(255,255,255,0.2)';
-        minimizeButton.style.background = 'transparent';
-        minimizeButton.style.color = 'inherit';
         minimizeButton.style.cursor = 'pointer';
 
         const searchWrap = document.createElement('div');
+        searchWrap.className = pc.divider || '';
         searchWrap.style.flex = '0 0 auto';
         searchWrap.style.padding = '6px 10px';
-        searchWrap.style.borderBottom = '1px solid rgba(255,255,255,0.08)';
 
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
         searchInput.placeholder = 'Search logs...';
+        searchInput.className = pc.textarea || '';
         searchInput.style.width = '100%';
         searchInput.style.fontSize = '11px';
         searchInput.style.padding = '6px 8px';
-        searchInput.style.borderRadius = '6px';
-        searchInput.style.border = '1px solid rgba(255,255,255,0.2)';
-        searchInput.style.background = 'rgba(15, 23, 42, 0.6)';
-        searchInput.style.color = '#e5e7eb';
+        searchInput.style.resize = 'none';
         searchInput.style.outline = 'none';
 
         searchWrap.appendChild(searchInput);
@@ -260,31 +243,17 @@ const plugin = {
         toggleButton.id = 'wf-dev-log-toggle';
         toggleButton.type = 'button';
         toggleButton.textContent = this._toggleButtonLabel(state.isVisible);
+        toggleButton.className = pc.chip || '';
         toggleButton.style.position = 'fixed';
         toggleButton.style.left = '20px';
         toggleButton.style.bottom = '78px';
         toggleButton.style.zIndex = '2147483646';
         toggleButton.style.padding = '6px 10px';
         toggleButton.style.fontSize = '12px';
-        toggleButton.style.borderRadius = '10px';
-        toggleButton.style.border = '1px solid rgba(0,0,0,0.2)';
-        toggleButton.style.background = '#111827';
-        toggleButton.style.color = '#f9fafb';
         toggleButton.style.cursor = 'pointer';
-        toggleButton.style.boxShadow = '0 6px 18px rgba(0,0,0,0.35)';
 
         const resizeHandle = document.createElement('div');
-        resizeHandle.style.position = 'absolute';
-        resizeHandle.style.right = '2px';
-        resizeHandle.style.bottom = '2px';
-        resizeHandle.style.width = '14px';
-        resizeHandle.style.height = '14px';
-        resizeHandle.style.cursor = 'se-resize';
-        resizeHandle.style.background = 'transparent';
-        resizeHandle.style.borderRight = '2px solid rgba(255,255,255,0.25)';
-        resizeHandle.style.borderBottom = '2px solid rgba(255,255,255,0.25)';
-        resizeHandle.style.borderRadius = '0 0 8px 0';
-        resizeHandle.style.zIndex = '1';
+        resizeHandle.className = pc.resize || '';
 
         headerActions.appendChild(clearButton);
         headerActions.appendChild(copyButton);
@@ -536,22 +505,16 @@ const plugin = {
         entry.style.whiteSpace = 'pre-wrap';
         entry.style.wordBreak = 'break-word';
 
-        if (level === 'error') entry.style.color = '#fca5a5';
-        if (level === 'warn') entry.style.color = '#facc15';
-        if (level === 'debug') entry.style.color = '#93c5fd';
-        if (level === 'info') entry.style.color = '#6ee7b7';
+        entry.classList.add('fleet-ui-log-entry');
+        if (level === 'error') entry.classList.add('fleet-ui-log--error');
+        if (level === 'warn') entry.classList.add('fleet-ui-log--warn');
+        if (level === 'debug') entry.classList.add('fleet-ui-log--debug');
+        if (level === 'info') entry.classList.add('fleet-ui-log--info');
 
         entry.textContent = message;
         entry.style.borderRadius = '6px';
         entry.style.padding = '2px 4px';
         entry.style.cursor = 'pointer';
-
-        entry.addEventListener('mouseenter', () => {
-            entry.style.background = 'rgba(255,255,255,0.08)';
-        });
-        entry.addEventListener('mouseleave', () => {
-            entry.style.background = 'transparent';
-        });
         entry.addEventListener('click', () => {
             void (async () => {
                 const ok = await this._copyToClipboard(message);

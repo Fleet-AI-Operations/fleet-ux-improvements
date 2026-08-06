@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.4
+// @version      13.5
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.4';
+    const VERSION = '13.5';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -838,12 +838,12 @@
             'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box;');
         const box = document.createElement('div');
         box.setAttribute('style',
-            'background:#fff;color:#1f2937;max-width:576px;padding:24px;border-radius:8px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;position:relative;');
+            'background:var(--card, var(--background, #fff));color:var(--foreground, #1f2937);max-width:576px;padding:24px;border-radius:8px;border:1px solid var(--border, #e2e8f0);box-shadow:0 25px 50px -12px color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent);font-family:system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.6;position:relative;');
         const closeBtn = document.createElement('button');
         closeBtn.type = 'button';
         closeBtn.textContent = 'Close';
         closeBtn.setAttribute('style',
-            'position:absolute;top:12px;right:12px;padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;color:#374151;');
+            'position:absolute;top:12px;right:12px;padding:6px 12px;border:1px solid var(--border, #d1d5db);border-radius:6px;background:var(--background, #fff);cursor:pointer;font-size:13px;color:var(--foreground, #374151);');
         closeBtn.addEventListener('click', function closeModal() {
             if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
         });
@@ -860,15 +860,15 @@
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = 'main version';
-        link.setAttribute('style', 'color:#2563eb;text-decoration:underline;font-weight:600;');
+        link.setAttribute('style', 'color:var(--brand, #2563eb);text-decoration:underline;font-weight:600;');
         p1.appendChild(link);
         p1.appendChild(document.createTextNode(' of this userscript and reload the page.'));
         const expandTrigger = document.createElement('button');
         expandTrigger.type = 'button';
         expandTrigger.textContent = 'Still seeing this message after reinstalling?';
-        expandTrigger.setAttribute('style', 'margin:12px 0 0 0;padding:0;border:none;background:none;cursor:pointer;font-size:14px;color:#2563eb;text-decoration:underline;text-align:left;display:block;');
+        expandTrigger.setAttribute('style', 'margin:12px 0 0 0;padding:0;border:none;background:none;cursor:pointer;font-size:14px;color:var(--brand, #2563eb);text-decoration:underline;text-align:left;display:block;');
         const expandBlock = document.createElement('div');
-        expandBlock.setAttribute('style', 'display:none;margin-top:12px;padding:12px;background:#f3f4f6;border-radius:6px;font-size:14px;line-height:1.6;');
+        expandBlock.setAttribute('style', 'display:none;margin-top:12px;padding:12px;background:var(--muted, #f3f4f6);border-radius:6px;font-size:14px;line-height:1.6;color:var(--foreground, #1f2937);');
         expandBlock.innerHTML = '<style>.fleet-redirect-modal-ol{margin:8px 0 0 0;padding-left:24px;list-style-type:decimal !important;list-style-position:outside !important;}.fleet-redirect-modal-ol li{list-style-type:decimal !important;list-style-position:outside !important;}</style>You may need to uninstall the dev version.<ol class="fleet-redirect-modal-ol">' +
             '<li>Go to your userscript extension dashboard</li>' +
             '<li>Look for any userscript that has a title like <code>[dev] Fleet..</code> or <code>[v1] Fleet...</code></li>' +
@@ -880,14 +880,14 @@
             expandBlock.style.display = isHidden ? 'block' : 'none';
         });
         const p2 = document.createElement('p');
-        p2.setAttribute('style', 'margin:12px 0 0 0;font-size:13px;color:#6b7280;text-align:center;');
+        p2.setAttribute('style', 'margin:12px 0 0 0;font-size:13px;color:var(--muted-foreground, #6b7280);text-align:center;');
         p2.appendChild(document.createTextNode('(If you are getting this message in error, please contact '));
         const contactLink = document.createElement('a');
         contactLink.href = 'https://fleet-ai.slack.com/team/U0A7ZG905R6';
         contactLink.target = '_blank';
         contactLink.rel = 'noopener noreferrer';
         contactLink.textContent = 'Nicholas Doherty';
-        contactLink.setAttribute('style', 'color:#2563eb;text-decoration:underline;');
+        contactLink.setAttribute('style', 'color:var(--brand, #2563eb);text-decoration:underline;');
         p2.appendChild(contactLink);
         p2.appendChild(document.createTextNode(' to resolve this.)'));
         box.appendChild(closeBtn);

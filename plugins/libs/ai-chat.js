@@ -358,12 +358,12 @@ function aiChatApplyTheme(el, opts) {
         + '  box-shadow: none !important;'
         + '}'
         // Default scrollbars render as bright white tracks on dark themes.
-        + '* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, #94a3b8 40%, transparent) transparent; }'
+        + '* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted-foreground, #64748b) 40%, transparent) transparent; }'
         + '*::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }'
         + '*::-webkit-scrollbar-track { background: transparent; }'
         + '*::-webkit-scrollbar-corner { background: transparent; }'
         + '*::-webkit-scrollbar-thumb {'
-        + '  background: color-mix(in srgb, #94a3b8 40%, transparent); border-radius: 8px;'
+        + '  background: color-mix(in srgb, var(--muted-foreground, #64748b) 40%, transparent); border-radius: 8px;'
         + '}'
         + '.deep-chat-temporary-message { display: none; }'
         + '.outer-message-container, .inner-message-container, .message-bubble {'
@@ -372,7 +372,7 @@ function aiChatApplyTheme(el, opts) {
         + '.inner-message-container { flex-direction: column; align-items: flex-start; }'
         + '.inner-message-container:has(.user-message-text) { align-items: flex-end; }'
         + '.name {'
-        + '  color: #94a3b8 !important; font-size: 11px !important; font-weight: 600 !important;'
+        + '  color: var(--muted-foreground, #64748b) !important; font-size: 11px !important; font-weight: 600 !important;'
         + '  margin: 0 10px 4px !important;'
         + '}'
         + '.outer-message-container { position: relative; }'
@@ -380,13 +380,13 @@ function aiChatApplyTheme(el, opts) {
         + '  display: inline-flex; align-items: center; justify-content: center;'
         + '  width: 28px; height: 28px; padding: 0; margin: 2px 10px 0;'
         + '  border: none; border-radius: 8px; cursor: pointer;'
-        + '  background: transparent; color: #94a3b8;'
+        + '  background: transparent; color: var(--muted-foreground, #64748b);'
         + '  opacity: 0; transition: opacity 120ms ease, color 120ms ease, background 120ms ease;'
         + '}'
         + '.outer-message-container:hover .wf-chat-copy,'
         + '.outer-message-container:focus-within .wf-chat-copy,'
         + '.wf-chat-copy:focus-visible { opacity: 1; }'
-        + '.wf-chat-copy:hover { background: color-mix(in srgb, #94a3b8 18%, transparent); color: #e2e8f0; }'
+        + '.wf-chat-copy:hover { background: color-mix(in srgb, var(--muted-foreground, #64748b) 18%, transparent); color: var(--foreground, #0f172a); }'
         + '.wf-chat-copy--ok { opacity: 1 !important; color: #16a34a !important; }'
         + '.wf-chat-copy--fail { opacity: 1 !important; color: #dc2626 !important; }'
         + '.wf-chat-attach {'
@@ -399,7 +399,7 @@ function aiChatApplyTheme(el, opts) {
         + '}'
         + '.wf-chat-attach > summary {'
         + '  cursor: pointer; list-style: none; user-select: none;'
-        + '  padding: 6px 8px; font-size: 11px; font-weight: 600; color: #94a3b8;'
+        + '  padding: 6px 8px; font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b);'
         + '  display: flex; align-items: center; gap: 6px;'
         + '}'
         + '.wf-chat-attach > summary::-webkit-details-marker { display: none; }'
@@ -416,7 +416,7 @@ function aiChatApplyTheme(el, opts) {
         + '  text-align: left; overflow-wrap: anywhere; cursor: pointer;'
         + '}'
         + '.wf-chat-attach-id:hover {'
-        + '  background: color-mix(in srgb, #94a3b8 18%, transparent);'
+        + '  background: color-mix(in srgb, var(--muted-foreground, #64748b) 18%, transparent);'
         + '}'
         + '.wf-chat-attach-id--ok { color: #16a34a !important; border-color: #16a34a !important; }'
         + '.wf-chat-attach-id--fail { color: #dc2626 !important; border-color: #dc2626 !important; }'
@@ -451,10 +451,10 @@ function aiChatApplyTheme(el, opts) {
         + '  border: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 80%, transparent);'
         + '  border-radius: 6px; cursor: pointer;'
         + '  background: color-mix(in srgb, var(--background, #fff) 88%, transparent);'
-        + '  color: #94a3b8; line-height: 0;'
+        + '  color: var(--muted-foreground, #64748b); line-height: 0;'
         + '}'
         + '.wf-chat-code-copy:hover {'
-        + '  color: #e2e8f0; background: color-mix(in srgb, #94a3b8 22%, transparent);'
+        + '  color: var(--foreground, #0f172a); background: color-mix(in srgb, var(--muted-foreground, #64748b) 22%, transparent);'
         + '}'
         + '.wf-chat-code-copy.wf-chat-copy--ok,'
         + '.wf-chat-code-copy.fleet-ui-flash--success { color: #16a34a !important; border-color: #16a34a !important; }'
@@ -466,7 +466,7 @@ function aiChatApplyTheme(el, opts) {
         + '  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;'
         + '}'
         + '.message-bubble code.wf-chat-inline-code:hover {'
-        + '  background: color-mix(in srgb, #94a3b8 18%, transparent);'
+        + '  background: color-mix(in srgb, var(--muted-foreground, #64748b) 18%, transparent);'
         + '}'
         + '.message-bubble code.wf-chat-inline-code.wf-chat-copy--ok,'
         + '.message-bubble code.wf-chat-inline-code.fleet-ui-flash--success {'
@@ -566,7 +566,7 @@ function aiChatApplyTheme(el, opts) {
         }
     };
     const nameStyle = {
-        color: '#94a3b8',
+        color: 'var(--muted-foreground, #64748b)',
         fontSize: '11px',
         fontWeight: '600',
     };
@@ -2353,7 +2353,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '7.3',
+    _version: '7.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

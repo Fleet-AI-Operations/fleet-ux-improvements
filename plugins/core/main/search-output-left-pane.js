@@ -20,7 +20,7 @@ const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
-const DASH_TASK_CARD_BG = '#121212';
+const DASH_TASK_CARD_BG = 'var(--card, #ffffff)';
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HYDRATE_BATCH_CONCURRENCY = 5;
 const DASH_SEARCH_FETCH_CONCURRENCY = 8;
@@ -1187,12 +1187,12 @@ const searchOutputLeftPaneMethods = {
     _renderDashSessionRefreshBannerHtml() {
         return [
             '<div style="',
-            'padding: 12px;background: #fee2e2;border: 2px solid #dc2626;border-radius: 8px;">',
+            'padding: 12px;background: color-mix(in srgb, #dc2626 12%, var(--background, #fff));border: 2px solid #dc2626;border-radius: 8px;">',
             '<div style="display: flex; align-items: flex-start; gap: 10px;">',
             '<span style="color: #dc2626; font-size: 16px; line-height: 1.2;" aria-hidden="true">⚠</span>',
             '<div style="flex: 1; min-width: 0;">',
-            '<div style="font-size: 13px; font-weight: 600; color: #991b1b; margin-bottom: 6px;">Fleet session token not yet captured</div>',
-            '<p style="font-size: 12px; color: #991b1b; margin: 0; line-height: 1.45;">',
+            '<div style="font-size: 13px; font-weight: 600; color: var(--foreground, #991b1b); margin-bottom: 6px;">Fleet session token not yet captured</div>',
+            '<p style="font-size: 12px; color: var(--muted-foreground, #991b1b); margin: 0; line-height: 1.45;">',
             'Navigate to a Fleet data page (e.g. Tasks or QA), then close and reopen the dashboard or retry your search.',
             '</p>',
             '</div>',
@@ -1200,7 +1200,7 @@ const searchOutputLeftPaneMethods = {
             '<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;">',
             '<a href="', dashEscHtml(dashFleetOrigin()), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload" style="',
             'display: inline-block;padding: 8px 14px;font-size: 12px;font-weight: 600;',
-            'color: #991b1b;background: #fef2f2;border: 1px solid #dc2626;border-radius: 6px;',
+            'color: var(--foreground, #991b1b);background: color-mix(in srgb, #dc2626 8%, var(--background, #fff));border: 1px solid #dc2626;border-radius: 6px;',
             'cursor: pointer;text-decoration: none;">Reload Fleet</a>',
             '</div>',
             '</div>'
@@ -2510,7 +2510,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.6',
+    _version: '5.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

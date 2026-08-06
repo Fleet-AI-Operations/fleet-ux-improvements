@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.3',
+    _version: '11.4',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -212,7 +212,7 @@ const plugin = {
             height: 48px;
             border-radius: 50%;
             background: ${shouldPulse ? bgOpaque : bgTranslucent};
-            border: 1px solid #60a5fa;
+            border: 1px solid var(--brand, #60a5fa);
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             display: flex;
             align-items: center;
@@ -502,12 +502,12 @@ const plugin = {
             : 'No plugins loaded for this page.';
         const pluginTogglesHTML = orderedPlugins.length > 0 
             ? orderedPlugins.map(plugin => this._createPluginToggleHTML(plugin, submoduleLoggingEnabled, globalEnabled)).join('')
-            : `<p style="color: #666; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
+            : `<p style="color: var(--muted-foreground, #666); font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
         
         // Build dev plugin toggles HTML
         const devPluginTogglesHTML = orderedDevPlugins.length > 0 
             ? orderedDevPlugins.map(plugin => this._createPluginToggleHTML(plugin, submoduleLoggingEnabled, globalEnabled)).join('')
-            : '<p style="color: #666; font-size: 13px; font-style: italic;">No dev plugins loaded.</p>';
+            : '<p style="color: var(--muted-foreground, #666); font-size: 13px; font-style: italic;">No dev plugins loaded.</p>';
         
         // Build outdated plugins warning HTML
         const outdatedPluginsHTML = Context.outdatedPlugins && Context.outdatedPlugins.length > 0
@@ -657,7 +657,7 @@ const plugin = {
                 ${updateNotificationHTML}
                 ${opsRefreshBannerHTML}
                 ${tabRowHTML}
-                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; font-size: 13px; text-align: center; color: #92400e;">
+                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff)); border: 1px solid #f59e0b; border-radius: 6px; font-size: 13px; text-align: center; color: var(--foreground, #92400e);">
                     Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: #92400e; text-decoration: underline;">Refresh</a> the page for changes to take effect.
                 </div>
             </div>
@@ -915,7 +915,7 @@ const plugin = {
         // Main toggles: green. Sub-options: blue. Log options: yellow.
         const variant = opts.variant || (isSmall ? 'sub' : 'main');
         const onColor = variant === 'main' ? '#22c55e' : variant === 'log' ? '#ca8a04' : '#6366f1';
-        const sliderBg = isDisabled ? '#d1d5db' : (isEnabled ? onColor : '#ccc');
+        const sliderBg = isDisabled ? 'var(--border, #d1d5db)' : (isEnabled ? onColor : 'var(--border, #ccc)');
         const knobBg = isDisabled ? '#f3f4f6' : 'white';
         const knobShadow = isDisabled ? 'none' : '0 1px 3px rgba(0,0,0,0.2)';
         const w = isSmall ? 33 : 44;
@@ -1385,7 +1385,7 @@ const plugin = {
         const onColor = slider.dataset.wfOnColor || 'var(--brand, #4f46e5)';
         const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '23px';
         const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
-        slider.style.backgroundColor = isChecked ? onColor : '#ccc';
+        slider.style.backgroundColor = isChecked ? onColor : 'var(--border, #ccc)';
         if (knob) {
             knob.style.left = isChecked ? knobLeftOn : knobLeftOff;
         }
@@ -1401,7 +1401,7 @@ const plugin = {
             const noPluginsMsg = Context.isOutdated
                 ? 'No plugins will load until you update the userscript.'
                 : 'No plugins loaded for this page.';
-            container.innerHTML = `<p style="color: #666; font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
+            container.innerHTML = `<p style="color: var(--muted-foreground, #666); font-size: 13px; font-style: italic;">${noPluginsMsg}</p>`;
             return;
         }
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
@@ -1419,7 +1419,7 @@ const plugin = {
         });
         if (!container) return;
         if (!devPlugins || devPlugins.length === 0) {
-            container.innerHTML = '<p style="color: #666; font-size: 13px; font-style: italic;">No dev plugins loaded.</p>';
+            container.innerHTML = '<p style="color: var(--muted-foreground, #666); font-size: 13px; font-style: italic;">No dev plugins loaded.</p>';
             return;
         }
         const submoduleLoggingEnabled = Logger.isSubmoduleLoggingEnabled();
@@ -1956,7 +1956,7 @@ const plugin = {
                 display: none;
                 margin-top: 12px;
                 padding: 10px 12px;
-                background: #fef3c7;
+                background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff));
                 border: 1px solid #f59e0b;
                 border-radius: 6px;
                 font-size: 13px;
@@ -2554,7 +2554,7 @@ const plugin = {
             <div style="
                 margin-bottom: 20px;
                 padding: 12px;
-                background: #fef3c7;
+                background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff));
                 border: 1px solid #f59e0b;
                 border-radius: 6px;
             ">
@@ -2639,7 +2639,7 @@ const plugin = {
             <div id="wf-ops-refresh-banner" style="
                 margin-bottom: 20px;
                 padding: 14px;
-                background: #fef3c7;
+                background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff));
                 border: 2px solid #f59e0b;
                 border-radius: 8px;
             ">
@@ -2762,7 +2762,7 @@ const plugin = {
                 margin-bottom: 20px;
                 padding: 14px;
                 padding-top: 20px;
-                background: #fee2e2;
+                background: color-mix(in srgb, #dc2626 12%, var(--background, #fff));
                 border: 2px solid #dc2626;
                 border-radius: 8px;
             ">

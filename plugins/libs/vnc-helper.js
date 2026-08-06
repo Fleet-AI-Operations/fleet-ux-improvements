@@ -42,7 +42,7 @@ const VncHelperApi = {
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '2.9',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION],
@@ -99,35 +99,31 @@ const VncHelperApi = {
         btn.type = 'button';
         btn.textContent = label;
         btn.setAttribute('aria-label', ariaLabel);
-        btn.style.cssText =
-            'margin:0;padding:2px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.08);color:#d0d0d8;font:inherit;font-size:10px;font-weight:500;cursor:pointer;';
-        btn.onmouseenter = () => {
-            btn.style.background = 'rgba(255,255,255,0.14)';
-        };
-        btn.onmouseleave = () => {
-            btn.style.background = 'rgba(255,255,255,0.08)';
-        };
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        btn.className = pc.ghostBtn || '';
         return btn;
     },
 
     makeClipboardHelpDetails() {
         const details = document.createElement('details');
-        details.style.cssText = 'margin:10px 0 0 0;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);';
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        details.className = pc.divider || '';
+        details.style.cssText = 'margin:10px 0 0 0;padding-top:10px;';
 
         const summaryEl = document.createElement('summary');
         summaryEl.textContent = 'How this works';
-        summaryEl.style.cssText =
-            'cursor:pointer;font-size:12px;color:#b0b0b8;outline:none;user-select:none;';
+        summaryEl.className = pc.muted || '';
+        summaryEl.style.cssText = 'cursor:pointer;font-size:12px;outline:none;user-select:none;';
 
         const help = document.createElement('div');
-        help.style.cssText =
-            'margin-top:10px;font-size:11px;color:#a5a5ad;line-height:1.55;user-select:text;';
+        help.className = pc.muted || '';
+        help.style.cssText = 'margin-top:10px;font-size:11px;line-height:1.55;user-select:text;';
 
         function pBlock(strongLabel, rest) {
             const p = document.createElement('p');
             p.style.margin = '0 0 8px 0';
             const s = document.createElement('strong');
-            s.style.color = '#ddd';
+            s.className = pc.strong || '';
             s.textContent = strongLabel;
             p.appendChild(s);
             p.appendChild(document.createTextNode(` ${rest}`));
@@ -232,48 +228,35 @@ const VncHelperApi = {
 
     applyPromptTextareaSizing(textarea, promptText) {
         const initialLines = promptText ? PROMPT_DEFAULT_LINES : DEFAULT_LINES;
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
         textarea.style.height = this.textareaHeightForLines(initialLines);
         textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
-        textarea.style.overflowY = 'auto';
-        textarea.style.resize = 'vertical';
-        textarea.style.boxSizing = 'border-box';
-        textarea.style.width = '100%';
-        textarea.style.padding = '8px';
-        textarea.style.borderRadius = '6px';
-        textarea.style.border = '1px solid rgba(255,255,255,0.15)';
-        textarea.style.background = 'rgba(0,0,0,0.25)';
-        textarea.style.color = '#f2f2f2';
-        textarea.style.font = 'inherit';
         textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
     },
 
     applyScratchpadTextareaSizing(textarea) {
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
         textarea.style.height = this.textareaHeightForLines(DEFAULT_LINES);
         textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
-        textarea.style.overflowY = 'auto';
-        textarea.style.resize = 'vertical';
-        textarea.style.boxSizing = 'border-box';
-        textarea.style.width = '100%';
-        textarea.style.padding = '8px';
-        textarea.style.borderRadius = '6px';
-        textarea.style.border = '1px solid rgba(255,255,255,0.15)';
-        textarea.style.background = 'rgba(0,0,0,0.25)';
-        textarea.style.color = '#f2f2f2';
-        textarea.style.font = 'inherit';
         textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
     },
 
     makeSectionHeader(label, onToggle, trailingEl) {
         const header = document.createElement('div');
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        header.className = pc.sectionLabel || '';
         header.style.cssText =
-            'display:flex;align-items:center;gap:6px;padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#b0b0b8;letter-spacing:0.03em;text-transform:uppercase;user-select:none;';
+            'display:flex;align-items:center;gap:6px;padding:8px 12px 4px 12px;';
 
         const toggleBtn = document.createElement('button');
         toggleBtn.type = 'button';
         toggleBtn.textContent = '▼';
         toggleBtn.setAttribute('aria-label', `Toggle ${label} section`);
+        toggleBtn.className = pc.muted || '';
         toggleBtn.style.cssText =
-            'margin:0;padding:0 4px;border:none;background:transparent;color:#b0b0b8;font:inherit;font-size:11px;cursor:pointer;line-height:1;';
+            'margin:0;padding:0 4px;border:none;background:transparent;font:inherit;font-size:11px;cursor:pointer;line-height:1;color:inherit;';
 
         const title = document.createElement('span');
         title.textContent = label;
@@ -356,17 +339,20 @@ const VncHelperApi = {
             if (restoreTab) {
                 return;
             }
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
             restoreTab = document.createElement('div');
             restoreTab.id = TAB_ID;
+            restoreTab.className = pc.chip || '';
             restoreTab.style.cssText =
-                'position:fixed;left:20px;bottom:124px;z-index:2147483646;display:flex;align-items:stretch;padding:0;font-size:12px;border-radius:10px;border:1px solid rgba(0,0,0,0.2);background:#111827;color:#f9fafb;box-shadow:0 6px 18px rgba(0,0,0,0.35);overflow:hidden;';
+                'position:fixed;left:20px;bottom:124px;z-index:2147483646;';
 
             const openBtn = document.createElement('button');
             openBtn.type = 'button';
             openBtn.textContent = 'VNC Helper';
             openBtn.setAttribute('aria-label', 'Toggle VNC Helper');
-            openBtn.style.cssText =
-                'margin:0;padding:6px 10px;border:none;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;';
             openBtn.addEventListener('click', () => {
                 if (!root) {
                     return;
@@ -385,8 +371,7 @@ const VncHelperApi = {
             refreshBtn.textContent = '\u21BB';
             refreshBtn.setAttribute('aria-label', 'Reset VNC Helper to default position');
             refreshBtn.title = 'Reset to default position';
-            refreshBtn.style.cssText =
-                'margin:0;padding:6px 8px;border:none;border-left:1px solid rgba(255,255,255,0.15);background:transparent;color:inherit;font:inherit;font-size:13px;line-height:1;cursor:pointer;';
+            refreshBtn.className = pc.chipSep || '';
             refreshBtn.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 if (!root) {
@@ -415,30 +400,29 @@ const VncHelperApi = {
         };
 
         if (showPanel) {
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
             const savedLayout = this.loadSavedLayout();
             root = document.createElement('div');
             root.id = ROOT_ID;
-            root.style.cssText = `position:fixed;left:${savedLayout.left ?? DEFAULT_MODAL_LEFT}px;top:${savedLayout.top ?? DEFAULT_MODAL_TOP}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};font:13px/1.45 system-ui,Segoe UI,sans-serif;color:#e8e8e8;background:linear-gradient(160deg,#1e1e24 0%,#121218 100%);border:1px solid rgba(255,255,255,0.12);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,0.55);overflow:hidden;user-select:none;`;
+            root.className = pc.root || '';
+            root.style.cssText = `position:fixed;left:${savedLayout.left ?? DEFAULT_MODAL_LEFT}px;top:${savedLayout.top ?? DEFAULT_MODAL_TOP}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};user-select:none;`;
 
             const headerEl = document.createElement('div');
-            headerEl.style.cssText =
-                'display:flex;align-items:center;gap:8px;padding:8px 10px 8px 12px;font-weight:600;font-size:12px;letter-spacing:0.02em;color:#fff;background:rgba(255,255,255,0.06);border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;';
+            headerEl.className = pc.header || '';
             const headerTitle = document.createElement('div');
             headerTitle.textContent = 'VNC Helper';
-            headerTitle.style.cssText =
-                'flex:1;min-width:0;cursor:grab;padding:2px 0;font-weight:600;font-size:12px;';
+            headerTitle.className = pc.title || '';
+            headerTitle.style.cursor = 'grab';
+            headerTitle.style.padding = '2px 0';
             const minimizeBtn = document.createElement('button');
             minimizeBtn.type = 'button';
             minimizeBtn.textContent = 'Minimize';
             minimizeBtn.setAttribute('aria-label', 'Minimize VNC Helper');
-            minimizeBtn.style.cssText =
-                'flex-shrink:0;margin:0;padding:5px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.1);color:#e8e8e8;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
-            minimizeBtn.onmouseenter = () => {
-                minimizeBtn.style.background = 'rgba(255,255,255,0.16)';
-            };
-            minimizeBtn.onmouseleave = () => {
-                minimizeBtn.style.background = 'rgba(255,255,255,0.1)';
-            };
+            minimizeBtn.className = pc.btn || '';
+            minimizeBtn.style.flexShrink = '0';
             headerEl.appendChild(headerTitle);
             headerEl.appendChild(minimizeBtn);
 
@@ -495,13 +479,13 @@ const VncHelperApi = {
 
             // VM Clipboard buttons section
             const clipSection = document.createElement('div');
-            clipSection.style.cssText =
-                'padding:0 0 4px 0;border-top:1px solid rgba(255,255,255,0.08);user-select:text;';
+            clipSection.className = pc.divider || '';
+            clipSection.style.cssText = 'padding:0 0 4px 0;user-select:text;';
 
             const clipHeader = document.createElement('div');
             clipHeader.textContent = 'VM Clipboard';
-            clipHeader.style.cssText =
-                'padding:8px 12px 4px 12px;font-size:11px;font-weight:600;color:#b0b0b8;letter-spacing:0.03em;text-transform:uppercase;user-select:none;';
+            clipHeader.className = pc.sectionLabel || '';
+            clipHeader.style.cssText = 'padding:8px 12px 4px 12px;';
 
             const clipBody = document.createElement('div');
             clipBody.style.cssText = 'padding:0 12px 8px 12px;';
@@ -513,18 +497,8 @@ const VncHelperApi = {
                 const b = document.createElement('button');
                 b.type = 'button';
                 b.textContent = label;
-                b.style.cssText =
-                    'flex:1;margin:0;padding:6px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.08);color:#f2f2f2;font:inherit;font-size:11px;font-weight:500;cursor:pointer;';
-                b.onmouseenter = () => {
-                    if (!b._fleetClipFlashTimeout) {
-                        b.style.background = 'rgba(255,255,255,0.14)';
-                    }
-                };
-                b.onmouseleave = () => {
-                    if (!b._fleetClipFlashTimeout) {
-                        b.style.background = 'rgba(255,255,255,0.08)';
-                    }
-                };
+                b.className = pc.btn || '';
+                b.style.flex = '1';
                 return b;
             }
 
@@ -532,7 +506,8 @@ const VncHelperApi = {
             const bOverwrite = makeBtn('Overwrite');
             const shortcutHint = document.createElement('div');
             shortcutHint.textContent = '⌘C/⌘V · Ctrl+Shift+C/F';
-            shortcutHint.style.cssText = 'font-size:11px;color:#a5a5ad;text-align:center;margin-top:8px;';
+            shortcutHint.className = pc.muted || '';
+            shortcutHint.style.cssText = 'font-size:11px;text-align:center;margin-top:8px;';
 
             btnRow.appendChild(bExtract);
             btnRow.appendChild(bOverwrite);
@@ -545,8 +520,7 @@ const VncHelperApi = {
 
             const resizeHandle = document.createElement('div');
             resizeHandle.setAttribute('aria-label', 'Resize VNC Helper');
-            resizeHandle.style.cssText =
-                'position:absolute;right:2px;bottom:2px;width:14px;height:14px;cursor:se-resize;background:transparent;border-right:2px solid rgba(255,255,255,0.25);border-bottom:2px solid rgba(255,255,255,0.25);border-radius:0 0 8px 0;z-index:1;';
+            resizeHandle.className = pc.resize || '';
 
             root.appendChild(headerEl);
             root.appendChild(bodyEl);
@@ -780,7 +754,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '2.8',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -812,38 +786,36 @@ const plugin = {
 // ---- Clipboard / noVNC helpers (declarations hoisted; used by plugin methods above) ----
 
 const CLIP_BTN_FLASH_MS = 600;
-const CLIP_BTN_BG = 'rgba(255,255,255,0.08)';
 
 function flashClipBtnSuccess(btn) {
     if (!btn) return;
-    // Solid inline flash: these dark panel buttons use `background` shorthand, so
-    // ui-lib CSS pulse (background-color) is too subtle / unreliable here.
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+        Context.buttonFeedback.flashSuccess(btn);
+        return;
+    }
     if (btn._fleetClipFlashTimeout) clearTimeout(btn._fleetClipFlashTimeout);
-    btn.style.transition = '';
     btn.style.background = 'rgb(34, 197, 94)';
     btn.style.color = '#ffffff';
     btn._fleetClipFlashTimeout = setTimeout(() => {
         btn._fleetClipFlashTimeout = null;
-        btn.style.background = CLIP_BTN_BG;
-        btn.style.color = '#f2f2f2';
+        btn.style.background = '';
+        btn.style.color = '';
     }, CLIP_BTN_FLASH_MS);
 }
 
 function flashClipBtnFailure(btn) {
     if (!btn) return;
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+        Context.buttonFeedback.flashFailure(btn);
+        return;
+    }
     if (btn._fleetClipFlashTimeout) clearTimeout(btn._fleetClipFlashTimeout);
-    const prevT = btn.style.transition;
-    btn.style.transition = 'none';
     btn.style.background = 'rgb(239, 68, 68)';
     btn.style.color = '#ffffff';
-    void btn.offsetHeight;
-    btn.style.transition =
-        'background ' + CLIP_BTN_FLASH_MS + 'ms ease-out, color ' + CLIP_BTN_FLASH_MS + 'ms ease-out';
-    btn.style.background = CLIP_BTN_BG;
-    btn.style.color = '#f2f2f2';
     btn._fleetClipFlashTimeout = setTimeout(() => {
-        btn.style.transition = prevT || '';
         btn._fleetClipFlashTimeout = null;
+        btn.style.background = '';
+        btn.style.color = '';
     }, CLIP_BTN_FLASH_MS);
 }
 function clipEl() {
@@ -938,9 +910,14 @@ function sendCtrlRfb(k) {
 }
 
 function toast(message) {
+    if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+        Context.uiLib.ensurePanelStyles();
+    }
+    const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
     const d = document.createElement('div');
     d.textContent = message;
-    d.style.cssText = `position:fixed;top:12px;right:12px;z-index:${Z_INDEX};background:rgba(0,0,0,0.88);color:#fff;font:12px/1.4 system-ui,Segoe UI,sans-serif;padding:10px 12px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.35);max-width:min(420px,92vw);word-break:break-word;white-space:pre-wrap;`;
+    d.className = pc.toast || '';
+    d.style.cssText = `position:fixed;top:12px;right:12px;z-index:${Z_INDEX};`;
     document.body.appendChild(d);
     setTimeout(() => {
         d.remove();

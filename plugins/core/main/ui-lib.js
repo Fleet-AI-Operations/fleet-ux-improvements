@@ -3,6 +3,8 @@
 
 const FLEET_UI_STYLE_ID = 'fleet-ui-styles';
 const FLEET_UI_SCOPED_STYLE_PREFIX = 'fleet-ui-btn-scope-';
+const FLEET_UI_PANEL_STYLE_ID = 'fleet-ui-panel-styles';
+const FLEET_UI_PANEL_SCOPED_PREFIX = 'fleet-ui-panel-scope-';
 const FLEET_UI_USER_STORY_PROSE_STYLE_ID = 'fleet-ui-user-story-prose';
 
 const FLASH_PULSE_MS = 600;
@@ -15,6 +17,28 @@ const SPIN_DURATION = '0.7s';
 const TAB_PULSE_MS = FLASH_PULSE_MS;
 const FLASH_CLASS_SUCCESS = 'fleet-ui-flash--success';
 const FLASH_CLASS_FAILURE = 'fleet-ui-flash--failure';
+
+/** Panel kit class names (theme-aware floating chrome). */
+const PANEL_CLASSES = {
+    root: 'fleet-ui-panel',
+    header: 'fleet-ui-panel__header',
+    title: 'fleet-ui-panel__title',
+    sectionLabel: 'fleet-ui-panel__section-label',
+    muted: 'fleet-ui-panel__muted',
+    strong: 'fleet-ui-panel__strong',
+    btn: 'fleet-ui-panel__btn',
+    textarea: 'fleet-ui-panel__textarea',
+    chip: 'fleet-ui-panel__chip',
+    chipSep: 'fleet-ui-panel__chip-sep',
+    toast: 'fleet-ui-panel__toast',
+    resize: 'fleet-ui-panel__resize',
+    divider: 'fleet-ui-panel__divider',
+    ghostBtn: 'fleet-ui-panel__ghost-btn'
+};
+
+let _fleetThemeListeners = [];
+let _fleetThemeObserverStarted = false;
+let _fleetLastDark = null;
 
 const BTN_VARIANTS = {
     primary: 'wf-dash-btn--primary',
@@ -36,6 +60,245 @@ function fleetUiScopeStyleId(scopeSelector) {
         .replace(/^-+|-+$/g, '')
         .slice(0, 48) || 'root';
     return FLEET_UI_SCOPED_STYLE_PREFIX + slug;
+}
+
+function fleetUiPanelScopeStyleId(scopeSelector) {
+    const slug = String(scopeSelector || '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'root';
+    return FLEET_UI_PANEL_SCOPED_PREFIX + slug;
+}
+
+function fleetUiIsFleetDark() {
+    return document.documentElement.classList.contains('dark');
+}
+
+function fleetUiGetFleetTheme() {
+    return fleetUiIsFleetDark() ? 'dark' : 'light';
+}
+
+function fleetUiNotifyThemeChange() {
+    const dark = fleetUiIsFleetDark();
+    if (_fleetLastDark === dark) return;
+    _fleetLastDark = dark;
+    const payload = { theme: dark ? 'dark' : 'light', dark };
+    for (const fn of _fleetThemeListeners) {
+        try {
+            fn(payload);
+        } catch (err) {
+            Logger.warn('theme listener failed', err);
+        }
+    }
+}
+
+function fleetUiEnsureThemeObserver() {
+    if (_fleetThemeObserverStarted) return;
+    _fleetThemeObserverStarted = true;
+    _fleetLastDark = fleetUiIsFleetDark();
+    try {
+        const observer = new MutationObserver(() => fleetUiNotifyThemeChange());
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerObserver) {
+            CleanupRegistry.registerObserver(observer);
+        }
+    } catch (err) {
+        Logger.warn('fleet theme observer failed', err);
+    }
+}
+
+function fleetUiOnThemeChange(callback) {
+    if (typeof callback !== 'function') return () => {};
+    fleetUiEnsureThemeObserver();
+    _fleetThemeListeners.push(callback);
+    return () => {
+        _fleetThemeListeners = _fleetThemeListeners.filter((fn) => fn !== callback);
+    };
+}
+
+function fleetUiPanelCssLines(scopePrefix) {
+    const p = scopePrefix || '';
+    const root = p + '.fleet-ui-panel';
+    const header = p + '.fleet-ui-panel__header';
+    const title = p + '.fleet-ui-panel__title';
+    const sectionLabel = p + '.fleet-ui-panel__section-label';
+    const muted = p + '.fleet-ui-panel__muted';
+    const strong = p + '.fleet-ui-panel__strong';
+    const btn = p + '.fleet-ui-panel__btn';
+    const textarea = p + '.fleet-ui-panel__textarea';
+    const chip = p + '.fleet-ui-panel__chip';
+    const chipSep = p + '.fleet-ui-panel__chip-sep';
+    const toast = p + '.fleet-ui-panel__toast';
+    const resize = p + '.fleet-ui-panel__resize';
+    const divider = p + '.fleet-ui-panel__divider';
+    const ghostBtn = p + '.fleet-ui-panel__ghost-btn';
+
+    return [
+        root + ' {',
+        '  color: var(--foreground, #0f172a);',
+        '  background: var(--card, var(--background, #ffffff));',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  border-radius: 10px;',
+        '  box-shadow: 0 12px 40px color-mix(in srgb, var(--foreground, #0f172a) 18%, transparent);',
+        '  overflow: hidden;',
+        '  font: 13px/1.45 system-ui, Segoe UI, sans-serif;',
+        '}',
+        header + ' {',
+        '  display: flex;',
+        '  align-items: center;',
+        '  gap: 8px;',
+        '  padding: 8px 10px 8px 12px;',
+        '  font-weight: 600;',
+        '  font-size: 12px;',
+        '  letter-spacing: 0.02em;',
+        '  color: var(--foreground, #0f172a);',
+        '  background: color-mix(in srgb, var(--muted, #f1f5f9) 80%, transparent);',
+        '  border-bottom: 1px solid var(--border, #e2e8f0);',
+        '  flex-shrink: 0;',
+        '}',
+        title + ' {',
+        '  flex: 1;',
+        '  min-width: 0;',
+        '  font-weight: 600;',
+        '  font-size: 12px;',
+        '}',
+        sectionLabel + ' {',
+        '  font-size: 11px;',
+        '  font-weight: 600;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  letter-spacing: 0.03em;',
+        '  text-transform: uppercase;',
+        '  user-select: none;',
+        '}',
+        muted + ' {',
+        '  color: var(--muted-foreground, #64748b);',
+        '}',
+        strong + ' {',
+        '  color: var(--foreground, #0f172a);',
+        '  font-weight: 600;',
+        '}',
+        btn + ' {',
+        '  margin: 0;',
+        '  padding: 6px 8px;',
+        '  border-radius: 6px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: var(--background, #fff);',
+        '  color: var(--foreground, #0f172a);',
+        '  font: inherit;',
+        '  font-size: 11px;',
+        '  font-weight: 500;',
+        '  cursor: pointer;',
+        '  transition: background 0.15s, border-color 0.15s, color 0.15s;',
+        '}',
+        btn + ':hover:not(:disabled) {',
+        '  background: var(--muted, #f1f5f9);',
+        '  border-color: var(--foreground, #0f172a);',
+        '}',
+        textarea + ' {',
+        '  box-sizing: border-box;',
+        '  width: 100%;',
+        '  padding: 8px;',
+        '  border-radius: 6px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: var(--background, #fff);',
+        '  color: var(--foreground, #0f172a);',
+        '  font: inherit;',
+        '  resize: vertical;',
+        '  overflow-y: auto;',
+        '}',
+        chip + ' {',
+        '  display: flex;',
+        '  align-items: stretch;',
+        '  padding: 0;',
+        '  font-size: 12px;',
+        '  border-radius: 10px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: var(--card, var(--background, #fff));',
+        '  color: var(--foreground, #0f172a);',
+        '  box-shadow: 0 6px 18px color-mix(in srgb, var(--foreground, #0f172a) 14%, transparent);',
+        '  overflow: hidden;',
+        '}',
+        chip + ' button {',
+        '  margin: 0;',
+        '  padding: 6px 10px;',
+        '  border: none;',
+        '  background: transparent;',
+        '  color: inherit;',
+        '  font: inherit;',
+        '  font-size: 12px;',
+        '  cursor: pointer;',
+        '}',
+        chipSep + ' {',
+        '  border-left: 1px solid var(--border, #e2e8f0) !important;',
+        '  padding: 6px 8px !important;',
+        '  font-size: 13px !important;',
+        '  line-height: 1 !important;',
+        '}',
+        toast + ' {',
+        '  background: var(--card, var(--background, #fff));',
+        '  color: var(--foreground, #0f172a);',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  font: 12px/1.4 system-ui, Segoe UI, sans-serif;',
+        '  padding: 10px 12px;',
+        '  border-radius: 8px;',
+        '  box-shadow: 0 4px 16px color-mix(in srgb, var(--foreground, #0f172a) 16%, transparent);',
+        '  max-width: min(420px, 92vw);',
+        '  word-break: break-word;',
+        '  white-space: pre-wrap;',
+        '}',
+        resize + ' {',
+        '  position: absolute;',
+        '  right: 2px;',
+        '  bottom: 2px;',
+        '  width: 14px;',
+        '  height: 14px;',
+        '  cursor: se-resize;',
+        '  background: transparent;',
+        '  border-right: 2px solid var(--muted-foreground, #94a3b8);',
+        '  border-bottom: 2px solid var(--muted-foreground, #94a3b8);',
+        '  border-radius: 0 0 8px 0;',
+        '  z-index: 1;',
+        '}',
+        divider + ' {',
+        '  border-top: 1px solid var(--border, #e2e8f0);',
+        '}',
+        ghostBtn + ' {',
+        '  margin: 0;',
+        '  padding: 2px 8px;',
+        '  border-radius: 6px;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: transparent;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  font: inherit;',
+        '  font-size: 10px;',
+        '  font-weight: 500;',
+        '  cursor: pointer;',
+        '}',
+        ghostBtn + ':hover:not(:disabled) {',
+        '  background: var(--muted, #f1f5f9);',
+        '  color: var(--foreground, #0f172a);',
+        '}',
+        'html.dark ' + root + ' {',
+        '  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);',
+        '}',
+        'html.dark ' + chip + ' {',
+        '  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);',
+        '}',
+        'html.dark ' + toast + ' {',
+        '  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);',
+        '}',
+        p + '.fleet-ui-log--error { color: #dc2626; }',
+        'html.dark ' + p + '.fleet-ui-log--error { color: #fca5a5; }',
+        p + '.fleet-ui-log--warn { color: #ca8a04; }',
+        'html.dark ' + p + '.fleet-ui-log--warn { color: #facc15; }',
+        p + '.fleet-ui-log--debug { color: #2563eb; }',
+        'html.dark ' + p + '.fleet-ui-log--debug { color: #93c5fd; }',
+        p + '.fleet-ui-log--info { color: #059669; }',
+        'html.dark ' + p + '.fleet-ui-log--info { color: #6ee7b7; }',
+        p + '.fleet-ui-log-entry:hover {',
+        '  background: color-mix(in srgb, var(--foreground, #0f172a) 6%, transparent);',
+        '}'
+    ];
 }
 
 function fleetUiBtnBaseCssLines(scopePrefix) {
@@ -86,13 +349,13 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '}',
         secondary + ' {',
         '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-        '  background: #000;',
-        '  color: var(--muted-foreground, #64748b);',
+        '  background: var(--background, #fff);',
+        '  color: var(--foreground, #0f172a);',
         '}',
         secondary + ':hover:not(:disabled) {',
         '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
         '  border-color: var(--brand, var(--primary, #2563eb));',
-        '  color: #ffffff;',
+        '  color: var(--foreground, #0f172a);',
         '}',
         tertiary + ' {',
         '  border: 1px solid var(--border, #e2e8f0);',
@@ -395,7 +658,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '2.7',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -428,6 +691,26 @@ const plugin = {
             target.appendChild(style);
         }
 
+        function ensurePanelStyles(scopeSelector, appendRoot) {
+            ensureStyles();
+            const styleId = scopeSelector
+                ? fleetUiPanelScopeStyleId(scopeSelector)
+                : FLEET_UI_PANEL_STYLE_ID;
+            const root = appendRoot || document;
+            if (root.getElementById && root.getElementById(styleId)) return;
+            if (root.querySelector && root.querySelector('#' + styleId)) return;
+            if (document.getElementById(styleId)) return;
+            const style = document.createElement('style');
+            style.id = styleId;
+            const prefix = scopeSelector ? scopeSelector + ' ' : '';
+            style.textContent = fleetUiPanelCssLines(prefix).join('\n');
+            const target = appendRoot || document.head || document.documentElement;
+            target.appendChild(style);
+            if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
+                CleanupRegistry.registerElement(style);
+            }
+        }
+
         function ensureUserStoryMarkdownStyles() {
             ensureStyles();
             if (document.getElementById(FLEET_UI_USER_STORY_PROSE_STYLE_ID)) return;
@@ -441,6 +724,7 @@ const plugin = {
         }
 
         ensureStyles();
+        fleetUiEnsureThemeObserver();
 
         Context.uiLib = {
             FLASH_PULSE_MS,
@@ -451,13 +735,19 @@ const plugin = {
             COPY_FAILURE_BG,
             SPIN_DURATION,
             TAB_PULSE_MS,
+            PANEL_CLASSES,
 
             ensureStyles,
             ensureButtonStyles,
+            ensurePanelStyles,
             ensureUserStoryMarkdownStyles,
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,
+
+            isFleetDark: fleetUiIsFleetDark,
+            getFleetTheme: fleetUiGetFleetTheme,
+            onThemeChange: fleetUiOnThemeChange,
 
             clearCopyFeedback: fleetUiClearCopyFeedback,
             flashSuccess: fleetUiFlashSuccess,

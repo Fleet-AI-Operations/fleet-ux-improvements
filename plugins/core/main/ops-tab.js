@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '9.17',
+    _version: '9.18',
     phase: 'core',
     enabledByDefault: true,
 
@@ -2666,7 +2666,7 @@ const plugin = {
         ].join('');
         return [
             '<div id="wf-ops-team-search-action-refresh-banner" style="',
-            'margin-bottom: 4px;padding: 14px;padding-top: 20px;background: #fee2e2;',
+            'margin-bottom: 4px;padding: 14px;padding-top: 20px;background: color-mix(in srgb, #dc2626 12%, var(--background, #fff));',
             'border: 2px solid #dc2626;border-radius: 8px;">',
             '<div style="display: flex; align-items: flex-start; margin-bottom: 10px;">',
             '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">',
@@ -3029,7 +3029,7 @@ const plugin = {
         const knob = slider.querySelector('span');
         const isChecked = checkbox.checked;
         const onColor = slider.dataset.wfOnColor || '#6366f1';
-        slider.style.backgroundColor = isChecked ? onColor : '#ccc';
+        slider.style.backgroundColor = isChecked ? onColor : 'var(--border, #ccc)';
         if (knob) {
             const knobLeftOn = slider.dataset.wfKnobLeftOn != null ? slider.dataset.wfKnobLeftOn + 'px' : '17px';
             const knobLeftOff = slider.dataset.wfKnobLeftOff != null ? slider.dataset.wfKnobLeftOff + 'px' : '3px';
@@ -3377,7 +3377,7 @@ const plugin = {
 
     _opsMemberBadgeHtml(category) {
         const styles = {
-            mts: 'background:#0f172a;color:#fff;',
+            mts: 'background:var(--foreground, #0f172a);color:var(--background, #fff);',
             ui: 'background:var(--brand,#4f46e5);color:#fff;',
             verticals: 'background:#0d9488;color:#fff;',
             epic: 'background:#7c3aed;color:#fff;',
@@ -4882,7 +4882,7 @@ const plugin = {
             : { bg: '#ffffff', card: '#fafafa' };
         const externalHostNotice = hostAllowsDashboard
             ? ''
-            : `<div id="wf-ops-external-host-notice" style="margin-top: 10px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
+            : `<div id="wf-ops-external-host-notice" style="margin-top: 10px; padding: 10px 12px; font-size: 12px; color: var(--foreground, #92400e); background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff)); border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
                     Ops Dashboard cannot open on external env instances. Open it from fleetai.com.
                 </div>`;
         return `
@@ -4911,7 +4911,7 @@ const plugin = {
                             margin-top: 10px;
                             box-sizing: border-box;
                         ">Open Dashboard</button>
-                        <div id="wf-ops-dashboard-incomplete-msg" style="display: none; margin-top: 10px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
+                        <div id="wf-ops-dashboard-incomplete-msg" style="display: none; margin-top: 10px; padding: 10px 12px; font-size: 12px; color: var(--foreground, #92400e); background: color-mix(in srgb, #f59e0b 18%, var(--background, #fff)); border: 1px solid #f59e0b; border-radius: 8px; line-height: 1.45;">
                             Search Output module failed to load. Check the console or refresh the page.
                         </div>
                     </div>
@@ -4997,7 +4997,7 @@ const plugin = {
 
     _renderOpsToggleSwitchHTML(id, isEnabled, spec) {
         const onColor = spec.onColor;
-        const sliderBg = isEnabled ? onColor : '#ccc';
+        const sliderBg = isEnabled ? onColor : 'var(--border, #ccc)';
         const knobLeft = isEnabled ? spec.knobLeftOn : spec.knobLeftOff;
         return `
             <label style="position: relative; display: inline-block; width: ${spec.width}px; height: ${spec.height}px; flex-shrink: 0;">
