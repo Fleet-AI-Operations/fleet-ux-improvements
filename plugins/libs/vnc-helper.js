@@ -7,6 +7,7 @@ const ROOT_ID = 'fleet-vnc-helper';
 const TAB_ID = 'fleet-vnc-helper-tab';
 const Z_INDEX = '2147483646';
 const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
+const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
 const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
 const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
 const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
@@ -37,15 +38,22 @@ const SHOW_PANEL_SUBOPTION = {
     enabledByDefault: true
 };
 
+const FORCE_DARK_SUBOPTION = {
+    id: FORCE_DARK_SUBOPTION_ID,
+    name: 'Force dark mode',
+    description: 'When off, helper chrome stays light. When on, helper chrome stays dark.',
+    enabledByDefault: false
+};
+
 const VncHelperApi = {
     id: 'vncHelper',
     name: 'VNC Helper',
     description:
         'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
-    subOptions: [SHOW_PANEL_SUBOPTION],
+    subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
     initialState: {
         bridgeStarted: false,
         waitObserverAttached: false,
@@ -55,6 +63,90 @@ const VncHelperApi = {
 
     isPanelEnabled() {
         return Storage.getSubOptionEnabled(this.id, SHOW_PANEL_SUBOPTION_ID, true);
+    },
+
+    isForceDarkEnabled() {
+        return Storage.getSubOptionEnabled(this.id, FORCE_DARK_SUBOPTION_ID, false);
+    },
+
+    helperChromeColors(forceDark) {
+        if (forceDark) {
+            return {
+                bg: '#1c1c1e',
+                fg: '#e5e7eb',
+                border: '#3f3f46',
+                headerBg: 'rgba(255,255,255,0.06)',
+                inputBg: '#121212',
+                dark: true
+            };
+        }
+        return {
+            bg: '#ffffff',
+            fg: '#0f172a',
+            border: '#e2e8f0',
+            headerBg: '#f1f5f9',
+            inputBg: '#ffffff',
+            dark: false
+        };
+    },
+
+    applyHelperChrome(root, chip) {
+        const forceDark = this.isForceDarkEnabled();
+        const c = this.helperChromeColors(forceDark);
+        const theme = forceDark ? 'dark' : 'light';
+        const shadow = forceDark
+            ? '0 12px 40px rgba(0,0,0,0.55)'
+            : '0 12px 40px rgba(15,23,42,0.18)';
+        const chipShadow = forceDark
+            ? '0 6px 18px rgba(0,0,0,0.35)'
+            : '0 6px 18px rgba(15,23,42,0.14)';
+        if (root) {
+            root.dataset.fleetHelperTheme = theme;
+            root.style.background = c.bg;
+            root.style.color = c.fg;
+            root.style.border = '1px solid ' + c.border;
+            root.style.borderRadius = '10px';
+            root.style.boxShadow = shadow;
+            const header = root.querySelector('.fleet-ui-panel__header') || root.firstElementChild;
+            if (header) {
+                header.style.background = c.headerBg;
+                header.style.borderBottom = '1px solid ' + c.border;
+                header.style.color = c.fg;
+            }
+            root.querySelectorAll('textarea, input').forEach((el) => {
+                el.style.background = c.inputBg;
+                el.style.color = c.fg;
+                el.style.border = '1px solid ' + c.border;
+            });
+            root.querySelectorAll('button').forEach((el) => {
+                if (!el.style.background || el.style.background === 'transparent' || el.style.background === '') {
+                    el.style.background = c.bg;
+                }
+                el.style.color = c.fg;
+                if (!el.style.border || el.style.border === 'none') {
+                    el.style.border = '1px solid ' + c.border;
+                }
+            });
+        }
+        if (chip) {
+            chip.dataset.fleetHelperTheme = theme;
+            chip.style.background = c.bg;
+            chip.style.color = c.fg;
+            chip.style.border = '1px solid ' + c.border;
+            chip.style.borderRadius = '10px';
+            chip.style.boxShadow = chipShadow;
+            chip.querySelectorAll('button').forEach((el) => {
+                el.style.background = 'transparent';
+                el.style.color = c.fg;
+            });
+        }
+    },
+
+    applyHelperChromeToMounted() {
+        this.applyHelperChrome(
+            document.getElementById(ROOT_ID),
+            document.getElementById(TAB_ID)
+        );
     },
 
     loadSavedLayout() {
@@ -387,6 +479,7 @@ const VncHelperApi = {
             restoreTab.appendChild(openBtn);
             restoreTab.appendChild(refreshBtn);
             document.body.appendChild(restoreTab);
+            self.applyHelperChrome(root, restoreTab);
         };
 
         const minimizeModal = () => {
@@ -526,6 +619,7 @@ const VncHelperApi = {
             root.appendChild(bodyEl);
             root.appendChild(resizeHandle);
             document.body.appendChild(root);
+            self.applyHelperChrome(root, null);
 
             bExtract.addEventListener('click', () => {
                 clipQueue = clipQueue
@@ -721,6 +815,7 @@ const VncHelperApi = {
 
     run(state, options) {
         if (state.bridgeStarted) {
+            this.applyHelperChromeToMounted();
             return;
         }
         this.installWaitObserver(state);
@@ -754,7 +849,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'VNC Helper (library)',
     description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

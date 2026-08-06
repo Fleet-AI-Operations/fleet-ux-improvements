@@ -6,6 +6,9 @@ const FLEET_UI_SCOPED_STYLE_PREFIX = 'fleet-ui-btn-scope-';
 const FLEET_UI_PANEL_STYLE_ID = 'fleet-ui-panel-styles';
 const FLEET_UI_PANEL_SCOPED_PREFIX = 'fleet-ui-panel-scope-';
 const FLEET_UI_USER_STORY_PROSE_STYLE_ID = 'fleet-ui-user-story-prose';
+const FLEET_UI_THEME_OVERRIDE_STYLE_ID = 'fleet-ui-theme-overrides';
+const FLEET_UI_THEME_MODE_KEY = 'extension-theme-mode';
+const FLEET_UI_THEME_MODES = ['match', 'light', 'dark'];
 
 const FLASH_PULSE_MS = 600;
 const FLASH_PULSE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -70,34 +73,136 @@ function fleetUiPanelScopeStyleId(scopeSelector) {
     return FLEET_UI_PANEL_SCOPED_PREFIX + slug;
 }
 
-function fleetUiIsFleetDark() {
+function fleetUiSiteIsDark() {
     return document.documentElement.classList.contains('dark');
 }
 
+function fleetUiNormalizeThemeMode(mode) {
+    const m = String(mode || '').toLowerCase();
+    return FLEET_UI_THEME_MODES.includes(m) ? m : 'match';
+}
+
+function fleetUiGetThemeMode() {
+    try {
+        if (typeof Storage !== 'undefined' && Storage.get) {
+            return fleetUiNormalizeThemeMode(Storage.get(FLEET_UI_THEME_MODE_KEY, 'match'));
+        }
+    } catch (_) { /* ignore */ }
+    return 'match';
+}
+
+function fleetUiResolveTheme() {
+    const mode = fleetUiGetThemeMode();
+    if (mode === 'light') return 'light';
+    if (mode === 'dark') return 'dark';
+    return fleetUiSiteIsDark() ? 'dark' : 'light';
+}
+
+function fleetUiIsFleetDark() {
+    return fleetUiResolveTheme() === 'dark';
+}
+
 function fleetUiGetFleetTheme() {
-    return fleetUiIsFleetDark() ? 'dark' : 'light';
+    return fleetUiResolveTheme();
+}
+
+function fleetUiThemeChromeRootsSelector() {
+    return [
+        '.fleet-ui-panel',
+        '.fleet-ui-panel__chip',
+        '.fleet-ui-panel__toast',
+        '#wf-settings-modal',
+        '#wf-dash-modal',
+        '#wf-dev-log-panel',
+        '#wf-dev-log-toggle',
+        '#fleet-vnc-helper',
+        '#fleet-vnc-helper-tab',
+        '#fleet-env-helper',
+        '#fleet-env-helper-tab'
+    ].join(', ');
+}
+
+function fleetUiThemeOverrideCssText() {
+    const roots = fleetUiThemeChromeRootsSelector();
+    return [
+        'html[data-fleet-ux-theme="light"] ' + roots + ' {',
+        '  --background: #ffffff;',
+        '  --card: #ffffff;',
+        '  --foreground: #111111;',
+        '  --border: #e7e7e7;',
+        '  --muted: #f7f7f7;',
+        '  --muted-foreground: #6d6d6d;',
+        '  --input: #e7e7e7;',
+        '}',
+        'html[data-fleet-ux-theme="dark"] ' + roots + ' {',
+        '  --background: #121212;',
+        '  --card: #1a1a1c;',
+        '  --foreground: #f5f5f5;',
+        '  --border: #262626;',
+        '  --muted: #171717;',
+        '  --muted-foreground: #8c8c8c;',
+        '  --input: #262626;',
+        '}'
+    ].join('\n');
+}
+
+function fleetUiEnsureThemeOverrideStyles() {
+    let style = document.getElementById(FLEET_UI_THEME_OVERRIDE_STYLE_ID);
+    if (!style) {
+        style = document.createElement('style');
+        style.id = FLEET_UI_THEME_OVERRIDE_STYLE_ID;
+        (document.head || document.documentElement).appendChild(style);
+    }
+    style.textContent = fleetUiThemeOverrideCssText();
+}
+
+function fleetUiSyncThemeDataset(forceNotify) {
+    const theme = fleetUiResolveTheme();
+    const dark = theme === 'dark';
+    try {
+        document.documentElement.dataset.fleetUxTheme = theme;
+    } catch (_) { /* ignore */ }
+    fleetUiEnsureThemeOverrideStyles();
+    if (forceNotify || _fleetLastDark !== dark) {
+        _fleetLastDark = dark;
+        const payload = { theme, dark };
+        for (const fn of _fleetThemeListeners) {
+            try {
+                fn(payload);
+            } catch (err) {
+                Logger.warn('theme listener failed', err);
+            }
+        }
+    }
+}
+
+function fleetUiSetThemeMode(mode) {
+    const next = fleetUiNormalizeThemeMode(mode);
+    try {
+        if (typeof Storage !== 'undefined' && Storage.set) {
+            Storage.set(FLEET_UI_THEME_MODE_KEY, next);
+        }
+    } catch (err) {
+        Logger.warn('failed to persist theme mode', err);
+    }
+    fleetUiSyncThemeDataset(true);
+    Logger.log('preferred mode → ' + next);
+    return next;
 }
 
 function fleetUiNotifyThemeChange() {
-    const dark = fleetUiIsFleetDark();
-    if (_fleetLastDark === dark) return;
-    _fleetLastDark = dark;
-    const payload = { theme: dark ? 'dark' : 'light', dark };
-    for (const fn of _fleetThemeListeners) {
-        try {
-            fn(payload);
-        } catch (err) {
-            Logger.warn('theme listener failed', err);
-        }
-    }
+    fleetUiSyncThemeDataset(false);
 }
 
 function fleetUiEnsureThemeObserver() {
     if (_fleetThemeObserverStarted) return;
     _fleetThemeObserverStarted = true;
-    _fleetLastDark = fleetUiIsFleetDark();
+    fleetUiSyncThemeDataset(true);
     try {
-        const observer = new MutationObserver(() => fleetUiNotifyThemeChange());
+        const observer = new MutationObserver(() => {
+            if (fleetUiGetThemeMode() !== 'match') return;
+            fleetUiNotifyThemeChange();
+        });
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerObserver) {
             CleanupRegistry.registerObserver(observer);
@@ -278,38 +383,38 @@ function fleetUiPanelCssLines(scopePrefix) {
         '  background: var(--muted, #f1f5f9);',
         '  color: var(--foreground, #0f172a);',
         '}',
-        'html.dark ' + root + ' {',
+        'html[data-fleet-ux-theme="dark"] ' + root + ' {',
         '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
         '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);',
         '}',
-        'html.dark ' + header + ' {',
+        'html[data-fleet-ux-theme="dark"] ' + header + ' {',
         '  background: color-mix(in srgb, var(--foreground, #f5f5f5) 8%, transparent);',
         '  border-bottom-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '}',
-        'html.dark ' + chip + ' {',
+        'html[data-fleet-ux-theme="dark"] ' + chip + ' {',
         '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
         '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);',
         '}',
-        'html.dark ' + toast + ' {',
+        'html[data-fleet-ux-theme="dark"] ' + toast + ' {',
         '  background: color-mix(in srgb, var(--card, #1a1a1c) 82%, #fff);',
         '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);',
         '}',
-        'html.dark ' + btn + ',',
-        'html.dark ' + textarea + ' {',
+        'html[data-fleet-ux-theme="dark"] ' + btn + ',',
+        'html[data-fleet-ux-theme="dark"] ' + textarea + ' {',
         '  background: var(--background, #121212);',
         '  border-color: color-mix(in srgb, var(--border, #262626) 45%, #737373);',
         '}',
         p + '.fleet-ui-log--error { color: #dc2626; }',
-        'html.dark ' + p + '.fleet-ui-log--error { color: #fca5a5; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--error { color: #fca5a5; }',
         p + '.fleet-ui-log--warn { color: #ca8a04; }',
-        'html.dark ' + p + '.fleet-ui-log--warn { color: #facc15; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--warn { color: #facc15; }',
         p + '.fleet-ui-log--debug { color: #2563eb; }',
-        'html.dark ' + p + '.fleet-ui-log--debug { color: #93c5fd; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--debug { color: #93c5fd; }',
         p + '.fleet-ui-log--info { color: #059669; }',
-        'html.dark ' + p + '.fleet-ui-log--info { color: #6ee7b7; }',
+        'html[data-fleet-ux-theme="dark"] ' + p + '.fleet-ui-log--info { color: #6ee7b7; }',
         p + '.fleet-ui-log-entry:hover {',
         '  background: color-mix(in srgb, var(--foreground, #0f172a) 6%, transparent);',
         '}'
@@ -673,7 +778,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '3.1',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -757,6 +862,10 @@ const plugin = {
             isFleetDark: fleetUiIsFleetDark,
             getFleetTheme: fleetUiGetFleetTheme,
             onThemeChange: fleetUiOnThemeChange,
+            getThemeMode: fleetUiGetThemeMode,
+            setThemeMode: fleetUiSetThemeMode,
+            resolveTheme: fleetUiResolveTheme,
+            syncThemeDataset: () => fleetUiSyncThemeDataset(true),
 
             clearCopyFeedback: fleetUiClearCopyFeedback,
             flashSuccess: fleetUiFlashSuccess,

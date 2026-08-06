@@ -1,7 +1,7 @@
 {
   "version": "13.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.264",
+  "archetypesVersion": "14.265",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.1",
-      "hash": "sha256-1afa05019d2adcb61df9c0e1b067cc6d5d842b55ce494e2f561c5fa19423b3bc",
+      "version": "3.2",
+      "hash": "sha256-78a034022869e26d67287480a4f4610a862d280961f64d06de9b974558942e7b",
       "log": false
     },
     {
@@ -34,8 +34,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "11.5",
-      "hash": "sha256-a930fec62f6a151f956b99d14e556d7b2a15f2a16508f03de9a9dffec891a3b9",
+      "version": "11.6",
+      "hash": "sha256-a5d557efdb827d47c2708797cad518109b7b778aa1e50e1704db03e06fd27d92",
       "log": false
     },
     {
@@ -162,14 +162,14 @@
     },
     {
       "name": "vnc-helper.js",
-      "version": "3.0",
-      "hash": "sha256-765d32f369fd1eccf9a674249d52464eb7fa7c4bc1535ddf1ebd979ec60bd5de",
+      "version": "3.1",
+      "hash": "sha256-052e75c5acefb4fecd5bb8849497f51fdc618b25f85b1127a1fed4c4d57e0d86",
       "log": false
     },
     {
       "name": "env-helper.js",
-      "version": "2.0",
-      "hash": "sha256-4f0a1f95b849d750b6808308470964031f8e74e9a265d993397d3c34fdd3192c",
+      "version": "2.1",
+      "hash": "sha256-2219046d5abd1d72e920f188f5d5c9465dcff4ee8e3dfa5d8f2214effc9dc8b0",
       "log": false
     }
   ],
@@ -975,8 +975,8 @@
         },
         {
           "name": "vnc-helper.js",
-          "version": "1.9",
-          "hash": "sha256-74828fd82db3fc86702312127965c39b6cffac32eb5e8169590a4cbaa5647034",
+          "version": "1.10",
+          "hash": "sha256-f776e8ef5808a11a034ae53a35e661eedbe92ba671f0ed4471785172a35dce0b",
           "log": false
         },
         {
@@ -1072,14 +1072,14 @@
       "plugins": [
         {
           "name": "vnc-helper.js",
-          "version": "1.9",
-          "hash": "sha256-74828fd82db3fc86702312127965c39b6cffac32eb5e8169590a4cbaa5647034",
+          "version": "1.10",
+          "hash": "sha256-f776e8ef5808a11a034ae53a35e661eedbe92ba671f0ed4471785172a35dce0b",
           "log": false
         },
         {
           "name": "env-helper.js",
-          "version": "1.1",
-          "hash": "sha256-736f3d1556677eca3f4840213036eeabe7c94060238ffccdba38934fbec77de6",
+          "version": "1.2",
+          "hash": "sha256-9e17fc777e4fe7ac95f2a5f1ed43ea6c88db5ed4f5a0c2ce0b7f83d4168d4d7d",
           "log": false
         }
       ]

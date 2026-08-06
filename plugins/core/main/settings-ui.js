@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.5',
+    _version: '11.6',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -124,9 +124,12 @@ const plugin = {
     },
 
     _ensureDialogBackdropStyles() {
-        if (document.getElementById('wf-settings-dialog-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'wf-settings-dialog-styles';
+        let style = document.getElementById('wf-settings-dialog-styles');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 'wf-settings-dialog-styles';
+            (document.head || document.documentElement).appendChild(style);
+        }
         style.textContent = `
             #wf-settings-modal {
                 margin: 0;
@@ -147,6 +150,37 @@ const plugin = {
             #wf-settings-btn.wf-settings-outdated {
                 border: 2px solid rgba(220, 38, 38, 0.9);
                 animation: wf-settings-update-flash 1.2s ease-in-out infinite;
+            }
+            .wf-theme-mode-group {
+                display: flex;
+                gap: 0;
+                border: 1px solid var(--border, #e5e5e5);
+                border-radius: 8px;
+                overflow: hidden;
+                background: var(--background, #fff);
+            }
+            .wf-theme-mode-seg {
+                flex: 1;
+                margin: 0;
+                padding: 8px 10px;
+                font-size: 12px;
+                font-weight: 600;
+                border: none;
+                border-right: 1px solid var(--border, #e5e5e5);
+                background: transparent;
+                color: var(--muted-foreground, #666);
+                cursor: pointer;
+            }
+            .wf-theme-mode-seg:last-child {
+                border-right: none;
+            }
+            .wf-theme-mode-seg.is-active {
+                background: var(--card, #fafafa);
+                color: var(--foreground, #333);
+            }
+            html[data-fleet-ux-theme="dark"] .wf-theme-mode-seg.is-active {
+                background: #27272a;
+                color: #e4e4e7;
             }
             #wf-update-notification-banner {
                 margin-bottom: 20px;
@@ -181,18 +215,18 @@ const plugin = {
                 border-radius: 6px;
                 cursor: pointer;
             }
-            html.dark #wf-update-notification-banner {
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner {
                 background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));
             }
-            html.dark #wf-update-notification-banner .wf-update-banner-title,
-            html.dark #wf-update-notification-banner .wf-update-banner-body,
-            html.dark #wf-update-notification-banner .wf-update-banner-body a {
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-title,
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-body,
+            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-body a {
                 color: #fca5a5;
             }
-            html.dark #wf-update-refresh-row {
+            html[data-fleet-ux-theme="dark"] #wf-update-refresh-row {
                 border-top-color: #7f1d1d;
             }
-            html.dark #wf-update-refresh-btn {
+            html[data-fleet-ux-theme="dark"] #wf-update-refresh-btn {
                 color: #fecaca;
                 background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));
             }
@@ -237,31 +271,68 @@ const plugin = {
                 border-top: 1px solid #fcd34d;
                 text-align: center;
             }
-            html.dark .wf-amber-banner,
-            html.dark .wf-amber-banner--soft,
-            html.dark #wf-settings-message {
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner,
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner--soft,
+            html[data-fleet-ux-theme="dark"] #wf-settings-message {
                 background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));
             }
-            html.dark .wf-amber-banner-title,
-            html.dark .wf-amber-banner-body,
-            html.dark .wf-amber-banner-body a,
-            html.dark #wf-settings-message,
-            html.dark #wf-settings-message a {
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner-title,
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner-body,
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner-body a,
+            html[data-fleet-ux-theme="dark"] #wf-settings-message,
+            html[data-fleet-ux-theme="dark"] #wf-settings-message a {
                 color: #fcd34d;
             }
-            html.dark .wf-amber-banner .wf-amber-banner-footer {
+            html[data-fleet-ux-theme="dark"] .wf-amber-banner .wf-amber-banner-footer {
                 border-top-color: #92400e;
             }
-            html.dark #wf-ops-refresh-fetch-btn {
+            html[data-fleet-ux-theme="dark"] #wf-ops-refresh-fetch-btn {
                 color: #fef3c7;
                 background: color-mix(in srgb, #f59e0b 28%, var(--background, #121212));
             }
         `;
-        (document.head || document.documentElement).appendChild(style);
     },
 
     _isFleetDark() {
+        if (Context.uiLib && typeof Context.uiLib.isFleetDark === 'function') {
+            return Context.uiLib.isFleetDark();
+        }
         return document.documentElement.classList.contains('dark');
+    },
+
+    _getPreferredThemeMode() {
+        if (Context.uiLib && typeof Context.uiLib.getThemeMode === 'function') {
+            return Context.uiLib.getThemeMode();
+        }
+        return 'match';
+    },
+
+    _setPreferredThemeMode(mode) {
+        if (Context.uiLib && typeof Context.uiLib.setThemeMode === 'function') {
+            return Context.uiLib.setThemeMode(mode);
+        }
+        return mode;
+    },
+
+    _createPreferredModeHTML() {
+        const mode = this._getPreferredThemeMode();
+        const c = this._settingsThemeColors();
+        const seg = (id, label, value) => {
+            const active = mode === value;
+            return `<button type="button" class="wf-theme-mode-seg${active ? ' is-active' : ''}" data-theme-mode="${value}" id="${id}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
+        };
+        return `
+            <div style="margin-bottom: 20px;">
+                <div style="padding: 12px 14px; border: 1px solid var(--border, #e5e5e5); border-radius: 8px; background: ${c.card};">
+                    <div style="font-size: 14px; font-weight: 600; color: var(--foreground, #333); margin-bottom: 10px;">Preferred mode</div>
+                    <div class="wf-theme-mode-group" role="group" aria-label="Preferred mode">
+                        ${seg('wf-theme-mode-match', 'Match site', 'match')}
+                        ${seg('wf-theme-mode-light', 'Light', 'light')}
+                        ${seg('wf-theme-mode-dark', 'Dark', 'dark')}
+                    </div>
+                </div>
+            </div>
+        `;
     },
 
     /** Opaque light/dark palette for Settings modal surfaces (avoids fragile host CSS vars). */
@@ -811,6 +882,8 @@ const plugin = {
                 </div>
             </div>
 
+            ${this._createPreferredModeHTML()}
+
             ${opsSettingsHTML}
 
             <!-- Outdated Plugins Warning -->
@@ -1141,6 +1214,30 @@ const plugin = {
                 this._attachPluginToggleListeners(modal, plugins);
                 this._attachPluginReorderListeners(modal, plugins);
                 this._updateSettingsMessage(modal, plugins);
+            });
+        }
+
+        const themeModeGroup = Context.dom.query('.wf-theme-mode-group', {
+            root: modal,
+            context: `${this.id}.themeModeGroup`
+        });
+        if (themeModeGroup) {
+            themeModeGroup.querySelectorAll('[data-theme-mode]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const next = btn.getAttribute('data-theme-mode') || 'match';
+                    const prev = this._getPreferredThemeMode();
+                    if (next === prev) return;
+                    this._setPreferredThemeMode(next);
+                    Logger.log(`Preferred mode → ${next}`);
+                    // Rebuild open modal so chrome picks up the new effective theme immediately.
+                    this._captureOpsState(modal);
+                    const wasOpen = this._modalOpen;
+                    modal.remove();
+                    this._modalOpen = false;
+                    if (wasOpen) {
+                        this._openSettingsModal();
+                    }
+                });
             });
         }
 
