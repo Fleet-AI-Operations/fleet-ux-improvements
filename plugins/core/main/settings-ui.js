@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.10',
+    _version: '11.11',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -659,7 +659,13 @@ const plugin = {
             ? Context.opsTab.renderSettingsSection()
             : '';
         const defaultTab = this._getDefaultSettingsTabId();
-        const paneDisplay = (tabId) => (tabId === defaultTab ? 'block' : 'none');
+        const openTab = (() => {
+            const pending = this._pendingSettingsTabId;
+            if (!pending) return defaultTab;
+            const valid = this._getSettingsTabs().some((t) => t.id === pending);
+            return valid ? pending : defaultTab;
+        })();
+        const paneDisplay = (tabId) => (tabId === openTab ? 'block' : 'none');
         const noPluginsMsg = Context.isOutdated
             ? 'No plugins will load until you update the userscript.'
             : 'No plugins loaded for this page.';
@@ -688,7 +694,7 @@ const plugin = {
         
         const hasDevSettings = this._hasActiveDevSettings();
         const tabs = this._getSettingsTabs();
-        const tabRowHTML = this._createTabRowHTML(tabs, defaultTab);
+        const tabRowHTML = this._createTabRowHTML(tabs, openTab);
         
         // Build the Dev pane content
         const devGlobalEnabled = this._getDevGlobalEnabled();
@@ -1179,7 +1185,14 @@ const plugin = {
         } else if (Context.opsTab) {
             Logger.warn('Context.opsTab.attachSettingsListeners unavailable');
         }
-        this._switchSettingsTab(modal, this._getDefaultSettingsTabId());
+        this._switchSettingsTab(modal, (() => {
+            const pending = this._pendingSettingsTabId;
+            this._pendingSettingsTabId = null;
+            if (pending && this._getSettingsTabs().some((t) => t.id === pending)) {
+                return pending;
+            }
+            return this._getDefaultSettingsTabId();
+        })());
 
         // Global toggle (regular plugins only)
         const globalToggle = Context.dom.query('#wf-global-enabled', {
@@ -1219,6 +1232,7 @@ const plugin = {
                     onChange: (next) => {
                         const prev = this._getPreferredThemeMode();
                         if (next === prev) return;
+                        this._pendingSettingsTabId = this._getActiveSettingsTabId(modal);
                         this._setPreferredThemeMode(next);
                         Logger.log(`Preferred mode → ${next}`);
                         this._captureOpsState(modal);

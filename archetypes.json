@@ -1,7 +1,7 @@
 {
   "version": "13.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.269",
+  "archetypesVersion": "14.270",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -34,8 +34,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "11.10",
-      "hash": "sha256-e063a9cac840f1cd3ae494be332435ba786160ada56316d21cf90be73fe7e589",
+      "version": "11.11",
+      "hash": "sha256-2dc0824e53c178d96902196ae5110fecdc506c02c41d0c64521e3f334d682636",
       "log": false
     },
     {
