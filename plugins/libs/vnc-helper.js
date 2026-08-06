@@ -1,6 +1,6 @@
 // ============= vnc-helper.js (library) =============
-// Shared VNC Helper for dispute-detail and no-vnc.
-// VNC Helper modal: Prompt (from qa-comp-use cache), scratchpad, clipboard bridge buttons, and
+// Shared External VNC Helper for no-vnc (external env tabs).
+// Modal: Prompt (from qa-comp-use cache), scratchpad, clipboard bridge buttons, and
 // ⌘C/⌘V + Ctrl+Shift+C/F shortcuts. Replaces novnc-clipboard-bridge.js.
 
 const ROOT_ID = 'fleet-vnc-helper';
@@ -34,7 +34,7 @@ const LAYOUT_STORAGE_KEYS = {
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
-    description: 'When off, hides the VNC Helper modal; ⌘C/⌘V and Ctrl+Shift+C/F still work.',
+    description: 'When off, hides the External VNC Helper modal; ⌘C/⌘V and Ctrl+Shift+C/F still work.',
     enabledByDefault: true
 };
 
@@ -47,10 +47,10 @@ const FORCE_DARK_SUBOPTION = {
 
 const VncHelperApi = {
     id: 'vncHelper',
-    name: 'VNC Helper',
+    name: 'External VNC Helper',
     description:
-        'VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '3.1',
+        'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -390,7 +390,7 @@ const VncHelperApi = {
         }
 
         state.bridgeStarted = true;
-        Logger.debug('noVNC clipboard element detected, initialising VNC Helper');
+        Logger.debug('noVNC clipboard element detected, initialising External VNC Helper');
 
         const oldRoot = document.getElementById(ROOT_ID);
         const oldTab = document.getElementById(TAB_ID);
@@ -443,8 +443,8 @@ const VncHelperApi = {
 
             const openBtn = document.createElement('button');
             openBtn.type = 'button';
-            openBtn.textContent = 'VNC Helper';
-            openBtn.setAttribute('aria-label', 'Toggle VNC Helper');
+            openBtn.textContent = 'External VNC Helper';
+            openBtn.setAttribute('aria-label', 'Toggle External VNC Helper');
             openBtn.addEventListener('click', () => {
                 if (!root) {
                     return;
@@ -461,7 +461,7 @@ const VncHelperApi = {
             const refreshBtn = document.createElement('button');
             refreshBtn.type = 'button';
             refreshBtn.textContent = '\u21BB';
-            refreshBtn.setAttribute('aria-label', 'Reset VNC Helper to default position');
+            refreshBtn.setAttribute('aria-label', 'Reset External VNC Helper to default position');
             refreshBtn.title = 'Reset to default position';
             refreshBtn.className = pc.chipSep || '';
             refreshBtn.addEventListener('click', (ev) => {
@@ -506,14 +506,14 @@ const VncHelperApi = {
             const headerEl = document.createElement('div');
             headerEl.className = pc.header || '';
             const headerTitle = document.createElement('div');
-            headerTitle.textContent = 'VNC Helper';
+            headerTitle.textContent = 'External VNC Helper';
             headerTitle.className = pc.title || '';
             headerTitle.style.cursor = 'grab';
             headerTitle.style.padding = '2px 0';
             const minimizeBtn = document.createElement('button');
             minimizeBtn.type = 'button';
             minimizeBtn.textContent = 'Minimize';
-            minimizeBtn.setAttribute('aria-label', 'Minimize VNC Helper');
+            minimizeBtn.setAttribute('aria-label', 'Minimize External VNC Helper');
             minimizeBtn.className = pc.btn || '';
             minimizeBtn.style.flexShrink = '0';
             headerEl.appendChild(headerTitle);
@@ -612,7 +612,7 @@ const VncHelperApi = {
             bodyEl.appendChild(clipSection);
 
             const resizeHandle = document.createElement('div');
-            resizeHandle.setAttribute('aria-label', 'Resize VNC Helper');
+            resizeHandle.setAttribute('aria-label', 'Resize External VNC Helper');
             resizeHandle.className = pc.resize || '';
 
             root.appendChild(headerEl);
@@ -806,10 +806,10 @@ const VncHelperApi = {
         if (showPanel) {
             minimizeModal();
             Logger.log('modal and keyboard shortcuts active (starts minimized)');
-            toast('VNC Helper ready — open from the tab. ⌘C/⌘V, Ctrl+Shift+C/F.');
+            toast('External VNC Helper ready — open from the tab. ⌘C/⌘V, Ctrl+Shift+C/F.');
         } else {
             Logger.debug('keyboard shortcuts active (panel hidden via settings)');
-            toast('VNC Helper ready — ⌘C/⌘V, Ctrl+Shift+C/F. Panel is hidden in settings.');
+            toast('External VNC Helper ready — ⌘C/⌘V, Ctrl+Shift+C/F. Panel is hidden in settings.');
         }
     },
 
@@ -847,9 +847,9 @@ const VncHelperApi = {
 
 const plugin = {
     id: 'vncHelperLib',
-    name: 'VNC Helper (library)',
-    description: 'Shared API for VNC helper panel and clipboard helpers',
-    _version: '3.1',
+    name: 'External VNC Helper (library)',
+    description: 'Shared API for External VNC Helper panel and clipboard helpers',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

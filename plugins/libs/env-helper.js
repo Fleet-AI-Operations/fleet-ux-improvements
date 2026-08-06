@@ -1,5 +1,5 @@
 // ============= env-helper.js (library) =============
-// Env Helper for non-VNC external env pages (no-vnc archetype when #noVNC_clipboard_text is absent).
+// External Env Helper for non-VNC external env pages (no-vnc when #noVNC_clipboard_text is absent).
 // Floating modal: Prompt (from qa-comp-use cache) + scratchpad. No clipboard / RFB bridging.
 
 const ROOT_ID = 'fleet-env-helper';
@@ -8,7 +8,7 @@ const Z_INDEX = '2147483646';
 const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
 const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
 const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
-/** Shared with vnc-helper / vnc-prompt-writer so QA prompt cache fills Env Helper too. */
+/** Shared with vnc-helper / vnc-prompt-writer so QA prompt cache fills External Env Helper too. */
 const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
 const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
 /** 'qa' | 'non-qa' — host sets from last Fleet archetype; helpers only prefill when 'qa'. */
@@ -34,7 +34,7 @@ const LAYOUT_STORAGE_KEYS = {
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
-    description: 'When off, hides the Env Helper modal.',
+    description: 'When off, hides the External Env Helper modal.',
     enabledByDefault: true
 };
 
@@ -47,9 +47,9 @@ const FORCE_DARK_SUBOPTION = {
 
 const EnvHelperApi = {
     id: 'envHelper',
-    name: 'Env Helper',
-    description: 'Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '2.1',
+    name: 'External Env Helper',
+    description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -200,7 +200,7 @@ const EnvHelperApi = {
     },
 
     /**
-     * Inverse of VNC Helper: start when noVNC clipboard is absent; tear down if it appears later.
+     * Inverse of External VNC Helper: start when noVNC clipboard is absent; tear down if it appears later.
      */
     installWaitObserver(state) {
         if (state.waitObserverAttached) {
@@ -212,7 +212,7 @@ const EnvHelperApi = {
         const sync = () => {
             if (self.hasNovncClipboard()) {
                 if (state.panelStarted) {
-                    Logger.log('noVNC clipboard appeared — tearing down Env Helper');
+                    Logger.log('noVNC clipboard appeared — tearing down External Env Helper');
                     self.destroy(state);
                     self.installWaitObserver(state);
                 }
@@ -371,7 +371,7 @@ const EnvHelperApi = {
         state.waitObserverAttached = true;
 
         state.panelStarted = true;
-        Logger.debug('non-VNC env page detected, initialising Env Helper');
+        Logger.debug('non-VNC env page detected, initialising External Env Helper');
 
         const oldRoot = document.getElementById(ROOT_ID);
         const oldTab = document.getElementById(TAB_ID);
@@ -416,8 +416,8 @@ const EnvHelperApi = {
 
             const openBtn = document.createElement('button');
             openBtn.type = 'button';
-            openBtn.textContent = 'Env Helper';
-            openBtn.setAttribute('aria-label', 'Toggle Env Helper');
+            openBtn.textContent = 'External Env Helper';
+            openBtn.setAttribute('aria-label', 'Toggle External Env Helper');
             openBtn.addEventListener('click', () => {
                 if (!root) {
                     return;
@@ -434,7 +434,7 @@ const EnvHelperApi = {
             const refreshBtn = document.createElement('button');
             refreshBtn.type = 'button';
             refreshBtn.textContent = '\u21BB';
-            refreshBtn.setAttribute('aria-label', 'Reset Env Helper to default position');
+            refreshBtn.setAttribute('aria-label', 'Reset External Env Helper to default position');
             refreshBtn.title = 'Reset to default position';
             refreshBtn.className = pc.chipSep || '';
             refreshBtn.addEventListener('click', (ev) => {
@@ -479,14 +479,14 @@ const EnvHelperApi = {
             const headerEl = document.createElement('div');
             headerEl.className = pc.header || '';
             const headerTitle = document.createElement('div');
-            headerTitle.textContent = 'Env Helper';
+            headerTitle.textContent = 'External Env Helper';
             headerTitle.className = pc.title || '';
             headerTitle.style.cursor = 'grab';
             headerTitle.style.padding = '2px 0';
             const minimizeBtn = document.createElement('button');
             minimizeBtn.type = 'button';
             minimizeBtn.textContent = 'Minimize';
-            minimizeBtn.setAttribute('aria-label', 'Minimize Env Helper');
+            minimizeBtn.setAttribute('aria-label', 'Minimize External Env Helper');
             minimizeBtn.className = pc.btn || '';
             minimizeBtn.style.flexShrink = '0';
             headerEl.appendChild(headerTitle);
@@ -542,7 +542,7 @@ const EnvHelperApi = {
             bodyEl.appendChild(scratchBody);
 
             const resizeHandle = document.createElement('div');
-            resizeHandle.setAttribute('aria-label', 'Resize Env Helper');
+            resizeHandle.setAttribute('aria-label', 'Resize External Env Helper');
             resizeHandle.className = pc.resize || '';
 
             root.appendChild(headerEl);
@@ -660,7 +660,7 @@ const EnvHelperApi = {
         if (showPanel) {
             minimizeModal();
             Logger.log('modal active (starts minimized)');
-            toast('Env Helper ready — open from the tab.');
+            toast('External Env Helper ready — open from the tab.');
         } else {
             Logger.debug('panel hidden via settings');
         }
@@ -700,9 +700,9 @@ const EnvHelperApi = {
 
 const plugin = {
     id: 'envHelperLib',
-    name: 'Env Helper (library)',
-    description: 'Shared API for Env Helper panel on non-VNC env pages',
-    _version: '2.1',
+    name: 'External Env Helper (library)',
+    description: 'Shared API for External Env Helper panel on non-VNC env pages',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

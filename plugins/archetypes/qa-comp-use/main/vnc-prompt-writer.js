@@ -1,5 +1,5 @@
 // ============= vnc-prompt-writer.js =============
-// Archetype: qa-comp-use. Saves the task prompt to GM Storage so the no-vnc VNC/Env Helper
+// Archetype: qa-comp-use. Saves the task prompt to GM Storage so the no-vnc External VNC/Env Helper
 // modal can pre-fill its Prompt section (2-hour TTL, read by vnc-helper.js / env-helper.js).
 // Prefill is gated by host helper-prompt context (qa vs non-qa) from the last Fleet page.
 
@@ -9,8 +9,8 @@ const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
 const plugin = {
     id: 'vncPromptWriter',
     name: 'VNC Prompt Writer',
-    description: 'Caches the QA task prompt for the VNC Helper modal on noVNC pages',
-    _version: '1.4',
+    description: 'Caches the QA task prompt for the External VNC/Env Helper modals on env pages',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -55,7 +55,7 @@ const plugin = {
             Storage.set(PROMPT_TS_STORAGE_KEY, String(Date.now()));
             state.lastSavedText = text;
             if (!state.savedLogged) {
-                Logger.log(`cached prompt for VNC Helper (${text.length} chars)`);
+                Logger.log(`cached prompt for External VNC/Env Helper (${text.length} chars)`);
                 state.savedLogged = true;
             }
         } catch (e) {
