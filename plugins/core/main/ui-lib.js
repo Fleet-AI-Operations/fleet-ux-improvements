@@ -5,6 +5,10 @@ const FLEET_UI_STYLE_ID = 'fleet-ui-styles';
 const FLEET_UI_SCOPED_STYLE_PREFIX = 'fleet-ui-btn-scope-';
 const FLEET_UI_PANEL_STYLE_ID = 'fleet-ui-panel-styles';
 const FLEET_UI_PANEL_SCOPED_PREFIX = 'fleet-ui-panel-scope-';
+const FLEET_UI_SEGMENT_STYLE_ID = 'fleet-ui-segment-styles';
+const FLEET_UI_SEGMENT_SCOPED_PREFIX = 'fleet-ui-seg-scope-';
+const FLEET_UI_FILTER_TOGGLE_STYLE_ID = 'fleet-ui-filter-toggle-styles';
+const FLEET_UI_FILTER_TOGGLE_SCOPED_PREFIX = 'fleet-ui-ft-scope-';
 const FLEET_UI_USER_STORY_PROSE_STYLE_ID = 'fleet-ui-user-story-prose';
 const FLEET_UI_THEME_OVERRIDE_STYLE_ID = 'fleet-ui-theme-overrides';
 const FLEET_UI_THEME_MODE_KEY = 'extension-theme-mode';
@@ -39,6 +43,19 @@ const PANEL_CLASSES = {
     ghostBtn: 'fleet-ui-panel__ghost-btn'
 };
 
+/** Exclusive connected segment control (Match/Light/Dark, Diff Viewer On/Off, Clear/Add). */
+const SEGMENT_CLASSES = {
+    group: 'fleet-ui-seg-group',
+    groupFill: 'fleet-ui-seg-group--fill',
+    btn: 'fleet-ui-seg-btn',
+    btnDivider: 'fleet-ui-seg-btn--divider'
+};
+
+/** Multi-select filter pills (Ops Dashboard Task Creation / QA / …). */
+const FILTER_TOGGLE_CLASSES = {
+    btn: 'fleet-ui-filter-toggle'
+};
+
 let _fleetThemeListeners = [];
 let _fleetThemeObserverStarted = false;
 let _fleetLastDark = null;
@@ -71,6 +88,22 @@ function fleetUiPanelScopeStyleId(scopeSelector) {
         .replace(/^-+|-+$/g, '')
         .slice(0, 48) || 'root';
     return FLEET_UI_PANEL_SCOPED_PREFIX + slug;
+}
+
+function fleetUiSegmentScopeStyleId(scopeSelector) {
+    const slug = String(scopeSelector || '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'root';
+    return FLEET_UI_SEGMENT_SCOPED_PREFIX + slug;
+}
+
+function fleetUiFilterToggleScopeStyleId(scopeSelector) {
+    const slug = String(scopeSelector || '')
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'root';
+    return FLEET_UI_FILTER_TOGGLE_SCOPED_PREFIX + slug;
 }
 
 function fleetUiSiteIsDark() {
@@ -712,6 +745,180 @@ function fleetUiBtnClass(variant, size) {
     return 'wf-dash-btn ' + v + ' ' + s;
 }
 
+function fleetUiEscapeAttr(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function fleetUiEscapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function fleetUiSegmentCssLines(prefix) {
+    const p = prefix || '';
+    return [
+        p + '.fleet-ui-seg-group {',
+        '  display: inline-flex;',
+        '  border-radius: 6px;',
+        '  overflow: hidden;',
+        '  border: 1px solid var(--border, #e2e8f0);',
+        '  background: color-mix(in srgb, var(--foreground, #0f172a) 6%, var(--card, #fff));',
+        '}',
+        p + '.fleet-ui-seg-group--fill {',
+        '  display: flex;',
+        '  width: 100%;',
+        '}',
+        p + '.fleet-ui-seg-btn {',
+        '  padding: 5px 12px;',
+        '  font-size: 12px;',
+        '  font-weight: 600;',
+        '  border: none;',
+        '  cursor: pointer;',
+        '  background: transparent;',
+        '  color: var(--foreground, #0f172a);',
+        '  transition: background-color 0.15s, color 0.15s;',
+        '  line-height: 1.4;',
+        '}',
+        p + '.fleet-ui-seg-group--fill .fleet-ui-seg-btn {',
+        '  flex: 1;',
+        '  padding: 8px 10px;',
+        '}',
+        p + '.fleet-ui-seg-btn--divider {',
+        '  border-right: 1px solid var(--border, #e2e8f0);',
+        '}',
+        p + '.fleet-ui-seg-btn[aria-pressed="true"] {',
+        '  background: var(--brand, #2563eb);',
+        '  color: #ffffff;',
+        '}',
+        p + '.fleet-ui-seg-btn:not([aria-pressed="true"]):hover {',
+        '  background: color-mix(in srgb, var(--foreground, #0f172a) 10%, transparent);',
+        '  color: var(--foreground, #0f172a);',
+        '}'
+    ];
+}
+
+function fleetUiFilterToggleCssLines(prefix) {
+    const p = prefix || '';
+    return [
+        p + '.fleet-ui-filter-toggle {',
+        '  padding: 7px 14px;',
+        '  font-size: 12px;',
+        '  font-weight: 600;',
+        '  border-radius: 6px;',
+        '  cursor: pointer;',
+        '  border: 2px solid var(--border, #e2e8f0);',
+        '  color: var(--muted-foreground, #64748b);',
+        '  background: transparent;',
+        '  opacity: 0.6;',
+        '}',
+        p + '.fleet-ui-filter-toggle[aria-pressed="true"] {',
+        '  opacity: 1;',
+        '}'
+    ];
+}
+
+function fleetUiSegmentBtnClass(divider) {
+    return SEGMENT_CLASSES.btn + (divider ? ' ' + SEGMENT_CLASSES.btnDivider : '');
+}
+
+function fleetUiSegmentBtnHtml(opts) {
+    const o = opts || {};
+    const valueAttr = o.valueAttr || 'data-value';
+    const divider = !!o.divider;
+    const active = !!o.active;
+    const idAttr = o.id ? ' id="' + fleetUiEscapeAttr(o.id) + '"' : '';
+    const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
+    return '<button type="button" class="' + fleetUiSegmentBtnClass(divider) + '" '
+        + valueAttr + '="' + fleetUiEscapeAttr(o.value) + '" aria-pressed="'
+        + (active ? 'true' : 'false') + '"' + idAttr + extra + '>'
+        + fleetUiEscapeHtml(o.label) + '</button>';
+}
+
+function fleetUiSegmentGroupHtml(opts) {
+    const o = opts || {};
+    const options = Array.isArray(o.options) ? o.options : [];
+    const valueAttr = o.valueAttr || 'data-value';
+    const value = o.value;
+    const fill = o.fill === true;
+    const groupClass = SEGMENT_CLASSES.group + (fill ? ' ' + SEGMENT_CLASSES.groupFill : '');
+    const buttons = options.map((opt, i) => fleetUiSegmentBtnHtml({
+        value: opt.value,
+        label: opt.label,
+        id: opt.id,
+        extraAttrs: opt.extraAttrs,
+        valueAttr,
+        active: String(opt.value) === String(value),
+        divider: i < options.length - 1
+    })).join('');
+    const labelAttr = o.ariaLabel ? ' aria-label="' + fleetUiEscapeAttr(o.ariaLabel) + '"' : '';
+    const styleAttr = o.style ? ' style="' + fleetUiEscapeAttr(o.style) + '"' : '';
+    const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
+    return '<div class="' + groupClass + '" role="group"' + labelAttr + styleAttr + extra + '>'
+        + buttons + '</div>';
+}
+
+function fleetUiSyncSegmentGroup(root, value, valueAttr) {
+    if (!root) return;
+    const attr = valueAttr || 'data-value';
+    root.querySelectorAll('.' + SEGMENT_CLASSES.btn).forEach((btn) => {
+        const v = btn.getAttribute(attr);
+        const active = String(v) === String(value);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+}
+
+function fleetUiBindSegmentGroup(root, options) {
+    if (!root) return;
+    const opts = options || {};
+    const valueAttr = opts.valueAttr || 'data-value';
+    if (root.dataset.fleetUiSegBound === '1') return;
+    root.dataset.fleetUiSegBound = '1';
+    root.addEventListener('click', (e) => {
+        const btn = e.target && e.target.closest
+            ? e.target.closest('.' + SEGMENT_CLASSES.btn)
+            : null;
+        if (!btn || !root.contains(btn)) return;
+        const next = btn.getAttribute(valueAttr);
+        if (next == null) return;
+        fleetUiSyncSegmentGroup(root, next, valueAttr);
+        if (typeof opts.onChange === 'function') {
+            opts.onChange(next, btn);
+        }
+    });
+}
+
+function fleetUiFilterToggleClass() {
+    return FILTER_TOGGLE_CLASSES.btn;
+}
+
+function fleetUiFilterToggleHtml(opts) {
+    const o = opts || {};
+    const pressed = !!o.pressed;
+    const idAttr = o.id ? ' id="' + fleetUiEscapeAttr(o.id) + '"' : '';
+    const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
+    const css = pressed && o.activeCss
+        ? String(o.activeCss).replace(/"/g, '&quot;')
+        : '';
+    const styleAttr = css ? ' style="' + css + '"' : '';
+    return '<button type="button" class="' + fleetUiFilterToggleClass() + '" aria-pressed="'
+        + (pressed ? 'true' : 'false') + '"' + idAttr + styleAttr + extra + '>'
+        + fleetUiEscapeHtml(o.label) + '</button>';
+}
+
+function fleetUiApplyFilterToggle(btn, pressed, activeCss) {
+    if (!btn) return;
+    btn.classList.add(FILTER_TOGGLE_CLASSES.btn);
+    btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    btn.style.cssText = pressed && activeCss ? activeCss : '';
+}
+
 function fleetUiSpinnerHtml(sizePx) {
     const size = sizePx || 16;
     return '<span class="fleet-ui-spinner" aria-hidden="true" style="width: ' + size + 'px; height: ' + size + 'px;"></span>';
@@ -781,8 +988,8 @@ function fleetUiUserStoryProseCssText() {
 const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
-    description: 'Shared UI tokens, button styles, spinners, and copy feedback',
-    _version: '3.3',
+    description: 'Shared UI tokens, buttons, segments, filter toggles, panels, and copy feedback',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -841,6 +1048,40 @@ const plugin = {
             (document.head || document.documentElement).appendChild(style);
         }
 
+        function ensureSegmentStyles(scopeSelector, appendRoot) {
+            ensureStyles();
+            const styleId = scopeSelector
+                ? fleetUiSegmentScopeStyleId(scopeSelector)
+                : FLEET_UI_SEGMENT_STYLE_ID;
+            const root = appendRoot || document;
+            if (root.getElementById && root.getElementById(styleId)) return;
+            if (root.querySelector && root.querySelector('#' + styleId)) return;
+            if (document.getElementById(styleId)) return;
+            const style = document.createElement('style');
+            style.id = styleId;
+            const prefix = scopeSelector ? scopeSelector + ' ' : '';
+            style.textContent = fleetUiSegmentCssLines(prefix).join('\n');
+            const target = appendRoot || document.head || document.documentElement;
+            target.appendChild(style);
+        }
+
+        function ensureFilterToggleStyles(scopeSelector, appendRoot) {
+            ensureStyles();
+            const styleId = scopeSelector
+                ? fleetUiFilterToggleScopeStyleId(scopeSelector)
+                : FLEET_UI_FILTER_TOGGLE_STYLE_ID;
+            const root = appendRoot || document;
+            if (root.getElementById && root.getElementById(styleId)) return;
+            if (root.querySelector && root.querySelector('#' + styleId)) return;
+            if (document.getElementById(styleId)) return;
+            const style = document.createElement('style');
+            style.id = styleId;
+            const prefix = scopeSelector ? scopeSelector + ' ' : '';
+            style.textContent = fleetUiFilterToggleCssLines(prefix).join('\n');
+            const target = appendRoot || document.head || document.documentElement;
+            target.appendChild(style);
+        }
+
         ensureStyles();
         fleetUiEnsureThemeObserver();
 
@@ -854,14 +1095,28 @@ const plugin = {
             SPIN_DURATION,
             TAB_PULSE_MS,
             PANEL_CLASSES,
+            SEGMENT_CLASSES,
+            FILTER_TOGGLE_CLASSES,
 
             ensureStyles,
             ensureButtonStyles,
             ensurePanelStyles,
             ensureUserStoryMarkdownStyles,
+            ensureSegmentStyles,
+            ensureFilterToggleStyles,
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,
+
+            segmentBtnClass: fleetUiSegmentBtnClass,
+            segmentBtnHtml: fleetUiSegmentBtnHtml,
+            segmentGroupHtml: fleetUiSegmentGroupHtml,
+            syncSegmentGroup: fleetUiSyncSegmentGroup,
+            bindSegmentGroup: fleetUiBindSegmentGroup,
+
+            filterToggleClass: fleetUiFilterToggleClass,
+            filterToggleHtml: fleetUiFilterToggleHtml,
+            applyFilterToggle: fleetUiApplyFilterToggle,
 
             isFleetDark: fleetUiIsFleetDark,
             getFleetTheme: fleetUiGetFleetTheme,

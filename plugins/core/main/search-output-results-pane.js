@@ -4003,17 +4003,6 @@ const searchOutputResultsPaneMethods = {
         return this._inputStyle() + ' width: auto; max-width: 280px; padding: 4px 8px; font-size: 12px;';
     },
 
-    _segmentBtnStyle(active, variant) {
-        const base = 'flex: 1; padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px;';
-        if (variant === 'depth') {
-            if (active) {
-                return base + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
-            }
-            return base + ' ' + DASH_TOGGLE_INACTIVE;
-        }
-        return base;
-    },
-
     _textareaFocusSnapshot(wrap, selector) {
         const ta = wrap && wrap.querySelector(selector);
         const hadFocus = ta && this._pageWindow().document.activeElement === ta;
@@ -4215,8 +4204,21 @@ const searchOutputResultsPaneMethods = {
     },
 
     _rollingSegBtn(attrName, value, label, active, divider) {
-        const divCls = divider ? ' dv-seg-btn--divider' : '';
-        return `<button type="button" ${attrName}="${value}" class="dv-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${dashEscHtml(label)}</button>`;
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        if (ui && typeof ui.segmentBtnHtml === 'function') {
+            return ui.segmentBtnHtml({
+                valueAttr: attrName,
+                value,
+                label,
+                active,
+                divider
+            });
+        }
+        const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
+        return `<button type="button" ${attrName}="${value}" class="fleet-ui-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${dashEscHtml(label)}</button>`;
     },
 
     _rollingSimilarityLabelHtml(leftText, rightText, rollingUi) {
@@ -4248,11 +4250,11 @@ const searchOutputResultsPaneMethods = {
         const showHighlights = rollingUi.showHighlights;
         return `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto;">
             ${this._labelSpan('Diff Viewer')}
-            <div class="dv-seg-group" role="group" aria-label="Diff highlights">
+            <div class="fleet-ui-seg-group" role="group" aria-label="Diff highlights">
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'on', 'On', showHighlights, true)}
                 ${this._rollingSegBtn('data-wf-dash-rolling-highlights', 'off', 'Off', !showHighlights, false)}
             </div>
-            <div class="dv-seg-group" role="group" aria-label="Diff modality">
+            <div class="fleet-ui-seg-group" role="group" aria-label="Diff modality">
                 ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'differences', 'Differences', modality === 'differences', true)}
                 ${this._rollingSegBtn('data-wf-dash-rolling-modality', 'similarities', 'Similarities', modality === 'similarities', false)}
             </div>
@@ -6829,7 +6831,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.9',
+    _version: '6.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

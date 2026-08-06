@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.7',
+    _version: '11.8',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -151,45 +151,6 @@ const plugin = {
                 border: 2px solid rgba(220, 38, 38, 0.9);
                 animation: wf-settings-update-flash 1.2s ease-in-out infinite;
             }
-            .wf-theme-mode-group {
-                display: flex;
-                gap: 0;
-                border: 1px solid #e5e5e5;
-                border-radius: 8px;
-                overflow: hidden;
-                background: #ffffff;
-            }
-            .wf-theme-mode-seg {
-                flex: 1;
-                margin: 0;
-                padding: 8px 10px;
-                font-size: 12px;
-                font-weight: 600;
-                border: none;
-                border-right: 1px solid #e5e5e5;
-                background: transparent;
-                color: #666666;
-                cursor: pointer;
-            }
-            .wf-theme-mode-seg:last-child {
-                border-right: none;
-            }
-            .wf-theme-mode-seg.is-active {
-                background: #fafafa;
-                color: #333333;
-            }
-            html[data-fleet-ux-theme="dark"] .wf-theme-mode-group {
-                border-color: #3f3f46;
-                background: #18181b;
-            }
-            html[data-fleet-ux-theme="dark"] .wf-theme-mode-seg {
-                border-right-color: #3f3f46;
-                color: #a1a1aa;
-            }
-            html[data-fleet-ux-theme="dark"] .wf-theme-mode-seg.is-active {
-                background: #27272a;
-                color: #e4e4e7;
-            }
             #wf-update-notification-banner {
                 margin-bottom: 20px;
                 padding: 14px;
@@ -325,19 +286,28 @@ const plugin = {
     _createPreferredModeHTML() {
         const mode = this._getPreferredThemeMode();
         const c = this._settingsThemeColors();
-        const seg = (id, label, value) => {
-            const active = mode === value;
-            return `<button type="button" class="wf-theme-mode-seg${active ? ' is-active' : ''}" data-theme-mode="${value}" id="${id}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
-        };
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-settings-modal');
+        }
+        const groupHtml = ui && typeof ui.segmentGroupHtml === 'function'
+            ? ui.segmentGroupHtml({
+                value: mode,
+                valueAttr: 'data-theme-mode',
+                fill: true,
+                ariaLabel: 'Preferred mode',
+                options: [
+                    { value: 'match', label: 'Match site', id: 'wf-theme-mode-match' },
+                    { value: 'light', label: 'Light', id: 'wf-theme-mode-light' },
+                    { value: 'dark', label: 'Dark', id: 'wf-theme-mode-dark' }
+                ]
+            })
+            : '';
         return `
             <div style="margin-bottom: 20px;">
                 <div style="padding: 12px 14px; border: 1px solid ${c.border}; border-radius: 8px; background: ${c.card};">
                     <div style="font-size: 14px; font-weight: 600; color: ${c.fg}; margin-bottom: 10px;">Preferred mode</div>
-                    <div class="wf-theme-mode-group" role="group" aria-label="Preferred mode">
-                        ${seg('wf-theme-mode-match', 'Match site', 'match')}
-                        ${seg('wf-theme-mode-light', 'Light', 'light')}
-                        ${seg('wf-theme-mode-dark', 'Dark', 'dark')}
-                    </div>
+                    ${groupHtml}
                 </div>
             </div>
         `;
@@ -1233,28 +1203,30 @@ const plugin = {
             });
         }
 
-        const themeModeGroup = Context.dom.query('.wf-theme-mode-group', {
+        const themeModeGroup = Context.dom.query('.fleet-ui-seg-group[aria-label="Preferred mode"]', {
             root: modal,
             context: `${this.id}.themeModeGroup`
         });
         if (themeModeGroup) {
-            themeModeGroup.querySelectorAll('[data-theme-mode]').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const next = btn.getAttribute('data-theme-mode') || 'match';
-                    const prev = this._getPreferredThemeMode();
-                    if (next === prev) return;
-                    this._setPreferredThemeMode(next);
-                    Logger.log(`Preferred mode → ${next}`);
-                    // Rebuild open modal so chrome picks up the new effective theme immediately.
-                    this._captureOpsState(modal);
-                    const wasOpen = this._modalOpen;
-                    modal.remove();
-                    this._modalOpen = false;
-                    if (wasOpen) {
-                        this._openSettingsModal();
+            const ui = Context.uiLib;
+            if (ui && typeof ui.bindSegmentGroup === 'function') {
+                ui.bindSegmentGroup(themeModeGroup, {
+                    valueAttr: 'data-theme-mode',
+                    onChange: (next) => {
+                        const prev = this._getPreferredThemeMode();
+                        if (next === prev) return;
+                        this._setPreferredThemeMode(next);
+                        Logger.log(`Preferred mode → ${next}`);
+                        this._captureOpsState(modal);
+                        const wasOpen = this._modalOpen;
+                        modal.remove();
+                        this._modalOpen = false;
+                        if (wasOpen) {
+                            this._openSettingsModal();
+                        }
                     }
                 });
-            });
+            }
         }
 
         // All On / All Off buttons (regular plugins only)

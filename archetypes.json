@@ -1,7 +1,7 @@
 {
   "version": "13.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.266",
+  "archetypesVersion": "14.267",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.3",
-      "hash": "sha256-af8add23cac8c0aa4f500c894e58c62b9cca733ad3322bd4bf557827cbb6fbf6",
+      "version": "3.4",
+      "hash": "sha256-2fb8a668e1e00d903bb7618ebcea295ebb220dea2459289e71af287743c87ecf",
       "log": false
     },
     {
@@ -34,8 +34,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "11.7",
-      "hash": "sha256-b68cd0e74cd3c9bdbde72fcb3d4fb694429bfaa53330bf6cefc07d9fc2168fa0",
+      "version": "11.8",
+      "hash": "sha256-622e45237b57a02222a9e2a77ac0adee98a337f8af7c48b70a9891fa3beddfbb",
       "log": false
     },
     {
@@ -218,14 +218,14 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "5.8",
-      "hash": "sha256-305b81e2a7b7b27b593f732a905dc67f2296ee0c3ff52bdbe3589df0a9dd5bcc",
+      "version": "5.9",
+      "hash": "sha256-7f41fd2063302e0ff52d4f16938b85a5f2862731a4e3b91e144f0d98461a2fb6",
       "log": false
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "6.9",
-      "hash": "sha256-9915408d446231b64cf4e602595c9f7721822c9a5cdc35feb04be3d1b31d9170",
+      "version": "6.10",
+      "hash": "sha256-5a0975e1cdc01c24a31b3df56f93b5416d10e0796935753c3cf42d558906d5d2",
       "log": false
     },
     {
@@ -242,8 +242,8 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "12.19",
-      "hash": "sha256-d5f951cee9b4ead9b0248048a8efa5c34eecb56362baf4a9d987c8db6dbef4dc",
+      "version": "12.20",
+      "hash": "sha256-0e8a6ba281b9ff4abb7e9ab65def37d1dd939ec962e99f5d3fb57eaa7cc99068",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "4.3",
-      "hash": "sha256-c0fa161c0e64dc0eea8155582e594a54b266944c76b2f09b3481303f6306250a",
+      "version": "4.4",
+      "hash": "sha256-a4742e491632e6f34d70508f63d5c31607e387e15983f5a76818a988011c3f84",
       "log": false
     },
     {

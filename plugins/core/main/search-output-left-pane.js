@@ -328,6 +328,13 @@ function dashFirstEmbed(embed) {
 
 const searchOutputLeftPaneMethods = {
     _leftPanelHtml() {
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        if (ui && typeof ui.ensureFilterToggleStyles === 'function') {
+            ui.ensureFilterToggleStyles('#wf-dash-modal');
+        }
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
         const hint = this._hintStyle();
@@ -358,11 +365,11 @@ const searchOutputLeftPaneMethods = {
                                 <div id="wf-dash-search-fields" style="display: flex; flex-direction: column; gap: 14px;">
                                     <div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                            <button type="button" id="wf-dash-toggle-tasks" aria-pressed="true" style="${this._btnToggleStyle(true, 'task_creation')}">Task Creation</button>
-                                            <button type="button" id="wf-dash-toggle-qa" aria-pressed="true" style="${this._btnToggleStyle(true, 'qa')}">QA</button>
-                                            <button type="button" id="wf-dash-toggle-disputes" aria-pressed="false" style="${this._btnToggleStyle(false, 'dispute')}">Disputes</button>
-                                            <button type="button" id="wf-dash-toggle-senior-review" aria-pressed="false" style="${this._btnToggleStyle(false, 'senior_review')}">Sr Review</button>
-                                            <button type="button" id="wf-dash-toggle-sessions" aria-pressed="false" style="${this._btnToggleStyle(false, 'sessions')}">Sessions</button>
+                                            ${this._filterToggleHtml('wf-dash-toggle-tasks', 'Task Creation', true, 'task_creation')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-qa', 'QA', true, 'qa')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-disputes', 'Disputes', false, 'dispute')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-senior-review', 'Sr Review', false, 'senior_review')}
+                                            ${this._filterToggleHtml('wf-dash-toggle-sessions', 'Sessions', false, 'sessions')}
                                         </div>
                                     </div>
                                     <div>
@@ -586,10 +593,6 @@ const searchOutputLeftPaneMethods = {
         return filtered.length > 0 ? filtered : catalog.projects;
     },
 
-    _btnDepthSegmentStyle(active) {
-        return this._segmentBtnStyle(active, 'depth');
-    },
-
     _readResultsModePref() {
         try {
             const v = Storage.getData(DASH_RESULTS_MODE_STORAGE_KEY, null);
@@ -615,12 +618,26 @@ const searchOutputLeftPaneMethods = {
 
     _resultsModeToggleHtml(hintKey) {
         const label = this._labelStyle();
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        const mode = (this._state && this._state.resultsMode) || 'clear';
+        const groupHtml = ui && typeof ui.segmentGroupHtml === 'function'
+            ? ui.segmentGroupHtml({
+                value: mode === 'add' ? 'add' : 'clear',
+                valueAttr: 'data-wf-dash-results-mode',
+                fill: true,
+                ariaLabel: 'Results mode',
+                options: [
+                    { value: 'clear', label: 'Clear' },
+                    { value: 'add', label: 'Add' }
+                ]
+            })
+            : '';
         return `<div style="margin-top: 4px; margin-bottom: 10px;">
             <div style="${label} margin-bottom: 6px; font-weight: 600;">Results mode</div>
-            <div style="display: flex; width: 100%; gap: 8px;">
-                <button type="button" data-wf-dash-results-mode="clear" aria-pressed="true" style="${this._btnDepthSegmentStyle(true)}">Clear</button>
-                <button type="button" data-wf-dash-results-mode="add" aria-pressed="false" style="${this._btnDepthSegmentStyle(false)}">Add</button>
-            </div>
+            ${groupHtml}
             <div data-wf-dash-results-mode-hint="${dashEscHtml(hintKey)}" style="margin-top: 8px;"></div>
         </div>`;
     },
@@ -641,11 +658,17 @@ const searchOutputLeftPaneMethods = {
         this._state.resultsMode = mode === 'add' ? 'add' : 'clear';
         const modal = this._modal;
         if (!modal) return;
-        modal.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
-            const btnMode = btn.getAttribute('data-wf-dash-results-mode');
-            const active = btnMode === this._state.resultsMode;
-            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-            btn.style.cssText = this._btnDepthSegmentStyle(active);
+        const ui = Context.uiLib;
+        modal.querySelectorAll('.fleet-ui-seg-group[aria-label="Results mode"]').forEach((group) => {
+            if (ui && typeof ui.syncSegmentGroup === 'function') {
+                ui.syncSegmentGroup(group, this._state.resultsMode, 'data-wf-dash-results-mode');
+            } else {
+                group.querySelectorAll('[data-wf-dash-results-mode]').forEach((btn) => {
+                    const btnMode = btn.getAttribute('data-wf-dash-results-mode');
+                    const active = btnMode === this._state.resultsMode;
+                    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
+            }
         });
         this._syncResultsModeHint();
     },
@@ -779,13 +802,34 @@ const searchOutputLeftPaneMethods = {
         Logger.log('search-output: @everyone author token added — bulk ratings mode');
     },
 
-    _btnToggleStyle(active, colorKind) {
-        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
-        if (active) {
-            const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
-            return base + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
+    _filterToggleHtml(id, label, pressed, colorKind) {
+        const ui = Context.uiLib;
+        const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
+        const activeCss = cfg ? cfg.toggleActive : '';
+        if (ui && typeof ui.filterToggleHtml === 'function') {
+            return ui.filterToggleHtml({ id, label, pressed, activeCss });
         }
-        return base + ' ' + DASH_TOGGLE_INACTIVE;
+        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
+        const style = pressed
+            ? base + ' ' + (activeCss || DASH_TOGGLE_INACTIVE)
+            : base + ' ' + DASH_TOGGLE_INACTIVE;
+        return `<button type="button" id="${id}" aria-pressed="${pressed ? 'true' : 'false'}" style="${style}">${label}</button>`;
+    },
+
+    _applyFilterToggleBtn(btn, pressed, colorKind) {
+        if (!btn) return;
+        const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
+        const activeCss = cfg ? cfg.toggleActive : '';
+        const ui = Context.uiLib;
+        if (ui && typeof ui.applyFilterToggle === 'function') {
+            ui.applyFilterToggle(btn, pressed, activeCss);
+            return;
+        }
+        btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+        const base = 'padding: 7px 14px; font-size: 12px; font-weight: 600; border-radius: 6px; cursor: pointer;';
+        btn.style.cssText = pressed
+            ? base + ' ' + (activeCss || DASH_TOGGLE_INACTIVE)
+            : base + ' ' + DASH_TOGGLE_INACTIVE;
     },
 
     _leftTabStyle(active) {
@@ -888,26 +932,11 @@ const searchOutputLeftPaneMethods = {
         const disputesBtn = this._q('#wf-dash-toggle-disputes');
         const seniorReviewBtn = this._q('#wf-dash-toggle-senior-review');
         const sessionsBtn = this._q('#wf-dash-toggle-sessions');
-        if (tasksBtn) {
-            tasksBtn.setAttribute('aria-pressed', this._state.includeTasks ? 'true' : 'false');
-            tasksBtn.style.cssText = this._btnToggleStyle(this._state.includeTasks, 'task_creation');
-        }
-        if (qaBtn) {
-            qaBtn.setAttribute('aria-pressed', this._state.includeQa ? 'true' : 'false');
-            qaBtn.style.cssText = this._btnToggleStyle(this._state.includeQa, 'qa');
-        }
-        if (disputesBtn) {
-            disputesBtn.setAttribute('aria-pressed', this._state.includeDisputes ? 'true' : 'false');
-            disputesBtn.style.cssText = this._btnToggleStyle(this._state.includeDisputes, 'dispute');
-        }
-        if (seniorReviewBtn) {
-            seniorReviewBtn.setAttribute('aria-pressed', this._state.includeSeniorReview ? 'true' : 'false');
-            seniorReviewBtn.style.cssText = this._btnToggleStyle(this._state.includeSeniorReview, 'senior_review');
-        }
-        if (sessionsBtn) {
-            sessionsBtn.setAttribute('aria-pressed', this._state.includeSessions ? 'true' : 'false');
-            sessionsBtn.style.cssText = this._btnToggleStyle(this._state.includeSessions, 'sessions');
-        }
+        this._applyFilterToggleBtn(tasksBtn, this._state.includeTasks, 'task_creation');
+        this._applyFilterToggleBtn(qaBtn, this._state.includeQa, 'qa');
+        this._applyFilterToggleBtn(disputesBtn, this._state.includeDisputes, 'dispute');
+        this._applyFilterToggleBtn(seniorReviewBtn, this._state.includeSeniorReview, 'senior_review');
+        this._applyFilterToggleBtn(sessionsBtn, this._state.includeSessions, 'sessions');
     },
 
     _readSearchLimitFromUi() {
@@ -2550,7 +2579,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.8',
+    _version: '5.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
