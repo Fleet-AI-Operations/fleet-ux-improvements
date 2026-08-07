@@ -3223,7 +3223,7 @@ const searchOutputResultsPaneMethods = {
         return { reviews, message: null, reason: null };
     },
 
-    async _getVerifierFromCard(itemId) {
+    async _getVerifierFromCard(itemId, opts) {
         const id = String(itemId || '').trim();
         if (!id) {
             this._logDashApiSkip('get-verifier', 'missing item id');
@@ -3246,11 +3246,29 @@ const searchOutputResultsPaneMethods = {
             this._logDashApiSkip('get-verifier', 'ops module missing');
             return;
         }
-        this._logDashApiClick('get-verifier', taskKey || taskId.slice(0, 8) + '…');
+        const verifierVersionId = opts && opts.verifierVersionId
+            ? String(opts.verifierVersionId).trim()
+            : '';
+        this._logDashApiClick(
+            'get-verifier',
+            (taskKey || taskId.slice(0, 8) + '…') +
+                (verifierVersionId ? ' pin=' + verifierVersionId.slice(0, 8) + '…' : '')
+        );
         this._setActiveTab('verifier-fetcher');
         const input = this._q('#wf-ops-verifier-input');
         if (input) input.value = inputValue;
-        await opsTab.handleVerifierFetch(this._modal);
+        const overrides = verifierVersionId && DASH_UUID_RE.test(verifierVersionId)
+            ? { verifierVersionId }
+            : undefined;
+        await opsTab.handleVerifierFetch(this._modal, overrides);
+    },
+
+    _versionVerifierButtonHtml(itemId, version) {
+        const versionId = version && version.verifierVersionId
+            ? String(version.verifierVersionId).trim()
+            : '';
+        if (!versionId || !DASH_UUID_RE.test(versionId)) return '';
+        return `<button type="button" data-wf-dash-version-verifier="1" data-item-id="${dashEscHtml(itemId)}" data-verifier-version-id="${dashEscHtml(versionId)}" title="Open verifier for this version" aria-label="Verifier" class="${this._dashBtnClass('basic', 'compact')}">Verifier</button>`;
     },
 
     async _toggleUserStory(itemId) {
@@ -6546,8 +6564,9 @@ const searchOutputResultsPaneMethods = {
             'Submitted',
             this._plainTimestampHtml(version.createdAt, null, { muted: inActivePair })
         )}</span>`;
+        const verifierBtnHtml = this._versionVerifierButtonHtml(itemId, version);
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
-        const leftHeader = `${promptLabel}${this._copyIconHtml(this._dashQuotedText(version.prompt))}${submittedHtml}`;
+        const leftHeader = `${promptLabel}${this._copyIconHtml(this._dashQuotedText(version.prompt))}${submittedHtml}${verifierBtnHtml}`;
         let rightHeader = '';
         if (inActivePair) {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
@@ -6845,7 +6864,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.13',
+    _version: '7.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

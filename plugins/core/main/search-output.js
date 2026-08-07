@@ -5685,6 +5685,17 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) void dash._getVerifierFromCard(itemId);
                 return;
             }
+            const versionVerifierBtn = e.target.closest('[data-wf-dash-version-verifier]');
+            if (versionVerifierBtn && modal.contains(versionVerifierBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = versionVerifierBtn.getAttribute('data-item-id');
+                const verifierVersionId = versionVerifierBtn.getAttribute('data-verifier-version-id');
+                if (itemId && verifierVersionId) {
+                    void dash._getVerifierFromCard(itemId, { verifierVersionId });
+                }
+                return;
+            }
             const rehydrateBtn = e.target.closest('[data-wf-dash-rehydrate]');
             if (rehydrateBtn && modal.contains(rehydrateBtn)) {
                 e.stopPropagation();
@@ -5906,7 +5917,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.35',
+    _version: '9.36',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

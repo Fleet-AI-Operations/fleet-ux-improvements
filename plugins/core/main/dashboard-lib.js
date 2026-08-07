@@ -805,7 +805,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.4',
+    _version: '8.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -985,6 +985,8 @@ const plugin = {
         for (const v of sorted) {
             const prompt = String(v.prompt ?? '');
             const notes = String(v.resubmission_notes ?? '').trim();
+            const verifierId = v.verifier_id ? String(v.verifier_id) : '';
+            const verifierVersionId = v.verifier_version_id ? String(v.verifier_version_id) : '';
             if (prompt !== prevPrompt) {
                 displayNo += 1;
                 result.push({
@@ -994,15 +996,29 @@ const plugin = {
                     prompt,
                     envKey: String(v.env_key ?? ''),
                     createdAt: String(v.created_at ?? ''),
-                    resubmissionNotes: notes
+                    resubmissionNotes: notes,
+                    verifierId,
+                    verifierVersionId
                 });
                 prevPrompt = prompt;
-            } else if (notes && result.length) {
+            } else if (result.length) {
                 const last = result[result.length - 1];
-                if (!last.resubmissionNotes) {
-                    last.resubmissionNotes = notes;
-                } else if (last.resubmissionNotes !== notes) {
-                    last.resubmissionNotes += '\n\n' + notes;
+                if (notes) {
+                    if (!last.resubmissionNotes) {
+                        last.resubmissionNotes = notes;
+                    } else if (last.resubmissionNotes !== notes) {
+                        last.resubmissionNotes += '\n\n' + notes;
+                    }
+                }
+                // Prefer latest non-null verifier pin when same-prompt rows collapse
+                if (verifierVersionId) {
+                    last.verifierVersionId = verifierVersionId;
+                    if (verifierId) last.verifierId = verifierId;
+                    last.id = String(v.id ?? last.id);
+                    last.versionNo = v.version_no != null ? v.version_no : last.versionNo;
+                    last.createdAt = String(v.created_at ?? last.createdAt);
+                } else if (verifierId && !last.verifierId) {
+                    last.verifierId = verifierId;
                 }
             }
         }
