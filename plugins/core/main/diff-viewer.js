@@ -41,6 +41,7 @@ let _dvPairCache = new Map();
 let _dvPrefetchToken = 0;
 let _dvHoverDebounceTimer = null;
 let _dvHoverPendingIdx = null;
+let _dvVerifierGranForced = false;
 
 // ── Module state ──
 
@@ -162,7 +163,7 @@ function _dvInvalidatePairCache() {
 
 function _dvCacheSettingsKey() {
     return [
-        _dvState.granularity,
+        _dvEffectiveGranularity(),
         _dvState.punctuationMode,
         _dvState.highlightModality,
         _dvState.linkSplits ? '1' : '0',
@@ -189,7 +190,7 @@ function _dvPairCacheKey(leftSlot, rightSlot) {
 
 function _dvDiffOpts(includeSimilarity) {
     return {
-        granularity: _dvState.granularity,
+        granularity: _dvEffectiveGranularity(),
         showHighlights: _dvState.showHighlights,
         highlightModality: _dvState.highlightModality,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
@@ -209,7 +210,7 @@ function _dvGetOrComputeBundle(leftSlot, rightSlot, includeSimilarity) {
             compareHtml: _dvPlainPromptHtml(rightText),
             percent: null,
             noDifference: null,
-            effectiveGranularity: _dvState.granularity,
+            effectiveGranularity: _dvEffectiveGranularity(),
             diff: null
         };
     }
@@ -219,7 +220,7 @@ function _dvGetOrComputeBundle(leftSlot, rightSlot, includeSimilarity) {
         if (includeSimilarity && (typeof bundle.percent !== 'number' || bundle.noDifference == null)
             && typeof eng.similarityPercent === 'function') {
             const sim = eng.similarityPercent(leftText, rightText, {
-                granularity: _dvState.granularity,
+                granularity: _dvEffectiveGranularity(),
                 punctuationMode: _dvState.punctuationMode,
                 effectiveGranularity: bundle.effectiveGranularity,
                 lcsLength: bundle.lcsLength,
@@ -303,9 +304,32 @@ function _dvEffectiveHighlightMinLength() {
 }
 
 function _dvHighlightLengthUnitLabel() {
-    if (_dvState.granularity === 'char') return 'chars';
-    if (_dvState.granularity === 'line') return 'lines';
+    if (_dvEffectiveGranularity() === 'char') return 'chars';
+    if (_dvEffectiveGranularity() === 'line') return 'lines';
     return 'words';
+}
+
+function _dvHasVerifierSlots() {
+    return _dvState.mode === 'tasks' && _dvState.slots.some((s) => (
+        _dvNormalizeContentKind(s.contentKind) === 'verifier'
+    ));
+}
+
+/** User preference stays in `_dvState.granularity`; verifiers always diff as line. */
+function _dvEffectiveGranularity() {
+    if (_dvHasVerifierSlots()) return 'line';
+    return _dvState.granularity;
+}
+
+function _dvSyncVerifierGranularityLock(modal) {
+    const forced = _dvHasVerifierSlots();
+    if (forced !== _dvVerifierGranForced) {
+        _dvInvalidatePairCache();
+        _dvVerifierGranForced = forced;
+        if (forced) Logger.log('granularity locked to line (verifier slots)');
+        else Logger.log('granularity unlocked → ' + _dvState.granularity);
+    }
+    _dvSyncGranularityUi(modal);
 }
 
 function _dvSlotWidthPx() {
@@ -385,7 +409,7 @@ function _dvRefreshHighlightLengthRange(modal) {
     let globalMax = 0;
     const allLengths = [];
     const opts = {
-        granularity: _dvState.granularity,
+        granularity: _dvEffectiveGranularity(),
         highlightModality: _dvState.highlightModality,
         linkSplits: _dvState.linkSplits,
         punctuationMode: _dvState.punctuationMode
@@ -441,7 +465,7 @@ function _dvDiffPair(baseText, compareText, granularity) {
         return { baseHtml: _dvPlainPromptHtml(baseText), compareHtml: _dvPlainPromptHtml(compareText) };
     }
     return eng.diffPair(baseText, compareText, {
-        granularity,
+        granularity: granularity || _dvEffectiveGranularity(),
         showHighlights: _dvState.showHighlights,
         highlightModality: _dvState.highlightModality,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
@@ -1683,19 +1707,21 @@ function _dvApplyAllFinal(modal) {
 
 // ── Panel HTML (built once) ──
 
-function _dvSegBtn(attrName, value, label, active, divider) {
+function _dvSegBtn(attrName, value, label, active, divider, disabled) {
     const ui = Context.uiLib;
+    const extraAttrs = disabled ? 'disabled title="Line only while verifier slots are open"' : '';
     if (ui && typeof ui.segmentBtnHtml === 'function') {
         return ui.segmentBtnHtml({
             valueAttr: attrName,
             value,
             label,
             active,
-            divider
+            divider,
+            extraAttrs
         });
     }
     const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
-    return `<button type="button" ${attrName}="${value}" class="fleet-ui-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
+    return `<button type="button" ${attrName}="${value}" class="fleet-ui-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}"${disabled ? ' disabled title="Line only while verifier slots are open"' : ''}>${label}</button>`;
 }
 
 function _dvToggleCell(labelStyle, title, innerHtml) {
@@ -1708,7 +1734,8 @@ function _dvPanelHtml(dash) {
     const input = dash.inputStyle ? dash.inputStyle() : 'border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:6px 9px;font-size:13px;width:100%;box-sizing:border-box;background:var(--background,#fff);color:var(--foreground,#0f172a);';
     const btnClass = (variant, size) => (dash.dashBtnClass ? dash.dashBtnClass(variant, size) : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
 
-    const gran = _dvState.granularity;
+    const gran = _dvEffectiveGranularity();
+    const granLocked = _dvHasVerifierSlots();
     const lensWidth = _dvState.lensWidth;
     const punctMode = _dvState.punctuationMode;
     const compMode = _dvState.compMode;
@@ -1723,7 +1750,7 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Highlights', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}</div>`)}
             ${_dvToggleCell(label, 'Type', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
-            ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}${_dvSegBtn('data-dv-seg', 'line', 'Line', gran === 'line', false)}</div>`)}
+            ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true, granLocked)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false, granLocked)}${_dvSegBtn('data-dv-seg', 'line', 'Line', gran === 'line', false, false)}</div>`)}
             ${_dvToggleCell(label, 'Width', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-width', 'normal', 'Normal', lensWidth === 'normal', true)}${_dvSegBtn('data-dv-width', 'wide', 'Wide', lensWidth === 'wide', false)}</div>`)}
             ${_dvToggleCell(label, 'Punctuation', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
             <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
@@ -1927,7 +1954,7 @@ function _dvAboveLabelInnerHtml() {
     return eng.similarityLabelHtml({
         leftText: pair.leftText,
         rightText: pair.rightText,
-        granularity: _dvState.granularity,
+        granularity: _dvEffectiveGranularity(),
         highlightModality: _dvState.highlightModality,
         showHighlights: _dvState.showHighlights,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
@@ -2112,6 +2139,7 @@ function _dvQ(modal, id) {
 
 function _dvRenderAll(modal) {
     if (!modal) return;
+    _dvSyncVerifierGranularityLock(modal);
     _dvRenderSlotsArea(modal);
     _dvRenderStash(modal);
     _dvRenderDiffs(modal);
@@ -2318,6 +2346,7 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
 
 function _dvRenderDiffs(modal) {
     if (_dvState.mode !== 'tasks') return;
+    _dvSyncVerifierGranularityLock(modal);
     _dvRefreshHighlightLengthRange(modal);
     if (_dvState.slots.length < 2) {
         _dvRemoveRollingOverlay(modal);
@@ -2605,7 +2634,17 @@ function _dvSyncModeUi(modal) {
 }
 
 function _dvSyncGranularityUi(modal) {
-    _dvSyncSegPressed(modal, 'data-dv-seg', _dvState.granularity);
+    if (!modal) return;
+    const forced = _dvHasVerifierSlots();
+    const effective = _dvEffectiveGranularity();
+    _dvSyncSegPressed(modal, 'data-dv-seg', effective);
+    modal.querySelectorAll('[data-dv-seg]').forEach((btn) => {
+        const value = btn.getAttribute('data-dv-seg');
+        const lock = forced && value !== 'line';
+        btn.disabled = lock;
+        if (lock) btn.setAttribute('title', 'Line only while verifier slots are open');
+        else btn.removeAttribute('title');
+    });
 }
 
 function _dvSyncPunctuationUi(modal) {
@@ -2725,7 +2764,12 @@ function _dvAttachListeners(modal) {
         // ── Granularity toggle ──
         const segBtn = e.target.closest('[data-dv-seg]');
         if (segBtn && modal.contains(segBtn)) {
+            if (segBtn.disabled) return;
             const gran = segBtn.getAttribute('data-dv-seg');
+            if (_dvHasVerifierSlots() && gran !== 'line') {
+                _dvSyncGranularityUi(modal);
+                return;
+            }
             if (gran !== _dvState.granularity) {
                 _dvInvalidatePairCache();
                 _dvState.granularity = gran;
@@ -3053,6 +3097,10 @@ function _dvInjectStyles() {
         '  flex-wrap: wrap;',
         '  gap: 12px;',
         '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-universal-toggles [data-dv-seg]:disabled {',
+        '  opacity: 0.45;',
+        '  cursor: not-allowed;',
         '}',
         '#wf-dash-modal .dv-highlight-length-wrap {',
         '  flex-basis: 100%;',
@@ -3632,7 +3680,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.5',
+    _version: '5.6',
     phase: 'core',
     enabledByDefault: true,
 
