@@ -272,11 +272,12 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '10.0',
+    _version: '11.0',
     phase: 'core',
     enabledByDefault: true,
 
     _opsVerifierFetchState: null,
+    _opsVerifierPendingSelectPin: '',
     _opsVerifierSourceText: '',
     _opsVerifierContentSearch: { query: '', index: 0, matchStarts: [] },
     _opsTeamSearchActive: null,
@@ -364,8 +365,11 @@ const plugin = {
             restoreTeamTabState: (modal) => this._restoreOpsTeamTabState(modal),
             handleVerifierFetch: (modal, overrides) => this._handleOpsVerifierFetch(modal, overrides),
             handleVerifierVersionChange: (modal) => this._handleOpsVerifierVersionChange(modal),
+            hydrateVerifierTaskVersionOptions: (modal, opts) => this._hydrateOpsVerifierTaskVersionOptions(modal, opts),
             setVerifierStatus: (modal, msg, isError) => this._setOpsVerifierStatus(modal, msg, isError),
             clearVerifierVersionPicker: (modal) => this._clearOpsVerifierVersionPicker(modal),
+            addVerifierToDiff: (modal) => this._addOpsVerifierToDiff(modal),
+            queueVerifierToChat: (modal) => this._queueOpsVerifierToChat(modal),
             applyVerifierContentSearch: (modal, query) => this._applyVerifierContentSearch(modal, query),
             clearVerifierContentSearch: (modal) => this._clearVerifierContentSearch(modal),
             stepVerifierContentMatch: (modal, dir) => this._stepVerifierContentMatch(modal, dir),
@@ -4296,48 +4300,127 @@ const plugin = {
         }
     },
 
-    _formatOpsVerifierVersionLabel(entry, isLatest) {
-        const versionText = entry.version != null ? 'v' + entry.version : 'unknown version';
-        const dateText = entry.createdAt ? entry.createdAt.slice(0, 10) : '';
-        const latestText = isLatest ? ' · latest' : '';
-        return dateText ? versionText + ' · ' + dateText + latestText : versionText + latestText;
+    _formatOpsTaskVerifierVersionLabel(entry) {
+        const n = entry && entry.displayVersionNo != null ? entry.displayVersionNo : null;
+        if (n == null) return 'Current';
+        return entry.isCurrent ? ('v' + n + ' — current') : ('v' + n);
     },
 
-    async _listOpsVerifierVersions(resolved) {
-        if (!resolved || !resolved.verifierId) return [];
+    async _listOpsTaskVerifierVersionOptions(parsed) {
+        const out = {
+            taskId: '',
+            taskKey: '',
+            currentVersionId: '',
+            options: [{ value: '', label: 'Current', displayVersionNo: null, isCurrent: true }]
+        };
+        if (!parsed || (!parsed.taskKey && !parsed.taskId)) return out;
+
+        let taskRow = null;
         try {
-            const rows = await this._opsPostgrestQuery('verifier_versions.select_list', {
-                verifier_id: 'eq.' + resolved.verifierId,
-                order: 'version.desc'
-            });
-            const list = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-            return list
-                .filter(row => row && row.id)
-                .map(row => ({
-                    version: row.version,
-                    versionId: row.id,
-                    createdAt: row.created_at || ''
-                }));
+            const params = { select: 'id,key,current_version_id,team_id', limit: 1 };
+            if (parsed.taskKey) params.key = 'eq.' + parsed.taskKey;
+            else params.id = 'eq.' + parsed.taskId;
+            const rows = await this._opsPostgrestQuery('tasks.select_verifier_lookup', params);
+            taskRow = Array.isArray(rows) ? rows[0] : rows;
         } catch (e) {
-            Logger.debug('list verifier versions failed', e);
-            return [];
+            Logger.debug('task version options lookup failed', e);
+            return out;
         }
+        if (!taskRow || !taskRow.id) return out;
+
+        out.taskId = taskRow.id || '';
+        out.taskKey = taskRow.key || parsed.taskKey || '';
+        out.currentVersionId = taskRow.current_version_id || '';
+
+        let rawVersions = [];
+        try {
+            const rows = await this._opsPostgrestQuery('task_versions.select_history', {
+                task_id: 'eq.' + taskRow.id,
+                order: 'version_no.asc',
+                limit: '100'
+            });
+            rawVersions = Array.isArray(rows) ? rows : (rows ? [rows] : []);
+        } catch (e) {
+            Logger.debug('task version history for options failed', e);
+            return out;
+        }
+
+        const lib = Context.dashboardLib;
+        const display = lib && typeof lib.computeDisplayVersions === 'function'
+            ? lib.computeDisplayVersions(rawVersions)
+            : [];
+        const currentId = String(out.currentVersionId || '');
+        display.forEach((entry) => {
+            const pin = entry && entry.verifierVersionId ? String(entry.verifierVersionId).trim() : '';
+            if (!pin || !OPS_UUID_RE.test(pin)) return;
+            const isCurrent = currentId && String(entry.id || '') === currentId;
+            out.options.push({
+                value: pin,
+                label: this._formatOpsTaskVerifierVersionLabel({
+                    displayVersionNo: entry.displayVersionNo,
+                    isCurrent
+                }),
+                displayVersionNo: entry.displayVersionNo,
+                isCurrent,
+                taskVersionId: entry.id || '',
+                verifierId: entry.verifierId || ''
+            });
+        });
+        return out;
     },
 
-    _pickOpsVerifierVersionId(versions, preferredVersionId, preferredNumericVersion) {
-        const list = Array.isArray(versions) ? versions : [];
-        const preferredId = String(preferredVersionId || '').trim();
-        if (preferredId && list.some((entry) => entry && entry.versionId === preferredId)) {
-            return preferredId;
+    _renderOpsTaskVerifierVersionSelect(modal, optionPayload, selectedValue) {
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierTaskVersionSet');
+        if (!select) return;
+        const options = optionPayload && Array.isArray(optionPayload.options)
+            ? optionPayload.options
+            : [{ value: '', label: 'Current', displayVersionNo: null, isCurrent: true }];
+        const prefer = selectedValue != null ? String(selectedValue) : '';
+        select.innerHTML = '';
+        options.forEach((entry) => {
+            const option = document.createElement('option');
+            option.value = String(entry.value || '');
+            option.textContent = entry.label || 'Current';
+            select.appendChild(option);
+        });
+        const values = [...select.options].map((o) => o.value);
+        if (prefer && values.indexOf(prefer) >= 0) {
+            select.value = prefer;
+        } else {
+            select.value = '';
         }
-        if (preferredId && OPS_UUID_RE.test(preferredId)) {
-            return preferredId;
+        select.style.display = options.length > 1 ? 'block' : 'none';
+        select.disabled = false;
+    },
+
+    async _hydrateOpsVerifierTaskVersionOptions(modal, opts) {
+        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputHydrate');
+        if (!input) return null;
+        const parsed = this._parseOpsVerifierInput(input.value);
+        if (!parsed.taskKey && !parsed.taskId) {
+            this._renderOpsTaskVerifierVersionSelect(modal, null, '');
+            return null;
         }
-        if (preferredNumericVersion != null) {
-            const match = list.find((entry) => entry && entry.version === preferredNumericVersion);
-            if (match && match.versionId) return match.versionId;
+        const preferPin = opts && opts.preferVerifierVersionId
+            ? String(opts.preferVerifierVersionId).trim()
+            : '';
+        const pendingPin = this._opsVerifierPendingSelectPin
+            ? String(this._opsVerifierPendingSelectPin).trim()
+            : '';
+        const selected = (preferPin && OPS_UUID_RE.test(preferPin))
+            ? preferPin
+            : (pendingPin && OPS_UUID_RE.test(pendingPin) ? pendingPin : '');
+        try {
+            const payload = await this._listOpsTaskVerifierVersionOptions(parsed);
+            this._renderOpsTaskVerifierVersionSelect(modal, payload, selected);
+            if (selected && this._opsVerifierPendingSelectPin === selected) {
+                this._opsVerifierPendingSelectPin = '';
+            }
+            return payload;
+        } catch (e) {
+            Logger.debug('hydrate task version options failed', e);
+            return null;
         }
-        return list[0] && list[0].versionId ? list[0].versionId : '';
     },
 
     async _fetchOpsVerifierCodeForVersion(resolved, versionId) {
@@ -4355,10 +4438,6 @@ const plugin = {
         } else if (resolved.verifierId) {
             params.verifier_id = 'eq.' + resolved.verifierId;
             params.order = 'version.desc';
-            if (resolved.verifierVersion != null) {
-                params.version = 'eq.' + resolved.verifierVersion;
-                delete params.order;
-            }
         } else {
             throw new Error('No verifier version id available for fetch.');
         }
@@ -4395,8 +4474,7 @@ const plugin = {
             verifierId: parsed.verifierId || '(none)',
             verifierKey: parsed.verifierKey || '(none)',
             teamId: parsed.teamId || '(none)',
-            verifierVersionId: parsed.verifierVersionId || '(none)',
-            verifierVersion: parsed.verifierVersion != null ? parsed.verifierVersion : '(none)'
+            verifierVersionId: parsed.verifierVersionId || '(none)'
         });
         const resolved = await this._resolveOpsVerifierId(parsed);
         Logger.debug('verifier resolved', {
@@ -4406,28 +4484,33 @@ const plugin = {
             verifierVersionId: resolved.verifierVersionId || '(none)'
         });
 
-        const versions = await this._listOpsVerifierVersions(resolved);
-        Logger.debug('verifier versions listed: ' + versions.length);
-
-        const defaultVersionId = this._pickOpsVerifierVersionId(
-            versions,
-            parsed.verifierVersionId || resolved.verifierVersionId,
-            parsed.verifierVersion != null ? parsed.verifierVersion : resolved.verifierVersion
-        );
-        if (!defaultVersionId) {
+        let versionId = String(parsed.verifierVersionId || resolved.verifierVersionId || '').trim();
+        if (!versionId || !OPS_UUID_RE.test(versionId)) {
+            if (parsed.taskKey || parsed.taskId || resolved.taskId || resolved.taskKey) {
+                const optionPayload = await this._listOpsTaskVerifierVersionOptions({
+                    taskKey: resolved.taskKey || parsed.taskKey,
+                    taskId: resolved.taskId || parsed.taskId
+                });
+                const pinned = (optionPayload.options || []).filter((o) => o && o.value);
+                const currentPinned = pinned.find((o) => o.isCurrent);
+                versionId = (currentPinned && currentPinned.value)
+                    || (pinned.length ? pinned[pinned.length - 1].value : '');
+            }
+        }
+        if (!versionId || !OPS_UUID_RE.test(versionId)) {
             throw new Error(
                 'No verifier version id for ' + (resolved.verifierId || resolved.verifierKey || 'this task') + '.'
             );
         }
         const result = await this._fetchOpsVerifierCodeForVersion(
-            { ...resolved, verifierVersionId: defaultVersionId },
-            defaultVersionId
+            { ...resolved, verifierVersionId: versionId },
+            versionId
         );
 
         return {
             ...result,
-            versions,
-            selectedVersion: result.versionId || defaultVersionId
+            selectedVersion: result.versionId || versionId,
+            displayVersionNo: parsed.displayVersionNo != null ? parsed.displayVersionNo : null
         };
     },
 
@@ -4641,6 +4724,14 @@ const plugin = {
         if (copyBtn) {
             copyBtn.style.display = hasOutput ? 'inline-block' : 'none';
         }
+        const addDiffBtn = this._opsQuery(modal, '#wf-ops-verifier-add-diff', 'verifierAddDiff');
+        const addChatBtn = this._opsQuery(modal, '#wf-ops-verifier-add-chat', 'verifierAddChat');
+        if (addDiffBtn) {
+            addDiffBtn.style.display = hasOutput ? 'inline-block' : 'none';
+        }
+        if (addChatBtn) {
+            addChatBtn.style.display = hasOutput ? 'inline-block' : 'none';
+        }
         if (clearBtn) {
             clearBtn.style.display = hasQuery ? 'inline-flex' : 'none';
         }
@@ -4793,59 +4884,93 @@ const plugin = {
     },
 
     _clearOpsVerifierVersionPicker(modal) {
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionClear');
-        if (select) {
-            select.innerHTML = '';
-            select.style.display = 'none';
-            select.disabled = false;
-        }
+        this._renderOpsTaskVerifierVersionSelect(modal, null, '');
         this._opsVerifierFetchState = null;
+        this._opsVerifierPendingSelectPin = '';
     },
 
-    _setOpsVerifierVersionPicker(modal, resolved, versions, selectedVersion) {
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionSet');
-        if (!select) return;
+    _syncOpsVerifierFetchState(modal, result, selectedVersion) {
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierFetchStateSync');
+        const pin = selectedVersion != null
+            ? String(selectedVersion)
+            : String((result && (result.selectedVersion || result.versionId || result.verifierVersionId)) || '');
+        if (select && pin && [...select.options].some((opt) => opt.value === pin)) {
+            select.value = pin;
+        } else if (select && !pin) {
+            select.value = '';
+        }
+        if (result && (result.verifierId || result.source || result.taskId || result.taskKey)) {
+            this._opsVerifierFetchState = {
+                resolved: result,
+                selectedVersion: (select && select.value != null) ? select.value : pin,
+                displayVersionNo: result.displayVersionNo != null ? result.displayVersionNo : null
+            };
+        } else {
+            this._opsVerifierFetchState = null;
+        }
+    },
 
-        select.innerHTML = '';
-        const list = Array.isArray(versions) ? versions : [];
-        if (list.length <= 1) {
-            select.style.display = 'none';
-            // Keep resolved metadata even with 0/1 versions so chat attach + restore
-            // still know task/verifier IDs while source is on screen.
-            if (resolved && (resolved.verifierId || resolved.source || resolved.taskId || resolved.taskKey)) {
-                const fallbackVersionId = list.length === 1
-                    ? list[0].versionId
-                    : (selectedVersion != null
-                        ? selectedVersion
-                        : (resolved.versionId || resolved.verifierVersionId || null));
-                this._opsVerifierFetchState = {
-                    resolved,
-                    versions: list,
-                    selectedVersion: fallbackVersionId
-                };
-            } else {
-                this._opsVerifierFetchState = null;
-            }
+    _readOpsVerifierVersionSelectPin(modal) {
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionRead');
+        if (!select || select.style.display === 'none') return '';
+        const value = String(select.value || '').trim();
+        return (value && OPS_UUID_RE.test(value)) ? value : '';
+    },
+
+    _addOpsVerifierToDiff(modal) {
+        const state = this._opsVerifierFetchState;
+        const resolved = state && state.resolved;
+        const taskId = resolved && resolved.taskId ? String(resolved.taskId) : '';
+        const key = resolved && resolved.taskKey ? String(resolved.taskKey) : '';
+        if (!taskId && !key) {
+            this._setOpsVerifierStatus(modal, 'Fetch a task verifier first.', true);
             return;
         }
-
-        list.forEach((entry, index) => {
-            const option = document.createElement('option');
-            option.value = String(entry.versionId || '');
-            option.textContent = this._formatOpsVerifierVersionLabel(entry, index === 0);
-            select.appendChild(option);
-        });
-
-        const selected = selectedVersion != null
-            ? String(selectedVersion)
-            : String(list[0].versionId || '');
-        if ([...select.options].some(opt => opt.value === selected)) {
-            select.value = selected;
+        const dv = Context.diffViewer;
+        if (!dv || typeof dv.addVerifier !== 'function') {
+            this._setOpsVerifierStatus(modal, 'Diff Viewer unavailable.', true);
+            Logger.warn('Add to Diff skipped — Context.diffViewer.addVerifier missing');
+            return;
         }
+        dv.addVerifier({ taskId, key });
+        Logger.log('verifier history added to Diff — ' + (key || taskId));
+        this._setOpsVerifierStatus(modal, 'Added verifier history to Diff.');
+    },
 
-        select.style.display = 'block';
-        this._opsVerifierFetchState = { resolved, versions: list, selectedVersion: select.value };
-        Logger.debug('verifier version picker shown (' + list.length + ' versions)');
+    _queueOpsVerifierToChat(modal) {
+        const source = String(this._opsVerifierSourceText || '').trim();
+        const state = this._opsVerifierFetchState;
+        const resolved = (state && state.resolved) || {};
+        if (!source) {
+            this._setOpsVerifierStatus(modal, 'Fetch verifier code first.', true);
+            return;
+        }
+        const ui = Context.verifierFetcherUi;
+        if (!ui || typeof ui.queueChatAttachment !== 'function') {
+            this._setOpsVerifierStatus(modal, 'Chat queue unavailable.', true);
+            return;
+        }
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierQueueSelect');
+        let displayVersionNo = state && state.displayVersionNo != null ? state.displayVersionNo : null;
+        if (displayVersionNo == null && select && select.selectedOptions && select.selectedOptions[0]) {
+            const label = String(select.selectedOptions[0].textContent || '');
+            const m = label.match(/^v(\d+)/);
+            if (m) displayVersionNo = Number(m[1]);
+        }
+        const count = ui.queueChatAttachment(modal, {
+            taskId: resolved.taskId || '',
+            taskKey: resolved.taskKey || '',
+            verifierId: resolved.verifierId || '',
+            verifierKey: resolved.verifierKey || '',
+            version: resolved.version != null ? resolved.version : null,
+            versionId: resolved.versionId || resolved.verifierVersionId
+                || (state && state.selectedVersion) || '',
+            displayVersionNo,
+            source
+        });
+        const label = count === 1 ? '1 verifier queued' : (count + ' verifiers queued');
+        this._setOpsVerifierStatus(modal, label);
+        Logger.log('verifier queued for chat — ' + label);
     },
 
     _captureOpsTabState(modal) {
@@ -5158,18 +5283,16 @@ const plugin = {
             verifierId: result.verifierId || '',
             verifierKey: result.verifierKey || '',
             version: result.version != null ? result.version : null,
+            versionId: result.versionId || result.verifierVersionId || '',
+            displayVersionNo: result.displayVersionNo != null ? result.displayVersionNo : null,
             source: String(result.source || ''),
         };
     },
 
     _notifyVerifierChatFetchContext(modal, ctx) {
-        const ui = Context.verifierFetcherUi;
-        if (!ui || typeof ui.setChatFetchContext !== 'function') return;
-        try {
-            ui.setChatFetchContext(modal, ctx || null);
-        } catch (err) {
-            Logger.warn('verifier chat fetch context notify failed', err);
-        }
+        // Legacy no-op: chat attach is explicit via Add to Chat queue.
+        void modal;
+        void ctx;
     },
 
     async _handleOpsVerifierFetch(modal, overrides) {
@@ -5183,6 +5306,7 @@ const plugin = {
             : '';
         if (overrideVersionId && OPS_UUID_RE.test(overrideVersionId)) {
             parsed.verifierVersionId = overrideVersionId;
+            this._opsVerifierPendingSelectPin = overrideVersionId;
         }
         if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) {
             if (dashLog && typeof dashLog.logApiSkip === 'function') {
@@ -5190,7 +5314,6 @@ const plugin = {
             }
             this._setOpsVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
             void this._setOpsVerifierOutput(modal, '');
-            this._notifyVerifierChatFetchContext(modal, null);
             this._captureOpsTabState(modal);
             return;
         }
@@ -5203,9 +5326,7 @@ const plugin = {
             fetchBtn.textContent = 'Fetching...';
         }
         this._setOpsVerifierStatus(modal, 'Fetching verifier code...');
-        this._clearOpsVerifierVersionPicker(modal);
         void this._setOpsVerifierOutput(modal, '');
-        this._notifyVerifierChatFetchContext(modal, null);
         Logger.debug('handle verifier fetch', {
             input: (input.value || '').slice(0, 120),
             parsed: {
@@ -5218,17 +5339,33 @@ const plugin = {
             }
         });
         try {
+            if (parsed.taskKey || parsed.taskId) {
+                await this._hydrateOpsVerifierTaskVersionOptions(modal, {
+                    preferVerifierVersionId: parsed.verifierVersionId || ''
+                });
+                if (!parsed.verifierVersionId) {
+                    const selectPin = this._readOpsVerifierVersionSelectPin(modal);
+                    if (selectPin) parsed.verifierVersionId = selectPin;
+                }
+            }
             const result = await this._fetchOpsVerifierCode(parsed);
-            this._setOpsVerifierVersionPicker(modal, result, result.versions || [], result.selectedVersion);
+            if (parsed.taskKey || parsed.taskId || result.taskKey || result.taskId) {
+                await this._hydrateOpsVerifierTaskVersionOptions(modal, {
+                    preferVerifierVersionId: result.versionId || result.verifierVersionId || parsed.verifierVersionId || ''
+                });
+            }
+            // Pin selection: card/select pin stays selected; Current stays empty.
+            const preferSelected = parsed.verifierVersionId
+                ? (result.versionId || result.verifierVersionId || parsed.verifierVersionId)
+                : '';
+            this._syncOpsVerifierFetchState(modal, result, preferSelected);
             await this._setOpsVerifierOutput(modal, result.source);
             this._setOpsVerifierStatus(modal, '');
-            this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext(result));
-            const versionText = result.version != null ? 'v' + result.version : 'latest version';
-            Logger.log('verifier fetched ' + result.verifierId + ' ' + versionText);
+            const versionText = result.version != null ? 'v' + result.version : 'current version';
+            Logger.log('verifier fetched ' + (result.verifierId || result.taskKey || result.taskId || 'unknown') + ' ' + versionText);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             this._setOpsVerifierStatus(modal, message, true);
-            this._notifyVerifierChatFetchContext(modal, null);
             Logger.warn('verifier fetch failed', e);
         } finally {
             if (fetchBtn) {
@@ -5241,33 +5378,40 @@ const plugin = {
 
     async _handleOpsVerifierVersionChange(modal) {
         const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionChange');
-        const state = this._opsVerifierFetchState;
-        if (!select || !state || !state.resolved) return;
+        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierVersionChangeInput');
+        if (!select || !input) return;
 
         const versionId = String(select.value || '').trim();
-        if (!versionId || !OPS_UUID_RE.test(versionId)) return;
+        const parsed = this._parseOpsVerifierInput(input.value);
+        if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) return;
 
-        state.selectedVersion = versionId;
+        if (versionId && OPS_UUID_RE.test(versionId)) {
+            parsed.verifierVersionId = versionId;
+            this._opsVerifierPendingSelectPin = versionId;
+        } else {
+            parsed.verifierVersionId = '';
+            this._opsVerifierPendingSelectPin = '';
+        }
+
         select.disabled = true;
-        const entry = (state.versions || []).find((v) => v && v.versionId === versionId);
-        const versionLabel = entry && entry.version != null ? 'v' + entry.version : versionId.slice(0, 8) + '…';
-        this._setOpsVerifierStatus(modal, 'Loading verifier ' + versionLabel + '...');
-        this._notifyVerifierChatFetchContext(modal, null);
+        const label = (select.selectedOptions && select.selectedOptions[0]
+            ? String(select.selectedOptions[0].textContent || '').trim()
+            : '') || (versionId ? versionId.slice(0, 8) + '…' : 'Current');
+        this._setOpsVerifierStatus(modal, 'Loading verifier ' + label + '...');
         try {
-            const result = await this._fetchOpsVerifierCodeForVersion(state.resolved, versionId);
+            const result = await this._fetchOpsVerifierCode(parsed);
+            this._syncOpsVerifierFetchState(modal, result, versionId && OPS_UUID_RE.test(versionId) ? versionId : '');
             await this._setOpsVerifierOutput(modal, result.source);
             this._setOpsVerifierStatus(modal, '');
-            this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext(result));
             Logger.log(
                 'verifier version selected ' +
-                    result.verifierId +
+                    (result.verifierId || result.taskKey || 'unknown') +
                     ' ' +
-                    (result.version != null ? 'v' + result.version : versionId.slice(0, 8) + '…')
+                    label
             );
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             this._setOpsVerifierStatus(modal, message, true);
-            this._notifyVerifierChatFetchContext(modal, null);
             Logger.warn('verifier version change failed', e);
         } finally {
             select.disabled = false;
@@ -5431,8 +5575,8 @@ const plugin = {
         this._opsTabState.verifierFetchState = fetchState
             ? {
                 resolved: fetchState.resolved,
-                versions: fetchState.versions,
-                selectedVersion: fetchState.selectedVersion
+                selectedVersion: fetchState.selectedVersion,
+                displayVersionNo: fetchState.displayVersionNo
             }
             : null;
     },
@@ -5461,26 +5605,23 @@ const plugin = {
             }
         }
         if (state.verifierFetchState && state.verifierFetchState.resolved) {
-            this._setOpsVerifierVersionPicker(
-                modal,
-                state.verifierFetchState.resolved,
-                state.verifierFetchState.versions || [],
-                state.verifierFetchState.selectedVersion
-            );
+            this._opsVerifierFetchState = {
+                resolved: state.verifierFetchState.resolved,
+                selectedVersion: state.verifierFetchState.selectedVersion || '',
+                displayVersionNo: state.verifierFetchState.displayVersionNo != null
+                    ? state.verifierFetchState.displayVersionNo
+                    : null
+            };
+            const prefer = state.verifierFetchState.selectedVersion || '';
+            if (prefer) this._opsVerifierPendingSelectPin = prefer;
+            void this._hydrateOpsVerifierTaskVersionOptions(modal, {
+                preferVerifierVersionId: prefer
+            });
         } else {
             this._opsVerifierFetchState = null;
-        }
-        if (state.verifierOutput) {
-            const resolved = (state.verifierFetchState && state.verifierFetchState.resolved) || {};
-            this._notifyVerifierChatFetchContext(modal, this._buildVerifierChatFetchContext({
-                ...resolved,
-                version: state.verifierFetchState
-                    ? state.verifierFetchState.selectedVersion
-                    : null,
-                source: state.verifierOutput,
-            }));
-        } else {
-            this._notifyVerifierChatFetchContext(modal, null);
+            if (state.verifierInput) {
+                void this._hydrateOpsVerifierTaskVersionOptions(modal, {});
+            }
         }
         if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.restoreScratchpadTabState === 'function') {
             Context.verifierFetcherUi.restoreScratchpadTabState(modal, state.verifierScratchpad || null);

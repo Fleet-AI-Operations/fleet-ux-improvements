@@ -315,7 +315,13 @@ function _dvSlotVersionCountHtml(slot) {
 }
 
 function _dvStashVersionCountHtml(entry) {
-    const slot = _dvState.slots.find((s) => s.taskId === entry.taskId && s.promptVersions && s.promptVersions.length > 0);
+    const kind = _dvNormalizeContentKind(entry.contentKind);
+    const slot = _dvState.slots.find((s) => (
+        s.taskId === entry.taskId
+        && _dvNormalizeContentKind(s.contentKind) === kind
+        && s.promptVersions
+        && s.promptVersions.length > 0
+    ));
     const count = slot ? slot.promptVersions.length : (entry.versionCount || 0);
     return _dvVersionCountHtml(count);
 }
@@ -469,18 +475,85 @@ async function _dvFetchTask(raw) {
         authorName: (task.author && task.author.name) || '',
         authorEmail: (task.author && task.author.email) || '',
         createdAt: _dvTaskInitialCreatedAt(row.created_at || '', promptVersions),
-        promptVersions
+        promptVersions,
+        contentKind: 'prompt'
+    };
+}
+
+async function _dvFetchVerifierSourceByVersionId(versionId, seed) {
+    const pin = String(versionId || '').trim();
+    if (!pin) return '';
+    const ops = Context.opsTab;
+    if (!ops || typeof ops.fetchVerifierCode !== 'function') {
+        throw new Error('Ops verifier fetch unavailable');
+    }
+    const result = await ops.fetchVerifierCode({
+        verifierVersionId: pin,
+        taskId: seed && seed.taskId ? seed.taskId : '',
+        taskKey: seed && seed.key ? seed.key : ''
+    });
+    return result && result.source ? String(result.source) : '';
+}
+
+async function _dvFetchVerifier(raw, seed) {
+    const base = await _dvFetchTask(raw);
+    const sourceVersions = [];
+    const promptVersions = base.promptVersions || [];
+    for (let i = 0; i < promptVersions.length; i++) {
+        const pv = promptVersions[i];
+        const pin = pv && pv.verifierVersionId ? String(pv.verifierVersionId).trim() : '';
+        if (!pin) continue;
+        try {
+            const source = await _dvFetchVerifierSourceByVersionId(pin, {
+                taskId: base.taskId,
+                key: base.key
+            });
+            if (!source) continue;
+            sourceVersions.push({
+                displayVersionNo: pv.displayVersionNo,
+                prompt: source,
+                createdAt: pv.createdAt || '',
+                verifierVersionId: pin,
+                verifierId: pv.verifierId || ''
+            });
+        } catch (err) {
+            Logger.warn('verifier source hydrate failed for v' + pv.displayVersionNo, err);
+        }
+    }
+    if (!sourceVersions.length) {
+        throw new Error('No verifier versions with source for ' + (base.key || base.taskId));
+    }
+    return {
+        taskId: base.taskId,
+        key: base.key,
+        authorName: base.authorName,
+        authorEmail: base.authorEmail,
+        createdAt: base.createdAt,
+        promptVersions: sourceVersions,
+        contentKind: 'verifier'
     };
 }
 
 // ── Stash management ──
 
-function _dvStashFind(taskId) {
-    return _dvState.stash.findIndex((s) => s.taskId === taskId);
+function _dvNormalizeContentKind(kind) {
+    return kind === 'verifier' ? 'verifier' : 'prompt';
+}
+
+function _dvStashIdentity(taskId, contentKind) {
+    return String(taskId || '') + '::' + _dvNormalizeContentKind(contentKind);
+}
+
+function _dvStashFind(taskId, contentKind) {
+    const kind = _dvNormalizeContentKind(contentKind);
+    return _dvState.stash.findIndex((s) => (
+        s.taskId === taskId && _dvNormalizeContentKind(s.contentKind) === kind
+    ));
 }
 
 function _dvAddToStash(entry) {
-    const idx = _dvStashFind(entry.taskId);
+    const contentKind = _dvNormalizeContentKind(entry && entry.contentKind);
+    const idx = _dvStashFind(entry.taskId, contentKind);
     if (idx < 0) {
         if (_dvState.stash.length >= DV_MAX_STASH) {
             Logger.warn('stash full (' + DV_MAX_STASH + ') — cannot add ' + (entry.key || entry.taskId));
@@ -492,7 +565,8 @@ function _dvAddToStash(entry) {
             authorName: entry.authorName,
             authorEmail: entry.authorEmail,
             createdAt: entry.createdAt || '',
-            versionCount: entry.versionCount || 0
+            versionCount: entry.versionCount || 0,
+            contentKind
         });
         _dvSaveStash();
         Logger.log('stash add — ' + (entry.key || entry.taskId));
@@ -521,8 +595,8 @@ function _dvClearStash(modal) {
     Logger.log('stash cleared — ' + count + ' item(s)');
 }
 
-function _dvRemoveFromStash(taskId, modal) {
-    const idx = _dvStashFind(taskId);
+function _dvRemoveFromStash(taskId, modal, contentKind) {
+    const idx = _dvStashFind(taskId, contentKind);
     if (idx >= 0) {
         _dvState.stash.splice(idx, 1);
         _dvSaveStash();
@@ -532,16 +606,29 @@ function _dvRemoveFromStash(taskId, modal) {
     }
 }
 
-function _dvRemoveTaskFromDiffAndStash(taskId, modal) {
+function _dvRemoveTaskFromDiffAndStash(taskId, modal, contentKind) {
     if (!taskId) return;
+    const kind = contentKind != null ? _dvNormalizeContentKind(contentKind) : null;
+    const removedKinds = new Set();
     let removedSlots = 0;
     for (let i = _dvState.slots.length - 1; i >= 0; i--) {
-        if (_dvState.slots[i].taskId === taskId) {
-            _dvState.slots.splice(i, 1);
-            removedSlots += 1;
-        }
+        const slot = _dvState.slots[i];
+        if (slot.taskId !== taskId) continue;
+        if (kind && _dvNormalizeContentKind(slot.contentKind) !== kind) continue;
+        removedKinds.add(_dvNormalizeContentKind(slot.contentKind));
+        _dvState.slots.splice(i, 1);
+        removedSlots += 1;
     }
-    _dvRemoveFromStash(taskId, modal);
+    if (kind) {
+        _dvRemoveFromStash(taskId, modal, kind);
+    } else if (removedKinds.size) {
+        removedKinds.forEach((k) => _dvRemoveFromStash(taskId, modal, k));
+    } else {
+        const kinds = _dvState.stash
+            .filter((s) => s.taskId === taskId)
+            .map((s) => _dvNormalizeContentKind(s.contentKind));
+        kinds.forEach((k) => _dvRemoveFromStash(taskId, modal, k));
+    }
     if (removedSlots > 0) _dvRenderAll(modal);
     Logger.log('task removed from stash'
         + (removedSlots > 0 ? ' and ' + removedSlots + ' comparison slot(s)' : '')
@@ -550,11 +637,17 @@ function _dvRemoveTaskFromDiffAndStash(taskId, modal) {
 
 // ── Lens index resolution ──
 
-function _dvNextLensIndex(taskId, promptVersions) {
+function _dvNextLensIndex(taskId, promptVersions, contentKind) {
     if (!promptVersions || promptVersions.length === 0) return 0;
+    const kind = _dvNormalizeContentKind(contentKind);
     const taken = new Set(
         _dvState.slots
-            .filter((s) => s.taskId === taskId && !s.loading && s.promptVersions)
+            .filter((s) => (
+                s.taskId === taskId
+                && _dvNormalizeContentKind(s.contentKind) === kind
+                && !s.loading
+                && s.promptVersions
+            ))
             .map((s) => s.lensIndex)
     );
     for (let i = 0; i < promptVersions.length; i++) {
@@ -567,8 +660,9 @@ function _dvNextLensIndex(taskId, promptVersions) {
 
 async function _dvOverflowToStash(seed, modal) {
     try {
+        const contentKind = _dvNormalizeContentKind(seed && seed.contentKind);
         let data;
-        if (seed.taskId && (seed.key || seed.authorName || seed.authorEmail)) {
+        if (seed.taskId && (seed.key || seed.authorName || seed.authorEmail) && seed.promptVersions == null && !seed.forceHydrate) {
             data = {
                 taskId: seed.taskId,
                 key: seed.key || '',
@@ -576,21 +670,25 @@ async function _dvOverflowToStash(seed, modal) {
                 authorEmail: seed.authorEmail || '',
                 createdAt: seed.createdAt || '',
                 promptVersions: null,
-                versionCount: seed.versionCount || 0
+                versionCount: seed.versionCount || 0,
+                contentKind
             };
         } else {
             const lookup = seed.raw || seed.key || seed.taskId;
             if (!lookup) throw new Error('No task identifier');
-            data = await _dvFetchTask(lookup);
+            data = contentKind === 'verifier'
+                ? await _dvFetchVerifier(lookup, seed)
+                : await _dvFetchTask(lookup);
         }
-        const wasNew = _dvStashFind(data.taskId) < 0;
+        const wasNew = _dvStashFind(data.taskId, contentKind) < 0;
         const added = _dvAddToStash({
             taskId: data.taskId,
             key: data.key,
             authorName: data.authorName,
             authorEmail: data.authorEmail,
             createdAt: data.createdAt || '',
-            versionCount: (data.promptVersions || []).length || data.versionCount || 0
+            versionCount: (data.promptVersions || []).length || data.versionCount || 0,
+            contentKind
         });
         if (!added) {
             if (modal) _dvSetSearchLoading(modal, false, 'Stash is full (max ' + DV_MAX_STASH + ' items)');
@@ -618,6 +716,7 @@ function _dvAddSlot(seed, modal) {
         void _dvOverflowToStash(seed, modal);
         return;
     }
+    const contentKind = _dvNormalizeContentKind(seed && seed.contentKind);
     const slotId = ++_dvSlotSeq;
     const slot = {
         slotId,
@@ -626,6 +725,7 @@ function _dvAddSlot(seed, modal) {
         authorName: seed.authorName || '',
         authorEmail: seed.authorEmail || '',
         createdAt: seed.createdAt || '',
+        contentKind,
         promptVersions: null,
         lensIndex: 0,
         loading: true,
@@ -638,7 +738,8 @@ function _dvAddSlot(seed, modal) {
             key: seed.key,
             authorName: seed.authorName,
             authorEmail: seed.authorEmail,
-            createdAt: seed.createdAt || ''
+            createdAt: seed.createdAt || '',
+            contentKind
         });
     }
     _dvRenderAll(modal);
@@ -650,18 +751,22 @@ async function _dvHydrateSlot(slotId, seed, modal) {
     try {
         const lookup = seed.raw || seed.key || seed.taskId;
         if (!lookup) throw new Error('No task identifier to hydrate');
-        const data = await _dvFetchTask(lookup);
+        const contentKind = _dvNormalizeContentKind(seed && seed.contentKind);
+        const data = contentKind === 'verifier'
+            ? await _dvFetchVerifier(lookup, seed)
+            : await _dvFetchTask(lookup);
         const slotIdx = _dvState.slots.findIndex((s) => s.slotId === slotId);
         if (slotIdx < 0) return; // slot was removed before hydration completed
         if (!modal.isConnected) return; // modal was rebuilt; drop stale update
         const slot = _dvState.slots[slotIdx];
         slot.taskId = data.taskId;
+        slot.contentKind = contentKind;
         slot.promptVersions = data.promptVersions;
         slot.authorName = data.authorName || slot.authorName;
         slot.authorEmail = data.authorEmail || slot.authorEmail;
         slot.key = data.key || slot.key;
         slot.createdAt = data.createdAt || slot.createdAt || '';
-        slot.lensIndex = _dvNextLensIndex(data.taskId, data.promptVersions) ?? 0;
+        slot.lensIndex = _dvNextLensIndex(data.taskId, data.promptVersions, contentKind) ?? 0;
         slot.loading = false;
         _dvAddToStash({
             taskId: data.taskId,
@@ -669,9 +774,11 @@ async function _dvHydrateSlot(slotId, seed, modal) {
             authorName: data.authorName,
             authorEmail: data.authorEmail,
             createdAt: slot.createdAt,
-            versionCount: (data.promptVersions || []).length
+            versionCount: (data.promptVersions || []).length,
+            contentKind
         });
-        Logger.log('slot hydrated — ' + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
+        Logger.log('slot hydrated — ' + (contentKind === 'verifier' ? 'verifier ' : '')
+            + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
         _dvRenderAll(modal);
     } catch (err) {
         const slotIdx = _dvState.slots.findIndex((s) => s.slotId === slotId);
@@ -687,9 +794,12 @@ function _dvRemoveSlot(slotIdx, modal) {
     if (slotIdx < 0 || slotIdx >= _dvState.slots.length) return;
     const removed = _dvState.slots.splice(slotIdx, 1)[0];
     const taskId = removed && removed.taskId;
-    const stillInComparison = taskId && _dvState.slots.some((s) => s.taskId === taskId);
+    const contentKind = removed && removed.contentKind;
+    const stillInComparison = taskId && _dvState.slots.some((s) => (
+        s.taskId === taskId && _dvNormalizeContentKind(s.contentKind) === _dvNormalizeContentKind(contentKind)
+    ));
     if (taskId && !stillInComparison) {
-        _dvRemoveFromStash(taskId, modal);
+        _dvRemoveFromStash(taskId, modal, contentKind);
     }
     Logger.log('slot removed from comparison'
         + (taskId && !stillInComparison ? ' and stash' : '')
@@ -706,7 +816,8 @@ function _dvMinimizeSlot(slotIdx, modal) {
         authorName: slot.authorName,
         authorEmail: slot.authorEmail,
         createdAt: slot.createdAt || '',
-        versionCount: (slot.promptVersions || []).length
+        versionCount: (slot.promptVersions || []).length,
+        contentKind: slot.contentKind
     });
     _dvState.slots.splice(slotIdx, 1);
     Logger.log('slot minimized to stash — ' + (slot.key || slot.taskId));
@@ -1219,6 +1330,7 @@ function _dvApplyViewProgression(modal) {
             taskId: base.taskId, key: base.key,
             authorName: base.authorName, authorEmail: base.authorEmail,
             createdAt: base.createdAt || '',
+            contentKind: base.contentKind || 'prompt',
             promptVersions: base.promptVersions,
             lensIndex: i, loading: false, error: null
         });
@@ -1532,6 +1644,10 @@ function _dvUpdateAboveLabels(modal) {
 function _dvSlotHtml(slot, slotIdx) {
     const authorHtml = _dvAuthorLineHtml(slot.authorName, slot.authorEmail);
     const keyCopyHtml = _dvKeyCopyHtml(slot.key, slot.taskId);
+    const kind = _dvNormalizeContentKind(slot.contentKind);
+    const kindBadge = kind === 'verifier'
+        ? '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#64748b);margin-top:2px;">Verifier</div>'
+        : '';
     const createdHtml = _dvSlotMetaRowHtml(slot);
 
     const btnStyle = _dvIconBtnStyle();
@@ -1553,6 +1669,7 @@ function _dvSlotHtml(slot, slotIdx) {
         <div class="dv-slot-header" data-dv-drag="${slotIdx}" style="padding:8px 10px;background:var(--card,#fff);border-bottom:1px solid var(--border,#e2e8f0);cursor:grab;flex-shrink:0;display:flex;align-items:flex-start;gap:8px;user-select:none;">
             <div style="flex:1;min-width:0;overflow:hidden;">
                 ${keyCopyHtml}
+                ${kindBadge}
                 ${authorHtml}
                 ${createdHtml}
             </div>
@@ -1623,7 +1740,9 @@ function _dvReelCardTrackHtml(slot, slotIdx) {
 }
 
 function _dvReelHtml(slot, slotIdx) {
-    const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="Copy prompt" aria-label="Copy prompt" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
+    const isVerifier = _dvNormalizeContentKind(slot.contentKind) === 'verifier';
+    const copyLabel = isVerifier ? 'Copy verifier' : 'Copy prompt';
+    const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="${copyLabel}" aria-label="${copyLabel}" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
 
     return `<div class="dv-reel">
         <div class="dv-reel-viewport" data-dv-reel-viewport="${slotIdx}">
@@ -1690,6 +1809,10 @@ function _dvRenderSlotsArea(modal) {
 function _dvStashChipHtml(entry, idx, active) {
     const authorHtml = _dvAuthorLineHtml(entry.authorName, entry.authorEmail);
     const keyHtml = _dvKeyCopyHtml(entry.key, entry.taskId);
+    const kind = _dvNormalizeContentKind(entry.contentKind);
+    const kindHtml = kind === 'verifier'
+        ? '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#64748b);">Verifier</div>'
+        : '';
     const createdHtml = entry.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', entry.createdAt)}</div>`
         : '';
@@ -1701,6 +1824,7 @@ function _dvStashChipHtml(entry, idx, active) {
     return `<div class="dv-stash-chip${active ? ' dv-stash-chip--active' : ''}" data-dv-stash-chip="${idx}" title="Click to add slot">
         <div class="dv-stash-chip-main">
             <div class="dv-stash-key">${keyHtml}</div>
+            ${kindHtml}
             ${authorHtml}
             ${metaHtml}
         </div>
@@ -1716,12 +1840,11 @@ function _dvRenderStash(modal) {
         _dvSyncStashClearUi(modal);
         return;
     }
-    const slotCountByTaskId = new Map();
-    for (const s of _dvState.slots) {
-        slotCountByTaskId.set(s.taskId, (slotCountByTaskId.get(s.taskId) || 0) + 1);
-    }
+    const activeIds = new Set(
+        _dvState.slots.map((s) => _dvStashIdentity(s.taskId, s.contentKind))
+    );
     chips.innerHTML = _dvState.stash.map((entry, idx) => (
-        _dvStashChipHtml(entry, idx, slotCountByTaskId.has(entry.taskId))
+        _dvStashChipHtml(entry, idx, activeIds.has(_dvStashIdentity(entry.taskId, entry.contentKind)))
     )).join('');
     _dvSyncStashClearUi(modal);
 }
@@ -1734,12 +1857,14 @@ function _dvSyncStashClearUi(modal) {
 function _dvRenderStashChipStates(modal) {
     const chips = _dvQ(modal, 'dv-stash-chips');
     if (!chips) return;
-    const slotTaskIds = new Set(_dvState.slots.map((s) => s.taskId));
+    const activeIds = new Set(
+        _dvState.slots.map((s) => _dvStashIdentity(s.taskId, s.contentKind))
+    );
     chips.querySelectorAll('[data-dv-stash-chip]').forEach((chip) => {
         const idx = parseInt(chip.getAttribute('data-dv-stash-chip'), 10);
         const entry = _dvState.stash[idx];
         if (!entry) return;
-        const active = slotTaskIds.has(entry.taskId);
+        const active = activeIds.has(_dvStashIdentity(entry.taskId, entry.contentKind));
         chip.classList.toggle('dv-stash-chip--active', active);
         const versionEl = chip.querySelector('.dv-slot-version-count');
         if (versionEl) {
@@ -2388,6 +2513,7 @@ function _dvAttachListeners(modal) {
                     authorName: entry.authorName,
                     authorEmail: entry.authorEmail,
                     createdAt: entry.createdAt || '',
+                    contentKind: entry.contentKind || 'prompt',
                     fromStashChip: true
                 }, modal);
             }
@@ -2409,7 +2535,7 @@ function _dvAttachListeners(modal) {
             e.stopPropagation();
             const idx = parseInt(stashRemove.getAttribute('data-dv-stash-remove'), 10);
             const entry = _dvState.stash[idx];
-            if (entry) _dvRemoveTaskFromDiffAndStash(entry.taskId, modal);
+            if (entry) _dvRemoveTaskFromDiffAndStash(entry.taskId, modal, entry.contentKind);
             return;
         }
     });
@@ -3011,14 +3137,21 @@ function _dvStashEntryFromSeed(seed) {
         authorName: seed.authorName || '',
         authorEmail: seed.authorEmail || '',
         createdAt: seed.createdAt || '',
-        versionCount: seed.versionCount || 0
+        versionCount: seed.versionCount || 0,
+        contentKind: _dvNormalizeContentKind(seed.contentKind)
     };
 }
 
 function _dvApiAddTask(seed) {
     // seed: { taskId, key, authorName, authorEmail } — always re-hydrated from PostgREST
     const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
-    _dvAddSlot(seed, modal);
+    _dvAddSlot(Object.assign({}, seed, { contentKind: 'prompt' }), modal);
+}
+
+function _dvApiAddVerifier(seed) {
+    // seed: { taskId, key, authorName, authorEmail } — hydrate verifier history reel
+    const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
+    _dvAddSlot(Object.assign({}, seed, { contentKind: 'verifier' }), modal);
 }
 
 function _dvApiAddTasks(seeds) {
@@ -3035,9 +3168,11 @@ function _dvApiAddTasks(seeds) {
     const pendingHydrations = [];
 
     for (let i = 0; i < list.length; i++) {
-        const seed = list[i];
+        const seed = Object.assign({}, list[i], {
+            contentKind: _dvNormalizeContentKind(list[i].contentKind)
+        });
         const taskId = seed.taskId;
-        const inStash = _dvStashFind(taskId) >= 0;
+        const inStash = _dvStashFind(taskId, seed.contentKind) >= 0;
         if (!inStash && _dvState.stash.length >= DV_MAX_STASH) {
             skipped = list.length - i;
             stoppedByStashLimit = true;
@@ -3053,6 +3188,7 @@ function _dvApiAddTasks(seeds) {
                 authorName: stashEntry.authorName,
                 authorEmail: stashEntry.authorEmail,
                 createdAt: stashEntry.createdAt,
+                contentKind: stashEntry.contentKind,
                 promptVersions: null,
                 lensIndex: 0,
                 loading: true,
@@ -3095,7 +3231,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '4.4',
+    _version: '5.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3166,6 +3302,7 @@ const plugin = {
         // Expose public API
         Context.diffViewer = {
             addTask: _dvApiAddTask,
+            addVerifier: _dvApiAddVerifier,
             addTasks: _dvApiAddTasks
         };
 

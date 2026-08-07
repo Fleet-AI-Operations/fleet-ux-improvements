@@ -1,7 +1,7 @@
 {
   "version": "13.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.278",
+  "archetypesVersion": "14.279",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -28,8 +28,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "10.0",
-      "hash": "sha256-02fa163475718b88d940a2084aeb6dbd94732544ec255bb0df7c689e0e973671",
+      "version": "11.0",
+      "hash": "sha256-cc085d8619ef6cde945060b6c341b5cc33508c971f32d5c7ac9f78615e9a6f9b",
       "log": false
     },
     {
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "7.4",
-      "hash": "sha256-5189037db1851df54f43632ce534a9e8e4b0799cce368375c0efa93e53005823",
+      "version": "8.0",
+      "hash": "sha256-ef1c8e4d492da4c2651281272a2e03ce2157cb81499c0350414ff4d1e973c26e",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "4.4",
-      "hash": "sha256-a4742e491632e6f34d70508f63d5c31607e387e15983f5a76818a988011c3f84",
+      "version": "5.0",
+      "hash": "sha256-600845d3d1494332bc58cfcf252ccf2b7b1df33a60558fe8417e060d4f5f1364",
       "log": false
     },
     {
@@ -266,8 +266,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "7.6",
-      "hash": "sha256-a607efe2a71e3a93eaa206b486ccaf2d1ed4f52ad23d9caca173df2364b13bae",
+      "version": "8.0",
+      "hash": "sha256-ef90470d27e8ce7fcfbcdbfbb51adf77ab458f3cefc5d6aadc1823abb1012a39",
       "log": false
     },
     {
