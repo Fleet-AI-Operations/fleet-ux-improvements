@@ -1725,10 +1725,6 @@ const searchOutputResultsPaneMethods = {
             el.style.display = 'none';
             el.innerHTML = '';
             this._syncVersionModeDropdownUi();
-            this._renderRatingsPanel();
-            if ((this._state.statsTab || 'stats') === 'stats') {
-                void this._renderStatsPanel();
-            }
             return;
         }
         const label = this._labelStyle();
@@ -1741,7 +1737,6 @@ const searchOutputResultsPaneMethods = {
             + this._loadingSpinnerHtml(14).replace('<span class="fleet-ui-spinner"', '<span data-wf-dash-load-mark="1" class="fleet-ui-spinner"')
             + '<span>Hydrating tasks</span></span>';
         this._syncVersionModeDropdownUi();
-        this._renderRatingsPanel();
     },
 
     _syncResultsPrefetchBannerUi() {
@@ -3730,6 +3725,7 @@ const searchOutputResultsPaneMethods = {
             this._syncBulkHydrateUi();
             this._syncResultsRangeCountUi();
             this._renderResults();
+            this._requestResultsSidePanelRefresh();
         }
     },
 
@@ -6849,7 +6845,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.12',
+    _version: '6.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -4537,15 +4537,7 @@ const searchOutputCoreMethods = {
             });
             this._syncResultsToolbarDerivedUi();
             this._validateRangeUi();
-            if ((this._state.statsTab || 'stats') === 'stats') {
-                void this._renderStatsPanel();
-            } else if ((this._state.statsTab || 'stats') === 'ratings') {
-                this._renderRatingsPanel();
-            } else if ((this._state.statsTab || 'stats') === 'chat'
-                && Context.searchOutputChat
-                && typeof Context.searchOutputChat.onResultsChanged === 'function') {
-                Context.searchOutputChat.onResultsChanged(this);
-            }
+            this._requestResultsSidePanelRefresh();
         };
 
         if (prehydrateInitialBatch && (this._state.resultsPage || 0) === 0) {
@@ -4602,6 +4594,7 @@ const searchOutputCoreMethods = {
         this._renderFilterLists({ syncDraftFromApplied: true });
         this._syncResultsToolbarDerivedUi();
         this._updateApplyFiltersUi();
+        this._requestResultsSidePanelRefresh();
         return !filterInvalid.invalid;
     },
 
@@ -4858,6 +4851,7 @@ const searchOutputCoreMethods = {
             this._state.autoHydrateActive = false;
             this._syncResultsHydrateBannerUi();
             this._syncBulkHydrateUi();
+            this._requestResultsSidePanelRefresh();
         }
     },
 
@@ -4902,6 +4896,7 @@ const searchOutputCoreMethods = {
         this._updateResultsStatus();
         this._updateSubstringErrorUi();
         this._renderResults();
+        this._requestResultsSidePanelRefresh();
         Logger.log('dashboard: results cleared');
     },
 
@@ -5911,7 +5906,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.34',
+    _version: '9.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
