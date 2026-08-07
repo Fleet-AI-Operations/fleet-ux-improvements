@@ -5419,6 +5419,18 @@ function attachSearchOutputListeners(modal, dash) {
                 void dash._runContributorHistoryDeepDive(person, historyKind);
                 return;
             }
+            const liveCopyEl = e.target.closest('[data-wf-dash-copy-section]');
+            if (liveCopyEl && modal.contains(liveCopyEl)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const text = dash._resolveLiveSectionCopyText(
+                    liveCopyEl.getAttribute('data-wf-dash-copy-section'),
+                    liveCopyEl.getAttribute('data-wf-dash-copy-entity'),
+                    liveCopyEl.getAttribute('data-item-id')
+                );
+                void dash._copyWithFeedback(liveCopyEl, text);
+                return;
+            }
             const copyEl = e.target.closest('[data-wf-dash-copy]');
             if (copyEl && modal.contains(copyEl)) {
                 void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
@@ -5941,7 +5953,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.39',
+    _version: '9.40',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
