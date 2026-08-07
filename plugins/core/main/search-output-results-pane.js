@@ -3812,8 +3812,8 @@ const searchOutputResultsPaneMethods = {
         const key = String(task && task.key || '').trim();
         const inner = '<span class="wf-dash-card-key-tab-inner">'
             + this._cardKeyCopyHtml(key, highlightOpts || {})
-            + this._taskOpenLinkHtml(task, itemId)
-            + this._taskPublicViewLinkHtml(task, { flushHorizontal: true })
+            + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
+            + this._taskPublicViewLinkHtml(task, { flushHorizontal: true, flushEnd: true })
             + '</span>';
         return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
             noHorizontalPadding: true,
@@ -5751,6 +5751,14 @@ const searchOutputResultsPaneMethods = {
         return 'display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground, #64748b); border: none; background: transparent; padding: 0; cursor: pointer;';
     },
 
+    _keyTabLinkFlushStyle(options) {
+        const opts = options || {};
+        if (!opts.flushHorizontal) return '';
+        let style = ' width: ' + DASH_CARD_TAB_HEIGHT + '; height: ' + DASH_CARD_TAB_HEIGHT + ';';
+        if (opts.flushEnd) style += ' border-radius: 0 6px 0 0;';
+        return style;
+    },
+
     _taskOpenLinkHtml(task, itemId, options) {
         const opts = options || {};
         const taskId = String(task && task.id || '').trim();
@@ -5758,9 +5766,7 @@ const searchOutputResultsPaneMethods = {
         const teamId = String(task.teamId || '').trim();
         const ui = this._getTaskOpenUi(taskId);
         const title = 'Open task in back end';
-        const flushStyle = opts.flushHorizontal
-            ? ' border-radius: 0 6px 0 0; width: ' + DASH_CARD_TAB_HEIGHT + '; height: ' + DASH_CARD_TAB_HEIGHT + ';'
-            : '';
+        const flushStyle = this._keyTabLinkFlushStyle(opts);
         if (ui.status === 'switching') {
             const teamLabel = this._teamName(teamId) || 'team';
             return `<button type="button" disabled aria-busy="true" title="${dashEscHtml(title)}" style="${this._extLinkButtonStyle()} gap: 6px; width: auto; max-width: 100%; padding: 2px 8px; cursor: wait; opacity: 0.9;">`
@@ -5779,9 +5785,7 @@ const searchOutputResultsPaneMethods = {
         const href = dashFleetViewTaskUrl(taskId);
         if (!href) return '';
         const title = 'Open public view task link';
-        const flushStyle = opts.flushHorizontal
-            ? ' border-radius: 0 6px 0 0; width: ' + DASH_CARD_TAB_HEIGHT + '; height: ' + DASH_CARD_TAB_HEIGHT + ';'
-            : '';
+        const flushStyle = this._keyTabLinkFlushStyle(opts);
         return `<a href="${dashEscHtml(href)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}" style="${flushStyle}">`
             + `${this._extLinkIconSvg(true)}`
             + `</a>`;
@@ -6831,7 +6835,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.10',
+    _version: '6.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
