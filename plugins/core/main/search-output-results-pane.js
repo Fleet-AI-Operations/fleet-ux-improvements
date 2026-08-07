@@ -508,7 +508,8 @@ const searchOutputResultsPaneMethods = {
                 loaded: false,
                 submitting: false,
                 confirmingRemove: false,
-                dirty: false
+                dirty: false,
+                reviewOpen: false
             };
         }
         if (!this._state.helpfulnessUi[id]) {
@@ -519,10 +520,23 @@ const searchOutputResultsPaneMethods = {
                 loaded: false,
                 submitting: false,
                 confirmingRemove: false,
-                dirty: false
+                dirty: false,
+                reviewOpen: false
             };
         }
-        return this._state.helpfulnessUi[id];
+        const ui = this._state.helpfulnessUi[id];
+        if (ui.reviewOpen == null) ui.reviewOpen = false;
+        return ui;
+    },
+
+    _toggleQaReviewPanel(feedbackId, open) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return;
+        const ui = this._getHelpfulnessUi(fid);
+        ui.reviewOpen = open == null ? !ui.reviewOpen : Boolean(open);
+        if (!ui.reviewOpen) ui.confirmingRemove = false;
+        Logger.log('search-output: QA review panel ' + (ui.reviewOpen ? 'opened' : 'closed') + ' — feedback ' + fid);
+        this._patchHelpfulnessBlock(fid);
     },
 
     _helpfulnessThumbSvg(direction) {
@@ -532,23 +546,40 @@ const searchOutputResultsPaneMethods = {
         return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; flex-shrink: 0;"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"></path></svg>';
     },
 
-    _helpfulnessThumbBtnStyle(direction, active) {
-        const base = 'display: inline-flex; align-items: center; justify-content: center; padding: 4px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: opacity 0.15s;';
-        if (direction === 'up' && active) {
-            return base + ' border: 1px solid #10b981; background: color-mix(in srgb, #10b981 8%, var(--card, #ffffff)); color: #047857;';
-        }
-        if (direction === 'down' && active) {
-            return base + ' border: 1px solid #ef4444; background: color-mix(in srgb, #ef4444 8%, var(--card, #ffffff)); color: #b91c1c;';
-        }
-        return base + ' border: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); color: var(--muted-foreground, #64748b);';
+    _helpfulnessThumbActiveStyle(direction, active) {
+        if (!active) return '';
+        if (direction === 'up') return ' color: #047857;';
+        if (direction === 'down') return ' color: #b91c1c;';
+        return '';
     },
 
-    _helpfulnessBlockHtml(feedbackId) {
+    _helpfulnessActionsHtml(feedbackId) {
         const fid = String(feedbackId || '').trim();
+        if (!fid) return '';
         const ui = this._getHelpfulnessUi(fid);
         const escId = dashEscHtml(fid);
         const upActive = ui.isHelpful === true;
         const downActive = ui.isHelpful === false;
+        const hasSubmitted = ui.reportText != null;
+        const flagActive = Boolean(ui.reviewOpen) || hasSubmitted;
+        const iconClass = this._dashBtnClass('basic', 'icon');
+        const flagStyle = flagActive ? ' color: var(--foreground, #0f172a);' : '';
+        const disabled = ui.submitting ? ' disabled' : '';
+        return `<span data-wf-dash-helpfulness-actions="${escId}" style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;">`
+            + `<button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" aria-label="Helpful" class="${iconClass}" style="${this._helpfulnessThumbActiveStyle('up', upActive)}"${disabled}>${this._helpfulnessThumbSvg('up')}</button>`
+            + `<button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" aria-label="Not Helpful" class="${iconClass}" style="${this._helpfulnessThumbActiveStyle('down', downActive)}"${disabled}>${this._helpfulnessThumbSvg('down')}</button>`
+            + `<button type="button" data-wf-dash-qa-review-toggle="1" data-wf-dash-feedback-id="${escId}" title="Write a review" aria-label="Write a review" aria-pressed="${flagActive ? 'true' : 'false'}" class="${iconClass}" style="${flagStyle}"${disabled}>${this._flagIconSvg()}</button>`
+            + `</span>`;
+    },
+
+    _helpfulnessReviewPanelHtml(feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return '';
+        const ui = this._getHelpfulnessUi(fid);
+        if (!ui.reviewOpen) {
+            return `<div data-wf-dash-helpfulness="${dashEscHtml(fid)}" hidden></div>`;
+        }
+        const escId = dashEscHtml(fid);
         const submittedText = ui.reportText != null ? String(ui.reportText) : '';
         const localText = ui.localText != null ? String(ui.localText) : '';
         const hasSubmitted = ui.reportText != null;
@@ -570,13 +601,7 @@ const searchOutputResultsPaneMethods = {
             removeHtml = `<button type="button" data-wf-dash-qa-review-remove="1" data-wf-dash-feedback-id="${escId}" class="${basicClass}" style="flex-shrink: 0; white-space: nowrap;"${ui.submitting ? ' disabled' : ''}>Remove Review</button>`;
         }
 
-        return `
-            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
-                <span style="font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Helpfulness</span>
-                <div style="display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;">
-                    <button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" style="${this._helpfulnessThumbBtnStyle('up', upActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('up')}</button>
-                    <button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" style="${this._helpfulnessThumbBtnStyle('down', downActive)}"${ui.submitting ? ' disabled' : ''}>${this._helpfulnessThumbSvg('down')}</button>
-                </div>
+        return `<div data-wf-dash-helpfulness="${escId}" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0 0;">
                 <textarea data-wf-dash-qa-review-input="1" data-wf-dash-feedback-id="${escId}" rows="1" placeholder="Write a review…" style="${textareaStyle}"${ui.submitting ? ' disabled' : ''}>${dashEscHtml(localText)}</textarea>
                 <button type="button" data-wf-dash-qa-review-submit="1" data-wf-dash-feedback-id="${escId}" class="${submitClass}" style="flex-shrink: 0;${submitStyle}"${submitDisabled}>${dashEscHtml(submitLabel)}</button>
                 ${removeHtml}
@@ -586,21 +611,51 @@ const searchOutputResultsPaneMethods = {
     _patchHelpfulnessBlock(feedbackId) {
         const fid = String(feedbackId || '').trim();
         if (!fid || !this._modal) return;
-        let wrap = null;
-        for (const el of this._modal.querySelectorAll('[data-wf-dash-helpfulness]')) {
-            if (el.getAttribute('data-wf-dash-helpfulness') === fid) {
-                wrap = el;
+        let actionsEl = null;
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-helpfulness-actions]')) {
+            if (el.getAttribute('data-wf-dash-helpfulness-actions') === fid) {
+                actionsEl = el;
                 break;
             }
         }
-        if (!wrap) return;
-        const ta = wrap.querySelector('[data-wf-dash-qa-review-input]');
+        let panelEl = null;
+        for (const el of this._modal.querySelectorAll('[data-wf-dash-helpfulness]')) {
+            if (el.getAttribute('data-wf-dash-helpfulness') === fid) {
+                panelEl = el;
+                break;
+            }
+        }
+        const ta = panelEl && panelEl.querySelector('[data-wf-dash-qa-review-input]');
         const hadFocus = ta && this._pageWindow().document.activeElement === ta;
         const selStart = hadFocus ? ta.selectionStart : null;
         const selEnd = hadFocus ? ta.selectionEnd : null;
-        wrap.innerHTML = this._helpfulnessBlockHtml(fid);
-        if (hadFocus) {
-            const newTa = wrap.querySelector('[data-wf-dash-qa-review-input]');
+        const block = (actionsEl && actionsEl.closest('[data-wf-dash-action-block]'))
+            || (panelEl && panelEl.closest('[data-wf-dash-action-block]'));
+        const header = block && block.querySelector('[data-wf-dash-action-block-header]');
+
+        if (actionsEl) {
+            const temp = this._pageWindow().document.createElement('div');
+            temp.innerHTML = this._helpfulnessActionsHtml(fid);
+            const nextActions = temp.firstElementChild;
+            if (nextActions) {
+                actionsEl.replaceWith(nextActions);
+                actionsEl = nextActions;
+            }
+        }
+
+        const tempPanel = this._pageWindow().document.createElement('div');
+        tempPanel.innerHTML = this._helpfulnessReviewPanelHtml(fid);
+        const nextPanel = tempPanel.firstElementChild;
+        if (panelEl && nextPanel) {
+            panelEl.replaceWith(nextPanel);
+            panelEl = nextPanel;
+        } else if (!panelEl && nextPanel && header) {
+            header.insertAdjacentElement('afterend', nextPanel);
+            panelEl = nextPanel;
+        }
+
+        if (hadFocus && panelEl) {
+            const newTa = panelEl.querySelector('[data-wf-dash-qa-review-input]');
             if (newTa) {
                 newTa.focus();
                 try {
@@ -6138,13 +6193,9 @@ const searchOutputResultsPaneMethods = {
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet', 'qa')}</div>`
             : '';
-        const helpfulnessHtml = this._shouldShowHelpfulness(qa, feedbackId)
-            ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                <div style="padding: 8px 10px; background: var(--card, #ffffff); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-helpfulness="${dashEscHtml(String(feedbackId))}">
-                    ${this._helpfulnessBlockHtml(String(feedbackId))}
-                </div>
-            </div>`
-            : '';
+        const showHelpfulness = this._shouldShowHelpfulness(qa, feedbackId);
+        const helpfulnessActions = showHelpfulness ? this._helpfulnessActionsHtml(String(feedbackId)) : '';
+        const helpfulnessReviewPanel = showHelpfulness ? this._helpfulnessReviewPanelHtml(String(feedbackId)) : '';
         const screenshotHtml = feedbackId && qa.screenshotKeys && qa.screenshotKeys.length
             ? this._screenshotBlockHtml('qa', feedbackId, itemId, qa.screenshotKeys)
             : '';
@@ -6153,18 +6204,18 @@ const searchOutputResultsPaneMethods = {
             : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>`
             + submittedHtml
-            + promptRatingHtml;
+            + promptRatingHtml
+            + helpfulnessActions;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '');
         const bodyHtml = `${reviewerHtml}`
             + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
             + blocks
-            + screenshotHtml
-            + helpfulnessHtml;
+            + screenshotHtml;
         return this._actionBlockShellHtml(
             blockId,
             itemId,
             'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
-            headerRow,
+            headerRow + helpfulnessReviewPanel,
             bodyHtml
         );
     },
@@ -6864,7 +6915,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '7.0',
+    _version: '8.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

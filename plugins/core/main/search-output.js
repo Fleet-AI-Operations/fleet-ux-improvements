@@ -5595,6 +5595,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (fid && dir) void dash._handleThumbClick(fid, dir);
                 return;
             }
+            const qaReviewToggleBtn = e.target.closest('[data-wf-dash-qa-review-toggle]');
+            if (qaReviewToggleBtn && modal.contains(qaReviewToggleBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const fid = qaReviewToggleBtn.getAttribute('data-wf-dash-feedback-id');
+                if (fid) dash._toggleQaReviewPanel(fid);
+                return;
+            }
             const qaReviewSubmitBtn = e.target.closest('[data-wf-dash-qa-review-submit]');
             if (qaReviewSubmitBtn && modal.contains(qaReviewSubmitBtn)) {
                 e.stopPropagation();
@@ -5917,7 +5925,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.36',
+    _version: '9.37',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
