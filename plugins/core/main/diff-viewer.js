@@ -494,6 +494,16 @@ function _dvVersionCountHtml(count) {
     return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${count}</span> <span class="dv-version-count-label">${label}</span></span>`;
 }
 
+function _dvVerifierBadgeHtml() {
+    return '<span class="dv-content-kind-badge">Verifier</span>';
+}
+
+function _dvMetaEndHtml(contentKind, versionHtml) {
+    const badge = _dvNormalizeContentKind(contentKind) === 'verifier' ? _dvVerifierBadgeHtml() : '';
+    if (!badge && !versionHtml) return '';
+    return `<div class="dv-slot-meta-end">${badge}${versionHtml || ''}</div>`;
+}
+
 function _dvSlotVersionCountHtml(slot) {
     const versions = slot.promptVersions;
     if (!versions || versions.length === 0) return '';
@@ -516,9 +526,23 @@ function _dvSlotMetaRowHtml(slot) {
     const createdHtml = slot.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', slot.createdAt)}</div>`
         : '';
-    const versionHtml = _dvSlotVersionCountHtml(slot);
-    if (!createdHtml && !versionHtml) return '';
-    return `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`;
+    const endHtml = _dvMetaEndHtml(slot.contentKind, _dvSlotVersionCountHtml(slot));
+    if (!createdHtml && !endHtml) return '';
+    return `<div class="dv-slot-meta">${createdHtml}${endHtml}</div>`;
+}
+
+function _dvStashDisplayAuthor(entry) {
+    const name = (entry && entry.authorName) || '';
+    const email = (entry && entry.authorEmail) || '';
+    if (name || email) return { authorName: name, authorEmail: email };
+    const kind = _dvNormalizeContentKind(entry && entry.contentKind);
+    const slot = _dvState.slots.find((s) => (
+        s.taskId === entry.taskId
+        && _dvNormalizeContentKind(s.contentKind) === kind
+        && (s.authorName || s.authorEmail)
+    ));
+    if (!slot) return { authorName: '', authorEmail: '' };
+    return { authorName: slot.authorName || '', authorEmail: slot.authorEmail || '' };
 }
 
 // ── Stash persistence ──
@@ -785,6 +809,18 @@ function _dvAddToStash(entry) {
         return true;
     }
     let changed = false;
+    if (entry.key && entry.key !== _dvState.stash[idx].key) {
+        _dvState.stash[idx].key = entry.key;
+        changed = true;
+    }
+    if (entry.authorName && entry.authorName !== _dvState.stash[idx].authorName) {
+        _dvState.stash[idx].authorName = entry.authorName;
+        changed = true;
+    }
+    if (entry.authorEmail && entry.authorEmail !== _dvState.stash[idx].authorEmail) {
+        _dvState.stash[idx].authorEmail = entry.authorEmail;
+        changed = true;
+    }
     if (entry.createdAt && !_dvState.stash[idx].createdAt) {
         _dvState.stash[idx].createdAt = entry.createdAt;
         changed = true;
@@ -1953,10 +1989,6 @@ function _dvUpdateAboveLabels(modal) {
 function _dvSlotHtml(slot, slotIdx) {
     const authorHtml = _dvAuthorLineHtml(slot.authorName, slot.authorEmail);
     const keyCopyHtml = _dvKeyCopyHtml(slot.key, slot.taskId);
-    const kind = _dvNormalizeContentKind(slot.contentKind);
-    const kindBadge = kind === 'verifier'
-        ? '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#64748b);margin-top:2px;">Verifier</div>'
-        : '';
     const createdHtml = _dvSlotMetaRowHtml(slot);
 
     const btnStyle = _dvIconBtnStyle();
@@ -1978,7 +2010,6 @@ function _dvSlotHtml(slot, slotIdx) {
         <div class="dv-slot-header" data-dv-drag="${slotIdx}" style="padding:8px 10px;background:var(--card,#fff);border-bottom:1px solid var(--border,#e2e8f0);cursor:grab;flex-shrink:0;display:flex;align-items:flex-start;gap:8px;user-select:none;">
             <div style="flex:1;min-width:0;overflow:hidden;">
                 ${keyCopyHtml}
-                ${kindBadge}
                 ${authorHtml}
                 ${createdHtml}
             </div>
@@ -2116,24 +2147,20 @@ function _dvRenderSlotsArea(modal) {
 }
 
 function _dvStashChipHtml(entry, idx, active) {
-    const authorHtml = _dvAuthorLineHtml(entry.authorName, entry.authorEmail);
+    const author = _dvStashDisplayAuthor(entry);
+    const authorHtml = _dvAuthorLineHtml(author.authorName, author.authorEmail);
     const keyHtml = _dvKeyCopyHtml(entry.key, entry.taskId);
-    const kind = _dvNormalizeContentKind(entry.contentKind);
-    const kindHtml = kind === 'verifier'
-        ? '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#64748b);">Verifier</div>'
-        : '';
     const createdHtml = entry.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', entry.createdAt)}</div>`
         : '';
-    const versionHtml = _dvStashVersionCountHtml(entry);
-    const metaHtml = (createdHtml || versionHtml)
-        ? `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`
+    const endHtml = _dvMetaEndHtml(entry.contentKind, _dvStashVersionCountHtml(entry));
+    const metaHtml = (createdHtml || endHtml)
+        ? `<div class="dv-slot-meta">${createdHtml}${endHtml}</div>`
         : '';
     const removeBtnStyle = _dvIconBtnStyle() + 'background:transparent;color:var(--muted-foreground,#64748b);';
     return `<div class="dv-stash-chip${active ? ' dv-stash-chip--active' : ''}" data-dv-stash-chip="${idx}" title="Click to add slot">
         <div class="dv-stash-chip-main">
             <div class="dv-stash-key">${keyHtml}</div>
-            ${kindHtml}
             ${authorHtml}
             ${metaHtml}
         </div>
@@ -2176,8 +2203,20 @@ function _dvRenderStashChipStates(modal) {
         const active = activeIds.has(_dvStashIdentity(entry.taskId, entry.contentKind));
         chip.classList.toggle('dv-stash-chip--active', active);
         const versionEl = chip.querySelector('.dv-slot-version-count');
-        if (versionEl) {
-            versionEl.outerHTML = _dvStashVersionCountHtml(entry);
+        const endEl = chip.querySelector('.dv-slot-meta-end');
+        const nextVersion = _dvStashVersionCountHtml(entry);
+        const nextEnd = _dvMetaEndHtml(entry.contentKind, nextVersion);
+        if (endEl) {
+            if (nextEnd) endEl.outerHTML = nextEnd;
+            else endEl.remove();
+        } else if (versionEl) {
+            if (nextEnd) versionEl.outerHTML = nextEnd;
+            else if (nextVersion) versionEl.outerHTML = nextVersion;
+        }
+        const authorEl = chip.querySelector('.dv-slot-author');
+        if (authorEl) {
+            const author = _dvStashDisplayAuthor(entry);
+            authorEl.outerHTML = _dvAuthorLineHtml(author.authorName, author.authorEmail);
         }
     });
 }
@@ -3178,6 +3217,19 @@ function _dvInjectStyles() {
         '  flex: 1;',
         '  min-width: 0;',
         '}',
+        '#wf-dash-modal .dv-slot-meta-end {',
+        '  display: inline-flex;',
+        '  align-items: baseline;',
+        '  gap: 6px;',
+        '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-content-kind-badge {',
+        '  font-size: 10px;',
+        '  font-weight: 600;',
+        '  line-height: 1.3;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  white-space: nowrap;',
+        '}',
         '#wf-dash-modal .dv-slot-version-count {',
         '  flex-shrink: 0;',
         '  font-size: 10px;',
@@ -3580,7 +3632,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.4',
+    _version: '5.5',
     phase: 'core',
     enabledByDefault: true,
 
