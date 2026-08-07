@@ -3012,6 +3012,7 @@ const searchOutputResultsPaneMethods = {
             : '';
         const blockId = 'session-qa:' + review.id;
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Session QA</span>`
+            + this._copyIconHtml(this._serializeSessionQaPlainText(review))
             + submittedHtml
             + difficultyHtml
             + sessionLink;
@@ -3078,6 +3079,7 @@ const searchOutputResultsPaneMethods = {
         const blockId = 'verifier-output:' + execution.id;
         this._ensureActionBlockCollapseDefault(blockId, true);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
+            + this._copyIconHtml(this._serializeVerifierOutputPlainText(execution))
             + submittedHtml
             + scoreHtml
             + timingHtml
@@ -3915,6 +3917,11 @@ const searchOutputResultsPaneMethods = {
             </button>`
             : '';
         return `<div class="wf-dash-card-action-area" aria-label="Card actions">
+            <button type="button" class="wf-dash-card-action wf-dash-card-action--copy" data-wf-dash-copy-card="1" data-item-id="${dashEscHtml(itemId)}" title="Copy visible card as plain text" aria-label="Copy visible card as plain text">
+                <span class="wf-dash-card-action-inner">
+                    <span class="wf-dash-card-action-label">Copy</span>
+                </span>
+            </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--add-to-diff" data-wf-dash-add-to-diff="1" data-item-id="${dashEscHtml(itemId)}" title="Add to Diff Viewer" aria-label="Add to Diff Viewer">
                 <span class="wf-dash-card-action-inner">
                     <span class="wf-dash-card-action-label">Diff</span>
@@ -4175,7 +4182,9 @@ const searchOutputResultsPaneMethods = {
         const copyText = options.copyText;
         const colors = this._resolutionBlockColors(kind);
         const statusBadge = this._resolutionStatusBadgeHtml(kind, statusLabel);
-        const resLeftHeader = '<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>' + leftHeaderExtra;
+        const resLeftHeader = '<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>'
+            + (options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : '')
+            + leftHeaderExtra;
         const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge);
         const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
         return '<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">'
@@ -5771,6 +5780,452 @@ const searchOutputResultsPaneMethods = {
         return lib && lib.copyIconHtml ? lib.copyIconHtml(text) : '';
     },
 
+    _plainPersonLine(name, email) {
+        const n = String(name || '').trim();
+        const e = String(email || '').trim();
+        if (n && e) return n + ', `' + e + '`';
+        if (n) return n;
+        if (e) return '`' + e + '`';
+        return '';
+    },
+
+    _plainTimestampDurationText(iso, durationSeconds) {
+        const { formatted, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+        let text = String(formatted || '').trim();
+        if (durationText) text += (text ? ' in ' : 'in ') + durationText;
+        return text;
+    },
+
+    _qaFeedbackStatusPlainText(qa) {
+        if (!qa) return '';
+        if (qa.isVerifierFailure) return 'Verifier Generation Error';
+        if (qa.isSystemFeedback) return '';
+        if (qa.isPositive) return 'Accepted';
+        if (qa.isEscalated) return 'Escalated for Fleet Review';
+        if (qa.isFlaggedAsBugged) return 'Flagged as Bugged';
+        return 'Returned for Revision';
+    },
+
+    _feedbackEntryOutcomePlainText(entry) {
+        if (!entry) return '';
+        const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
+        const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
+            || isVerifierFailure;
+        if (isSystem) return 'System';
+        if (entry.isPositive) return 'Accepted';
+        if (entry.isEscalated) return 'Escalated';
+        if (entry.isFlaggedAsBugged) return 'Flagged';
+        return 'Returned';
+    },
+
+    _joinPlainSections(parts) {
+        return (parts || [])
+            .map((p) => String(p == null ? '' : p).replace(/\s+$/g, ''))
+            .filter(Boolean)
+            .join('\n\n');
+    },
+
+    _serializeQaFeedbackPlainText(qa) {
+        if (!qa) return '';
+        const isSystem = Boolean(qa.isSystemFeedback);
+        const isVerifierFailure = Boolean(qa.isVerifierFailure);
+        const title = isSystem ? 'System Feedback' : 'QA Feedback';
+        const status = this._qaFeedbackStatusPlainText(qa);
+        const lines = [];
+        lines.push(status ? (title + ': ' + status) : title);
+        const when = this._plainTimestampDurationText(qa.feedbackAt, qa.reviewDurationSeconds);
+        if (when) lines.push(when);
+        if (!isSystem && qa.qualityRating) {
+            lines.push('Rating: ' + String(qa.qualityRating).trim());
+        }
+        if (!isSystem) {
+            const person = this._plainPersonLine(qa.qaReviewerName, qa.qaReviewerEmail);
+            if (person) lines.push(person);
+        }
+        const issues = (qa.rejectionBadges || []).map((l) => String(l || '').trim()).filter(Boolean);
+        if (issues.length) lines.push('Issues: ' + issues.join(', '));
+        const blocks = [];
+        for (const b of qa.textBlocks || []) {
+            const label = (isSystem || isVerifierFailure)
+                ? String(b.label || '').trim()
+                : dashQaTextBlockLabel(b.label, qa.isPositive);
+            const body = this._dashQuotedText(b.text);
+            if (!label && !body) continue;
+            blocks.push((label ? label + ':\n' : '') + (body || '—'));
+        }
+        return this._joinPlainSections([lines.join('\n'), ...blocks]);
+    },
+
+    _serializeDisputeResolutionPlainText(display) {
+        if (!display || !display.resolutionAt) return '';
+        const statusText = display.isApproved
+            ? 'Approved'
+            : (display.isRejected ? 'Rejected' : (display.status || 'Resolved'));
+        const lines = ['Resolution: ' + statusText];
+        const when = this._plainTimestampDurationText(display.resolutionAt, display.reviewDurationSeconds);
+        if (when) lines.push(when);
+        const person = this._plainPersonLine(display.resolverName, display.resolverEmail);
+        if (person) lines.push(person);
+        const note = this._dashQuotedText(display.resolutionText);
+        const parts = [lines.join('\n')];
+        if (note) parts.push('Reason:\n' + note);
+        return this._joinPlainSections(parts);
+    },
+
+    _serializeDisputePlainText(display) {
+        if (!display) return '';
+        const lines = ['Dispute'];
+        const when = this._plainTimestampDurationText(display.submittedAt, null);
+        if (when) lines.push(when);
+        if (display.category) lines.push('Category: ' + String(display.category).trim());
+        const parts = [lines.join('\n')];
+        const reason = this._dashQuotedText(display.reason);
+        if (reason) parts.push('Reason:\n' + reason);
+        const resolution = this._serializeDisputeResolutionPlainText(display);
+        if (resolution) parts.push(resolution);
+        return this._joinPlainSections(parts);
+    },
+
+    _serializeFlagResolutionPlainText(display) {
+        if (!display || !display.resolutionAt) return '';
+        const statusText = display.isConfirmed
+            ? 'Confirmed'
+            : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
+        const lines = ['Resolution: ' + statusText];
+        const when = this._plainTimestampDurationText(display.resolutionAt, null);
+        if (when) lines.push(when);
+        const person = this._plainPersonLine(display.resolverName, display.resolverEmail);
+        if (person) lines.push(person);
+        const note = this._dashQuotedText(display.resolutionNote);
+        const parts = [lines.join('\n')];
+        if (note) parts.push('Resolution Note:\n' + note);
+        return this._joinPlainSections(parts);
+    },
+
+    _serializeFlagPlainText(display) {
+        if (!display) return '';
+        const lines = ['Senior Review Flag: Flagged for Review'];
+        const when = this._plainTimestampDurationText(display.createdAt, null);
+        if (when) lines.push(when);
+        const person = this._plainPersonLine(display.flaggerName, display.flaggerEmail);
+        if (person) lines.push(person);
+        const reasonLabel = String(display.reason || display.reasonKey || '').trim();
+        if (reasonLabel) lines.push('Issues: ' + reasonLabel);
+        const parts = [lines.join('\n')];
+        const note = this._dashQuotedText(display.note);
+        if (note) parts.push('Reviewer Note:\n' + note);
+        else parts.push('Reviewer Note:\nNONE PROVIDED');
+        const resolution = this._serializeFlagResolutionPlainText(display);
+        if (resolution) parts.push(resolution);
+        return this._joinPlainSections(parts);
+    },
+
+    _serializePromptVersionPlainText(version, options) {
+        const opts = options || {};
+        const partsHead = [];
+        if (opts.showVersionLabel !== false && version && version.displayVersionNo != null) {
+            partsHead.push('v' + version.displayVersionNo);
+        }
+        const submitted = dashFormatCreatedAt(version && version.createdAt);
+        if (submitted) partsHead.push('submitted ' + submitted);
+        const status = String(opts.statusLabel || '').trim();
+        if (status) partsHead.push(status);
+        let head = 'Prompt';
+        if (partsHead.length) head += ': ' + partsHead.join(', ');
+        const body = this._dashQuotedText(version && version.prompt) || '—';
+        const sections = [head + '\n' + body];
+        const notes = this._dashQuotedText(version && version.resubmissionNotes);
+        if (notes && !opts.omitNotesToQa) {
+            sections.push('Notes to QA:\n' + notes);
+        }
+        return this._joinPlainSections(sections);
+    },
+
+    _serializeSessionQaPlainText(review) {
+        if (!review) return '';
+        const meta = this._sessionQaVerdictMeta(review.verdict);
+        const lines = ['Session QA: ' + (meta.label || String(review.verdict || '').trim() || '—')];
+        const when = this._plainTimestampDurationText(review.createdAt, null);
+        if (when) lines.push(when);
+        if (review.difficulty != null && String(review.difficulty).trim()) {
+            lines.push('Difficulty: ' + String(review.difficulty).trim());
+        }
+        const person = this._plainPersonLine(
+            review.reviewerName || '',
+            review.reviewerEmail || ''
+        );
+        if (person) lines.push(person);
+        const parts = [lines.join('\n')];
+        const notes = this._dashQuotedText(review.notes);
+        if (notes) parts.push('Notes:\n' + notes);
+        return this._joinPlainSections(parts);
+    },
+
+    _serializeVerifierOutputPlainText(execution) {
+        if (!execution) return '';
+        const passed = Number(execution.score) === 1;
+        const lines = ['Verifier Output: ' + (passed ? 'Pass' : 'Fail')];
+        const when = this._plainTimestampDurationText(execution.createdAt, null);
+        if (when) lines.push(when);
+        if (execution.score != null && execution.score !== '') {
+            lines.push('Score: ' + String(execution.score));
+        }
+        if (execution.executionTimeMs != null && Number.isFinite(Number(execution.executionTimeMs))) {
+            lines.push('Time: ' + Math.round(Number(execution.executionTimeMs)) + ' ms');
+        }
+        const parts = [lines.join('\n')];
+        const stdout = this._formatVerifierStdoutText(execution.stdout);
+        if (stdout) parts.push('Stdout:\n' + stdout);
+        return this._joinPlainSections(parts);
+    },
+
+    _serializeUserStoryPlainText(ui) {
+        if (!ui || ui.status !== 'loaded') return '';
+        const lines = ['User Story'];
+        if (ui.scenarioTitle) lines.push('Scenario: ' + String(ui.scenarioTitle).trim());
+        const parts = [lines.join('\n')];
+        if (ui.humanAnnotatorInstructions) {
+            parts.push('Annotator Instructions:\n' + String(ui.humanAnnotatorInstructions).trim());
+        }
+        if (ui.userStory) parts.push('User Story:\n' + String(ui.userStory).trim());
+        return this._joinPlainSections(parts);
+    },
+
+    _serializeVersionTaskActionsPlainText(feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags) {
+        const blocks = [];
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        for (const entry of orderedFeedback) {
+            if (entry.display) {
+                blocks.push({
+                    sortAt: this._feedbackEntryAt(entry),
+                    text: this._serializeQaFeedbackPlainText(entry.display)
+                });
+            }
+            for (const dispute of entry.disputes || []) {
+                blocks.push({
+                    sortAt: String(dispute.submittedAt || ''),
+                    text: this._serializeDisputePlainText(dispute)
+                });
+            }
+        }
+        if (fallbackFeedback) {
+            blocks.push({
+                sortAt: String(fallbackFeedback.feedbackAt || ''),
+                text: this._serializeQaFeedbackPlainText(fallbackFeedback)
+            });
+        }
+        for (const dispute of orphanDisputes || []) {
+            blocks.push({
+                sortAt: String(dispute.submittedAt || ''),
+                text: this._serializeDisputePlainText(dispute)
+            });
+        }
+        for (const flag of orphanFlags || []) {
+            blocks.push({
+                sortAt: String(flag.createdAt || ''),
+                text: this._serializeFlagPlainText(flag)
+            });
+        }
+        return this._sortTaskActionBlocksByDate(blocks)
+            .map((b) => b.text)
+            .filter(Boolean);
+    },
+
+    _serializeTaskCardPlainText(itemId) {
+        const iid = String(itemId || '').trim();
+        const item = this._findCachedItem(iid) || this._findResultItem(iid);
+        if (!item || !item.task) return '';
+        const task = item.task;
+
+        if (item.hydrated === false) {
+            const sections = [];
+            const key = String(task.key || '').trim();
+            if (key) sections.push('`' + key + '`');
+            const statusMeta = this._statusDisplayMeta(task.status);
+            sections.push('Task Status: ' + (statusMeta.label || task.status || '—'));
+            const created = this._plainTimestampDurationText(
+                this._taskInitialCreatedAt(task),
+                task.initialCreationTimeSeconds
+            );
+            if (created) sections.push('Created ' + created);
+            const author = this._plainPersonLine(
+                task.author && task.author.name,
+                task.author && task.author.email
+            );
+            if (author) sections.push('Author: ' + author);
+            const metaLines = [];
+            const env = this._envName(task.envKey) || task.environment;
+            if (env) metaLines.push('Environment: ' + env);
+            if (task.team) metaLines.push('Team: ' + task.team);
+            const project = task.project || this._projectName(task.projectId);
+            if (project) metaLines.push('Project: ' + project);
+            if (metaLines.length) sections.push(metaLines.join('\n'));
+            const quickParts = [sections.join('\n')];
+            if (task.prompt) {
+                quickParts.push(this._serializePromptVersionPlainText(
+                    { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
+                    { showVersionLabel: false, statusLabel: '' }
+                ));
+            }
+            if (item.qaFeedback) quickParts.push(this._serializeQaFeedbackPlainText(item.qaFeedback));
+            for (const d of item.disputes || []) quickParts.push(this._serializeDisputePlainText(d));
+            for (const f of item.flags || []) quickParts.push(this._serializeFlagPlainText(f));
+            return quickParts.filter(Boolean).join('\n\n---\n\n');
+        }
+
+        const allFeedback = task.allFeedback || [];
+        let versions = task.promptVersions && task.promptVersions.length
+            ? task.promptVersions
+            : [{ id: '', displayVersionNo: 1, prompt: task.prompt, envKey: task.envKey, createdAt: task.createdAt }];
+        const totalVersions = versions.length;
+        const hasTimeline = totalVersions > 1;
+        const versionMode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
+        const hasContributors = (this._state.activeSearchAuthorIds || []).length > 0;
+        let defaultDisplayNo;
+        if (versionMode === DASH_VERSION_MODE_V1) {
+            const sorted = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo);
+            defaultDisplayNo = sorted[0].displayVersionNo;
+        } else if (versionMode === DASH_VERSION_MODE_CONTRIBUTOR && hasContributors) {
+            defaultDisplayNo = this._contributorMatchDisplayNo(item, versions);
+        } else {
+            defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
+        }
+        const ui = this._getCardUi(task.id);
+        const expanded = ui.expanded;
+        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
+        const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
+        const feedbackByDisplayNo = new Map();
+        const disputes = item.disputes || [];
+        const attachedDisputeIds = new Set();
+        for (const entry of allFeedback) {
+            const linked = disputes.filter((d) => d.feedbackId && d.feedbackId === String(entry.id));
+            for (const d of linked) attachedDisputeIds.add(d.id);
+            const list = feedbackByDisplayNo.get(entry.linkedDisplayVersionNo) || [];
+            list.push(Object.assign({}, entry, { disputes: linked }));
+            feedbackByDisplayNo.set(entry.linkedDisplayVersionNo, list);
+        }
+        const orphanDisputesByDisplayNo = this._orphanDisputesByDisplayNo(
+            disputes.filter((d) => !attachedDisputeIds.has(d.id)),
+            allFeedback,
+            task.promptVersions || versions
+        );
+        const orphanFlagsByDisplayNo = this._orphanFlagsByDisplayNo(item.flags || [], task.promptVersions || versions);
+
+        let renderedVersions;
+        if (expanded) {
+            renderedVersions = [...versions].sort((a, b) => (
+                ui.timelineNewestFirst
+                    ? b.displayVersionNo - a.displayVersionNo
+                    : a.displayVersionNo - b.displayVersionNo
+            ));
+        } else {
+            const extras = [...new Set(item.extraVisibleVersionNos || [])]
+                .filter((n) => n !== selectedDisplayNo)
+                .sort((a, b) => b - a);
+            renderedVersions = [selectedDisplayNo, ...extras]
+                .map((n) => versionByDisplayNo.get(n))
+                .filter(Boolean);
+        }
+
+        const headerLines = [];
+        const key = String(task.key || '').trim();
+        if (key) headerLines.push('`' + key + '`');
+        const statusMeta = this._statusDisplayMeta(task.status);
+        headerLines.push('Task Status: ' + (statusMeta.label || task.status || '—'));
+        const created = this._plainTimestampDurationText(
+            this._taskInitialCreatedAt(task),
+            task.initialCreationTimeSeconds
+        );
+        if (created) headerLines.push('Created ' + created);
+        const author = this._plainPersonLine(
+            task.author && task.author.name,
+            task.author && task.author.email
+        );
+        if (author) headerLines.push('Author: ' + author);
+        const metaLines = [];
+        const env = this._envName(task.envKey) || task.environment;
+        if (env) metaLines.push('Environment: ' + env);
+        if (task.team) metaLines.push('Team: ' + task.team);
+        const project = task.project || this._projectName(task.projectId);
+        if (project) metaLines.push('Project: ' + project);
+        const headerParts = [headerLines.join('\n')];
+        if (metaLines.length) headerParts.push(metaLines.join('\n'));
+        if (allFeedback.length) {
+            const reviewers = [...allFeedback].reverse().map((entry) => {
+                const isVerifierFailure = Boolean(entry.isVerifierFailure || (entry.display && entry.display.isVerifierFailure));
+                const isSystem = Boolean(entry.isSystemFeedback || (entry.display && entry.display.isSystemFeedback))
+                    || isVerifierFailure;
+                const name = isSystem
+                    ? 'System'
+                    : ((entry.reviewer && (entry.reviewer.name || entry.reviewer.email)) || 'Reviewer');
+                const outcome = this._feedbackEntryOutcomePlainText(entry);
+                return outcome ? (name + ' `' + outcome + '`') : name;
+            });
+            headerParts.push('Reviewers: ' + reviewers.join(', '));
+        }
+
+        const out = [this._joinPlainSections(headerParts)];
+        const maxDisplayVersionNo = hasTimeline
+            ? Math.max(...versions.map((v) => v.displayVersionNo))
+            : 0;
+        for (const version of renderedVersions) {
+            const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
+            const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
+            const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
+            const orphanFlagsForVersion = orphanFlagsByDisplayNo.get(version.displayVersionNo) || [];
+            const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+            const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
+            let statusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
+            if (!statusLabel && hasTimeline && version.displayVersionNo < maxDisplayVersionNo) {
+                statusLabel = 'QA Edited';
+            }
+            if (statusLabel === 'Returned') statusLabel = 'Returned for Revision';
+            if (statusLabel === 'Escalated') statusLabel = 'Escalated for Fleet Review';
+            if (statusLabel === 'Flagged') statusLabel = 'Flagged as Bugged';
+            out.push(this._serializePromptVersionPlainText(version, {
+                showVersionLabel: hasTimeline,
+                statusLabel
+            }));
+            const actionTexts = this._serializeVersionTaskActionsPlainText(
+                feedbackEntries, fallback, orphanDisputes, orphanFlagsForVersion
+            );
+            for (const t of actionTexts) out.push(t);
+        }
+
+        const userStoryUi = this._getUserStoryUi(iid);
+        if (userStoryUi && userStoryUi.visible) {
+            const us = this._serializeUserStoryPlainText(userStoryUi);
+            if (us) out.push(us);
+        }
+        const sessionUi = this._getSessionQaUi(iid);
+        if (sessionUi && sessionUi.visible) {
+            for (const review of sessionUi.reviews || []) {
+                const t = this._serializeSessionQaPlainText(review);
+                if (t) out.push(t);
+            }
+        }
+        const verifierUi = this._getVerifierOutputUi(iid);
+        if (verifierUi && verifierUi.visible) {
+            for (const exec of verifierUi.executions || []) {
+                const t = this._serializeVerifierOutputPlainText(exec);
+                if (t) out.push(t);
+            }
+        }
+
+        return out.filter(Boolean).join('\n\n---\n\n');
+    },
+
+    async _copyTaskCardPlainText(itemId, buttonEl) {
+        const text = this._serializeTaskCardPlainText(itemId);
+        if (!text) {
+            Logger.warn('dashboard: card copy skipped (empty)');
+            if (buttonEl && Context.buttonFeedback) Context.buttonFeedback.flashFailure(buttonEl);
+            return false;
+        }
+        Logger.log('dashboard: card copied ' + text.length + ' chars');
+        return this._copyWithFeedback(buttonEl, text);
+    },
+
     _extLinkIconSvg(active) {
         const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
         const opacity = active ? '1' : '0.45';
@@ -6203,6 +6658,7 @@ const searchOutputResultsPaneMethods = {
             ? ('qa:' + feedbackId)
             : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>`
+            + this._copyIconHtml(this._serializeQaFeedbackPlainText(qa))
             + submittedHtml
             + promptRatingHtml
             + helpfulnessActions;
@@ -6319,7 +6775,8 @@ const searchOutputResultsPaneMethods = {
                 resolverHtml,
                 noteLabel: 'Reason',
                 noteBodyHtml: resolutionBody,
-                copyText: this._dashQuotedText(display.resolutionText)
+                copyText: this._dashQuotedText(display.resolutionText),
+                blockCopyText: this._serializeDisputeResolutionPlainText(display)
             });
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
@@ -6327,7 +6784,9 @@ const searchOutputResultsPaneMethods = {
             ? `${categoryHtml}${claimControlHtml}`
             : '';
         const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
-        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>${submittedHtml}`;
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
+            + this._copyIconHtml(this._serializeDisputePlainText(display))
+            + submittedHtml;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
         const resolutionPanelHtml = !display.resolutionAt
             ? this._disputeResolutionPanelHtml(display, itemId)
@@ -6399,7 +6858,8 @@ const searchOutputResultsPaneMethods = {
                 resolverHtml,
                 noteLabel: 'Resolution Note',
                 noteBodyHtml: resolutionBody,
-                copyText: this._dashQuotedText(display.resolutionNote)
+                copyText: this._dashQuotedText(display.resolutionNote),
+                blockCopyText: this._serializeFlagResolutionPlainText(display)
             });
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
@@ -6410,7 +6870,9 @@ const searchOutputResultsPaneMethods = {
             </div>`
             : '';
         const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
-        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>${submittedHtml}`;
+        const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
+            + this._copyIconHtml(this._serializeFlagPlainText(display))
+            + submittedHtml;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`);
         const bodyHtml = `${flaggerHtml}
                 ${issuesHtml}
@@ -6602,6 +7064,16 @@ const searchOutputResultsPaneMethods = {
         if (!versionActionBadge && hasSubsequentVersions) {
             versionActionBadge = this._qaEditedBadgeHtml();
         }
+        let promptStatusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
+        if (!promptStatusLabel && hasSubsequentVersions) promptStatusLabel = 'QA Edited';
+        if (promptStatusLabel === 'Returned') promptStatusLabel = 'Returned for Revision';
+        if (promptStatusLabel === 'Escalated') promptStatusLabel = 'Escalated for Fleet Review';
+        if (promptStatusLabel === 'Flagged') promptStatusLabel = 'Flagged as Bugged';
+        const promptCopyText = this._serializePromptVersionPlainText(version, {
+            showVersionLabel: showVersionLabel || Boolean(versionHeaderControls),
+            statusLabel: promptStatusLabel,
+            omitNotesToQa: false
+        });
         const taskActionsHtml = this._versionTaskActionsHtml(
             feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags,
             hq, cs, fz, rx, itemId
@@ -6617,7 +7089,7 @@ const searchOutputResultsPaneMethods = {
         )}</span>`;
         const verifierBtnHtml = this._versionVerifierButtonHtml(itemId, version);
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
-        const leftHeader = `${promptLabel}${this._copyIconHtml(this._dashQuotedText(version.prompt))}${submittedHtml}${verifierBtnHtml}`;
+        const leftHeader = `${promptLabel}${this._copyIconHtml(promptCopyText)}${submittedHtml}${verifierBtnHtml}`;
         let rightHeader = '';
         if (inActivePair) {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
@@ -6675,7 +7147,10 @@ const searchOutputResultsPaneMethods = {
             : '—';
         const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
         const blockId = 'version:' + itemId + ':quick';
-        const leftHeader = `${this._labelSpan('Prompt')}${this._copyIconHtml(promptText)}`;
+        const leftHeader = `${this._labelSpan('Prompt')}${this._copyIconHtml(this._serializePromptVersionPlainText(
+            { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
+            { showVersionLabel: false, statusLabel: '' }
+        ))}`;
         const rightHeader = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt));
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
         let promptSectionHtml = this._actionBlockShellHtml(
@@ -6915,7 +7390,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '8.0',
+    _version: '9.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

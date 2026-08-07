@@ -5693,6 +5693,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) dash._addToDiffFromCard(itemId);
                 return;
             }
+            const copyCardBtn = e.target.closest('[data-wf-dash-copy-card]');
+            if (copyCardBtn && modal.contains(copyCardBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = copyCardBtn.getAttribute('data-item-id');
+                if (itemId) void dash._copyTaskCardPlainText(itemId, copyCardBtn);
+                return;
+            }
             const getVerifierBtn = e.target.closest('[data-wf-dash-get-verifier]');
             if (getVerifierBtn && modal.contains(getVerifierBtn)) {
                 e.stopPropagation();
@@ -5933,7 +5941,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.38',
+    _version: '9.39',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
