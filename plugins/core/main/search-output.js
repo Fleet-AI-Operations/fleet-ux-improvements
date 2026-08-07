@@ -3884,7 +3884,11 @@ const searchOutputCoreMethods = {
 
     _refreshHelpfulnessFilterUi() {
         if (!this._state.cachedItems) return;
-        this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
+        this._refreshResultsView({
+            filterSource: 'results-mutate',
+            reindexFilters: true,
+            refreshSidePanel: false
+        });
     },
 
     _refreshSessionQaFilterUi() {
@@ -4450,7 +4454,7 @@ const searchOutputCoreMethods = {
         ).join('');
     },
 
-    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateInitialBatch = false } = {}) {
+    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateInitialBatch = false, refreshSidePanel = true } = {}) {
         const lib = dashLib();
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
@@ -4537,7 +4541,11 @@ const searchOutputCoreMethods = {
             });
             this._syncResultsToolbarDerivedUi();
             this._validateRangeUi();
-            this._requestResultsSidePanelRefresh();
+            if (refreshSidePanel) {
+                this._requestResultsSidePanelRefresh();
+            } else {
+                this._state.statsPanelDirty = true;
+            }
         };
 
         if (prehydrateInitialBatch && (this._state.resultsPage || 0) === 0) {
@@ -5925,7 +5933,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.37',
+    _version: '9.38',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
