@@ -1,7 +1,7 @@
 {
   "version": "13.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.282",
+  "archetypesVersion": "14.283",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -212,8 +212,8 @@
     },
     {
       "name": "diff-engine.js",
-      "version": "3.8",
-      "hash": "sha256-7176abf023950a5d677aa3a53b619b35ce98ff171a31dbbcbe39b38c868521cd",
+      "version": "3.9",
+      "hash": "sha256-1f929426ce3ff1edbaab74f32df2ebf89cf787ef7628027ed3285ea4f6082be0",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "5.3",
-      "hash": "sha256-50ebf34d43bbad7782505826e815df723e31ec9f93737e2137f3ec827ea08b50",
+      "version": "5.4",
+      "hash": "sha256-ccff7f1b2a6f1ec35f058255d09e19b21880501bd10c794b36be4a728e8867cc",
       "log": false
     },
     {

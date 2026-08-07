@@ -33,9 +33,14 @@ const DV_REEL_NAV_LABEL_H = 14;
 const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
 const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
 const DV_DRAG_THRESHOLD_PX = 4;
+const DV_HOVER_DEBOUNCE_MS = 50;
 
 let _dvSlotSeq = 0;
 let _dvLensSyncScheduled = false;
+let _dvPairCache = new Map();
+let _dvPrefetchToken = 0;
+let _dvHoverDebounceTimer = null;
+let _dvHoverPendingIdx = null;
 
 // ── Module state ──
 
@@ -150,6 +155,142 @@ function _dvPlainPromptHtml(text) {
     return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
 }
 
+function _dvInvalidatePairCache() {
+    _dvPairCache.clear();
+    _dvPrefetchToken += 1;
+}
+
+function _dvCacheSettingsKey() {
+    return [
+        _dvState.granularity,
+        _dvState.punctuationMode,
+        _dvState.highlightModality,
+        _dvState.linkSplits ? '1' : '0',
+        String(_dvEffectiveHighlightMinLength()),
+        _dvState.showHighlights ? '1' : '0'
+    ].join('|');
+}
+
+function _dvSlotCacheFingerprint(slot) {
+    if (!slot) return 'none';
+    const text = _dvSlotPromptText(slot);
+    let h = 0;
+    const step = Math.max(1, Math.floor(text.length / 64) || 1);
+    for (let i = 0; i < text.length; i += step) {
+        h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+    }
+    return String(slot.slotId) + ':' + String(slot.lensIndex) + ':' + text.length + ':' + h;
+}
+
+function _dvPairCacheKey(leftSlot, rightSlot) {
+    return _dvCacheSettingsKey() + '::' + _dvSlotCacheFingerprint(leftSlot)
+        + '::' + _dvSlotCacheFingerprint(rightSlot);
+}
+
+function _dvDiffOpts(includeSimilarity) {
+    return {
+        granularity: _dvState.granularity,
+        showHighlights: _dvState.showHighlights,
+        highlightModality: _dvState.highlightModality,
+        minHighlightLength: _dvEffectiveHighlightMinLength(),
+        linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode,
+        includeSimilarity: !!includeSimilarity
+    };
+}
+
+function _dvGetOrComputeBundle(leftSlot, rightSlot, includeSimilarity) {
+    const leftText = _dvSlotPromptText(leftSlot);
+    const rightText = _dvSlotPromptText(rightSlot);
+    const eng = _dvEngine();
+    if (!eng || typeof eng.diffBundle !== 'function') {
+        return {
+            baseHtml: _dvPlainPromptHtml(leftText),
+            compareHtml: _dvPlainPromptHtml(rightText),
+            percent: null,
+            noDifference: null,
+            effectiveGranularity: _dvState.granularity,
+            diff: null
+        };
+    }
+    const key = _dvPairCacheKey(leftSlot, rightSlot);
+    let bundle = _dvPairCache.get(key);
+    if (bundle) {
+        if (includeSimilarity && (typeof bundle.percent !== 'number' || bundle.noDifference == null)
+            && typeof eng.similarityPercent === 'function') {
+            const sim = eng.similarityPercent(leftText, rightText, {
+                granularity: _dvState.granularity,
+                punctuationMode: _dvState.punctuationMode,
+                effectiveGranularity: bundle.effectiveGranularity,
+                lcsLength: bundle.lcsLength,
+                unitLenA: bundle.unitLenA,
+                unitLenB: bundle.unitLenB,
+                diff: bundle.diff
+            });
+            bundle = Object.assign({}, bundle, {
+                percent: sim.percent,
+                noDifference: sim.noDifference,
+                effectiveGranularity: sim.effectiveGranularity || bundle.effectiveGranularity
+            });
+            _dvPairCache.set(key, bundle);
+        }
+        return bundle;
+    }
+    bundle = eng.diffBundle(leftText, rightText, _dvDiffOpts(includeSimilarity));
+    _dvPairCache.set(key, bundle);
+    return bundle;
+}
+
+function _dvSchedulePairPrefetch() {
+    if (_dvState.mode !== 'tasks' || !_dvState.showHighlights || _dvState.slots.length < 2) return;
+    const token = ++_dvPrefetchToken;
+    const jobs = [];
+    if (_dvState.compMode === 'rolling') {
+        _dvClampRollingLeft();
+        const seen = new Set();
+        const pushPair = (leftIdx) => {
+            if (leftIdx < 0 || leftIdx + 1 >= _dvState.slots.length) return;
+            if (seen.has(leftIdx)) return;
+            seen.add(leftIdx);
+            jobs.push([_dvState.slots[leftIdx], _dvState.slots[leftIdx + 1]]);
+        };
+        pushPair(_dvState.rollingLeft);
+        pushPair(_dvState.rollingLeft - 1);
+        pushPair(_dvState.rollingLeft + 1);
+    } else {
+        const base = _dvState.slots[0];
+        for (let i = 1; i < _dvState.slots.length; i++) {
+            jobs.push([base, _dvState.slots[i]]);
+        }
+    }
+    let i = 0;
+    const step = () => {
+        if (token !== _dvPrefetchToken) return;
+        while (i < jobs.length) {
+            const pair = jobs[i++];
+            const left = pair[0];
+            const right = pair[1];
+            if (!left || !right || left.loading || right.loading || !left.promptVersions || !right.promptVersions) {
+                continue;
+            }
+            _dvGetOrComputeBundle(left, right, true);
+            break;
+        }
+        if (i < jobs.length) {
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(step, { timeout: 200 });
+            } else {
+                setTimeout(step, 0);
+            }
+        }
+    };
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(step, { timeout: 100 });
+    } else {
+        setTimeout(step, 0);
+    }
+}
+
 function _dvClampHighlightMinLength(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return DV_HIGHLIGHT_DEFAULT_MIN_WORDS;
@@ -240,7 +381,6 @@ function _dvRefreshHighlightLengthRange(modal) {
         _dvSyncHighlightLengthUi(modal);
         return;
     }
-    const pairs = _dvComparePairs(modal, { mode: 'all' });
     let globalMin = Infinity;
     let globalMax = 0;
     const allLengths = [];
@@ -250,12 +390,41 @@ function _dvRefreshHighlightLengthRange(modal) {
         linkSplits: _dvState.linkSplits,
         punctuationMode: _dvState.punctuationMode
     };
-    for (const pair of pairs) {
-        const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
-        if (range.lengths.length) {
-            globalMin = Math.min(globalMin, range.min);
-            globalMax = Math.max(globalMax, range.max);
-            allLengths.push(...range.lengths);
+
+    if (_dvState.mode === 'tasks' && _dvState.slots.length >= 2) {
+        const slotPairs = [];
+        if (_dvState.compMode === 'rolling') {
+            _dvClampRollingLeft();
+            const left = _dvState.slots[_dvState.rollingLeft];
+            const right = _dvState.slots[_dvState.rollingLeft + 1];
+            if (left && right) slotPairs.push([left, right]);
+        } else {
+            const base = _dvState.slots[0];
+            for (let i = 1; i < _dvState.slots.length; i++) {
+                slotPairs.push([base, _dvState.slots[i]]);
+            }
+        }
+        for (let p = 0; p < slotPairs.length; p++) {
+            const left = slotPairs[p][0];
+            const right = slotPairs[p][1];
+            if (!left || !right || left.loading || right.loading) continue;
+            const bundle = _dvGetOrComputeBundle(left, right, false);
+            const range = eng.highlightSectionLengthRange('', '', Object.assign({}, opts, { bundle: bundle }));
+            if (range.lengths.length) {
+                globalMin = Math.min(globalMin, range.min);
+                globalMax = Math.max(globalMax, range.max);
+                allLengths.push(...range.lengths);
+            }
+        }
+    } else {
+        const pairs = _dvComparePairs(modal, { mode: 'all' });
+        for (const pair of pairs) {
+            const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
+            if (range.lengths.length) {
+                globalMin = Math.min(globalMin, range.min);
+                globalMax = Math.max(globalMax, range.max);
+                allLengths.push(...range.lengths);
+            }
         }
     }
     if (!allLengths.length) {
@@ -277,7 +446,8 @@ function _dvDiffPair(baseText, compareText, granularity) {
         highlightModality: _dvState.highlightModality,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
         linkSplits: _dvState.linkSplits,
-        punctuationMode: _dvState.punctuationMode
+        punctuationMode: _dvState.punctuationMode,
+        includeSimilarity: false
     });
 }
 
@@ -1697,6 +1867,27 @@ function _dvAboveLabelInnerHtml() {
     if (!pair) return '';
     const eng = _dvEngine();
     if (!eng) return '';
+
+    let bundle = null;
+    if (_dvState.mode === 'tasks' && _dvState.slots.length >= 2) {
+        let leftSlot = null;
+        let rightSlot = null;
+        if (_dvState.compMode === 'rolling') {
+            _dvClampRollingLeft();
+            leftSlot = _dvState.slots[_dvState.rollingLeft];
+            rightSlot = _dvState.slots[_dvState.rollingLeft + 1];
+        } else if (_dvState.slots.length === 2) {
+            leftSlot = _dvState.slots[0];
+            rightSlot = _dvState.slots[1];
+        } else if (_dvState.hoverSlotIdx != null && _dvState.hoverSlotIdx > 0) {
+            leftSlot = _dvState.slots[0];
+            rightSlot = _dvState.slots[_dvState.hoverSlotIdx];
+        }
+        if (leftSlot && rightSlot && !leftSlot.loading && !rightSlot.loading) {
+            bundle = _dvGetOrComputeBundle(leftSlot, rightSlot, true);
+        }
+    }
+
     return eng.similarityLabelHtml({
         leftText: pair.leftText,
         rightText: pair.rightText,
@@ -1706,7 +1897,8 @@ function _dvAboveLabelInnerHtml() {
         minHighlightLength: _dvEffectiveHighlightMinLength(),
         linkSplits: _dvState.linkSplits,
         punctuationMode: _dvState.punctuationMode,
-        lengthRange: _dvState.highlightLengthRange
+        lengthRange: _dvState.highlightLengthRange,
+        bundle: bundle
     });
 }
 
@@ -2035,9 +2227,11 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
         const rightIdx = leftIdx + 1;
         const leftSlot = _dvState.slots[leftIdx];
         const rightSlot = _dvState.slots[rightIdx];
-        const leftText = _dvSlotPromptText(leftSlot);
-        const rightText = _dvSlotPromptText(rightSlot);
-        const { baseHtml, compareHtml } = _dvDiffPair(leftText, rightText, _dvState.granularity);
+        const bundle = (leftSlot && rightSlot && !leftSlot.loading && !rightSlot.loading)
+            ? _dvGetOrComputeBundle(leftSlot, rightSlot, false)
+            : null;
+        const baseHtml = bundle ? bundle.baseHtml : _dvPlainPromptHtml(_dvSlotPromptText(leftSlot));
+        const compareHtml = bundle ? bundle.compareHtml : _dvPlainPromptHtml(_dvSlotPromptText(rightSlot));
 
         for (let i = 0; i < _dvState.slots.length; i++) {
             const slot = _dvState.slots[i];
@@ -2065,9 +2259,8 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
     if (twoSlots) {
         const compare = _dvState.slots[1];
         if (compare && compare.promptVersions && !compare.loading) {
-            const compareText = _dvSlotPromptText(compare);
-            const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
-            if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, baseHtml, null);
+            const bundle = _dvGetOrComputeBundle(base, compare, false);
+            if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, bundle.baseHtml, null);
         } else if (baseLensPre) {
             _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
         }
@@ -2078,10 +2271,9 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
     for (let i = 1; i < _dvState.slots.length; i++) {
         const slot = _dvState.slots[i];
         if (!slot.promptVersions || slot.loading) continue;
-        const compareText = _dvSlotPromptText(slot);
-        const { compareHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
+        const bundle = _dvGetOrComputeBundle(base, slot, false);
         const lensPre = getPre(i);
-        if (lensPre) lensPre.innerHTML = compareHtml;
+        if (lensPre) lensPre.innerHTML = bundle.compareHtml;
     }
 }
 
@@ -2105,6 +2297,7 @@ function _dvRenderDiffs(modal) {
     _dvApplyDiffToLensPres(modal, lensPres);
     _dvUpdateAboveLabels(modal);
     _dvScheduleReelLensSync(modal);
+    _dvSchedulePairPrefetch();
 }
 
 function _dvSetBaseLensHtml(baseLensPre, html, hoverSrc) {
@@ -2151,10 +2344,25 @@ function _dvSetHoverDiff(modal, slotIdx) {
     if (!base || !base.promptVersions || !compare || !compare.promptVersions) return;
     const baseLensPre = _dvGetLensPreRef(modal, 0);
     if (baseLensPre && baseLensPre.getAttribute('data-dv-hover-src') === String(slotIdx)) return;
-    const baseText = _dvSlotPromptText(base);
-    const compareText = _dvSlotPromptText(compare);
-    const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
-    _dvSetBaseLensHtml(baseLensPre, baseHtml, slotIdx);
+    const bundle = _dvGetOrComputeBundle(base, compare, true);
+    _dvSetBaseLensHtml(baseLensPre, bundle.baseHtml, slotIdx);
+}
+
+function _dvScheduleHoverDiff(modal, slotIdx) {
+    _dvHoverPendingIdx = slotIdx;
+    if (_dvHoverDebounceTimer) clearTimeout(_dvHoverDebounceTimer);
+    _dvHoverDebounceTimer = setTimeout(() => {
+        _dvHoverDebounceTimer = null;
+        const pending = _dvHoverPendingIdx;
+        if (pending == null) {
+            _dvSetHoverDiff(modal, null);
+            _dvUpdateAboveLabels(modal);
+            return;
+        }
+        if (_dvState.hoverSlotIdx !== pending) return;
+        _dvSetHoverDiff(modal, pending);
+        _dvUpdateAboveLabels(modal);
+    }, DV_HOVER_DEBOUNCE_MS);
 }
 
 function _dvRemoveRollingOverlay(modal) {
@@ -2480,6 +2688,7 @@ function _dvAttachListeners(modal) {
         if (segBtn && modal.contains(segBtn)) {
             const gran = segBtn.getAttribute('data-dv-seg');
             if (gran !== _dvState.granularity) {
+                _dvInvalidatePairCache();
                 _dvState.granularity = gran;
                 try { Storage.setData(DV_GRANULARITY_KEY, gran); } catch (_e) { /* no-op */ }
                 _dvSyncGranularityUi(modal);
@@ -2511,6 +2720,7 @@ function _dvAttachListeners(modal) {
         if (punctBtn && modal.contains(punctBtn)) {
             const punctMode = punctBtn.getAttribute('data-dv-punctuation');
             if (punctMode !== _dvState.punctuationMode) {
+                _dvInvalidatePairCache();
                 _dvState.punctuationMode = punctMode;
                 try { Storage.setData(DV_PUNCTUATION_KEY, punctMode); } catch (_e) { /* no-op */ }
                 _dvSyncPunctuationUi(modal);
@@ -2527,6 +2737,7 @@ function _dvAttachListeners(modal) {
         if (modalityBtn && modal.contains(modalityBtn)) {
             const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
             if (modality !== _dvState.highlightModality) {
+                _dvInvalidatePairCache();
                 _dvState.highlightModality = modality;
                 try { Storage.setData(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
                 _dvSyncHighlightModalityUi(modal);
@@ -2543,6 +2754,7 @@ function _dvAttachListeners(modal) {
         if (linkSplitsBtn && modal.contains(linkSplitsBtn)) {
             const enabled = linkSplitsBtn.getAttribute('data-dv-link-splits') === 'on';
             if (enabled !== _dvState.linkSplits) {
+                _dvInvalidatePairCache();
                 _dvState.linkSplits = enabled;
                 try { Storage.setData(DV_LINK_SPLITS_KEY, enabled ? 'on' : 'off'); } catch (_e) { /* no-op */ }
                 _dvSyncLinkSplitsUi(modal);
@@ -2580,6 +2792,7 @@ function _dvAttachListeners(modal) {
         if (highlightsBtn && modal.contains(highlightsBtn)) {
             const enabled = highlightsBtn.getAttribute('data-dv-highlights') === 'on';
             if (enabled !== _dvState.showHighlights) {
+                _dvInvalidatePairCache();
                 _dvState.showHighlights = enabled;
                 _dvState.hoverSlotIdx = null;
                 _dvSetHoverDiff(modal, null);
@@ -2715,6 +2928,7 @@ function _dvAttachListeners(modal) {
         lengthSlider.addEventListener('input', () => {
             const val = parseInt(lengthSlider.value, 10);
             if (!Number.isFinite(val)) return;
+            _dvInvalidatePairCache();
             _dvState.highlightMinLength = _dvClampHighlightMinLength(val);
             _dvSyncHighlightLengthUi(modal);
             _dvRenderDiffs(modal);
@@ -2757,8 +2971,8 @@ function _dvAttachListeners(modal) {
         if (_dvState.hoverSlotIdx === idx) return;
         _dvState.hoverSlotIdx = idx;
         _dvApplyCompareHoverRing(idx, modal);
-        if (_dvState.slots.length > 2) _dvSetHoverDiff(modal, idx);
-        _dvUpdateAboveLabels(modal);
+        if (_dvState.slots.length > 2) _dvScheduleHoverDiff(modal, idx);
+        else _dvUpdateAboveLabels(modal);
     });
 
     modal.addEventListener('mouseout', (e) => {
@@ -2770,8 +2984,11 @@ function _dvAttachListeners(modal) {
         const related = e.relatedTarget;
         if (related instanceof Node && slot.contains(related)) return;
         _dvState.hoverSlotIdx = null;
-        _dvSetHoverDiff(modal, null);
-        _dvUpdateAboveLabels(modal);
+        if (_dvState.slots.length > 2) _dvScheduleHoverDiff(modal, null);
+        else {
+            _dvSetHoverDiff(modal, null);
+            _dvUpdateAboveLabels(modal);
+        }
     });
 }
 
@@ -3363,7 +3580,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.3',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
 
