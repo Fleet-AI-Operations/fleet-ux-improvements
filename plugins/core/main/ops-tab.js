@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '11.0',
+    _version: '11.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4932,8 +4932,31 @@ const plugin = {
             Logger.warn('Add to Diff skipped — Context.diffViewer.addVerifier missing');
             return;
         }
-        dv.addVerifier({ taskId, key });
-        Logger.log('verifier history added to Diff — ' + (key || taskId));
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierAddDiffSelect');
+        let preferredVerifierVersionId = this._readOpsVerifierVersionSelectPin(modal)
+            || (state && state.selectedVersion ? String(state.selectedVersion).trim() : '')
+            || (resolved && (resolved.versionId || resolved.verifierVersionId)
+                ? String(resolved.versionId || resolved.verifierVersionId).trim()
+                : '');
+        if (preferredVerifierVersionId && !OPS_UUID_RE.test(preferredVerifierVersionId)) {
+            preferredVerifierVersionId = '';
+        }
+        let preferredDisplayVersionNo = state && state.displayVersionNo != null
+            ? state.displayVersionNo
+            : null;
+        if (preferredDisplayVersionNo == null && select && select.selectedOptions && select.selectedOptions[0]) {
+            const label = String(select.selectedOptions[0].textContent || '');
+            const m = label.match(/^v(\d+)/);
+            if (m) preferredDisplayVersionNo = Number(m[1]);
+        }
+        dv.addVerifier({
+            taskId,
+            key,
+            preferredVerifierVersionId,
+            preferredDisplayVersionNo
+        });
+        Logger.log('verifier history added to Diff — ' + (key || taskId)
+            + (preferredDisplayVersionNo != null ? ' v' + preferredDisplayVersionNo : ''));
         this._setOpsVerifierStatus(modal, 'Added verifier history to Diff.');
     },
 

@@ -497,27 +497,53 @@ async function _dvFetchVerifierSourceByVersionId(versionId, seed) {
 
 async function _dvFetchVerifier(raw, seed) {
     const base = await _dvFetchTask(raw);
-    const sourceVersions = [];
     const promptVersions = base.promptVersions || [];
+    // One reel entry per unique verifier pin; keep latest displayVersionNo as label.
+    const byPin = new Map();
     for (let i = 0; i < promptVersions.length; i++) {
         const pv = promptVersions[i];
         const pin = pv && pv.verifierVersionId ? String(pv.verifierVersionId).trim() : '';
         if (!pin) continue;
-        try {
-            const source = await _dvFetchVerifierSourceByVersionId(pin, {
-                taskId: base.taskId,
-                key: base.key
-            });
-            if (!source) continue;
-            sourceVersions.push({
-                displayVersionNo: pv.displayVersionNo,
-                prompt: source,
+        const prev = byPin.get(pin);
+        const displayNo = pv.displayVersionNo;
+        if (!prev || (displayNo != null && (prev.displayVersionNo == null || displayNo >= prev.displayVersionNo))) {
+            byPin.set(pin, {
+                displayVersionNo: displayNo,
                 createdAt: pv.createdAt || '',
                 verifierVersionId: pin,
                 verifierId: pv.verifierId || ''
             });
+        }
+    }
+    const uniquePins = [...byPin.values()].sort((a, b) => {
+        const an = a.displayVersionNo != null ? a.displayVersionNo : 0;
+        const bn = b.displayVersionNo != null ? b.displayVersionNo : 0;
+        return an - bn;
+    });
+    const sourceCache = new Map();
+    const sourceVersions = [];
+    for (let i = 0; i < uniquePins.length; i++) {
+        const entry = uniquePins[i];
+        const pin = entry.verifierVersionId;
+        try {
+            let source = sourceCache.get(pin);
+            if (source == null) {
+                source = await _dvFetchVerifierSourceByVersionId(pin, {
+                    taskId: base.taskId,
+                    key: base.key
+                });
+                sourceCache.set(pin, source || '');
+            }
+            if (!source) continue;
+            sourceVersions.push({
+                displayVersionNo: entry.displayVersionNo,
+                prompt: source,
+                createdAt: entry.createdAt || '',
+                verifierVersionId: pin,
+                verifierId: entry.verifierId || ''
+            });
         } catch (err) {
-            Logger.warn('verifier source hydrate failed for v' + pv.displayVersionNo, err);
+            Logger.warn('verifier source hydrate failed for v' + entry.displayVersionNo, err);
         }
     }
     if (!sourceVersions.length) {
@@ -656,6 +682,54 @@ function _dvNextLensIndex(taskId, promptVersions, contentKind) {
     return null; // all versions occupied
 }
 
+function _dvResolvePreferredLensIndex(taskId, promptVersions, contentKind, seed) {
+    if (!promptVersions || promptVersions.length === 0) return 0;
+    const kind = _dvNormalizeContentKind(contentKind);
+    const taken = new Set(
+        _dvState.slots
+            .filter((s) => (
+                s.taskId === taskId
+                && _dvNormalizeContentKind(s.contentKind) === kind
+                && !s.loading
+                && s.promptVersions
+            ))
+            .map((s) => s.lensIndex)
+    );
+    const preferPin = seed && seed.preferredVerifierVersionId
+        ? String(seed.preferredVerifierVersionId).trim()
+        : '';
+    const preferDisplay = seed && seed.preferredDisplayVersionNo != null
+        ? Number(seed.preferredDisplayVersionNo)
+        : null;
+
+    const tryIndex = (idx) => {
+        if (idx == null || idx < 0 || idx >= promptVersions.length) return null;
+        if (taken.has(idx)) return null;
+        return idx;
+    };
+
+    if (preferPin) {
+        const byPin = promptVersions.findIndex((v) => (
+            v && String(v.verifierVersionId || '').trim() === preferPin
+        ));
+        const hit = tryIndex(byPin);
+        if (hit != null) return hit;
+    }
+    if (preferDisplay != null && Number.isFinite(preferDisplay)) {
+        const byDisplay = promptVersions.findIndex((v) => (
+            v && Number(v.displayVersionNo) === preferDisplay
+        ));
+        const hit = tryIndex(byDisplay);
+        if (hit != null) return hit;
+    }
+    // No explicit pin (Current): prefer latest reel entry when free.
+    if (!preferPin && preferDisplay == null) {
+        const latest = tryIndex(promptVersions.length - 1);
+        if (latest != null) return latest;
+    }
+    return _dvNextLensIndex(taskId, promptVersions, contentKind) ?? 0;
+}
+
 // ── Slot management ──
 
 async function _dvOverflowToStash(seed, modal) {
@@ -766,7 +840,10 @@ async function _dvHydrateSlot(slotId, seed, modal) {
         slot.authorEmail = data.authorEmail || slot.authorEmail;
         slot.key = data.key || slot.key;
         slot.createdAt = data.createdAt || slot.createdAt || '';
-        slot.lensIndex = _dvNextLensIndex(data.taskId, data.promptVersions, contentKind) ?? 0;
+        const preferredIdx = contentKind === 'verifier'
+            ? _dvResolvePreferredLensIndex(data.taskId, data.promptVersions, contentKind, seed)
+            : (_dvNextLensIndex(data.taskId, data.promptVersions, contentKind) ?? 0);
+        slot.lensIndex = preferredIdx;
         slot.loading = false;
         _dvAddToStash({
             taskId: data.taskId,
@@ -777,9 +854,31 @@ async function _dvHydrateSlot(slotId, seed, modal) {
             versionCount: (data.promptVersions || []).length,
             contentKind
         });
+        const versionLabel = data.promptVersions && data.promptVersions[preferredIdx]
+            ? data.promptVersions[preferredIdx].displayVersionNo
+            : null;
         Logger.log('slot hydrated — ' + (contentKind === 'verifier' ? 'verifier ' : '')
-            + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
+            + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)'
+            + (versionLabel != null ? ' · lens v' + versionLabel : ''));
         _dvRenderAll(modal);
+
+        // Sole verifier with multiple distinct pins: fan into slots so highlights work.
+        if (contentKind === 'verifier'
+            && _dvState.slots.length === 1
+            && (data.promptVersions || []).length >= 2) {
+            slot.lensIndex = 0;
+            _dvApplyViewProgression(modal);
+            if (preferredIdx > 0) {
+                _dvState.rollingLeft = Math.max(
+                    0,
+                    Math.min(preferredIdx - 1, _dvState.slots.length - 2)
+                );
+                _dvUpdateRollingOverlay(modal);
+            }
+            Logger.log('verifier auto View Progression — '
+                + _dvState.slots.length + ' slots'
+                + (versionLabel != null ? ' · focus v' + versionLabel : ''));
+        }
     } catch (err) {
         const slotIdx = _dvState.slots.findIndex((s) => s.slotId === slotId);
         if (slotIdx < 0) return;
@@ -3231,7 +3330,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.0',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
 
