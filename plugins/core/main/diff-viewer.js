@@ -11,12 +11,14 @@ const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_LINK_SPLITS_KEY = 'fleet-ux:diff-viewer-link-splits';
 const DV_PUNCTUATION_KEY = 'fleet-ux:diff-viewer-punctuation';
+const DV_WIDTH_KEY = 'fleet-ux:diff-viewer-width';
 const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
 const DV_HIGHLIGHT_LENGTH_MIN = 1;
 const DV_HIGHLIGHT_LENGTH_MAX = 50;
 const DV_MAX_SLOTS = 10;
 const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
+const DV_SLOT_WIDTH_WIDE_PX = Math.round(DV_SLOT_WIDTH_PX * 1.33); // 33% wider lenses
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
 const DV_REEL_PEEK_H = 14;
@@ -40,6 +42,7 @@ let _dvLensSyncScheduled = false;
 const _dvState = {
     mode: 'tasks',       // 'tasks' | 'free-text'
     granularity: 'word', // 'word' | 'char' | 'line'
+    lensWidth: 'normal', // 'normal' | 'wide'
     punctuationMode: 'ignore', // 'ignore' | 'highlight'
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
@@ -162,6 +165,17 @@ function _dvHighlightLengthUnitLabel() {
     if (_dvState.granularity === 'char') return 'chars';
     if (_dvState.granularity === 'line') return 'lines';
     return 'words';
+}
+
+function _dvSlotWidthPx() {
+    return _dvState.lensWidth === 'wide' ? DV_SLOT_WIDTH_WIDE_PX : DV_SLOT_WIDTH_PX;
+}
+
+function _dvApplyLensWidth(modal) {
+    if (!modal) return;
+    const slotsArea = _dvQ(modal, 'dv-slots-area');
+    if (slotsArea) slotsArea.style.setProperty('--dv-slot-w', _dvSlotWidthPx() + 'px');
+    _dvSyncSegPressed(modal, 'data-dv-width', _dvState.lensWidth);
 }
 
 function _dvComparePairs(modal, opts) {
@@ -1489,6 +1503,7 @@ function _dvPanelHtml(dash) {
     const btnClass = (variant, size) => (dash.dashBtnClass ? dash.dashBtnClass(variant, size) : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
 
     const gran = _dvState.granularity;
+    const lensWidth = _dvState.lensWidth;
     const punctMode = _dvState.punctuationMode;
     const compMode = _dvState.compMode;
     const showHighlights = _dvState.showHighlights;
@@ -1503,6 +1518,7 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Type', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
             ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}${_dvSegBtn('data-dv-seg', 'line', 'Line', gran === 'line', false)}</div>`)}
+            ${_dvToggleCell(label, 'Width', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-width', 'normal', 'Normal', lensWidth === 'normal', true)}${_dvSegBtn('data-dv-width', 'wide', 'Wide', lensWidth === 'wide', false)}</div>`)}
             ${_dvToggleCell(label, 'Punctuation', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
             <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Link Splits</div>
@@ -1558,7 +1574,7 @@ function _dvPanelHtml(dash) {
 
     const rightHtml = `
     <div id="dv-right" class="${showHighlights ? '' : 'dv-highlights-off'}" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
-        <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
+        <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};--dv-slot-w:${_dvSlotWidthPx()}px;">
             <div class="dv-slots-stack">
                 <div id="dv-slots-above-label" class="dv-slot-above-label" aria-hidden="true"></div>
                 <div id="dv-slots-columns-row" class="dv-slots-columns-row">
@@ -2475,6 +2491,21 @@ function _dvAttachListeners(modal) {
             return;
         }
 
+        // ── Lens width toggle ──
+        const widthBtn = e.target.closest('[data-dv-width]');
+        if (widthBtn && modal.contains(widthBtn)) {
+            const width = widthBtn.getAttribute('data-dv-width');
+            if ((width === 'normal' || width === 'wide') && width !== _dvState.lensWidth) {
+                _dvState.lensWidth = width;
+                try { Storage.setData(DV_WIDTH_KEY, width); } catch (_e) { /* no-op */ }
+                _dvApplyLensWidth(modal);
+                _dvScheduleReelLensSync(modal);
+                if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
+                Logger.log('lens width → ' + width);
+            }
+            return;
+        }
+
         // ── Punctuation toggle ──
         const punctBtn = e.target.closest('[data-dv-punctuation]');
         if (punctBtn && modal.contains(punctBtn)) {
@@ -2994,8 +3025,8 @@ function _dvInjectStyles() {
         '  color: var(--foreground, #0f172a);',
         '}',
         '#wf-dash-modal .dv-slot-column {',
-        '  width: ' + DV_SLOT_WIDTH_PX + 'px;',
-        '  min-width: ' + DV_SLOT_WIDTH_PX + 'px;',
+        '  width: var(--dv-slot-w, ' + DV_SLOT_WIDTH_PX + 'px);',
+        '  min-width: var(--dv-slot-w, ' + DV_SLOT_WIDTH_PX + 'px);',
         '  flex-shrink: 0;',
         '  display: flex;',
         '  flex-direction: column;',
@@ -3332,7 +3363,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3361,6 +3392,12 @@ const plugin = {
         try {
             const stored = Storage.getData(DV_GRANULARITY_KEY, null);
             if (stored === 'char' || stored === 'word' || stored === 'line') _dvState.granularity = stored;
+        } catch (_e) { /* no-op */ }
+
+        // Restore persisted lens width
+        try {
+            const storedWidth = Storage.getData(DV_WIDTH_KEY, null);
+            if (storedWidth === 'normal' || storedWidth === 'wide') _dvState.lensWidth = storedWidth;
         } catch (_e) { /* no-op */ }
 
         // Restore persisted punctuation mode (default ignore)
