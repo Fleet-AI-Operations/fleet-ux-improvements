@@ -145,6 +145,7 @@ const DASH_LIB_MANUAL_FILTER_FIELDS = [
     { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true },
     { id: 'dispute_resolution_time_minutes', label: 'Dispute Resolution Time Minutes', type: 'number', hydrateHint: true },
     { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
+    { id: 'qa_rounds_count', label: 'Number of QA Rounds', type: 'number', hydrateHint: true },
     { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
 ];
@@ -804,7 +805,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.3',
+    _version: '8.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -960,6 +961,7 @@ const plugin = {
             itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
             itemQaHelpfulness: bind(self._itemQaHelpfulness),
             itemPromptHistory: bind(self._itemPromptHistory),
+            itemQaRoundsCount: bind(self._itemQaRoundsCount),
             itemSessionQaOutcomes: bind(self._itemSessionQaOutcomes),
             itemDisputeOutcomes: bind(self._itemDisputeOutcomes),
             itemSrReviewOutcomes: bind(self._itemSrReviewOutcomes),
@@ -1118,6 +1120,17 @@ const plugin = {
         if (entry.isEscalated) return 'escalated';
         if (entry.isFlaggedAsBugged) return 'bugged';
         return 'returned';
+    },
+
+    /** Human QA dispositions that leave the QA's possession (accept / return / escalate / flag). Excludes system feedback, Sr Review flags, and disputes. */
+    _itemQaRoundsCount(item) {
+        const task = item && item.task;
+        if (!task || !Array.isArray(task.allFeedback)) return 0;
+        let n = 0;
+        for (const entry of task.allFeedback) {
+            if (this._returnTypeOf(entry) != null) n += 1;
+        }
+        return n;
     },
 
     _feedbackFieldsOf(entry) {

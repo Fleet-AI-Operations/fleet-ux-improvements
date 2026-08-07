@@ -4278,6 +4278,9 @@ const searchOutputCoreMethods = {
                 return dashManualFilterWordCount(task.prompt);
             case 'rejection_issue_count':
                 return ((item.qaFeedback && item.qaFeedback.rejectionBadges) || []).length;
+            case 'qa_rounds_count':
+                if (!item.hydrated) return null;
+                return dashLib().itemQaRoundsCount(item);
             case 'prompt_version_count':
                 if (!item.hydrated) return 1;
                 return this._displayPromptVersionCount(task);
@@ -5908,7 +5911,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.33',
+    _version: '9.34',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
