@@ -313,7 +313,8 @@ function _deSectionUnitLength(group, granularity, ignorePunctuation) {
     let values = group.values || [];
     if (ignorePunctuation) values = values.filter((v) => !_deIsPunctuationToken(v));
     if (granularity === 'line') {
-        return values.join('').split('\n').filter((line) => line.trim().length > 0).length;
+        // Line-mode tokens are already whole lines (no embedded newlines).
+        return values.filter((v) => String(v).trim().length > 0).length;
     }
     if (granularity === 'char') {
         return values.join('').replace(/[\s\n\r\t]/g, '').length;
@@ -331,6 +332,7 @@ function _deHighlightTypes(highlightModality) {
 
 function _deComputeDiff(baseText, compareText, granularity, _punctuationMode) {
     const isChar = granularity === 'char';
+    const isLine = granularity === 'line';
     let diff;
     let effectiveGranularity;
     if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
@@ -340,14 +342,14 @@ function _deComputeDiff(baseText, compareText, granularity, _punctuationMode) {
     } else if (isChar) {
         diff = _deComputeCharDiff(baseText, compareText);
         effectiveGranularity = 'char';
+    } else if (isLine) {
+        const units = _deDiffUnits(baseText, compareText, 'line');
+        effectiveGranularity = 'line';
+        diff = _deBacktrack(_deComputeLCS(units.a, units.b), units.a, units.b);
     } else {
-        const units = _deDiffUnits(baseText, compareText, granularity);
-        effectiveGranularity = units.effectiveGranularity;
-        if (effectiveGranularity === 'line') {
-            diff = _deBacktrack(_deComputeLCS(units.a, units.b), units.a, units.b);
-        } else {
-            diff = _deComputeWordDiff(baseText, compareText);
-        }
+        _deDiffUnits(baseText, compareText, 'word'); // debug warn only when oversized
+        diff = _deComputeWordDiff(baseText, compareText);
+        effectiveGranularity = 'word';
     }
     // Ignore mode must NOT demote side-only punctuation add/remove to equal — that
     // paints characters onto the opposite pane. Ignore is handled at highlight /
@@ -679,7 +681,18 @@ function _deRenderCompareHtml(diff, highlightStyle, highlightType, renderOpts) {
     return _deRenderSideHtml(diff, ['equal', 'add'], highlightStyle, highlightType, renderOpts);
 }
 
+function _deSplitLines(text) {
+    return String(text ?? '').split(/\r\n|\r|\n/);
+}
+
 function _deDiffUnits(baseText, compareText, granularity) {
+    if (granularity === 'line') {
+        return {
+            a: _deSplitLines(baseText),
+            b: _deSplitLines(compareText),
+            effectiveGranularity: 'line'
+        };
+    }
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
         return { a: _deTokenize(baseText), b: _deTokenize(compareText), effectiveGranularity: 'word' };
@@ -690,10 +703,8 @@ function _deDiffUnits(baseText, compareText, granularity) {
     const a = _deTokenize(baseText);
     const b = _deTokenize(compareText);
     if (a.length + b.length > DE_WORD_DIFF_TOKEN_LIMIT) {
-        Logger.debug('word token count ' + (a.length + b.length) + ' > ' + DE_WORD_DIFF_TOKEN_LIMIT + '; falling back to line diff');
-        const aLines = baseText.split('\n');
-        const bLines = compareText.split('\n');
-        return { a: aLines, b: bLines, effectiveGranularity: 'line' };
+        Logger.debug('word token count ' + (a.length + b.length) + ' > ' + DE_WORD_DIFF_TOKEN_LIMIT
+            + '; keeping word granularity (Line is an explicit choice)');
     }
     return { a, b, effectiveGranularity: 'word' };
 }
@@ -702,7 +713,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.7',
+    _version: '3.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

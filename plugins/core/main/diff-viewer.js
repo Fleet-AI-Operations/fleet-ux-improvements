@@ -39,7 +39,7 @@ let _dvLensSyncScheduled = false;
 
 const _dvState = {
     mode: 'tasks',       // 'tasks' | 'free-text'
-    granularity: 'word', // 'word' | 'char'
+    granularity: 'word', // 'word' | 'char' | 'line'
     punctuationMode: 'ignore', // 'ignore' | 'highlight'
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
@@ -159,7 +159,9 @@ function _dvEffectiveHighlightMinLength() {
 }
 
 function _dvHighlightLengthUnitLabel() {
-    return _dvState.granularity === 'char' ? 'chars' : 'words';
+    if (_dvState.granularity === 'char') return 'chars';
+    if (_dvState.granularity === 'line') return 'lines';
+    return 'words';
 }
 
 function _dvComparePairs(modal, opts) {
@@ -1500,7 +1502,7 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Highlights', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}</div>`)}
             ${_dvToggleCell(label, 'Type', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
-            ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
+            ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}${_dvSegBtn('data-dv-seg', 'line', 'Line', gran === 'line', false)}</div>`)}
             ${_dvToggleCell(label, 'Punctuation', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
             <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Link Splits</div>
@@ -3330,7 +3332,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.1',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3358,7 +3360,7 @@ const plugin = {
         // Restore persisted granularity
         try {
             const stored = Storage.getData(DV_GRANULARITY_KEY, null);
-            if (stored === 'char' || stored === 'word') _dvState.granularity = stored;
+            if (stored === 'char' || stored === 'word' || stored === 'line') _dvState.granularity = stored;
         } catch (_e) { /* no-op */ }
 
         // Restore persisted punctuation mode (default ignore)
