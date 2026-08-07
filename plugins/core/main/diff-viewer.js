@@ -1183,16 +1183,29 @@ function _dvMeasureNavRowH(_track) {
     return DV_REEL_NAV_ROW_H;
 }
 
-function _dvVersionTrackOffset(viewport, track, lensIndex) {
-    const rowH = _dvMeasureNavRowH(track);
+/** Track slot index of the current label, counting arrow-band spacers before it. */
+function _dvVersionCurrentSlotIndex(lensIndex) {
+    return lensIndex + (lensIndex > 0 ? 1 : 0);
+}
+
+function _dvVersionTrackOffsetY(viewport, lensIndex, versionCount) {
+    const rowH = DV_REEL_NAV_ROW_H;
     const nav = viewport && viewport.closest('.dv-reel-arrows-nav');
     const slot = nav && nav.querySelector('.dv-reel-nav-current-slot');
-    if (!slot || !viewport) return -lensIndex * rowH;
+    const currentSlot = _dvVersionCurrentSlotIndex(lensIndex);
+    if (!slot || !viewport) return -currentSlot * rowH;
     const viewportRect = viewport.getBoundingClientRect();
     const slotRect = slot.getBoundingClientRect();
     const slotCenterY = slotRect.top + slotRect.height / 2 - viewportRect.top;
-    const labelCenterY = lensIndex * rowH + rowH / 2;
+    const labelCenterY = currentSlot * rowH + rowH / 2;
     return slotCenterY - labelCenterY;
+}
+
+function _dvVersionTrackOffset(viewport, track, lensIndex) {
+    const count = track
+        ? track.querySelectorAll('.dv-reel-version-label').length
+        : 0;
+    return _dvVersionTrackOffsetY(viewport, lensIndex, count);
 }
 
 function _dvSyncVersionTrack(track, lensIndex) {
@@ -1202,6 +1215,11 @@ function _dvSyncVersionTrack(track, lensIndex) {
     track.style.transform = 'translateY(' + y + 'px)';
 }
 
+function _dvRebuildVersionTrack(track, slot) {
+    if (!track || !slot) return;
+    track.innerHTML = _dvReelVersionTrackHtml(slot);
+}
+
 function _dvSyncAllVersionTracks(modal) {
     if (!modal) return;
     for (let i = 0; i < _dvState.slots.length; i++) {
@@ -1209,6 +1227,7 @@ function _dvSyncAllVersionTracks(modal) {
         if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
         const track = modal.querySelector('[data-dv-version-track="' + i + '"]');
         if (!track) continue;
+        _dvRebuildVersionTrack(track, slot);
         _dvSyncVersionTrack(track, slot.lensIndex);
     }
 }
@@ -1325,14 +1344,15 @@ function _dvAnimateReelTrack(track, delta, modal, done) {
     });
 }
 
-function _dvAnimateVersionTrack(track, viewport, delta, done) {
+function _dvAnimateVersionTrack(track, viewport, fromLensIndex, toLensIndex, versionCount, done) {
     if (!track) {
         if (done) done();
         return;
     }
-    const rowH = _dvMeasureNavRowH(track);
     const fromY = _dvParseTranslateY(track);
-    const toY = fromY - delta * rowH;
+    const mathFrom = _dvVersionTrackOffsetY(viewport, fromLensIndex, versionCount);
+    const mathTo = _dvVersionTrackOffsetY(viewport, toLensIndex, versionCount);
+    const toY = fromY + (mathTo - mathFrom);
     _dvAnimateTranslateY(track, fromY, toY, { done });
 }
 
@@ -1355,10 +1375,8 @@ function _dvUpdateReelNavControls(slotIdx, modal) {
     }
     const versionTrack = nav.querySelector('[data-dv-version-track="' + slotIdx + '"]');
     if (versionTrack) {
-        versionTrack.querySelectorAll('.dv-reel-version-label').forEach((el) => {
-            const vi = parseInt(el.getAttribute('data-vi'), 10);
-            el.classList.toggle('dv-reel-version-label--current', vi === lensIdx);
-        });
+        _dvRebuildVersionTrack(versionTrack, slot);
+        _dvSyncVersionTrack(versionTrack, lensIdx);
     }
     const reelTrack = modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
     if (reelTrack) {
@@ -1373,18 +1391,19 @@ function _dvUpdateReelNavControls(slotIdx, modal) {
 function _dvShiftLens(slotIdx, delta, modal) {
     const slot = _dvState.slots[slotIdx];
     if (!slot || !slot.promptVersions || slot._lensAnimating) return;
-    const newIdx = slot.lensIndex + delta;
+    const oldIdx = slot.lensIndex;
+    const newIdx = oldIdx + delta;
     if (newIdx < 0 || newIdx >= slot.promptVersions.length) return;
 
     const reelTrack = modal && modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
     const versionTrack = modal && modal.querySelector('[data-dv-version-track="' + slotIdx + '"]');
     const versionViewport = versionTrack && versionTrack.closest('.dv-reel-arrows-nav-viewport');
+    const versionCount = slot.promptVersions.length;
 
     if (!reelTrack || typeof reelTrack.animate !== 'function') {
         slot.lensIndex = newIdx;
         Logger.debug('lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + (slot.promptVersions[newIdx].displayVersionNo));
         if (reelTrack) _dvSyncReelTrack(reelTrack, slot.lensIndex, modal);
-        if (versionTrack) _dvSyncVersionTrack(versionTrack, slot.lensIndex);
         _dvUpdateReelNavControls(slotIdx, modal);
         _dvRenderDiffs(modal);
         _dvUpdateAboveLabels(modal);
@@ -1398,7 +1417,6 @@ function _dvShiftLens(slotIdx, delta, modal) {
         if (pending <= 0) {
             slot._lensAnimating = false;
             _dvSyncReelTrack(reelTrack, slot.lensIndex, modal);
-            if (versionTrack) _dvSyncVersionTrack(versionTrack, slot.lensIndex);
             _dvUpdateReelNavControls(slotIdx, modal);
             _dvRenderDiffs(modal);
             _dvUpdateAboveLabels(modal);
@@ -1407,8 +1425,11 @@ function _dvShiftLens(slotIdx, delta, modal) {
 
     slot.lensIndex = newIdx;
     _dvAnimateReelTrack(reelTrack, delta, modal, finishOne);
-    if (versionTrack) _dvAnimateVersionTrack(versionTrack, versionViewport, delta, finishOne);
-    else finishOne();
+    if (versionTrack) {
+        _dvAnimateVersionTrack(versionTrack, versionViewport, oldIdx, newIdx, versionCount, finishOne);
+    } else {
+        finishOne();
+    }
 
     Logger.debug('lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + slot.promptVersions[newIdx].displayVersionNo);
 }
@@ -2051,10 +2072,23 @@ function _dvReelVersionTrackLabel(v, vi, isCurrent) {
     return '<span class="' + cls + '" data-vi="' + vi + '">v' + _dvEscHtml(String(v.displayVersionNo)) + '</span>';
 }
 
-function _dvReelVersionTrackHtml(slot, slotIdx) {
+function _dvReelVersionSpacerHtml() {
+    return '<span class="dv-reel-version-spacer" aria-hidden="true"></span>';
+}
+
+function _dvReelVersionTrackHtml(slot, _slotIdx) {
     const versions = slot.promptVersions || [];
     const lensIdx = slot.lensIndex;
-    return versions.map((v, i) => _dvReelVersionTrackLabel(v, i, i === lensIdx)).join('');
+    const n = versions.length;
+    let html = '';
+    for (let i = 0; i < n; i++) {
+        // Spacer under ↑ between far labels and the peek-above.
+        if (i === lensIdx - 1 && lensIdx > 0) html += _dvReelVersionSpacerHtml();
+        html += _dvReelVersionTrackLabel(versions[i], i, i === lensIdx);
+        // Spacer under ↓ between the peek-below and farther labels.
+        if (i === lensIdx + 1 && lensIdx < n - 1) html += _dvReelVersionSpacerHtml();
+    }
+    return html;
 }
 
 function _dvReelArrowBtn(slotIdx, dir, enabled) {
@@ -3541,6 +3575,13 @@ function _dvInjectStyles() {
         '  font-family: inherit;',
         '  user-select: none;',
         '}',
+        '#wf-dash-modal .dv-reel-version-spacer {',
+        '  display: block;',
+        '  height: ' + DV_REEL_NAV_ROW_H + 'px;',
+        '  width: 100%;',
+        '  flex-shrink: 0;',
+        '  pointer-events: none;',
+        '}',
         '#wf-dash-modal .dv-reel-version-label--current {',
         '  font-size: 9px;',
         '  font-weight: 700;',
@@ -3680,7 +3721,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.6',
+    _version: '5.7',
     phase: 'core',
     enabledByDefault: true,
 
