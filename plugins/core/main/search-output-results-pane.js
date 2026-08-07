@@ -5821,13 +5821,23 @@ const searchOutputResultsPaneMethods = {
     _fieldGroupHtml(label, valueHtml, opts) {
         const options = opts || {};
         const nowrap = Boolean(options.nowrap);
-        const groupStyle = nowrap
-            ? 'display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; flex-shrink: 0; white-space: nowrap;'
-            : 'display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 0 1 auto; max-width: 100%; min-width: 0;';
-        const valueStyle = nowrap
-            ? 'display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; flex-shrink: 0;'
-            : 'min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;';
-        return `<div style="${groupStyle}">${this._labelSpan(label)}<span style="${valueStyle}">${valueHtml}</span></div>`;
+        const labelColumn = Boolean(options.labelColumn);
+        let groupStyle;
+        let valueStyle;
+        if (nowrap) {
+            groupStyle = 'display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; flex-shrink: 0; white-space: nowrap;';
+            valueStyle = 'display: inline-flex; align-items: center; gap: 4px; flex-wrap: nowrap; flex-shrink: 0;';
+        } else if (labelColumn) {
+            groupStyle = 'display: flex; align-items: flex-start; gap: 6px; flex-wrap: nowrap; max-width: 100%; min-width: 0;';
+            valueStyle = 'display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto;';
+        } else {
+            groupStyle = 'display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 0 1 auto; max-width: 100%; min-width: 0;';
+            valueStyle = 'min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;';
+        }
+        const labelHtml = labelColumn
+            ? `<span style="flex-shrink: 0; padding-top: 2px;">${this._labelSpan(label)}</span>`
+            : this._labelSpan(label);
+        return `<div style="${groupStyle}">${labelHtml}<span style="${valueStyle}">${valueHtml}</span></div>`;
     },
 
     _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
@@ -6717,7 +6727,11 @@ const searchOutputResultsPaneMethods = {
         }
 
         const reviewerBadges = allFeedback.length > 0
-            ? `<div style="display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewers')}${[...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join('')}</div>`
+            ? this._fieldGroupHtml(
+                'Reviewers',
+                [...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join(''),
+                { labelColumn: true }
+            )
             : '';
 
         const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
@@ -6835,7 +6849,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '6.11',
+    _version: '6.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
