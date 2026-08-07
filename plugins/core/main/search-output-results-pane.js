@@ -3006,7 +3006,7 @@ const searchOutputResultsPaneMethods = {
         const notesText = this._dashQuotedText(review.notes);
         const notesHtml = notesText
             ? `<div>
-                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Notes')}${this._copyIconHtml(notesText)}</div>
+                ${this._labelSpan('Notes')}
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(notesText)}</p>
             </div>`
             : '';
@@ -3072,7 +3072,7 @@ const searchOutputResultsPaneMethods = {
         const formatted = this._formatVerifierStdoutText(execution.stdout);
         const stdoutHtml = formatted
             ? `<div>
-                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan('Stdout')}${this._copyIconHtml(formatted)}</div>
+                ${this._labelSpan('Stdout')}
                 <pre style="margin: 4px 0 0 0; padding: 8px 10px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.45; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</pre>
             </div>`
             : '';
@@ -4112,16 +4112,12 @@ const searchOutputResultsPaneMethods = {
         return this._quotedFieldBodyLayoutStyle() + ' color: var(--muted-foreground, #64748b);';
     },
 
-    _quotedFieldBlockHtml(label, bodyHtml, copyText, options) {
+    _quotedFieldBlockHtml(label, bodyHtml, _copyText, options) {
         const opts = options || {};
         const shellClass = opts.shellClass ? ' class="' + dashEscHtml(opts.shellClass) + '"' : '';
         const headerClass = opts.headerClass ? ' class="' + dashEscHtml(opts.headerClass) + '"' : '';
         const bodyClass = opts.bodyClass ? ' class="' + dashEscHtml(opts.bodyClass) + '"' : '';
-        const copyHtml = copyText != null && String(copyText).trim()
-            ? this._copyIconHtml(copyText)
-            : '';
-        const headerInner = opts.headerInner
-            || ('<div style="display: flex; align-items: center; gap: 6px;">' + this._labelSpan(label) + copyHtml + '</div>');
+        const headerInner = opts.headerInner || this._labelSpan(label);
         const bodyTag = opts.bodyTag || 'p';
         const layout = this._quotedFieldBodyLayoutStyle();
         const bodyStyle = opts.bodyStyle != null
@@ -6634,7 +6630,7 @@ const searchOutputResultsPaneMethods = {
                 : '—';
             return `
             <div>
-                <div style="display: flex; align-items: center; gap: 6px;">${this._labelSpan(blockLabel)}${this._copyIconHtml(quotedText)}</div>
+                ${this._labelSpan(blockLabel)}
                 <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>
             </div>`;
         }).join('');
@@ -7390,7 +7386,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
