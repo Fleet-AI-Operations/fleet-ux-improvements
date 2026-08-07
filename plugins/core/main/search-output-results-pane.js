@@ -5206,7 +5206,13 @@ const searchOutputResultsPaneMethods = {
         if (!block) return false;
         const body = block.querySelector('[data-wf-dash-action-block-body]');
         if (!body) return false;
-        body.style.display = this._getActionBlockCollapseUi(id).collapsed ? 'none' : 'flex';
+        const collapsed = this._getActionBlockCollapseUi(id).collapsed;
+        body.style.display = collapsed ? 'none' : 'flex';
+        for (const el of block.querySelectorAll('[data-wf-dash-qa-collapse-swap]')) {
+            const mode = el.getAttribute('data-wf-dash-qa-collapse-swap');
+            const show = collapsed ? mode === 'collapsed' : mode === 'expanded';
+            el.style.display = show ? (el.getAttribute('data-wf-dash-qa-collapse-display') || 'inline-flex') : 'none';
+        }
         return true;
     },
 
@@ -6710,6 +6716,27 @@ const searchOutputResultsPaneMethods = {
         return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
     },
 
+    _qaCollapseSwapHtml(mode, collapsed, innerHtml, display) {
+        if (!innerHtml) return '';
+        const show = collapsed ? mode === 'collapsed' : mode === 'expanded';
+        const disp = display || 'inline-flex';
+        return `<span data-wf-dash-qa-collapse-swap="${dashEscHtml(mode)}" data-wf-dash-qa-collapse-display="${dashEscHtml(disp)}" style="display: ${show ? disp : 'none'}; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0;">${innerHtml}</span>`;
+    },
+
+    _qaCollapsedReviewerHeaderHtml(qa) {
+        if (!qa) return '';
+        if (qa.isSystemFeedback || qa.isVerifierFailure) {
+            return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);">System</span>`;
+        }
+        return this._personChipsHtml(
+            qa.qaReviewerName,
+            qa.qaReviewerEmail,
+            qa.qaReviewerId,
+            'Open reviewer in Fleet',
+            'qa'
+        );
+    },
+
     _qaBlockHtml(qa, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, feedbackId, itemId) {
         const positive = qa.isPositive;
         const isVerifierFailure = Boolean(qa.isVerifierFailure);
@@ -6780,21 +6807,32 @@ const searchOutputResultsPaneMethods = {
         const blockId = feedbackId
             ? ('qa:' + feedbackId)
             : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        const collapsed = this._isActionBlockCollapsed(blockId);
+        const headerHelpfulness = this._qaCollapseSwapHtml('expanded', collapsed, helpfulnessActions);
+        const headerReviewer = this._qaCollapseSwapHtml(
+            'collapsed',
+            collapsed,
+            this._qaCollapsedReviewerHeaderHtml(qa)
+        );
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>`
             + this._copyIconHtml(this._serializeQaFeedbackPlainText(qa))
             + submittedHtml
             + promptRatingHtml
-            + helpfulnessActions;
+            + headerHelpfulness
+            + headerReviewer;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '');
         const bodyHtml = `${reviewerHtml}`
             + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
             + blocks
             + screenshotHtml;
+        const panelWrap = helpfulnessReviewPanel
+            ? this._qaCollapseSwapHtml('expanded', collapsed, helpfulnessReviewPanel, 'block')
+            : '';
         return this._actionBlockShellHtml(
             blockId,
             itemId,
             'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
-            headerRow + helpfulnessReviewPanel,
+            headerRow + panelWrap,
             bodyHtml
         );
     },
@@ -7513,7 +7551,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.2',
+    _version: '9.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
