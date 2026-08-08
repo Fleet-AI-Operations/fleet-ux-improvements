@@ -7473,7 +7473,7 @@ const searchOutputResultsPaneMethods = {
         const bodyShell = 'border: ' + DASH_CARD_BORDER + '; border-top: none;'
             + ' border-radius: 0 0 10px 10px; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
         return `
-            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column; padding-bottom: 10px; box-sizing: border-box;">
+            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
                 <div class="wf-dash-card-sticky">
                     ${tabsRow}
                     <div class="wf-dash-card-shell wf-dash-card-shell--chrome" style="${chromeShell}">
@@ -7675,7 +7675,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.13',
+    _version: '9.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
