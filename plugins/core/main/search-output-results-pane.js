@@ -7367,7 +7367,7 @@ const searchOutputResultsPaneMethods = {
         const itemId = item.id;
         const tabsRow = this._cardTabsRowHtml(item);
         const chromeShell = 'border: ' + DASH_CARD_BORDER + '; border-bottom: 1px solid var(--border, #e2e8f0);'
-            + ' border-radius: 10px 10px 0 0; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
+            + ' border-radius: 0; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
         const bodyShell = 'border: ' + DASH_CARD_BORDER + '; border-top: none;'
             + ' border-radius: 0 0 10px 10px; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
         return `
@@ -7572,7 +7572,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.7',
+    _version: '9.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
