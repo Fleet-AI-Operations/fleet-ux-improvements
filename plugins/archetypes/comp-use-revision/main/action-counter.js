@@ -6,7 +6,7 @@ const plugin = {
     name: 'Action Counter',
     description:
         'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -35,6 +35,12 @@ const plugin = {
 
     findTaskNotesTabBar(anchor) {
         if (!anchor) return null;
+        // Current CU revision: Task/Notes bar is nested inside #prompt-editor.
+        const nested = anchor.querySelectorAll('div');
+        for (const el of nested) {
+            if (this.isTaskNotesTabBar(el)) return el;
+        }
+        // Fallback: older shapes where the bar is a sibling of content.
         let node = anchor;
         while (node && node !== document.body) {
             const parent = node.parentElement;

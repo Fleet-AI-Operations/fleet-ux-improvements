@@ -3884,7 +3884,11 @@ const searchOutputCoreMethods = {
 
     _refreshHelpfulnessFilterUi() {
         if (!this._state.cachedItems) return;
-        this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
+        this._refreshResultsView({
+            filterSource: 'results-mutate',
+            reindexFilters: true,
+            refreshSidePanel: false
+        });
     },
 
     _refreshSessionQaFilterUi() {
@@ -4278,6 +4282,9 @@ const searchOutputCoreMethods = {
                 return dashManualFilterWordCount(task.prompt);
             case 'rejection_issue_count':
                 return ((item.qaFeedback && item.qaFeedback.rejectionBadges) || []).length;
+            case 'qa_rounds_count':
+                if (!item.hydrated) return null;
+                return dashLib().itemQaRoundsCount(item);
             case 'prompt_version_count':
                 if (!item.hydrated) return 1;
                 return this._displayPromptVersionCount(task);
@@ -4447,7 +4454,7 @@ const searchOutputCoreMethods = {
         ).join('');
     },
 
-    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateInitialBatch = false } = {}) {
+    _refreshResultsView({ resetPage = false, reindexFilters = false, filterSource = 'client', prehydrateInitialBatch = false, refreshSidePanel = true } = {}) {
         const lib = dashLib();
         if (this._state.cachedItems === null) {
             this._state.filteredItems = null;
@@ -4534,14 +4541,10 @@ const searchOutputCoreMethods = {
             });
             this._syncResultsToolbarDerivedUi();
             this._validateRangeUi();
-            if ((this._state.statsTab || 'stats') === 'stats') {
-                void this._renderStatsPanel();
-            } else if ((this._state.statsTab || 'stats') === 'ratings') {
-                this._renderRatingsPanel();
-            } else if ((this._state.statsTab || 'stats') === 'chat'
-                && Context.searchOutputChat
-                && typeof Context.searchOutputChat.onResultsChanged === 'function') {
-                Context.searchOutputChat.onResultsChanged(this);
+            if (refreshSidePanel) {
+                this._requestResultsSidePanelRefresh();
+            } else {
+                this._state.statsPanelDirty = true;
             }
         };
 
@@ -4599,6 +4602,7 @@ const searchOutputCoreMethods = {
         this._renderFilterLists({ syncDraftFromApplied: true });
         this._syncResultsToolbarDerivedUi();
         this._updateApplyFiltersUi();
+        this._requestResultsSidePanelRefresh();
         return !filterInvalid.invalid;
     },
 
@@ -4855,6 +4859,7 @@ const searchOutputCoreMethods = {
             this._state.autoHydrateActive = false;
             this._syncResultsHydrateBannerUi();
             this._syncBulkHydrateUi();
+            this._requestResultsSidePanelRefresh();
         }
     },
 
@@ -4899,6 +4904,7 @@ const searchOutputCoreMethods = {
         this._updateResultsStatus();
         this._updateSubstringErrorUi();
         this._renderResults();
+        this._requestResultsSidePanelRefresh();
         Logger.log('dashboard: results cleared');
     },
 
@@ -5413,6 +5419,18 @@ function attachSearchOutputListeners(modal, dash) {
                 void dash._runContributorHistoryDeepDive(person, historyKind);
                 return;
             }
+            const liveCopyEl = e.target.closest('[data-wf-dash-copy-section]');
+            if (liveCopyEl && modal.contains(liveCopyEl)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const text = dash._resolveLiveSectionCopyText(
+                    liveCopyEl.getAttribute('data-wf-dash-copy-section'),
+                    liveCopyEl.getAttribute('data-wf-dash-copy-entity'),
+                    liveCopyEl.getAttribute('data-item-id')
+                );
+                void dash._copyWithFeedback(liveCopyEl, text);
+                return;
+            }
             const copyEl = e.target.closest('[data-wf-dash-copy]');
             if (copyEl && modal.contains(copyEl)) {
                 void dash._copyWithFeedback(copyEl, copyEl.getAttribute('data-wf-dash-copy'));
@@ -5597,6 +5615,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (fid && dir) void dash._handleThumbClick(fid, dir);
                 return;
             }
+            const qaReviewToggleBtn = e.target.closest('[data-wf-dash-qa-review-toggle]');
+            if (qaReviewToggleBtn && modal.contains(qaReviewToggleBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const fid = qaReviewToggleBtn.getAttribute('data-wf-dash-feedback-id');
+                if (fid) dash._toggleQaReviewPanel(fid);
+                return;
+            }
             const qaReviewSubmitBtn = e.target.closest('[data-wf-dash-qa-review-submit]');
             if (qaReviewSubmitBtn && modal.contains(qaReviewSubmitBtn)) {
                 e.stopPropagation();
@@ -5652,7 +5678,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.stopPropagation();
                 e.preventDefault();
                 const itemId = flagCreateToggleBtn.getAttribute('data-item-id');
-                if (itemId) dash._toggleFlagCreatePanel(itemId, true);
+                if (itemId) dash._toggleFlagCreatePanel(itemId);
                 return;
             }
             const flagCreateCancelBtn = e.target.closest('[data-wf-dash-flag-create-cancel]');
@@ -5660,7 +5686,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.stopPropagation();
                 e.preventDefault();
                 const itemId = flagCreateCancelBtn.getAttribute('data-item-id');
-                if (itemId) dash._toggleFlagCreatePanel(itemId, false);
+                if (itemId) dash._resetFlagCreatePanel(itemId);
                 return;
             }
             const flagCreateSubmitBtn = e.target.closest('[data-wf-dash-flag-create-submit]');
@@ -5679,12 +5705,31 @@ function attachSearchOutputListeners(modal, dash) {
                 if (itemId) dash._addToDiffFromCard(itemId);
                 return;
             }
+            const copyCardBtn = e.target.closest('[data-wf-dash-copy-card]');
+            if (copyCardBtn && modal.contains(copyCardBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = copyCardBtn.getAttribute('data-item-id');
+                if (itemId) void dash._copyTaskCardPlainText(itemId, copyCardBtn);
+                return;
+            }
             const getVerifierBtn = e.target.closest('[data-wf-dash-get-verifier]');
             if (getVerifierBtn && modal.contains(getVerifierBtn)) {
                 e.stopPropagation();
                 e.preventDefault();
                 const itemId = getVerifierBtn.getAttribute('data-item-id');
                 if (itemId) void dash._getVerifierFromCard(itemId);
+                return;
+            }
+            const versionVerifierBtn = e.target.closest('[data-wf-dash-version-verifier]');
+            if (versionVerifierBtn && modal.contains(versionVerifierBtn)) {
+                e.stopPropagation();
+                e.preventDefault();
+                const itemId = versionVerifierBtn.getAttribute('data-item-id');
+                const verifierVersionId = versionVerifierBtn.getAttribute('data-verifier-version-id');
+                if (itemId && verifierVersionId) {
+                    void dash._getVerifierFromCard(itemId, { verifierVersionId });
+                }
                 return;
             }
             const rehydrateBtn = e.target.closest('[data-wf-dash-rehydrate]');
@@ -5908,7 +5953,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.33',
+    _version: '9.41',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

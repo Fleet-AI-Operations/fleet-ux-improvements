@@ -4283,6 +4283,32 @@ const searchOutputStatsPaneMethods = {
         return true;
     },
 
+    /** Refresh charts/ratings/chat only when the results dataset or filter scope changes. */
+    _requestResultsSidePanelRefresh() {
+        const dashApi = Context.dashboard;
+        const panelHidden = dashApi && typeof dashApi.readStatsPanelHiddenPref === 'function'
+            ? dashApi.readStatsPanelHiddenPref()
+            : false;
+        if (panelHidden) {
+            this._state.statsPanelDirty = true;
+            return;
+        }
+        const tab = this._state.statsTab || 'stats';
+        if (tab === 'stats') {
+            void this._renderStatsPanel();
+            return;
+        }
+        if (tab === 'ratings') {
+            this._renderRatingsPanel();
+            return;
+        }
+        if (tab === 'chat'
+            && Context.searchOutputChat
+            && typeof Context.searchOutputChat.onResultsChanged === 'function') {
+            Context.searchOutputChat.onResultsChanged(this);
+        }
+    },
+
     async _renderStatsPanel() {
         if ((this._state.statsTab || 'stats') !== 'stats') return;
         if ((this._state.statsViewMode || 'dashboard') === 'builder') {
@@ -6107,7 +6133,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.20',
+    _version: '12.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

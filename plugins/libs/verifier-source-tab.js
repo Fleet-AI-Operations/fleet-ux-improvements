@@ -8,7 +8,8 @@ const PRIMARY_CONTENT_MARKER = 'data-fleet-verifier-primary-content';
 const VERIFIER_PANEL_MARKER = 'data-fleet-verifier-panel';
 const PANEL_SCOPE = '[data-fleet-verifier-panel="true"]';
 const NETWORK_WATCHER_ID = 'verifier-source-tab-capture';
-const ORCHESTRATOR_VERIFIER_BASE = 'https://orchestrator.fleetai.com/v1/verifiers/';
+const ORCHESTRATOR_VERIFIER_VERSIONS_BASE = 'https://orchestrator.fleetai.com/v1/verifiers/versions/';
+const ORCHESTRATOR_VERIFIER_VERSIONS_PATH_RE = /^\/v1\/verifiers\/versions\/([0-9a-f-]{36})\/?$/i;
 const TASK_KEY_RE = /\btask_[a-z0-9_]+\b/i;
 const TASK_KEY_FALSE_POSITIVES = new Set([
     'task_feedback',
@@ -62,7 +63,7 @@ const VerifierSourceTabApi = {
             fetchInFlight: false,
             lastFetchedCacheKey: '',
             searchState: { query: '', index: 0, matchStarts: [] },
-            // cacheKey → { verifierId, teamId, source, version, versions[], sourceFromCapture }
+            // cacheKey → { verifierId, teamId, source, version, versionId, versions[], sourceFromCapture }
             cache: {},
             capture: {
                 taskKey: '',
@@ -71,6 +72,7 @@ const VerifierSourceTabApi = {
                 teamId: '',
                 source: '',
                 version: null,
+                versionId: '',
                 versions: []
             },
             opsBundleWaitStarted: false,
@@ -308,7 +310,11 @@ const VerifierSourceTabApi = {
                 if (!meta || !meta.urlObj) return false;
                 const host = meta.urlObj.hostname || '';
                 const path = meta.urlObj.pathname || '';
+                if (host === 'orchestrator.fleetai.com' && path.indexOf('/v1/verifiers/versions/') === 0) {
+                    return true;
+                }
                 if (host === 'orchestrator.fleetai.com' && path.indexOf('/v1/verifiers/') === 0) {
+                    // Legacy parent-id path — still observe for capture if Fleet emits it
                     return true;
                 }
                 if (host.endsWith('.supabase.co') && path.indexOf('/rest/v1/') === 0) {
@@ -337,7 +343,12 @@ const VerifierSourceTabApi = {
 
     ingestCapturePayload(state, body, meta) {
         const found = this.extractVerifierHints(body);
-        if (!found.verifierId && !found.source && !(found.versions && found.versions.length)) {
+        const path = meta && meta.urlObj ? String(meta.urlObj.pathname || '') : '';
+        const versionsPathMatch = path.match(ORCHESTRATOR_VERIFIER_VERSIONS_PATH_RE);
+        if (versionsPathMatch && UUID_RE.test(versionsPathMatch[1])) {
+            found.versionId = versionsPathMatch[1];
+        }
+        if (!found.verifierId && !found.source && !found.versionId && !(found.versions && found.versions.length)) {
             return;
         }
 
@@ -349,6 +360,7 @@ const VerifierSourceTabApi = {
             teamId: found.teamId || prev.teamId || '',
             source: found.source || prev.source || '',
             version: found.version != null ? found.version : prev.version,
+            versionId: found.versionId || prev.versionId || '',
             versions: found.versions && found.versions.length ? found.versions : prev.versions || []
         };
 
@@ -356,7 +368,8 @@ const VerifierSourceTabApi = {
             next.verifierId !== prev.verifierId ||
             next.source !== prev.source ||
             next.taskKey !== prev.taskKey ||
-            next.version !== prev.version;
+            next.version !== prev.version ||
+            next.versionId !== prev.versionId;
 
         state.capture = next;
 
@@ -365,13 +378,14 @@ const VerifierSourceTabApi = {
                 'captured verifier hints' +
                     (next.taskKey ? ' task=' + next.taskKey : '') +
                     (next.verifierId ? ' id=' + next.verifierId.slice(0, 8) + '…' : '') +
+                    (next.versionId ? ' versionId=' + next.versionId.slice(0, 8) + '…' : '') +
                     (next.source ? ' source=' + next.source.length + 'ch' : '') +
                     (meta && meta.urlObj ? ' via ' + meta.urlObj.pathname : '')
             );
         }
 
         const cacheKey = this.resolveTaskKeyFromDom() || next.taskKey || next.taskId || next.verifierId;
-        if (cacheKey && (next.verifierId || next.source)) {
+        if (cacheKey && (next.verifierId || next.source || next.versionId)) {
             const entry = state.cache[cacheKey] || {};
             state.cache[cacheKey] = {
                 ...entry,
@@ -379,6 +393,7 @@ const VerifierSourceTabApi = {
                 teamId: next.teamId || entry.teamId || '',
                 source: entry.source || next.source || '',
                 version: entry.version != null ? entry.version : next.version,
+                versionId: next.versionId || entry.versionId || '',
                 versions:
                     entry.versions && entry.versions.length ? entry.versions : next.versions || [],
                 sourceFromCapture: !entry.source && !!next.source
@@ -406,6 +421,7 @@ const VerifierSourceTabApi = {
             teamId: '',
             source: '',
             version: null,
+            versionId: '',
             versions: []
         };
         if (payload == null) return out;
@@ -430,6 +446,12 @@ const VerifierSourceTabApi = {
             if (typeof node.verifierId === 'string' && UUID_RE.test(node.verifierId)) {
                 out.verifierId = node.verifierId;
             }
+            if (typeof node.verifier_version_id === 'string' && UUID_RE.test(node.verifier_version_id)) {
+                out.versionId = node.verifier_version_id;
+            }
+            if (typeof node.verifierVersionId === 'string' && UUID_RE.test(node.verifierVersionId)) {
+                out.versionId = node.verifierVersionId;
+            }
             if (typeof node.team_id === 'string' && UUID_RE.test(node.team_id)) {
                 out.teamId = node.team_id;
             }
@@ -449,9 +471,11 @@ const VerifierSourceTabApi = {
             if (typeof node.display_src === 'string' && node.display_src.length > 0) {
                 out.source = node.display_src;
                 if (Number.isFinite(node.version)) out.version = node.version;
+                if (typeof node.id === 'string' && UUID_RE.test(node.id)) out.versionId = node.id;
             } else if (typeof node.code === 'string' && node.code.length > 0) {
                 out.source = node.code;
                 if (Number.isFinite(node.version)) out.version = node.version;
+                if (typeof node.id === 'string' && UUID_RE.test(node.id)) out.versionId = node.id;
             } else if (typeof node.verifier_code === 'string' && node.verifier_code.length > 0) {
                 out.source = node.verifier_code;
             } else if (
@@ -485,7 +509,7 @@ const VerifierSourceTabApi = {
         return {
             source: hints.source,
             version: hints.version,
-            versionId: hints.verifierId || null
+            versionId: hints.versionId || null
         };
     },
 
@@ -653,8 +677,11 @@ const VerifierSourceTabApi = {
         versionSelect.style.maxWidth = '160px';
         versionSelect.title = 'Verifier version';
         versionSelect.addEventListener('change', () => {
-            const version = versionSelect.value ? Number(versionSelect.value) : null;
-            void this.fetchVerifier(state, { force: true, version });
+            const versionId = String(versionSelect.value || '').trim();
+            void this.fetchVerifier(state, {
+                force: true,
+                versionId: versionId && UUID_RE.test(versionId) ? versionId : null
+            });
         });
         state.versionSelect = versionSelect;
         toolbar.appendChild(versionSelect);
@@ -896,12 +923,23 @@ const VerifierSourceTabApi = {
             return;
         }
         select.style.display = '';
+        const selectedId = entry && (entry.versionId || entry.selectedVersion)
+            ? String(entry.versionId || entry.selectedVersion)
+            : '';
         for (const item of versions) {
             const opt = document.createElement('option');
             const ver = item && item.version != null ? item.version : item;
-            opt.value = String(ver);
+            const versionId = item && item.versionId ? String(item.versionId) : '';
+            opt.value = versionId || String(ver);
             opt.textContent = 'v' + ver + (item && item.isLatest ? ' · latest' : '');
-            if (entry && entry.version != null && Number(entry.version) === Number(ver)) {
+            if (selectedId && versionId && selectedId === versionId) {
+                opt.selected = true;
+            } else if (
+                !selectedId &&
+                entry &&
+                entry.version != null &&
+                Number(entry.version) === Number(ver)
+            ) {
                 opt.selected = true;
             }
             select.appendChild(opt);
@@ -961,7 +999,8 @@ const VerifierSourceTabApi = {
                 verifierId: '',
                 verifierKey: '',
                 teamId: args.teamId || '',
-                verifierVersion: args.versionOverride != null ? args.versionOverride : null
+                verifierVersionId: args.versionIdOverride || '',
+                verifierVersion: null
             };
             const result = await ops.fetchVerifierCode(parsed);
             const source = result && result.source ? String(result.source) : '';
@@ -975,7 +1014,8 @@ const VerifierSourceTabApi = {
                 verifierId: (result && result.verifierId) || '',
                 teamId: args.teamId || '',
                 source,
-                version: result && result.selectedVersion != null ? result.selectedVersion : result && result.version,
+                version: result && result.version != null ? result.version : null,
+                versionId: (result && (result.versionId || result.selectedVersion)) || '',
                 versions: (result && result.versions) || [],
                 sourceFromCapture: false
             };
@@ -1015,7 +1055,10 @@ const VerifierSourceTabApi = {
         const force = !!(options && options.force);
         const prefetch = !!(options && options.prefetch);
         const quiet = prefetch && !state.tabActive;
-        const versionOverride = options && options.version != null ? options.version : null;
+        const versionIdOverride =
+            options && options.versionId && UUID_RE.test(String(options.versionId))
+                ? String(options.versionId)
+                : null;
 
         this.maybeScrapePageVerifierId(state);
 
@@ -1023,7 +1066,7 @@ const VerifierSourceTabApi = {
         const cacheKey = this.resolveCacheKey(state);
         const verifierIdHint = capture.verifierId || '';
 
-        if (!cacheKey && !verifierIdHint) {
+        if (!cacheKey && !verifierIdHint && !versionIdOverride && !capture.versionId) {
             if (!quiet) {
                 this.setStatus(state, 'Waiting for verifier id…');
                 Logger.warn('fetch skipped — missing cache key and verifier id');
@@ -1031,12 +1074,22 @@ const VerifierSourceTabApi = {
             return;
         }
 
-        const effectiveKey = cacheKey || verifierIdHint;
+        const effectiveKey = cacheKey || verifierIdHint || versionIdOverride || capture.versionId;
         const cached = state.cache[effectiveKey] || {};
         const verifierId = cached.verifierId || capture.verifierId || '';
         const teamId = cached.teamId || this.resolveTeamId(state) || '';
+        const versionId =
+            versionIdOverride ||
+            cached.versionId ||
+            capture.versionId ||
+            '';
 
-        if (!force && cached.source && state.lastFetchedCacheKey === effectiveKey && versionOverride == null) {
+        if (
+            !force &&
+            cached.source &&
+            state.lastFetchedCacheKey === effectiveKey &&
+            !versionIdOverride
+        ) {
             await this.renderSource(state, cached.source);
             this.updateVersionSelect(state, cached);
             this.setReadyStatus(state, effectiveKey, cached);
@@ -1048,7 +1101,7 @@ const VerifierSourceTabApi = {
             !force &&
             capture.source &&
             (!verifierId || capture.verifierId === verifierId) &&
-            versionOverride == null
+            !versionIdOverride
         ) {
             const entry = {
                 ...cached,
@@ -1056,6 +1109,7 @@ const VerifierSourceTabApi = {
                 teamId,
                 source: capture.source,
                 version: capture.version,
+                versionId: capture.versionId || cached.versionId || '',
                 versions: capture.versions || cached.versions || [],
                 sourceFromCapture: true
             };
@@ -1069,7 +1123,7 @@ const VerifierSourceTabApi = {
             return;
         }
 
-        if (!verifierId) {
+        if (!versionId && !verifierId) {
             const taskId = capture.taskId || '';
             const taskKey = capture.taskKey || this.resolveTaskKeyFromDom() || '';
             if (taskId || taskKey) {
@@ -1079,7 +1133,7 @@ const VerifierSourceTabApi = {
                     force,
                     prefetch,
                     quiet,
-                    versionOverride,
+                    versionIdOverride,
                     effectiveKey,
                     cached,
                     teamId
@@ -1087,7 +1141,33 @@ const VerifierSourceTabApi = {
                 if (viaOps) return;
             }
             if (!quiet) this.setStatus(state, 'Waiting for verifier id from page traffic…');
-            Logger.debug('fetch deferred — no verifierId yet for ' + effectiveKey);
+            Logger.debug('fetch deferred — no verifierVersionId yet for ' + effectiveKey);
+            return;
+        }
+
+        if (!versionId && verifierId) {
+            const taskId = capture.taskId || '';
+            const taskKey = capture.taskKey || this.resolveTaskKeyFromDom() || '';
+            if (taskId || taskKey) {
+                const viaOps = await this.fetchVerifierViaOpsTask(state, {
+                    taskId,
+                    taskKey,
+                    force,
+                    prefetch,
+                    quiet,
+                    versionIdOverride: null,
+                    effectiveKey,
+                    cached,
+                    teamId
+                });
+                if (viaOps) return;
+            }
+        }
+
+        const pin = versionId;
+        if (!pin || !UUID_RE.test(pin)) {
+            if (!quiet) this.setStatus(state, 'Waiting for verifier version id…');
+            Logger.debug('fetch deferred — no verifier_version_id for ' + effectiveKey);
             return;
         }
 
@@ -1108,18 +1188,15 @@ const VerifierSourceTabApi = {
         this.setStatus(state, quiet ? 'Prefetching verifier…' : 'Loading verifier…');
         Logger.debug(
             (quiet ? 'prefetch' : 'fetch') +
-                ' orchestrator verifier ' +
-                verifierId.slice(0, 8) +
-                '…' +
-                (versionOverride != null ? ' v' + versionOverride : '')
+                ' orchestrator verifier version ' +
+                pin.slice(0, 8) +
+                '…'
         );
 
         try {
             const pageWindow = this.getPageWindow();
             const requestFetch = pageWindow.fetch || fetch;
-            const versionQuery =
-                versionOverride != null ? '?version=' + encodeURIComponent(versionOverride) : '';
-            const url = ORCHESTRATOR_VERIFIER_BASE + encodeURIComponent(verifierId) + versionQuery;
+            const url = ORCHESTRATOR_VERIFIER_VERSIONS_BASE + encodeURIComponent(pin);
             const headers = { accept: 'application/json', 'x-jwt-token': jwt };
             if (teamId) headers['x-team-id'] = teamId;
 
@@ -1131,7 +1208,7 @@ const VerifierSourceTabApi = {
             if (!res.ok) {
                 const text = await res.text().catch(() => '');
                 Logger.warn('orchestrator HTTP ' + res.status, {
-                    verifierId,
+                    verifierVersionId: pin,
                     body: String(text).slice(0, 200)
                 });
                 this.setStatus(state, 'Fetch failed (HTTP ' + res.status + ')');
@@ -1150,8 +1227,13 @@ const VerifierSourceTabApi = {
                 verifierId,
                 teamId,
                 source: parsed.source,
-                version: parsed.version != null ? parsed.version : versionOverride,
-                versions: this.mergeVersions(cached.versions || capture.versions || [], parsed.version),
+                version: parsed.version,
+                versionId: parsed.versionId || pin,
+                versions: this.mergeVersions(
+                    cached.versions || capture.versions || [],
+                    parsed.version,
+                    parsed.versionId || pin
+                ),
                 sourceFromCapture: false
             };
             state.cache[effectiveKey] = entry;
@@ -1175,15 +1257,23 @@ const VerifierSourceTabApi = {
         }
     },
 
-    mergeVersions(existing, currentVersion) {
+    mergeVersions(existing, currentVersion, currentVersionId) {
         const list = Array.isArray(existing) ? existing.slice() : [];
-        if (currentVersion == null) return list;
-        if (
-            !list.some(
-                (item) => Number(item.version != null ? item.version : item) === Number(currentVersion)
-            )
-        ) {
-            list.push({ version: currentVersion, isLatest: list.length === 0 });
+        const versionId = currentVersionId ? String(currentVersionId) : '';
+        if (currentVersion == null && !versionId) return list;
+        const already = list.some((item) => {
+            if (versionId && item && item.versionId && String(item.versionId) === versionId) {
+                return true;
+            }
+            if (currentVersion == null) return false;
+            return Number(item.version != null ? item.version : item) === Number(currentVersion);
+        });
+        if (!already) {
+            list.push({
+                version: currentVersion,
+                versionId: versionId || undefined,
+                isLatest: list.length === 0
+            });
         }
         return list.sort(
             (a, b) =>
@@ -1297,7 +1387,7 @@ const plugin = {
     name: 'Verifier Source Tab (library)',
     description:
         'Shared primary | Verifier tab shell and searchable verifier source (archetype modules supply placement)',
-    _version: '2.2',
+    _version: '3.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

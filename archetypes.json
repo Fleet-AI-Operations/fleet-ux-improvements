@@ -1,7 +1,7 @@
 {
   "version": "13.6",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.272",
+  "archetypesVersion": "14.311",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.6",
-      "hash": "sha256-ff25b9a32e2c33aba9131f8cfa82f2bea79004abd0a789bbd61df555baf3b696",
+      "version": "3.8",
+      "hash": "sha256-ebed0a866e928707da9e51134014a4dc3cd8ccf924cdd24f34677bee901b423e",
       "log": false
     },
     {
@@ -28,8 +28,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "9.20",
-      "hash": "sha256-795b8c7e38b9fd8aab3475da8c978b49fcae9d40637c8e7bbe76af294bd99e6d",
+      "version": "11.1",
+      "hash": "sha256-b20276eaf9f8d02a05a6e9f283a24c6185ed9527fd01260967adf3d7a1b151f2",
       "log": false
     },
     {
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "7.4",
-      "hash": "sha256-5189037db1851df54f43632ce534a9e8e4b0799cce368375c0efa93e53005823",
+      "version": "8.0",
+      "hash": "sha256-ef1c8e4d492da4c2651281272a2e03ce2157cb81499c0350414ff4d1e973c26e",
       "log": false
     },
     {
@@ -156,8 +156,8 @@
     },
     {
       "name": "verifier-source-tab.js",
-      "version": "2.2",
-      "hash": "sha256-e714f89a7ef52a9676361d75532e8addc53d28667fd8fd0cf9a45faebf48e7c6",
+      "version": "3.0",
+      "hash": "sha256-344bbf33406faaa216211a19801b3a4bbf829409911f1642a06aadfbea939bb5",
       "log": false
     },
     {
@@ -176,8 +176,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "8.3",
-      "hash": "sha256-7754fb9486568b8de78dc724b4b57cb1a4f27f61cc09e48a9568d7c31538e6f9",
+      "version": "8.5",
+      "hash": "sha256-35b5e66405305fd414b047ebbb348e8af7255c76246251650c36cba9e17001c3",
       "log": false
     },
     {
@@ -200,8 +200,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "11.19",
-      "hash": "sha256-35ee66bd5b56ddc66ff57800dc2d6eea0583bf8fd571e6e5abcbcdd58ce29441",
+      "version": "11.34",
+      "hash": "sha256-7a1cabe0587d0bad083c6878521957fc13090310acc3abf3ba0ea6a8edac85dc",
       "log": false
     },
     {
@@ -212,8 +212,8 @@
     },
     {
       "name": "diff-engine.js",
-      "version": "3.7",
-      "hash": "sha256-7a93707a548d3df37b6e6c7d05e3634103f590eb7b55eb5cd4f7bd65aa0ee521",
+      "version": "3.9",
+      "hash": "sha256-1f929426ce3ff1edbaab74f32df2ebf89cf787ef7628027ed3285ea4f6082be0",
       "log": false
     },
     {
@@ -224,14 +224,14 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "6.10",
-      "hash": "sha256-5a0975e1cdc01c24a31b3df56f93b5416d10e0796935753c3cf42d558906d5d2",
+      "version": "9.14",
+      "hash": "sha256-fe6eb7c0f5ddd49980e9e519cb33a9d483b5f29eac88e4792394ef4baa3d168f",
       "log": false
     },
     {
       "name": "search-output-stats-engine.js",
-      "version": "8.3",
-      "hash": "sha256-95caf574ff49a782145bf35dbc6d1461117173045e0a980501f7737cd558281f",
+      "version": "8.4",
+      "hash": "sha256-e5afeb085535b385b80bceac158b6e4815e7bd0010c22a7fef1cfc821435ca28",
       "log": false
     },
     {
@@ -242,20 +242,20 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "12.20",
-      "hash": "sha256-0e8a6ba281b9ff4abb7e9ab65def37d1dd939ec962e99f5d3fb57eaa7cc99068",
+      "version": "12.21",
+      "hash": "sha256-8ddfd9e4c6525003b035e93db28ceeae5b7bc267220bfb37534b78338e825a30",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "9.33",
-      "hash": "sha256-9fc8f3c05ff8d4f4fb1ad94e975820b91a3bc2b1506b1dbef73c2b8f17d83293",
+      "version": "9.41",
+      "hash": "sha256-f20966f0f43b7ebcb11ff45408b47f34eb46a0b65818a13fc5b820c19d883d72",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "4.4",
-      "hash": "sha256-a4742e491632e6f34d70508f63d5c31607e387e15983f5a76818a988011c3f84",
+      "version": "5.7",
+      "hash": "sha256-c72a8f4f4727cc110ad56b97c9e93ab8d3f4cdf688bef140b3fe68e76a74a881",
       "log": false
     },
     {
@@ -266,8 +266,8 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "7.6",
-      "hash": "sha256-a607efe2a71e3a93eaa206b486ccaf2d1ed4f52ad23d9caca173df2364b13bae",
+      "version": "8.1",
+      "hash": "sha256-e5d84efa01234a7041b7263b9e9c609538b87b2386a8a8da8ab4bc956d5c2464",
       "log": false
     },
     {
@@ -577,9 +577,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "2.1",
+          "version": "2.2",
           "log": false,
-          "hash": "sha256-23d6aced75ec2a59e9d7cf1a6889de86ba397a099a9ca7831d06dd14c83438ed"
+          "hash": "sha256-ec9e78fbf5a83e181f17abf1cb6ca9527008910b856f21e60d50dd441b1adac6"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -589,8 +589,8 @@
         },
         {
           "name": "fos-vm-clipboard.js",
-          "version": "1.2",
-          "hash": "sha256-a2c64aacc3d23ac939c3a7eaa67d42806249df034774a1e404701d60f35be0f3",
+          "version": "1.3",
+          "hash": "sha256-1723f4044a98189862fb946550b03f14df1a447ec0d66514138f3d059596d1ed",
           "log": false
         },
         {

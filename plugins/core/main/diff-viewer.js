@@ -11,12 +11,14 @@ const DV_COMP_MODE_KEY = 'fleet-ux:diff-viewer-comp-mode';
 const DV_HIGHLIGHT_MODALITY_KEY = 'fleet-ux:diff-viewer-highlight-modality';
 const DV_LINK_SPLITS_KEY = 'fleet-ux:diff-viewer-link-splits';
 const DV_PUNCTUATION_KEY = 'fleet-ux:diff-viewer-punctuation';
+const DV_WIDTH_KEY = 'fleet-ux:diff-viewer-width';
 const DV_HIGHLIGHT_DEFAULT_MIN_WORDS = 3;
 const DV_HIGHLIGHT_LENGTH_MIN = 1;
 const DV_HIGHLIGHT_LENGTH_MAX = 50;
 const DV_MAX_SLOTS = 10;
 const DV_MAX_STASH = 100;
 const DV_SLOT_WIDTH_PX = 440;
+const DV_SLOT_WIDTH_WIDE_PX = Math.round(DV_SLOT_WIDTH_PX * 1.33); // 33% wider lenses
 const DV_SLOT_GAP = 12;
 const DV_SLOTS_AREA_PAD = 10;
 const DV_REEL_PEEK_H = 14;
@@ -31,15 +33,22 @@ const DV_REEL_NAV_LABEL_H = 14;
 const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
 const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
 const DV_DRAG_THRESHOLD_PX = 4;
+const DV_HOVER_DEBOUNCE_MS = 50;
 
 let _dvSlotSeq = 0;
 let _dvLensSyncScheduled = false;
+let _dvPairCache = new Map();
+let _dvPrefetchToken = 0;
+let _dvHoverDebounceTimer = null;
+let _dvHoverPendingIdx = null;
+let _dvVerifierGranForced = false;
 
 // ── Module state ──
 
 const _dvState = {
     mode: 'tasks',       // 'tasks' | 'free-text'
-    granularity: 'word', // 'word' | 'char'
+    granularity: 'word', // 'word' | 'char' | 'line'
+    lensWidth: 'normal', // 'normal' | 'wide'
     punctuationMode: 'ignore', // 'ignore' | 'highlight'
     compMode: 'base',    // 'base' | 'rolling'
     showHighlights: true,
@@ -147,6 +156,142 @@ function _dvPlainPromptHtml(text) {
     return eng ? eng.plainPromptHtml(text) : _dvEscHtml(text || '');
 }
 
+function _dvInvalidatePairCache() {
+    _dvPairCache.clear();
+    _dvPrefetchToken += 1;
+}
+
+function _dvCacheSettingsKey() {
+    return [
+        _dvEffectiveGranularity(),
+        _dvState.punctuationMode,
+        _dvState.highlightModality,
+        _dvState.linkSplits ? '1' : '0',
+        String(_dvEffectiveHighlightMinLength()),
+        _dvState.showHighlights ? '1' : '0'
+    ].join('|');
+}
+
+function _dvSlotCacheFingerprint(slot) {
+    if (!slot) return 'none';
+    const text = _dvSlotPromptText(slot);
+    let h = 0;
+    const step = Math.max(1, Math.floor(text.length / 64) || 1);
+    for (let i = 0; i < text.length; i += step) {
+        h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+    }
+    return String(slot.slotId) + ':' + String(slot.lensIndex) + ':' + text.length + ':' + h;
+}
+
+function _dvPairCacheKey(leftSlot, rightSlot) {
+    return _dvCacheSettingsKey() + '::' + _dvSlotCacheFingerprint(leftSlot)
+        + '::' + _dvSlotCacheFingerprint(rightSlot);
+}
+
+function _dvDiffOpts(includeSimilarity) {
+    return {
+        granularity: _dvEffectiveGranularity(),
+        showHighlights: _dvState.showHighlights,
+        highlightModality: _dvState.highlightModality,
+        minHighlightLength: _dvEffectiveHighlightMinLength(),
+        linkSplits: _dvState.linkSplits,
+        punctuationMode: _dvState.punctuationMode,
+        includeSimilarity: !!includeSimilarity
+    };
+}
+
+function _dvGetOrComputeBundle(leftSlot, rightSlot, includeSimilarity) {
+    const leftText = _dvSlotPromptText(leftSlot);
+    const rightText = _dvSlotPromptText(rightSlot);
+    const eng = _dvEngine();
+    if (!eng || typeof eng.diffBundle !== 'function') {
+        return {
+            baseHtml: _dvPlainPromptHtml(leftText),
+            compareHtml: _dvPlainPromptHtml(rightText),
+            percent: null,
+            noDifference: null,
+            effectiveGranularity: _dvEffectiveGranularity(),
+            diff: null
+        };
+    }
+    const key = _dvPairCacheKey(leftSlot, rightSlot);
+    let bundle = _dvPairCache.get(key);
+    if (bundle) {
+        if (includeSimilarity && (typeof bundle.percent !== 'number' || bundle.noDifference == null)
+            && typeof eng.similarityPercent === 'function') {
+            const sim = eng.similarityPercent(leftText, rightText, {
+                granularity: _dvEffectiveGranularity(),
+                punctuationMode: _dvState.punctuationMode,
+                effectiveGranularity: bundle.effectiveGranularity,
+                lcsLength: bundle.lcsLength,
+                unitLenA: bundle.unitLenA,
+                unitLenB: bundle.unitLenB,
+                diff: bundle.diff
+            });
+            bundle = Object.assign({}, bundle, {
+                percent: sim.percent,
+                noDifference: sim.noDifference,
+                effectiveGranularity: sim.effectiveGranularity || bundle.effectiveGranularity
+            });
+            _dvPairCache.set(key, bundle);
+        }
+        return bundle;
+    }
+    bundle = eng.diffBundle(leftText, rightText, _dvDiffOpts(includeSimilarity));
+    _dvPairCache.set(key, bundle);
+    return bundle;
+}
+
+function _dvSchedulePairPrefetch() {
+    if (_dvState.mode !== 'tasks' || !_dvState.showHighlights || _dvState.slots.length < 2) return;
+    const token = ++_dvPrefetchToken;
+    const jobs = [];
+    if (_dvState.compMode === 'rolling') {
+        _dvClampRollingLeft();
+        const seen = new Set();
+        const pushPair = (leftIdx) => {
+            if (leftIdx < 0 || leftIdx + 1 >= _dvState.slots.length) return;
+            if (seen.has(leftIdx)) return;
+            seen.add(leftIdx);
+            jobs.push([_dvState.slots[leftIdx], _dvState.slots[leftIdx + 1]]);
+        };
+        pushPair(_dvState.rollingLeft);
+        pushPair(_dvState.rollingLeft - 1);
+        pushPair(_dvState.rollingLeft + 1);
+    } else {
+        const base = _dvState.slots[0];
+        for (let i = 1; i < _dvState.slots.length; i++) {
+            jobs.push([base, _dvState.slots[i]]);
+        }
+    }
+    let i = 0;
+    const step = () => {
+        if (token !== _dvPrefetchToken) return;
+        while (i < jobs.length) {
+            const pair = jobs[i++];
+            const left = pair[0];
+            const right = pair[1];
+            if (!left || !right || left.loading || right.loading || !left.promptVersions || !right.promptVersions) {
+                continue;
+            }
+            _dvGetOrComputeBundle(left, right, true);
+            break;
+        }
+        if (i < jobs.length) {
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(step, { timeout: 200 });
+            } else {
+                setTimeout(step, 0);
+            }
+        }
+    };
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(step, { timeout: 100 });
+    } else {
+        setTimeout(step, 0);
+    }
+}
+
 function _dvClampHighlightMinLength(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return DV_HIGHLIGHT_DEFAULT_MIN_WORDS;
@@ -159,7 +304,43 @@ function _dvEffectiveHighlightMinLength() {
 }
 
 function _dvHighlightLengthUnitLabel() {
-    return _dvState.granularity === 'char' ? 'chars' : 'words';
+    if (_dvEffectiveGranularity() === 'char') return 'chars';
+    if (_dvEffectiveGranularity() === 'line') return 'lines';
+    return 'words';
+}
+
+function _dvHasVerifierSlots() {
+    return _dvState.mode === 'tasks' && _dvState.slots.some((s) => (
+        _dvNormalizeContentKind(s.contentKind) === 'verifier'
+    ));
+}
+
+/** User preference stays in `_dvState.granularity`; verifiers always diff as line. */
+function _dvEffectiveGranularity() {
+    if (_dvHasVerifierSlots()) return 'line';
+    return _dvState.granularity;
+}
+
+function _dvSyncVerifierGranularityLock(modal) {
+    const forced = _dvHasVerifierSlots();
+    if (forced !== _dvVerifierGranForced) {
+        _dvInvalidatePairCache();
+        _dvVerifierGranForced = forced;
+        if (forced) Logger.log('granularity locked to line (verifier slots)');
+        else Logger.log('granularity unlocked → ' + _dvState.granularity);
+    }
+    _dvSyncGranularityUi(modal);
+}
+
+function _dvSlotWidthPx() {
+    return _dvState.lensWidth === 'wide' ? DV_SLOT_WIDTH_WIDE_PX : DV_SLOT_WIDTH_PX;
+}
+
+function _dvApplyLensWidth(modal) {
+    if (!modal) return;
+    const slotsArea = _dvQ(modal, 'dv-slots-area');
+    if (slotsArea) slotsArea.style.setProperty('--dv-slot-w', _dvSlotWidthPx() + 'px');
+    _dvSyncSegPressed(modal, 'data-dv-width', _dvState.lensWidth);
 }
 
 function _dvComparePairs(modal, opts) {
@@ -224,22 +405,50 @@ function _dvRefreshHighlightLengthRange(modal) {
         _dvSyncHighlightLengthUi(modal);
         return;
     }
-    const pairs = _dvComparePairs(modal, { mode: 'all' });
     let globalMin = Infinity;
     let globalMax = 0;
     const allLengths = [];
     const opts = {
-        granularity: _dvState.granularity,
+        granularity: _dvEffectiveGranularity(),
         highlightModality: _dvState.highlightModality,
         linkSplits: _dvState.linkSplits,
         punctuationMode: _dvState.punctuationMode
     };
-    for (const pair of pairs) {
-        const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
-        if (range.lengths.length) {
-            globalMin = Math.min(globalMin, range.min);
-            globalMax = Math.max(globalMax, range.max);
-            allLengths.push(...range.lengths);
+
+    if (_dvState.mode === 'tasks' && _dvState.slots.length >= 2) {
+        const slotPairs = [];
+        if (_dvState.compMode === 'rolling') {
+            _dvClampRollingLeft();
+            const left = _dvState.slots[_dvState.rollingLeft];
+            const right = _dvState.slots[_dvState.rollingLeft + 1];
+            if (left && right) slotPairs.push([left, right]);
+        } else {
+            const base = _dvState.slots[0];
+            for (let i = 1; i < _dvState.slots.length; i++) {
+                slotPairs.push([base, _dvState.slots[i]]);
+            }
+        }
+        for (let p = 0; p < slotPairs.length; p++) {
+            const left = slotPairs[p][0];
+            const right = slotPairs[p][1];
+            if (!left || !right || left.loading || right.loading) continue;
+            const bundle = _dvGetOrComputeBundle(left, right, false);
+            const range = eng.highlightSectionLengthRange('', '', Object.assign({}, opts, { bundle: bundle }));
+            if (range.lengths.length) {
+                globalMin = Math.min(globalMin, range.min);
+                globalMax = Math.max(globalMax, range.max);
+                allLengths.push(...range.lengths);
+            }
+        }
+    } else {
+        const pairs = _dvComparePairs(modal, { mode: 'all' });
+        for (const pair of pairs) {
+            const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
+            if (range.lengths.length) {
+                globalMin = Math.min(globalMin, range.min);
+                globalMax = Math.max(globalMax, range.max);
+                allLengths.push(...range.lengths);
+            }
         }
     }
     if (!allLengths.length) {
@@ -256,12 +465,13 @@ function _dvDiffPair(baseText, compareText, granularity) {
         return { baseHtml: _dvPlainPromptHtml(baseText), compareHtml: _dvPlainPromptHtml(compareText) };
     }
     return eng.diffPair(baseText, compareText, {
-        granularity,
+        granularity: granularity || _dvEffectiveGranularity(),
         showHighlights: _dvState.showHighlights,
         highlightModality: _dvState.highlightModality,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
         linkSplits: _dvState.linkSplits,
-        punctuationMode: _dvState.punctuationMode
+        punctuationMode: _dvState.punctuationMode,
+        includeSimilarity: false
     });
 }
 
@@ -308,6 +518,16 @@ function _dvVersionCountHtml(count) {
     return `<span class="dv-slot-version-count"><span class="dv-version-count-num">${count}</span> <span class="dv-version-count-label">${label}</span></span>`;
 }
 
+function _dvVerifierBadgeHtml() {
+    return '<span class="dv-content-kind-badge">Verifier</span>';
+}
+
+function _dvMetaEndHtml(contentKind, versionHtml) {
+    const badge = _dvNormalizeContentKind(contentKind) === 'verifier' ? _dvVerifierBadgeHtml() : '';
+    if (!badge && !versionHtml) return '';
+    return `<div class="dv-slot-meta-end">${badge}${versionHtml || ''}</div>`;
+}
+
 function _dvSlotVersionCountHtml(slot) {
     const versions = slot.promptVersions;
     if (!versions || versions.length === 0) return '';
@@ -315,7 +535,13 @@ function _dvSlotVersionCountHtml(slot) {
 }
 
 function _dvStashVersionCountHtml(entry) {
-    const slot = _dvState.slots.find((s) => s.taskId === entry.taskId && s.promptVersions && s.promptVersions.length > 0);
+    const kind = _dvNormalizeContentKind(entry.contentKind);
+    const slot = _dvState.slots.find((s) => (
+        s.taskId === entry.taskId
+        && _dvNormalizeContentKind(s.contentKind) === kind
+        && s.promptVersions
+        && s.promptVersions.length > 0
+    ));
     const count = slot ? slot.promptVersions.length : (entry.versionCount || 0);
     return _dvVersionCountHtml(count);
 }
@@ -324,9 +550,23 @@ function _dvSlotMetaRowHtml(slot) {
     const createdHtml = slot.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', slot.createdAt)}</div>`
         : '';
-    const versionHtml = _dvSlotVersionCountHtml(slot);
-    if (!createdHtml && !versionHtml) return '';
-    return `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`;
+    const endHtml = _dvMetaEndHtml(slot.contentKind, _dvSlotVersionCountHtml(slot));
+    if (!createdHtml && !endHtml) return '';
+    return `<div class="dv-slot-meta">${createdHtml}${endHtml}</div>`;
+}
+
+function _dvStashDisplayAuthor(entry) {
+    const name = (entry && entry.authorName) || '';
+    const email = (entry && entry.authorEmail) || '';
+    if (name || email) return { authorName: name, authorEmail: email };
+    const kind = _dvNormalizeContentKind(entry && entry.contentKind);
+    const slot = _dvState.slots.find((s) => (
+        s.taskId === entry.taskId
+        && _dvNormalizeContentKind(s.contentKind) === kind
+        && (s.authorName || s.authorEmail)
+    ));
+    if (!slot) return { authorName: '', authorEmail: '' };
+    return { authorName: slot.authorName || '', authorEmail: slot.authorEmail || '' };
 }
 
 // ── Stash persistence ──
@@ -469,18 +709,111 @@ async function _dvFetchTask(raw) {
         authorName: (task.author && task.author.name) || '',
         authorEmail: (task.author && task.author.email) || '',
         createdAt: _dvTaskInitialCreatedAt(row.created_at || '', promptVersions),
-        promptVersions
+        promptVersions,
+        contentKind: 'prompt'
+    };
+}
+
+async function _dvFetchVerifierSourceByVersionId(versionId, seed) {
+    const pin = String(versionId || '').trim();
+    if (!pin) return '';
+    const ops = Context.opsTab;
+    if (!ops || typeof ops.fetchVerifierCode !== 'function') {
+        throw new Error('Ops verifier fetch unavailable');
+    }
+    const result = await ops.fetchVerifierCode({
+        verifierVersionId: pin,
+        taskId: seed && seed.taskId ? seed.taskId : '',
+        taskKey: seed && seed.key ? seed.key : ''
+    });
+    return result && result.source ? String(result.source) : '';
+}
+
+async function _dvFetchVerifier(raw, seed) {
+    const base = await _dvFetchTask(raw);
+    const promptVersions = base.promptVersions || [];
+    // One reel entry per unique verifier pin; keep latest displayVersionNo as label.
+    const byPin = new Map();
+    for (let i = 0; i < promptVersions.length; i++) {
+        const pv = promptVersions[i];
+        const pin = pv && pv.verifierVersionId ? String(pv.verifierVersionId).trim() : '';
+        if (!pin) continue;
+        const prev = byPin.get(pin);
+        const displayNo = pv.displayVersionNo;
+        if (!prev || (displayNo != null && (prev.displayVersionNo == null || displayNo >= prev.displayVersionNo))) {
+            byPin.set(pin, {
+                displayVersionNo: displayNo,
+                createdAt: pv.createdAt || '',
+                verifierVersionId: pin,
+                verifierId: pv.verifierId || ''
+            });
+        }
+    }
+    const uniquePins = [...byPin.values()].sort((a, b) => {
+        const an = a.displayVersionNo != null ? a.displayVersionNo : 0;
+        const bn = b.displayVersionNo != null ? b.displayVersionNo : 0;
+        return an - bn;
+    });
+    const sourceCache = new Map();
+    const sourceVersions = [];
+    for (let i = 0; i < uniquePins.length; i++) {
+        const entry = uniquePins[i];
+        const pin = entry.verifierVersionId;
+        try {
+            let source = sourceCache.get(pin);
+            if (source == null) {
+                source = await _dvFetchVerifierSourceByVersionId(pin, {
+                    taskId: base.taskId,
+                    key: base.key
+                });
+                sourceCache.set(pin, source || '');
+            }
+            if (!source) continue;
+            sourceVersions.push({
+                displayVersionNo: entry.displayVersionNo,
+                prompt: source,
+                createdAt: entry.createdAt || '',
+                verifierVersionId: pin,
+                verifierId: entry.verifierId || ''
+            });
+        } catch (err) {
+            Logger.warn('verifier source hydrate failed for v' + entry.displayVersionNo, err);
+        }
+    }
+    if (!sourceVersions.length) {
+        throw new Error('No verifier versions with source for ' + (base.key || base.taskId));
+    }
+    return {
+        taskId: base.taskId,
+        key: base.key,
+        authorName: base.authorName,
+        authorEmail: base.authorEmail,
+        createdAt: base.createdAt,
+        promptVersions: sourceVersions,
+        contentKind: 'verifier'
     };
 }
 
 // ── Stash management ──
 
-function _dvStashFind(taskId) {
-    return _dvState.stash.findIndex((s) => s.taskId === taskId);
+function _dvNormalizeContentKind(kind) {
+    return kind === 'verifier' ? 'verifier' : 'prompt';
+}
+
+function _dvStashIdentity(taskId, contentKind) {
+    return String(taskId || '') + '::' + _dvNormalizeContentKind(contentKind);
+}
+
+function _dvStashFind(taskId, contentKind) {
+    const kind = _dvNormalizeContentKind(contentKind);
+    return _dvState.stash.findIndex((s) => (
+        s.taskId === taskId && _dvNormalizeContentKind(s.contentKind) === kind
+    ));
 }
 
 function _dvAddToStash(entry) {
-    const idx = _dvStashFind(entry.taskId);
+    const contentKind = _dvNormalizeContentKind(entry && entry.contentKind);
+    const idx = _dvStashFind(entry.taskId, contentKind);
     if (idx < 0) {
         if (_dvState.stash.length >= DV_MAX_STASH) {
             Logger.warn('stash full (' + DV_MAX_STASH + ') — cannot add ' + (entry.key || entry.taskId));
@@ -492,13 +825,26 @@ function _dvAddToStash(entry) {
             authorName: entry.authorName,
             authorEmail: entry.authorEmail,
             createdAt: entry.createdAt || '',
-            versionCount: entry.versionCount || 0
+            versionCount: entry.versionCount || 0,
+            contentKind
         });
         _dvSaveStash();
         Logger.log('stash add — ' + (entry.key || entry.taskId));
         return true;
     }
     let changed = false;
+    if (entry.key && entry.key !== _dvState.stash[idx].key) {
+        _dvState.stash[idx].key = entry.key;
+        changed = true;
+    }
+    if (entry.authorName && entry.authorName !== _dvState.stash[idx].authorName) {
+        _dvState.stash[idx].authorName = entry.authorName;
+        changed = true;
+    }
+    if (entry.authorEmail && entry.authorEmail !== _dvState.stash[idx].authorEmail) {
+        _dvState.stash[idx].authorEmail = entry.authorEmail;
+        changed = true;
+    }
     if (entry.createdAt && !_dvState.stash[idx].createdAt) {
         _dvState.stash[idx].createdAt = entry.createdAt;
         changed = true;
@@ -521,8 +867,8 @@ function _dvClearStash(modal) {
     Logger.log('stash cleared — ' + count + ' item(s)');
 }
 
-function _dvRemoveFromStash(taskId, modal) {
-    const idx = _dvStashFind(taskId);
+function _dvRemoveFromStash(taskId, modal, contentKind) {
+    const idx = _dvStashFind(taskId, contentKind);
     if (idx >= 0) {
         _dvState.stash.splice(idx, 1);
         _dvSaveStash();
@@ -532,16 +878,29 @@ function _dvRemoveFromStash(taskId, modal) {
     }
 }
 
-function _dvRemoveTaskFromDiffAndStash(taskId, modal) {
+function _dvRemoveTaskFromDiffAndStash(taskId, modal, contentKind) {
     if (!taskId) return;
+    const kind = contentKind != null ? _dvNormalizeContentKind(contentKind) : null;
+    const removedKinds = new Set();
     let removedSlots = 0;
     for (let i = _dvState.slots.length - 1; i >= 0; i--) {
-        if (_dvState.slots[i].taskId === taskId) {
-            _dvState.slots.splice(i, 1);
-            removedSlots += 1;
-        }
+        const slot = _dvState.slots[i];
+        if (slot.taskId !== taskId) continue;
+        if (kind && _dvNormalizeContentKind(slot.contentKind) !== kind) continue;
+        removedKinds.add(_dvNormalizeContentKind(slot.contentKind));
+        _dvState.slots.splice(i, 1);
+        removedSlots += 1;
     }
-    _dvRemoveFromStash(taskId, modal);
+    if (kind) {
+        _dvRemoveFromStash(taskId, modal, kind);
+    } else if (removedKinds.size) {
+        removedKinds.forEach((k) => _dvRemoveFromStash(taskId, modal, k));
+    } else {
+        const kinds = _dvState.stash
+            .filter((s) => s.taskId === taskId)
+            .map((s) => _dvNormalizeContentKind(s.contentKind));
+        kinds.forEach((k) => _dvRemoveFromStash(taskId, modal, k));
+    }
     if (removedSlots > 0) _dvRenderAll(modal);
     Logger.log('task removed from stash'
         + (removedSlots > 0 ? ' and ' + removedSlots + ' comparison slot(s)' : '')
@@ -550,11 +909,17 @@ function _dvRemoveTaskFromDiffAndStash(taskId, modal) {
 
 // ── Lens index resolution ──
 
-function _dvNextLensIndex(taskId, promptVersions) {
+function _dvNextLensIndex(taskId, promptVersions, contentKind) {
     if (!promptVersions || promptVersions.length === 0) return 0;
+    const kind = _dvNormalizeContentKind(contentKind);
     const taken = new Set(
         _dvState.slots
-            .filter((s) => s.taskId === taskId && !s.loading && s.promptVersions)
+            .filter((s) => (
+                s.taskId === taskId
+                && _dvNormalizeContentKind(s.contentKind) === kind
+                && !s.loading
+                && s.promptVersions
+            ))
             .map((s) => s.lensIndex)
     );
     for (let i = 0; i < promptVersions.length; i++) {
@@ -563,12 +928,61 @@ function _dvNextLensIndex(taskId, promptVersions) {
     return null; // all versions occupied
 }
 
+function _dvResolvePreferredLensIndex(taskId, promptVersions, contentKind, seed) {
+    if (!promptVersions || promptVersions.length === 0) return 0;
+    const kind = _dvNormalizeContentKind(contentKind);
+    const taken = new Set(
+        _dvState.slots
+            .filter((s) => (
+                s.taskId === taskId
+                && _dvNormalizeContentKind(s.contentKind) === kind
+                && !s.loading
+                && s.promptVersions
+            ))
+            .map((s) => s.lensIndex)
+    );
+    const preferPin = seed && seed.preferredVerifierVersionId
+        ? String(seed.preferredVerifierVersionId).trim()
+        : '';
+    const preferDisplay = seed && seed.preferredDisplayVersionNo != null
+        ? Number(seed.preferredDisplayVersionNo)
+        : null;
+
+    const tryIndex = (idx) => {
+        if (idx == null || idx < 0 || idx >= promptVersions.length) return null;
+        if (taken.has(idx)) return null;
+        return idx;
+    };
+
+    if (preferPin) {
+        const byPin = promptVersions.findIndex((v) => (
+            v && String(v.verifierVersionId || '').trim() === preferPin
+        ));
+        const hit = tryIndex(byPin);
+        if (hit != null) return hit;
+    }
+    if (preferDisplay != null && Number.isFinite(preferDisplay)) {
+        const byDisplay = promptVersions.findIndex((v) => (
+            v && Number(v.displayVersionNo) === preferDisplay
+        ));
+        const hit = tryIndex(byDisplay);
+        if (hit != null) return hit;
+    }
+    // No explicit pin (Current): prefer latest reel entry when free.
+    if (!preferPin && preferDisplay == null) {
+        const latest = tryIndex(promptVersions.length - 1);
+        if (latest != null) return latest;
+    }
+    return _dvNextLensIndex(taskId, promptVersions, contentKind) ?? 0;
+}
+
 // ── Slot management ──
 
 async function _dvOverflowToStash(seed, modal) {
     try {
+        const contentKind = _dvNormalizeContentKind(seed && seed.contentKind);
         let data;
-        if (seed.taskId && (seed.key || seed.authorName || seed.authorEmail)) {
+        if (seed.taskId && (seed.key || seed.authorName || seed.authorEmail) && seed.promptVersions == null && !seed.forceHydrate) {
             data = {
                 taskId: seed.taskId,
                 key: seed.key || '',
@@ -576,21 +990,25 @@ async function _dvOverflowToStash(seed, modal) {
                 authorEmail: seed.authorEmail || '',
                 createdAt: seed.createdAt || '',
                 promptVersions: null,
-                versionCount: seed.versionCount || 0
+                versionCount: seed.versionCount || 0,
+                contentKind
             };
         } else {
             const lookup = seed.raw || seed.key || seed.taskId;
             if (!lookup) throw new Error('No task identifier');
-            data = await _dvFetchTask(lookup);
+            data = contentKind === 'verifier'
+                ? await _dvFetchVerifier(lookup, seed)
+                : await _dvFetchTask(lookup);
         }
-        const wasNew = _dvStashFind(data.taskId) < 0;
+        const wasNew = _dvStashFind(data.taskId, contentKind) < 0;
         const added = _dvAddToStash({
             taskId: data.taskId,
             key: data.key,
             authorName: data.authorName,
             authorEmail: data.authorEmail,
             createdAt: data.createdAt || '',
-            versionCount: (data.promptVersions || []).length || data.versionCount || 0
+            versionCount: (data.promptVersions || []).length || data.versionCount || 0,
+            contentKind
         });
         if (!added) {
             if (modal) _dvSetSearchLoading(modal, false, 'Stash is full (max ' + DV_MAX_STASH + ' items)');
@@ -618,6 +1036,7 @@ function _dvAddSlot(seed, modal) {
         void _dvOverflowToStash(seed, modal);
         return;
     }
+    const contentKind = _dvNormalizeContentKind(seed && seed.contentKind);
     const slotId = ++_dvSlotSeq;
     const slot = {
         slotId,
@@ -626,6 +1045,7 @@ function _dvAddSlot(seed, modal) {
         authorName: seed.authorName || '',
         authorEmail: seed.authorEmail || '',
         createdAt: seed.createdAt || '',
+        contentKind,
         promptVersions: null,
         lensIndex: 0,
         loading: true,
@@ -638,7 +1058,8 @@ function _dvAddSlot(seed, modal) {
             key: seed.key,
             authorName: seed.authorName,
             authorEmail: seed.authorEmail,
-            createdAt: seed.createdAt || ''
+            createdAt: seed.createdAt || '',
+            contentKind
         });
     }
     _dvRenderAll(modal);
@@ -650,18 +1071,25 @@ async function _dvHydrateSlot(slotId, seed, modal) {
     try {
         const lookup = seed.raw || seed.key || seed.taskId;
         if (!lookup) throw new Error('No task identifier to hydrate');
-        const data = await _dvFetchTask(lookup);
+        const contentKind = _dvNormalizeContentKind(seed && seed.contentKind);
+        const data = contentKind === 'verifier'
+            ? await _dvFetchVerifier(lookup, seed)
+            : await _dvFetchTask(lookup);
         const slotIdx = _dvState.slots.findIndex((s) => s.slotId === slotId);
         if (slotIdx < 0) return; // slot was removed before hydration completed
         if (!modal.isConnected) return; // modal was rebuilt; drop stale update
         const slot = _dvState.slots[slotIdx];
         slot.taskId = data.taskId;
+        slot.contentKind = contentKind;
         slot.promptVersions = data.promptVersions;
         slot.authorName = data.authorName || slot.authorName;
         slot.authorEmail = data.authorEmail || slot.authorEmail;
         slot.key = data.key || slot.key;
         slot.createdAt = data.createdAt || slot.createdAt || '';
-        slot.lensIndex = _dvNextLensIndex(data.taskId, data.promptVersions) ?? 0;
+        const preferredIdx = contentKind === 'verifier'
+            ? _dvResolvePreferredLensIndex(data.taskId, data.promptVersions, contentKind, seed)
+            : (_dvNextLensIndex(data.taskId, data.promptVersions, contentKind) ?? 0);
+        slot.lensIndex = preferredIdx;
         slot.loading = false;
         _dvAddToStash({
             taskId: data.taskId,
@@ -669,10 +1097,34 @@ async function _dvHydrateSlot(slotId, seed, modal) {
             authorName: data.authorName,
             authorEmail: data.authorEmail,
             createdAt: slot.createdAt,
-            versionCount: (data.promptVersions || []).length
+            versionCount: (data.promptVersions || []).length,
+            contentKind
         });
-        Logger.log('slot hydrated — ' + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)');
+        const versionLabel = data.promptVersions && data.promptVersions[preferredIdx]
+            ? data.promptVersions[preferredIdx].displayVersionNo
+            : null;
+        Logger.log('slot hydrated — ' + (contentKind === 'verifier' ? 'verifier ' : '')
+            + (data.key || data.taskId) + ' (' + (data.promptVersions || []).length + ' versions)'
+            + (versionLabel != null ? ' · lens v' + versionLabel : ''));
         _dvRenderAll(modal);
+
+        // Sole verifier with multiple distinct pins: fan into slots so highlights work.
+        if (contentKind === 'verifier'
+            && _dvState.slots.length === 1
+            && (data.promptVersions || []).length >= 2) {
+            slot.lensIndex = 0;
+            _dvApplyViewProgression(modal);
+            if (preferredIdx > 0) {
+                _dvState.rollingLeft = Math.max(
+                    0,
+                    Math.min(preferredIdx - 1, _dvState.slots.length - 2)
+                );
+                _dvUpdateRollingOverlay(modal);
+            }
+            Logger.log('verifier auto View Progression — '
+                + _dvState.slots.length + ' slots'
+                + (versionLabel != null ? ' · focus v' + versionLabel : ''));
+        }
     } catch (err) {
         const slotIdx = _dvState.slots.findIndex((s) => s.slotId === slotId);
         if (slotIdx < 0) return;
@@ -687,9 +1139,12 @@ function _dvRemoveSlot(slotIdx, modal) {
     if (slotIdx < 0 || slotIdx >= _dvState.slots.length) return;
     const removed = _dvState.slots.splice(slotIdx, 1)[0];
     const taskId = removed && removed.taskId;
-    const stillInComparison = taskId && _dvState.slots.some((s) => s.taskId === taskId);
+    const contentKind = removed && removed.contentKind;
+    const stillInComparison = taskId && _dvState.slots.some((s) => (
+        s.taskId === taskId && _dvNormalizeContentKind(s.contentKind) === _dvNormalizeContentKind(contentKind)
+    ));
     if (taskId && !stillInComparison) {
-        _dvRemoveFromStash(taskId, modal);
+        _dvRemoveFromStash(taskId, modal, contentKind);
     }
     Logger.log('slot removed from comparison'
         + (taskId && !stillInComparison ? ' and stash' : '')
@@ -706,7 +1161,8 @@ function _dvMinimizeSlot(slotIdx, modal) {
         authorName: slot.authorName,
         authorEmail: slot.authorEmail,
         createdAt: slot.createdAt || '',
-        versionCount: (slot.promptVersions || []).length
+        versionCount: (slot.promptVersions || []).length,
+        contentKind: slot.contentKind
     });
     _dvState.slots.splice(slotIdx, 1);
     Logger.log('slot minimized to stash — ' + (slot.key || slot.taskId));
@@ -727,16 +1183,29 @@ function _dvMeasureNavRowH(_track) {
     return DV_REEL_NAV_ROW_H;
 }
 
-function _dvVersionTrackOffset(viewport, track, lensIndex) {
-    const rowH = _dvMeasureNavRowH(track);
+/** Track slot index of the current label, counting arrow-band spacers before it. */
+function _dvVersionCurrentSlotIndex(lensIndex) {
+    return lensIndex + (lensIndex > 0 ? 1 : 0);
+}
+
+function _dvVersionTrackOffsetY(viewport, lensIndex, versionCount) {
+    const rowH = DV_REEL_NAV_ROW_H;
     const nav = viewport && viewport.closest('.dv-reel-arrows-nav');
     const slot = nav && nav.querySelector('.dv-reel-nav-current-slot');
-    if (!slot || !viewport) return -lensIndex * rowH;
+    const currentSlot = _dvVersionCurrentSlotIndex(lensIndex);
+    if (!slot || !viewport) return -currentSlot * rowH;
     const viewportRect = viewport.getBoundingClientRect();
     const slotRect = slot.getBoundingClientRect();
     const slotCenterY = slotRect.top + slotRect.height / 2 - viewportRect.top;
-    const labelCenterY = lensIndex * rowH + rowH / 2;
+    const labelCenterY = currentSlot * rowH + rowH / 2;
     return slotCenterY - labelCenterY;
+}
+
+function _dvVersionTrackOffset(viewport, track, lensIndex) {
+    const count = track
+        ? track.querySelectorAll('.dv-reel-version-label').length
+        : 0;
+    return _dvVersionTrackOffsetY(viewport, lensIndex, count);
 }
 
 function _dvSyncVersionTrack(track, lensIndex) {
@@ -746,6 +1215,11 @@ function _dvSyncVersionTrack(track, lensIndex) {
     track.style.transform = 'translateY(' + y + 'px)';
 }
 
+function _dvRebuildVersionTrack(track, slot) {
+    if (!track || !slot) return;
+    track.innerHTML = _dvReelVersionTrackHtml(slot);
+}
+
 function _dvSyncAllVersionTracks(modal) {
     if (!modal) return;
     for (let i = 0; i < _dvState.slots.length; i++) {
@@ -753,6 +1227,7 @@ function _dvSyncAllVersionTracks(modal) {
         if (!slot.promptVersions || slot.promptVersions.length === 0) continue;
         const track = modal.querySelector('[data-dv-version-track="' + i + '"]');
         if (!track) continue;
+        _dvRebuildVersionTrack(track, slot);
         _dvSyncVersionTrack(track, slot.lensIndex);
     }
 }
@@ -869,14 +1344,15 @@ function _dvAnimateReelTrack(track, delta, modal, done) {
     });
 }
 
-function _dvAnimateVersionTrack(track, viewport, delta, done) {
+function _dvAnimateVersionTrack(track, viewport, fromLensIndex, toLensIndex, versionCount, done) {
     if (!track) {
         if (done) done();
         return;
     }
-    const rowH = _dvMeasureNavRowH(track);
     const fromY = _dvParseTranslateY(track);
-    const toY = fromY - delta * rowH;
+    const mathFrom = _dvVersionTrackOffsetY(viewport, fromLensIndex, versionCount);
+    const mathTo = _dvVersionTrackOffsetY(viewport, toLensIndex, versionCount);
+    const toY = fromY + (mathTo - mathFrom);
     _dvAnimateTranslateY(track, fromY, toY, { done });
 }
 
@@ -899,10 +1375,8 @@ function _dvUpdateReelNavControls(slotIdx, modal) {
     }
     const versionTrack = nav.querySelector('[data-dv-version-track="' + slotIdx + '"]');
     if (versionTrack) {
-        versionTrack.querySelectorAll('.dv-reel-version-label').forEach((el) => {
-            const vi = parseInt(el.getAttribute('data-vi'), 10);
-            el.classList.toggle('dv-reel-version-label--current', vi === lensIdx);
-        });
+        _dvRebuildVersionTrack(versionTrack, slot);
+        _dvSyncVersionTrack(versionTrack, lensIdx);
     }
     const reelTrack = modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
     if (reelTrack) {
@@ -917,18 +1391,19 @@ function _dvUpdateReelNavControls(slotIdx, modal) {
 function _dvShiftLens(slotIdx, delta, modal) {
     const slot = _dvState.slots[slotIdx];
     if (!slot || !slot.promptVersions || slot._lensAnimating) return;
-    const newIdx = slot.lensIndex + delta;
+    const oldIdx = slot.lensIndex;
+    const newIdx = oldIdx + delta;
     if (newIdx < 0 || newIdx >= slot.promptVersions.length) return;
 
     const reelTrack = modal && modal.querySelector('[data-dv-reel-track="' + slotIdx + '"]');
     const versionTrack = modal && modal.querySelector('[data-dv-version-track="' + slotIdx + '"]');
     const versionViewport = versionTrack && versionTrack.closest('.dv-reel-arrows-nav-viewport');
+    const versionCount = slot.promptVersions.length;
 
     if (!reelTrack || typeof reelTrack.animate !== 'function') {
         slot.lensIndex = newIdx;
         Logger.debug('lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + (slot.promptVersions[newIdx].displayVersionNo));
         if (reelTrack) _dvSyncReelTrack(reelTrack, slot.lensIndex, modal);
-        if (versionTrack) _dvSyncVersionTrack(versionTrack, slot.lensIndex);
         _dvUpdateReelNavControls(slotIdx, modal);
         _dvRenderDiffs(modal);
         _dvUpdateAboveLabels(modal);
@@ -942,7 +1417,6 @@ function _dvShiftLens(slotIdx, delta, modal) {
         if (pending <= 0) {
             slot._lensAnimating = false;
             _dvSyncReelTrack(reelTrack, slot.lensIndex, modal);
-            if (versionTrack) _dvSyncVersionTrack(versionTrack, slot.lensIndex);
             _dvUpdateReelNavControls(slotIdx, modal);
             _dvRenderDiffs(modal);
             _dvUpdateAboveLabels(modal);
@@ -951,8 +1425,11 @@ function _dvShiftLens(slotIdx, delta, modal) {
 
     slot.lensIndex = newIdx;
     _dvAnimateReelTrack(reelTrack, delta, modal, finishOne);
-    if (versionTrack) _dvAnimateVersionTrack(versionTrack, versionViewport, delta, finishOne);
-    else finishOne();
+    if (versionTrack) {
+        _dvAnimateVersionTrack(versionTrack, versionViewport, oldIdx, newIdx, versionCount, finishOne);
+    } else {
+        finishOne();
+    }
 
     Logger.debug('lens shift slot=' + slotIdx + ' delta=' + delta + ' → v' + slot.promptVersions[newIdx].displayVersionNo);
 }
@@ -1219,6 +1696,7 @@ function _dvApplyViewProgression(modal) {
             taskId: base.taskId, key: base.key,
             authorName: base.authorName, authorEmail: base.authorEmail,
             createdAt: base.createdAt || '',
+            contentKind: base.contentKind || 'prompt',
             promptVersions: base.promptVersions,
             lensIndex: i, loading: false, error: null
         });
@@ -1250,19 +1728,21 @@ function _dvApplyAllFinal(modal) {
 
 // ── Panel HTML (built once) ──
 
-function _dvSegBtn(attrName, value, label, active, divider) {
+function _dvSegBtn(attrName, value, label, active, divider, disabled) {
     const ui = Context.uiLib;
+    const extraAttrs = disabled ? 'disabled title="Line only while verifier slots are open"' : '';
     if (ui && typeof ui.segmentBtnHtml === 'function') {
         return ui.segmentBtnHtml({
             valueAttr: attrName,
             value,
             label,
             active,
-            divider
+            divider,
+            extraAttrs
         });
     }
     const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
-    return `<button type="button" ${attrName}="${value}" class="fleet-ui-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}">${label}</button>`;
+    return `<button type="button" ${attrName}="${value}" class="fleet-ui-seg-btn${divCls}" aria-pressed="${active ? 'true' : 'false'}"${disabled ? ' disabled title="Line only while verifier slots are open"' : ''}>${label}</button>`;
 }
 
 function _dvToggleCell(labelStyle, title, innerHtml) {
@@ -1275,7 +1755,9 @@ function _dvPanelHtml(dash) {
     const input = dash.inputStyle ? dash.inputStyle() : 'border:1px solid var(--border,#e2e8f0);border-radius:6px;padding:6px 9px;font-size:13px;width:100%;box-sizing:border-box;background:var(--background,#fff);color:var(--foreground,#0f172a);';
     const btnClass = (variant, size) => (dash.dashBtnClass ? dash.dashBtnClass(variant, size) : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size);
 
-    const gran = _dvState.granularity;
+    const gran = _dvEffectiveGranularity();
+    const granLocked = _dvHasVerifierSlots();
+    const lensWidth = _dvState.lensWidth;
     const punctMode = _dvState.punctuationMode;
     const compMode = _dvState.compMode;
     const showHighlights = _dvState.showHighlights;
@@ -1289,7 +1771,8 @@ function _dvPanelHtml(dash) {
             ${_dvToggleCell(label, 'Highlights', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlights', 'on', 'On', showHighlights, true)}${_dvSegBtn('data-dv-highlights', 'off', 'Off', !showHighlights, false)}</div>`)}
             ${_dvToggleCell(label, 'Type', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-mode', 'tasks', 'Tasks', _dvState.mode === 'tasks', true)}${_dvSegBtn('data-dv-mode', 'free-text', 'Free Text', _dvState.mode === 'free-text', false)}</div>`)}
             ${_dvToggleCell(label, 'Modality', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-highlight-modality', 'differences', 'Differences', highlightModality === 'differences', true)}${_dvSegBtn('data-dv-highlight-modality', 'similarities', 'Similarities', highlightModality === 'similarities', false)}</div>`)}
-            ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false)}</div>`)}
+            ${_dvToggleCell(label, 'Granularity', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-seg', 'word', 'Word', gran === 'word', true, granLocked)}${_dvSegBtn('data-dv-seg', 'char', 'Character', gran === 'char', false, granLocked)}${_dvSegBtn('data-dv-seg', 'line', 'Line', gran === 'line', false, false)}</div>`)}
+            ${_dvToggleCell(label, 'Width', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-width', 'normal', 'Normal', lensWidth === 'normal', true)}${_dvSegBtn('data-dv-width', 'wide', 'Wide', lensWidth === 'wide', false)}</div>`)}
             ${_dvToggleCell(label, 'Punctuation', `<div class="fleet-ui-seg-group">${_dvSegBtn('data-dv-punctuation', 'ignore', 'Ignore', punctMode === 'ignore', true)}${_dvSegBtn('data-dv-punctuation', 'highlight', 'Highlight', punctMode === 'highlight', false)}</div>`)}
             <div id="dv-link-splits-wrap" class="dv-toggle-cell" style="display:${showLinkSplits ? 'block' : 'none'};">
                 <div style="${label}margin-bottom:6px;">Link Splits</div>
@@ -1345,7 +1828,7 @@ function _dvPanelHtml(dash) {
 
     const rightHtml = `
     <div id="dv-right" class="${showHighlights ? '' : 'dv-highlights-off'}" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
-        <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};">
+        <div id="dv-slots-area" class="dv-slots-area${_dvState.compMode==='rolling'?' dv-slots-area--rolling':''}" style="display:${_dvState.mode==='tasks'?'flex':'none'};--dv-slot-w:${_dvSlotWidthPx()}px;">
             <div class="dv-slots-stack">
                 <div id="dv-slots-above-label" class="dv-slot-above-label" aria-hidden="true"></div>
                 <div id="dv-slots-columns-row" class="dv-slots-columns-row">
@@ -1468,16 +1951,38 @@ function _dvAboveLabelInnerHtml() {
     if (!pair) return '';
     const eng = _dvEngine();
     if (!eng) return '';
+
+    let bundle = null;
+    if (_dvState.mode === 'tasks' && _dvState.slots.length >= 2) {
+        let leftSlot = null;
+        let rightSlot = null;
+        if (_dvState.compMode === 'rolling') {
+            _dvClampRollingLeft();
+            leftSlot = _dvState.slots[_dvState.rollingLeft];
+            rightSlot = _dvState.slots[_dvState.rollingLeft + 1];
+        } else if (_dvState.slots.length === 2) {
+            leftSlot = _dvState.slots[0];
+            rightSlot = _dvState.slots[1];
+        } else if (_dvState.hoverSlotIdx != null && _dvState.hoverSlotIdx > 0) {
+            leftSlot = _dvState.slots[0];
+            rightSlot = _dvState.slots[_dvState.hoverSlotIdx];
+        }
+        if (leftSlot && rightSlot && !leftSlot.loading && !rightSlot.loading) {
+            bundle = _dvGetOrComputeBundle(leftSlot, rightSlot, true);
+        }
+    }
+
     return eng.similarityLabelHtml({
         leftText: pair.leftText,
         rightText: pair.rightText,
-        granularity: _dvState.granularity,
+        granularity: _dvEffectiveGranularity(),
         highlightModality: _dvState.highlightModality,
         showHighlights: _dvState.showHighlights,
         minHighlightLength: _dvEffectiveHighlightMinLength(),
         linkSplits: _dvState.linkSplits,
         punctuationMode: _dvState.punctuationMode,
-        lengthRange: _dvState.highlightLengthRange
+        lengthRange: _dvState.highlightLengthRange,
+        bundle: bundle
     });
 }
 
@@ -1567,10 +2072,23 @@ function _dvReelVersionTrackLabel(v, vi, isCurrent) {
     return '<span class="' + cls + '" data-vi="' + vi + '">v' + _dvEscHtml(String(v.displayVersionNo)) + '</span>';
 }
 
-function _dvReelVersionTrackHtml(slot, slotIdx) {
+function _dvReelVersionSpacerHtml() {
+    return '<span class="dv-reel-version-spacer" aria-hidden="true"></span>';
+}
+
+function _dvReelVersionTrackHtml(slot, _slotIdx) {
     const versions = slot.promptVersions || [];
     const lensIdx = slot.lensIndex;
-    return versions.map((v, i) => _dvReelVersionTrackLabel(v, i, i === lensIdx)).join('');
+    const n = versions.length;
+    let html = '';
+    for (let i = 0; i < n; i++) {
+        // Spacer under ↑ between far labels and the peek-above.
+        if (i === lensIdx - 1 && lensIdx > 0) html += _dvReelVersionSpacerHtml();
+        html += _dvReelVersionTrackLabel(versions[i], i, i === lensIdx);
+        // Spacer under ↓ between the peek-below and farther labels.
+        if (i === lensIdx + 1 && lensIdx < n - 1) html += _dvReelVersionSpacerHtml();
+    }
+    return html;
 }
 
 function _dvReelArrowBtn(slotIdx, dir, enabled) {
@@ -1623,7 +2141,9 @@ function _dvReelCardTrackHtml(slot, slotIdx) {
 }
 
 function _dvReelHtml(slot, slotIdx) {
-    const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="Copy prompt" aria-label="Copy prompt" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
+    const isVerifier = _dvNormalizeContentKind(slot.contentKind) === 'verifier';
+    const copyLabel = isVerifier ? 'Copy verifier' : 'Copy prompt';
+    const copyPromptBtn = `<button type="button" data-dv-copy-prompt="${slotIdx}" title="${copyLabel}" aria-label="${copyLabel}" class="dv-reel-copy wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon">${_dvCopyIconSvg()}</button>`;
 
     return `<div class="dv-reel">
         <div class="dv-reel-viewport" data-dv-reel-viewport="${slotIdx}">
@@ -1653,6 +2173,7 @@ function _dvQ(modal, id) {
 
 function _dvRenderAll(modal) {
     if (!modal) return;
+    _dvSyncVerifierGranularityLock(modal);
     _dvRenderSlotsArea(modal);
     _dvRenderStash(modal);
     _dvRenderDiffs(modal);
@@ -1688,14 +2209,15 @@ function _dvRenderSlotsArea(modal) {
 }
 
 function _dvStashChipHtml(entry, idx, active) {
-    const authorHtml = _dvAuthorLineHtml(entry.authorName, entry.authorEmail);
+    const author = _dvStashDisplayAuthor(entry);
+    const authorHtml = _dvAuthorLineHtml(author.authorName, author.authorEmail);
     const keyHtml = _dvKeyCopyHtml(entry.key, entry.taskId);
     const createdHtml = entry.createdAt
         ? `<div class="dv-slot-created">${_dvTimestampLineHtml('', entry.createdAt)}</div>`
         : '';
-    const versionHtml = _dvStashVersionCountHtml(entry);
-    const metaHtml = (createdHtml || versionHtml)
-        ? `<div class="dv-slot-meta">${createdHtml}${versionHtml}</div>`
+    const endHtml = _dvMetaEndHtml(entry.contentKind, _dvStashVersionCountHtml(entry));
+    const metaHtml = (createdHtml || endHtml)
+        ? `<div class="dv-slot-meta">${createdHtml}${endHtml}</div>`
         : '';
     const removeBtnStyle = _dvIconBtnStyle() + 'background:transparent;color:var(--muted-foreground,#64748b);';
     return `<div class="dv-stash-chip${active ? ' dv-stash-chip--active' : ''}" data-dv-stash-chip="${idx}" title="Click to add slot">
@@ -1716,12 +2238,11 @@ function _dvRenderStash(modal) {
         _dvSyncStashClearUi(modal);
         return;
     }
-    const slotCountByTaskId = new Map();
-    for (const s of _dvState.slots) {
-        slotCountByTaskId.set(s.taskId, (slotCountByTaskId.get(s.taskId) || 0) + 1);
-    }
+    const activeIds = new Set(
+        _dvState.slots.map((s) => _dvStashIdentity(s.taskId, s.contentKind))
+    );
     chips.innerHTML = _dvState.stash.map((entry, idx) => (
-        _dvStashChipHtml(entry, idx, slotCountByTaskId.has(entry.taskId))
+        _dvStashChipHtml(entry, idx, activeIds.has(_dvStashIdentity(entry.taskId, entry.contentKind)))
     )).join('');
     _dvSyncStashClearUi(modal);
 }
@@ -1734,16 +2255,30 @@ function _dvSyncStashClearUi(modal) {
 function _dvRenderStashChipStates(modal) {
     const chips = _dvQ(modal, 'dv-stash-chips');
     if (!chips) return;
-    const slotTaskIds = new Set(_dvState.slots.map((s) => s.taskId));
+    const activeIds = new Set(
+        _dvState.slots.map((s) => _dvStashIdentity(s.taskId, s.contentKind))
+    );
     chips.querySelectorAll('[data-dv-stash-chip]').forEach((chip) => {
         const idx = parseInt(chip.getAttribute('data-dv-stash-chip'), 10);
         const entry = _dvState.stash[idx];
         if (!entry) return;
-        const active = slotTaskIds.has(entry.taskId);
+        const active = activeIds.has(_dvStashIdentity(entry.taskId, entry.contentKind));
         chip.classList.toggle('dv-stash-chip--active', active);
         const versionEl = chip.querySelector('.dv-slot-version-count');
-        if (versionEl) {
-            versionEl.outerHTML = _dvStashVersionCountHtml(entry);
+        const endEl = chip.querySelector('.dv-slot-meta-end');
+        const nextVersion = _dvStashVersionCountHtml(entry);
+        const nextEnd = _dvMetaEndHtml(entry.contentKind, nextVersion);
+        if (endEl) {
+            if (nextEnd) endEl.outerHTML = nextEnd;
+            else endEl.remove();
+        } else if (versionEl) {
+            if (nextEnd) versionEl.outerHTML = nextEnd;
+            else if (nextVersion) versionEl.outerHTML = nextVersion;
+        }
+        const authorEl = chip.querySelector('.dv-slot-author');
+        if (authorEl) {
+            const author = _dvStashDisplayAuthor(entry);
+            authorEl.outerHTML = _dvAuthorLineHtml(author.authorName, author.authorEmail);
         }
     });
 }
@@ -1793,9 +2328,11 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
         const rightIdx = leftIdx + 1;
         const leftSlot = _dvState.slots[leftIdx];
         const rightSlot = _dvState.slots[rightIdx];
-        const leftText = _dvSlotPromptText(leftSlot);
-        const rightText = _dvSlotPromptText(rightSlot);
-        const { baseHtml, compareHtml } = _dvDiffPair(leftText, rightText, _dvState.granularity);
+        const bundle = (leftSlot && rightSlot && !leftSlot.loading && !rightSlot.loading)
+            ? _dvGetOrComputeBundle(leftSlot, rightSlot, false)
+            : null;
+        const baseHtml = bundle ? bundle.baseHtml : _dvPlainPromptHtml(_dvSlotPromptText(leftSlot));
+        const compareHtml = bundle ? bundle.compareHtml : _dvPlainPromptHtml(_dvSlotPromptText(rightSlot));
 
         for (let i = 0; i < _dvState.slots.length; i++) {
             const slot = _dvState.slots[i];
@@ -1823,9 +2360,8 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
     if (twoSlots) {
         const compare = _dvState.slots[1];
         if (compare && compare.promptVersions && !compare.loading) {
-            const compareText = _dvSlotPromptText(compare);
-            const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
-            if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, baseHtml, null);
+            const bundle = _dvGetOrComputeBundle(base, compare, false);
+            if (baseLensPre) _dvSetBaseLensHtml(baseLensPre, bundle.baseHtml, null);
         } else if (baseLensPre) {
             _dvSetBaseLensHtml(baseLensPre, _dvPlainPromptHtml(baseText), null);
         }
@@ -1836,15 +2372,15 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
     for (let i = 1; i < _dvState.slots.length; i++) {
         const slot = _dvState.slots[i];
         if (!slot.promptVersions || slot.loading) continue;
-        const compareText = _dvSlotPromptText(slot);
-        const { compareHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
+        const bundle = _dvGetOrComputeBundle(base, slot, false);
         const lensPre = getPre(i);
-        if (lensPre) lensPre.innerHTML = compareHtml;
+        if (lensPre) lensPre.innerHTML = bundle.compareHtml;
     }
 }
 
 function _dvRenderDiffs(modal) {
     if (_dvState.mode !== 'tasks') return;
+    _dvSyncVerifierGranularityLock(modal);
     _dvRefreshHighlightLengthRange(modal);
     if (_dvState.slots.length < 2) {
         _dvRemoveRollingOverlay(modal);
@@ -1863,6 +2399,7 @@ function _dvRenderDiffs(modal) {
     _dvApplyDiffToLensPres(modal, lensPres);
     _dvUpdateAboveLabels(modal);
     _dvScheduleReelLensSync(modal);
+    _dvSchedulePairPrefetch();
 }
 
 function _dvSetBaseLensHtml(baseLensPre, html, hoverSrc) {
@@ -1909,10 +2446,25 @@ function _dvSetHoverDiff(modal, slotIdx) {
     if (!base || !base.promptVersions || !compare || !compare.promptVersions) return;
     const baseLensPre = _dvGetLensPreRef(modal, 0);
     if (baseLensPre && baseLensPre.getAttribute('data-dv-hover-src') === String(slotIdx)) return;
-    const baseText = _dvSlotPromptText(base);
-    const compareText = _dvSlotPromptText(compare);
-    const { baseHtml } = _dvDiffPair(baseText, compareText, _dvState.granularity);
-    _dvSetBaseLensHtml(baseLensPre, baseHtml, slotIdx);
+    const bundle = _dvGetOrComputeBundle(base, compare, true);
+    _dvSetBaseLensHtml(baseLensPre, bundle.baseHtml, slotIdx);
+}
+
+function _dvScheduleHoverDiff(modal, slotIdx) {
+    _dvHoverPendingIdx = slotIdx;
+    if (_dvHoverDebounceTimer) clearTimeout(_dvHoverDebounceTimer);
+    _dvHoverDebounceTimer = setTimeout(() => {
+        _dvHoverDebounceTimer = null;
+        const pending = _dvHoverPendingIdx;
+        if (pending == null) {
+            _dvSetHoverDiff(modal, null);
+            _dvUpdateAboveLabels(modal);
+            return;
+        }
+        if (_dvState.hoverSlotIdx !== pending) return;
+        _dvSetHoverDiff(modal, pending);
+        _dvUpdateAboveLabels(modal);
+    }, DV_HOVER_DEBOUNCE_MS);
 }
 
 function _dvRemoveRollingOverlay(modal) {
@@ -2116,7 +2668,17 @@ function _dvSyncModeUi(modal) {
 }
 
 function _dvSyncGranularityUi(modal) {
-    _dvSyncSegPressed(modal, 'data-dv-seg', _dvState.granularity);
+    if (!modal) return;
+    const forced = _dvHasVerifierSlots();
+    const effective = _dvEffectiveGranularity();
+    _dvSyncSegPressed(modal, 'data-dv-seg', effective);
+    modal.querySelectorAll('[data-dv-seg]').forEach((btn) => {
+        const value = btn.getAttribute('data-dv-seg');
+        const lock = forced && value !== 'line';
+        btn.disabled = lock;
+        if (lock) btn.setAttribute('title', 'Line only while verifier slots are open');
+        else btn.removeAttribute('title');
+    });
 }
 
 function _dvSyncPunctuationUi(modal) {
@@ -2236,8 +2798,14 @@ function _dvAttachListeners(modal) {
         // ── Granularity toggle ──
         const segBtn = e.target.closest('[data-dv-seg]');
         if (segBtn && modal.contains(segBtn)) {
+            if (segBtn.disabled) return;
             const gran = segBtn.getAttribute('data-dv-seg');
+            if (_dvHasVerifierSlots() && gran !== 'line') {
+                _dvSyncGranularityUi(modal);
+                return;
+            }
             if (gran !== _dvState.granularity) {
+                _dvInvalidatePairCache();
                 _dvState.granularity = gran;
                 try { Storage.setData(DV_GRANULARITY_KEY, gran); } catch (_e) { /* no-op */ }
                 _dvSyncGranularityUi(modal);
@@ -2249,11 +2817,27 @@ function _dvAttachListeners(modal) {
             return;
         }
 
+        // ── Lens width toggle ──
+        const widthBtn = e.target.closest('[data-dv-width]');
+        if (widthBtn && modal.contains(widthBtn)) {
+            const width = widthBtn.getAttribute('data-dv-width');
+            if ((width === 'normal' || width === 'wide') && width !== _dvState.lensWidth) {
+                _dvState.lensWidth = width;
+                try { Storage.setData(DV_WIDTH_KEY, width); } catch (_e) { /* no-op */ }
+                _dvApplyLensWidth(modal);
+                _dvScheduleReelLensSync(modal);
+                if (_dvState.compMode === 'rolling') _dvUpdateRollingOverlay(modal);
+                Logger.log('lens width → ' + width);
+            }
+            return;
+        }
+
         // ── Punctuation toggle ──
         const punctBtn = e.target.closest('[data-dv-punctuation]');
         if (punctBtn && modal.contains(punctBtn)) {
             const punctMode = punctBtn.getAttribute('data-dv-punctuation');
             if (punctMode !== _dvState.punctuationMode) {
+                _dvInvalidatePairCache();
                 _dvState.punctuationMode = punctMode;
                 try { Storage.setData(DV_PUNCTUATION_KEY, punctMode); } catch (_e) { /* no-op */ }
                 _dvSyncPunctuationUi(modal);
@@ -2270,6 +2854,7 @@ function _dvAttachListeners(modal) {
         if (modalityBtn && modal.contains(modalityBtn)) {
             const modality = modalityBtn.getAttribute('data-dv-highlight-modality');
             if (modality !== _dvState.highlightModality) {
+                _dvInvalidatePairCache();
                 _dvState.highlightModality = modality;
                 try { Storage.setData(DV_HIGHLIGHT_MODALITY_KEY, modality); } catch (_e) { /* no-op */ }
                 _dvSyncHighlightModalityUi(modal);
@@ -2286,6 +2871,7 @@ function _dvAttachListeners(modal) {
         if (linkSplitsBtn && modal.contains(linkSplitsBtn)) {
             const enabled = linkSplitsBtn.getAttribute('data-dv-link-splits') === 'on';
             if (enabled !== _dvState.linkSplits) {
+                _dvInvalidatePairCache();
                 _dvState.linkSplits = enabled;
                 try { Storage.setData(DV_LINK_SPLITS_KEY, enabled ? 'on' : 'off'); } catch (_e) { /* no-op */ }
                 _dvSyncLinkSplitsUi(modal);
@@ -2323,6 +2909,7 @@ function _dvAttachListeners(modal) {
         if (highlightsBtn && modal.contains(highlightsBtn)) {
             const enabled = highlightsBtn.getAttribute('data-dv-highlights') === 'on';
             if (enabled !== _dvState.showHighlights) {
+                _dvInvalidatePairCache();
                 _dvState.showHighlights = enabled;
                 _dvState.hoverSlotIdx = null;
                 _dvSetHoverDiff(modal, null);
@@ -2388,6 +2975,7 @@ function _dvAttachListeners(modal) {
                     authorName: entry.authorName,
                     authorEmail: entry.authorEmail,
                     createdAt: entry.createdAt || '',
+                    contentKind: entry.contentKind || 'prompt',
                     fromStashChip: true
                 }, modal);
             }
@@ -2409,7 +2997,7 @@ function _dvAttachListeners(modal) {
             e.stopPropagation();
             const idx = parseInt(stashRemove.getAttribute('data-dv-stash-remove'), 10);
             const entry = _dvState.stash[idx];
-            if (entry) _dvRemoveTaskFromDiffAndStash(entry.taskId, modal);
+            if (entry) _dvRemoveTaskFromDiffAndStash(entry.taskId, modal, entry.contentKind);
             return;
         }
     });
@@ -2457,6 +3045,7 @@ function _dvAttachListeners(modal) {
         lengthSlider.addEventListener('input', () => {
             const val = parseInt(lengthSlider.value, 10);
             if (!Number.isFinite(val)) return;
+            _dvInvalidatePairCache();
             _dvState.highlightMinLength = _dvClampHighlightMinLength(val);
             _dvSyncHighlightLengthUi(modal);
             _dvRenderDiffs(modal);
@@ -2499,8 +3088,8 @@ function _dvAttachListeners(modal) {
         if (_dvState.hoverSlotIdx === idx) return;
         _dvState.hoverSlotIdx = idx;
         _dvApplyCompareHoverRing(idx, modal);
-        if (_dvState.slots.length > 2) _dvSetHoverDiff(modal, idx);
-        _dvUpdateAboveLabels(modal);
+        if (_dvState.slots.length > 2) _dvScheduleHoverDiff(modal, idx);
+        else _dvUpdateAboveLabels(modal);
     });
 
     modal.addEventListener('mouseout', (e) => {
@@ -2512,8 +3101,11 @@ function _dvAttachListeners(modal) {
         const related = e.relatedTarget;
         if (related instanceof Node && slot.contains(related)) return;
         _dvState.hoverSlotIdx = null;
-        _dvSetHoverDiff(modal, null);
-        _dvUpdateAboveLabels(modal);
+        if (_dvState.slots.length > 2) _dvScheduleHoverDiff(modal, null);
+        else {
+            _dvSetHoverDiff(modal, null);
+            _dvUpdateAboveLabels(modal);
+        }
     });
 }
 
@@ -2539,6 +3131,10 @@ function _dvInjectStyles() {
         '  flex-wrap: wrap;',
         '  gap: 12px;',
         '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-universal-toggles [data-dv-seg]:disabled {',
+        '  opacity: 0.45;',
+        '  cursor: not-allowed;',
         '}',
         '#wf-dash-modal .dv-highlight-length-wrap {',
         '  flex-basis: 100%;',
@@ -2703,6 +3299,19 @@ function _dvInjectStyles() {
         '  flex: 1;',
         '  min-width: 0;',
         '}',
+        '#wf-dash-modal .dv-slot-meta-end {',
+        '  display: inline-flex;',
+        '  align-items: baseline;',
+        '  gap: 6px;',
+        '  flex-shrink: 0;',
+        '}',
+        '#wf-dash-modal .dv-content-kind-badge {',
+        '  font-size: 10px;',
+        '  font-weight: 600;',
+        '  line-height: 1.3;',
+        '  color: var(--muted-foreground, #64748b);',
+        '  white-space: nowrap;',
+        '}',
         '#wf-dash-modal .dv-slot-version-count {',
         '  flex-shrink: 0;',
         '  font-size: 10px;',
@@ -2767,8 +3376,8 @@ function _dvInjectStyles() {
         '  color: var(--foreground, #0f172a);',
         '}',
         '#wf-dash-modal .dv-slot-column {',
-        '  width: ' + DV_SLOT_WIDTH_PX + 'px;',
-        '  min-width: ' + DV_SLOT_WIDTH_PX + 'px;',
+        '  width: var(--dv-slot-w, ' + DV_SLOT_WIDTH_PX + 'px);',
+        '  min-width: var(--dv-slot-w, ' + DV_SLOT_WIDTH_PX + 'px);',
         '  flex-shrink: 0;',
         '  display: flex;',
         '  flex-direction: column;',
@@ -2966,6 +3575,13 @@ function _dvInjectStyles() {
         '  font-family: inherit;',
         '  user-select: none;',
         '}',
+        '#wf-dash-modal .dv-reel-version-spacer {',
+        '  display: block;',
+        '  height: ' + DV_REEL_NAV_ROW_H + 'px;',
+        '  width: 100%;',
+        '  flex-shrink: 0;',
+        '  pointer-events: none;',
+        '}',
         '#wf-dash-modal .dv-reel-version-label--current {',
         '  font-size: 9px;',
         '  font-weight: 700;',
@@ -3011,14 +3627,21 @@ function _dvStashEntryFromSeed(seed) {
         authorName: seed.authorName || '',
         authorEmail: seed.authorEmail || '',
         createdAt: seed.createdAt || '',
-        versionCount: seed.versionCount || 0
+        versionCount: seed.versionCount || 0,
+        contentKind: _dvNormalizeContentKind(seed.contentKind)
     };
 }
 
 function _dvApiAddTask(seed) {
     // seed: { taskId, key, authorName, authorEmail } — always re-hydrated from PostgREST
     const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
-    _dvAddSlot(seed, modal);
+    _dvAddSlot(Object.assign({}, seed, { contentKind: 'prompt' }), modal);
+}
+
+function _dvApiAddVerifier(seed) {
+    // seed: { taskId, key, authorName, authorEmail } — hydrate verifier history reel
+    const modal = Context.dashboard && Context.dashboard._loader && Context.dashboard._loader._modal;
+    _dvAddSlot(Object.assign({}, seed, { contentKind: 'verifier' }), modal);
 }
 
 function _dvApiAddTasks(seeds) {
@@ -3035,9 +3658,11 @@ function _dvApiAddTasks(seeds) {
     const pendingHydrations = [];
 
     for (let i = 0; i < list.length; i++) {
-        const seed = list[i];
+        const seed = Object.assign({}, list[i], {
+            contentKind: _dvNormalizeContentKind(list[i].contentKind)
+        });
         const taskId = seed.taskId;
-        const inStash = _dvStashFind(taskId) >= 0;
+        const inStash = _dvStashFind(taskId, seed.contentKind) >= 0;
         if (!inStash && _dvState.stash.length >= DV_MAX_STASH) {
             skipped = list.length - i;
             stoppedByStashLimit = true;
@@ -3053,6 +3678,7 @@ function _dvApiAddTasks(seeds) {
                 authorName: stashEntry.authorName,
                 authorEmail: stashEntry.authorEmail,
                 createdAt: stashEntry.createdAt,
+                contentKind: stashEntry.contentKind,
                 promptVersions: null,
                 lensIndex: 0,
                 loading: true,
@@ -3095,7 +3721,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '4.4',
+    _version: '5.7',
     phase: 'core',
     enabledByDefault: true,
 
@@ -3123,7 +3749,13 @@ const plugin = {
         // Restore persisted granularity
         try {
             const stored = Storage.getData(DV_GRANULARITY_KEY, null);
-            if (stored === 'char' || stored === 'word') _dvState.granularity = stored;
+            if (stored === 'char' || stored === 'word' || stored === 'line') _dvState.granularity = stored;
+        } catch (_e) { /* no-op */ }
+
+        // Restore persisted lens width
+        try {
+            const storedWidth = Storage.getData(DV_WIDTH_KEY, null);
+            if (storedWidth === 'normal' || storedWidth === 'wide') _dvState.lensWidth = storedWidth;
         } catch (_e) { /* no-op */ }
 
         // Restore persisted punctuation mode (default ignore)
@@ -3166,6 +3798,7 @@ const plugin = {
         // Expose public API
         Context.diffViewer = {
             addTask: _dvApiAddTask,
+            addVerifier: _dvApiAddVerifier,
             addTasks: _dvApiAddTasks
         };
 

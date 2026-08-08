@@ -198,51 +198,223 @@ function getVerifierChatState(modal) {
     return modal._wfVerifierChatState;
 }
 
-function setVerifierChatFetchContext(modal, ctx) {
-    if (!modal) return;
-    // Flag for "include this verifier on the next chat message".
-    // Source is required; verifierId falls back so uniqueness checks still work.
-    if (!ctx || !String(ctx.source || '').trim()) {
-        modal._wfVerifierChatPending = null;
-        Logger.debug('chat fetch context cleared');
-        return;
-    }
+function getVerifierChatQueue(modal) {
+    if (!modal) return [];
+    if (!Array.isArray(modal._wfVerifierChatQueue)) modal._wfVerifierChatQueue = [];
+    return modal._wfVerifierChatQueue;
+}
+
+function verifierQueueDedupeKey(ctx) {
+    const versionId = String(ctx && (ctx.versionId || ctx.verifierVersionId) || '').trim();
+    if (versionId) return 'vid:' + versionId;
+    const source = String(ctx && ctx.source || '');
+    if (source) return 'src:' + source.length + ':' + source.slice(0, 64);
+    return '';
+}
+
+function normalizeVerifierQueueItem(ctx) {
+    if (!ctx || !String(ctx.source || '').trim()) return null;
     const taskId = String(ctx.taskId || '');
     const taskKey = String(ctx.taskKey || '');
     const verifierKey = String(ctx.verifierKey || '');
+    const versionId = String(ctx.versionId || ctx.verifierVersionId || '').trim();
     const verifierId = String(ctx.verifierId || '').trim()
+        || (versionId ? ('version:' + versionId) : '')
         || (taskKey ? ('task:' + taskKey) : '')
         || (taskId ? ('task-id:' + taskId) : '')
         || verifierKey
         || 'verifier';
-    modal._wfVerifierChatPending = {
+    return {
         taskId,
         taskKey,
         verifierId,
         verifierKey,
         version: ctx.version != null ? ctx.version : null,
+        versionId,
+        displayVersionNo: ctx.displayVersionNo != null ? ctx.displayVersionNo : null,
         source: String(ctx.source || ''),
     };
-    Logger.debug('chat fetch context set · verifier '
-        + modal._wfVerifierChatPending.verifierId
-        + (modal._wfVerifierChatPending.version != null
-            ? ' v' + modal._wfVerifierChatPending.version
-            : ''));
 }
 
-function getVerifierChatFetchContext(modal) {
-    return modal && modal._wfVerifierChatPending ? modal._wfVerifierChatPending : null;
+/** Append verifier source for the next chat send. Returns queue length. */
+function queueVerifierChatAttachment(modal, ctx) {
+    if (!modal) return 0;
+    const item = normalizeVerifierQueueItem(ctx);
+    if (!item) return getVerifierChatQueue(modal).length;
+    const queue = getVerifierChatQueue(modal);
+    const key = verifierQueueDedupeKey(item);
+    if (key) {
+        const idx = queue.findIndex((entry) => verifierQueueDedupeKey(entry) === key);
+        if (idx >= 0) {
+            queue[idx] = item;
+            Logger.debug('chat queue updated existing verifier · ' + item.verifierId);
+            return queue.length;
+        }
+    }
+    queue.push(item);
+    Logger.log('chat queue +1 · ' + item.verifierId
+        + (item.displayVersionNo != null ? ' v' + item.displayVersionNo : '')
+        + ' (' + queue.length + ' queued)');
+    return queue.length;
 }
 
-function verifierChatHasAttachedId(state, verifierId) {
-    const id = String(verifierId || '').trim();
-    if (!id || !state || !Array.isArray(state.messages)) return false;
+function removeVerifierChatQueueItem(modal, dedupeKey) {
+    const queue = getVerifierChatQueue(modal);
+    const needle = String(dedupeKey || '');
+    if (!needle) return queue.length;
+    const next = queue.filter((entry) => verifierQueueDedupeKey(entry) !== needle);
+    modal._wfVerifierChatQueue = next;
+    Logger.log('chat queue removed · ' + needle + ' (' + next.length + ' queued)');
+    return next.length;
+}
+
+function clearVerifierChatQueue(modal) {
+    if (!modal) return;
+    modal._wfVerifierChatQueue = [];
+}
+
+function ensureVerifierPendingTrayStyles() {
+    if (document.getElementById('wf-ops-verifier-pending-tray-style')) return;
+    const style = document.createElement('style');
+    style.id = 'wf-ops-verifier-pending-tray-style';
+    style.textContent = ''
+        + '#wf-ops-verifier-pending-tray{display:none;flex-direction:column;gap:6px;flex-shrink:0;}'
+        + '#wf-ops-verifier-pending-tray[data-wf-has-items="1"]{display:flex;}'
+        + '#wf-ops-verifier-pending-tray .wf-ops-verifier-pending-label{'
+        + 'font-size:11px;font-weight:500;color:var(--muted-foreground,#64748b);}'
+        + '#wf-ops-verifier-pending-tray .wf-ops-verifier-pending-list{'
+        + 'display:flex;flex-direction:column;gap:6px;}'
+        + '#wf-ops-verifier-pending-tray .wf-ops-verifier-pending-chip{'
+        + 'display:flex;align-items:center;gap:8px;padding:6px 8px;'
+        + 'border:1px solid var(--border,#e2e8f0);border-radius:6px;'
+        + 'background:var(--card,#fff);color:var(--foreground,#0f172a);'
+        + 'font-size:12px;box-sizing:border-box;}'
+        + '#wf-ops-verifier-pending-tray .wf-ops-verifier-pending-chip-main{'
+        + 'flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}'
+        + '#wf-ops-verifier-pending-tray .wf-ops-verifier-pending-chip-title{'
+        + 'font-weight:600;}'
+        + '#wf-ops-verifier-pending-tray .wf-ops-verifier-pending-chip-id{'
+        + 'font-size:11px;color:var(--muted-foreground,#64748b);'
+        + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+        + '#wf-ops-verifier-pending-tray .wf-ops-verifier-pending-remove{'
+        + 'flex-shrink:0;}';
+    document.head.appendChild(style);
+}
+
+function verifierPendingChipLabel(item) {
+    if (!item) return 'Verifier';
+    if (item.displayVersionNo != null) return 'Verifier v' + item.displayVersionNo;
+    if (item.version != null) return 'Verifier v' + item.version;
+    return 'Verifier';
+}
+
+function escapeVerifierPendingHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function syncVerifierPendingAttachTray(modal) {
+    if (!modal) return;
+    ensureVerifierPendingTrayStyles();
+    const tray = modal.querySelector('#wf-ops-verifier-pending-tray');
+    if (!tray) return;
+    const queue = getVerifierChatQueue(modal);
+    tray.setAttribute('data-wf-has-items', queue.length ? '1' : '0');
+    if (!queue.length) {
+        tray.innerHTML = '';
+        return;
+    }
+    const btnClass = (variant, size) => {
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            return Context.uiLib.btnClass(variant, size);
+        }
+        return 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
+    };
+    let html = '<div class="wf-ops-verifier-pending-label">Queued for next send</div>'
+        + '<div class="wf-ops-verifier-pending-list">';
+    for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+        const key = verifierQueueDedupeKey(item);
+        const title = verifierPendingChipLabel(item);
+        const idText = String(item.taskId || item.taskKey || item.verifierId || '').trim();
+        html += '<div class="wf-ops-verifier-pending-chip" data-wf-pending-key="'
+            + escapeVerifierPendingHtml(key) + '">'
+            + '<div class="wf-ops-verifier-pending-chip-main">'
+            + '<div class="wf-ops-verifier-pending-chip-title">'
+            + escapeVerifierPendingHtml(title) + '</div>'
+            + (idText
+                ? ('<div class="wf-ops-verifier-pending-chip-id" title="'
+                    + escapeVerifierPendingHtml(idText) + '">'
+                    + escapeVerifierPendingHtml(idText) + '</div>')
+                : '')
+            + '</div>'
+            + '<button type="button" class="wf-ops-verifier-pending-remove '
+            + btnClass('basic', 'icon')
+            + '" data-wf-pending-remove="' + escapeVerifierPendingHtml(key)
+            + '" title="Remove from queue" aria-label="Remove from queue">&times;</button>'
+            + '</div>';
+    }
+    html += '</div>';
+    tray.innerHTML = html;
+}
+
+async function showVerifierQueuedInChat(modal) {
+    if (!modal) return;
+    ensureVerifierChatPaneOpen(modal);
+    const chat = verifierChatApi();
+    const state = getVerifierChatState(modal);
+    if (chat && state && typeof chat.ensureMounted === 'function') {
+        try {
+            await chat.ensureMounted(modal, state, verifierChatOpts());
+        } catch (err) {
+            Logger.warn('chat mount before pending tray failed', err);
+        }
+    }
+    wireVerifierChatComposer(modal);
+    syncVerifierPendingAttachTray(modal);
+}
+
+/** Queue + paint pending chips in the chat pane (no send). Returns queue length. */
+function queueVerifierChatAttachmentAndShow(modal, ctx) {
+    const count = queueVerifierChatAttachment(modal, ctx);
+    void showVerifierQueuedInChat(modal);
+    return count;
+}
+
+function setVerifierChatFetchContext(modal, ctx) {
+    // Backward-compatible: replace queue with a single pending item (or clear).
+    if (!modal) return;
+    clearVerifierChatQueue(modal);
+    if (!ctx || !String(ctx.source || '').trim()) {
+        syncVerifierPendingAttachTray(modal);
+        Logger.debug('chat queue cleared');
+        return;
+    }
+    queueVerifierChatAttachmentAndShow(modal, ctx);
+}
+
+function verifierMessageAttachments(msg) {
+    if (!msg) return [];
+    if (Array.isArray(msg.displayAttachments) && msg.displayAttachments.length) {
+        return msg.displayAttachments;
+    }
+    if (msg.displayAttachment) return [msg.displayAttachment];
+    return [];
+}
+
+function verifierChatHasAttachedKey(state, key) {
+    const needle = String(key || '').trim();
+    if (!needle || !state || !Array.isArray(state.messages)) return false;
     for (let i = 0; i < state.messages.length; i++) {
-        const msg = state.messages[i];
-        const att = msg && msg.displayAttachment;
-        if (att && att.type === 'verifier-source'
-            && String(att.verifierId || '').trim() === id) {
-            return true;
+        const atts = verifierMessageAttachments(state.messages[i]);
+        for (let j = 0; j < atts.length; j++) {
+            const att = atts[j];
+            if (!att || att.type !== 'verifier-source') continue;
+            if (verifierQueueDedupeKey(att) === needle) return true;
+            if (String(att.verifierId || '').trim() === needle) return true;
         }
     }
     return false;
@@ -251,7 +423,10 @@ function verifierChatHasAttachedId(state, verifierId) {
 function buildVerifierSourceApiBlock(ctx) {
     const taskId = String(ctx.taskId || '').trim() || '(none)';
     const verifierId = String(ctx.verifierId || '').trim() || '(none)';
-    const versionLine = ctx.version != null ? '- Version: ' + ctx.version + '\n' : '';
+    const versionLabel = ctx.displayVersionNo != null
+        ? ctx.displayVersionNo
+        : (ctx.version != null ? ctx.version : null);
+    const versionLine = versionLabel != null ? '- Version: ' + versionLabel + '\n' : '';
     return '## Verifier context\n\n'
         + '- Task ID: ' + taskId + '\n'
         + '- Verifier ID: ' + verifierId + '\n'
@@ -259,39 +434,60 @@ function buildVerifierSourceApiBlock(ctx) {
         + '\n```python\n' + String(ctx.source || '') + '\n```';
 }
 
+function buildVerifierSourcesApiBlock(attachments) {
+    const list = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
+    if (!list.length) return '';
+    return list.map(buildVerifierSourceApiBlock).join('\n\n');
+}
+
 function buildVerifierDisplayAttachment(ctx) {
+    const item = normalizeVerifierQueueItem(ctx);
+    if (!item) return null;
     return {
         type: 'verifier-source',
-        taskId: String(ctx.taskId || ''),
-        taskKey: String(ctx.taskKey || ''),
-        verifierId: String(ctx.verifierId || ''),
-        verifierKey: String(ctx.verifierKey || ''),
-        version: ctx.version != null ? ctx.version : null,
-        source: String(ctx.source || ''),
+        taskId: item.taskId,
+        taskKey: item.taskKey,
+        verifierId: item.verifierId,
+        verifierKey: item.verifierKey,
+        version: item.version,
+        versionId: item.versionId,
+        displayVersionNo: item.displayVersionNo,
+        source: item.source,
     };
 }
 
 /**
- * Consume the pending fetch flag for the next chat turn. Attaches when this
- * verifier ID is not already in the transcript; otherwise skips.
+ * Consume the entire pending queue for the next chat turn.
+ * Skips items already present in the transcript (by version id / verifier id).
  */
-function takeVerifierAttachmentForTurn(modal, state) {
-    const ctx = getVerifierChatFetchContext(modal);
-    if (!ctx || !String(ctx.source || '').trim()) return null;
-
-    // Clear the flag either way — this message is the "next" one after fetch.
-    if (modal) modal._wfVerifierChatPending = null;
-
-    if (verifierChatHasAttachedId(state, ctx.verifierId)) {
-        Logger.debug('skip verifier attach — already in chat · '
-            + ctx.verifierId);
-        return null;
+function takeVerifierAttachmentsForTurn(modal, state) {
+    const queue = getVerifierChatQueue(modal).slice();
+    clearVerifierChatQueue(modal);
+    syncVerifierPendingAttachTray(modal);
+    if (!queue.length) return [];
+    const out = [];
+    for (let i = 0; i < queue.length; i++) {
+        const ctx = queue[i];
+        if (!ctx || !String(ctx.source || '').trim()) continue;
+        const key = verifierQueueDedupeKey(ctx) || ctx.verifierId;
+        if (verifierChatHasAttachedKey(state, key)) {
+            Logger.debug('skip verifier attach — already in chat · ' + key);
+            continue;
+        }
+        const att = buildVerifierDisplayAttachment(ctx);
+        if (att) out.push(att);
     }
-    Logger.log('attaching verifier context · '
-        + ctx.verifierId
-        + (ctx.version != null ? ' v' + ctx.version : '')
-        + ' (' + ctx.source.length + ' chars)');
-    return buildVerifierDisplayAttachment(ctx);
+    if (out.length) {
+        Logger.log('attaching ' + out.length + ' verifier'
+            + (out.length === 1 ? '' : 's') + ' to chat turn');
+    }
+    return out;
+}
+
+/** @deprecated Prefer takeVerifierAttachmentsForTurn */
+function takeVerifierAttachmentForTurn(modal, state) {
+    const list = takeVerifierAttachmentsForTurn(modal, state);
+    return list.length ? list[0] : null;
 }
 
 function renderVerifierChatMessages(modal) {
@@ -339,17 +535,17 @@ async function sendVerifierChatMessage(modal, userText) {
         }
     }
 
-    const attachment = takeVerifierAttachmentForTurn(modal, state);
-    const userContent = attachment
-        ? (buildVerifierSourceApiBlock(attachment) + '\n\n' + text)
-        : text;
+    const attachments = takeVerifierAttachmentsForTurn(modal, state);
+    const apiBlock = buildVerifierSourcesApiBlock(attachments);
+    const userContent = apiBlock ? (apiBlock + '\n\n' + text) : text;
 
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
             userText: text,
             userContent,
             displayContent: text,
-            displayAttachment: attachment,
+            displayAttachments: attachments,
+            displayAttachment: attachments[0] || null,
             systemContent: DECODE_SYSTEM_PROMPT,
             onTurnDone: (turn) => verifierRecordTurn(modal, turn),
         }));
@@ -404,21 +600,23 @@ async function decodeVerifierOutput(modal) {
     }
     if (Context.buttonFeedback && decodeBtn) Context.buttonFeedback.flashSuccess(decodeBtn);
 
-    const attachment = takeVerifierAttachmentForTurn(modal, state);
+    const attachments = takeVerifierAttachmentsForTurn(modal, state);
     const parts = [];
-    if (attachment) {
-        parts.push(buildVerifierSourceApiBlock(attachment));
-    }
+    const apiBlock = buildVerifierSourcesApiBlock(attachments);
+    if (apiBlock) parts.push(apiBlock);
     parts.push('## Verifier Output\n\n```\n' + outputText + '\n```');
     const userPayload = parts.join('\n\n');
 
     Logger.debug('Diagnose Issues started'
-        + (attachment ? ' · with verifier attach' : ' · without new verifier attach'));
+        + (attachments.length
+            ? (' · with ' + attachments.length + ' verifier attach' + (attachments.length === 1 ? '' : 'es'))
+            : ' · without new verifier attach'));
     try {
         await chat.sendTurn(modal, state, Object.assign({}, verifierChatOpts(), {
             userContent: userPayload,
             displayContent: 'Diagnose Issues',
-            displayAttachment: attachment,
+            displayAttachments: attachments,
+            displayAttachment: attachments[0] || null,
             systemContent: DECODE_SYSTEM_PROMPT,
             onTurnDone: (turn) => verifierRecordTurn(modal, Object.assign({}, turn, {
                 userPreview: 'Diagnose Issues',
@@ -540,6 +738,7 @@ function syncVerifierAiUi(modal) {
         wireVerifierChatComposer(modal);
         renderVerifierChatMessages(modal);
         setVerifierChatStreamingUi(modal, !!(getVerifierChatState(modal).streaming));
+        syncVerifierPendingAttachTray(modal);
         const chat = verifierChatApi();
         if (chat && typeof chat.setKeyGate === 'function') {
             chat.setKeyGate(modal, {
@@ -688,13 +887,13 @@ function verifierFetcherPanelHtml() {
                                 Paste a task key, task URL, verifier key, verifier ID, or copied seed data. Press Enter to fetch.
                             </p>
                             <div style="display: flex; gap: 8px; align-items: stretch;">
-                                <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="${monoInputStyle} flex: 1; min-width: 0;">
+                                <input type="text" id="wf-ops-verifier-input" placeholder="Paste here" autocomplete="off" style="${monoInputStyle} flex: 1 1 auto; min-width: 0; max-width: none;">
+                                <select id="wf-ops-verifier-version" aria-label="Task version" title="Task version" style="display: none; flex: 0 0 7.5rem; width: 7.5rem; max-width: 7.5rem; ${monoInputStyle}"></select>
                                 <button type="button" id="wf-ops-fetch-verifier" class="${btnClass('primary', 'regular')}" style="flex-shrink: 0;">Fetch</button>
                             </div>
                             <div id="wf-ops-verifier-status-row" style="display: none; margin-top: 8px;">
                                 <div id="wf-ops-verifier-status" style="${hintStyle} line-height: 1.45;"></div>
                             </div>
-                            <select id="wf-ops-verifier-version" aria-label="Verifier version" style="display: none; width: 100%; margin-top: 8px; ${monoInputStyle}"></select>
                         </div>
                         <div id="wf-ops-verifier-output-toolbar" style="
                             display: none;
@@ -732,6 +931,8 @@ function verifierFetcherPanelHtml() {
                                 <button type="button" id="wf-ops-copy-verifier" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Copy</button>
                             </div>
                             <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
+                                <button type="button" id="wf-ops-verifier-add-diff" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Add to Diff</button>
+                                <button type="button" id="wf-ops-verifier-add-chat" class="${btnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Add to Chat</button>
                                 <button type="button" id="wf-ops-verifier-scratchpad-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Verifier Output</button>
                                 <button type="button" id="wf-ops-verifier-chat-toggle" class="${btnClass('basic', 'nav')}" aria-pressed="false" style="flex-shrink: 0;">Chat</button>
                             </div>
@@ -849,6 +1050,7 @@ function verifierFetcherPanelHtml() {
                             <div style="${labelStyle}">Chat</div>
                             <button type="button" id="wf-ops-verifier-chat-export" class="${btnClass('basic', 'compact')}">Export</button>
                         </div>
+                        <div id="wf-ops-verifier-pending-tray" data-wf-has-items="0" aria-label="Queued verifiers"></div>
                         <div id="wf-ops-verifier-chat-mount" style="
                             flex: 1;
                             min-height: 120px;
@@ -874,9 +1076,15 @@ function attachVerifierFetcherListeners(modal) {
     modal.dataset.wfVerifierFetcherListenersAttached = '1';
     if (typeof ops.injectSpinnerStyle === 'function') ops.injectSpinnerStyle();
     ensureVerifierBtnStyles();
+    ensureVerifierPendingTrayStyles();
+    if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+        Context.uiLib.ensureButtonStyles('#wf-ops-verifier-pending-tray');
+    }
 
     const verifierFetchBtn = modal.querySelector('#wf-ops-fetch-verifier');
     const verifierCopyBtn = modal.querySelector('#wf-ops-copy-verifier');
+    const verifierAddDiffBtn = modal.querySelector('#wf-ops-verifier-add-diff');
+    const verifierAddChatBtn = modal.querySelector('#wf-ops-verifier-add-chat');
     const verifierInput = modal.querySelector('#wf-ops-verifier-input');
     const verifierVersionSelect = modal.querySelector('#wf-ops-verifier-version');
     const verifierContentSearch = modal.querySelector('#wf-ops-verifier-content-search');
@@ -932,12 +1140,21 @@ function attachVerifierFetcherListeners(modal) {
         verifierFetchBtn.addEventListener('click', () => { void ops.handleVerifierFetch(modal); });
     }
     if (verifierInput && typeof ops.handleVerifierFetch === 'function') {
+        let hydrateTimer = null;
+        const scheduleHydrate = () => {
+            if (typeof ops.hydrateVerifierTaskVersionOptions !== 'function') return;
+            if (hydrateTimer) clearTimeout(hydrateTimer);
+            hydrateTimer = setTimeout(() => {
+                hydrateTimer = null;
+                void ops.hydrateVerifierTaskVersionOptions(modal, {});
+            }, 250);
+        };
         verifierInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') { e.preventDefault(); void ops.handleVerifierFetch(modal); }
         });
         const onVerifierInput = () => {
             if (typeof ops.setVerifierStatus === 'function') ops.setVerifierStatus(modal, '');
-            if (typeof ops.clearVerifierVersionPicker === 'function') ops.clearVerifierVersionPicker(modal);
+            scheduleHydrate();
             if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
         };
         verifierInput.addEventListener('paste', () => requestAnimationFrame(onVerifierInput));
@@ -976,15 +1193,41 @@ function attachVerifierFetcherListeners(modal) {
     if (verifierCopyBtn && typeof ops.copyVerifierCode === 'function') {
         verifierCopyBtn.addEventListener('click', () => { void ops.copyVerifierCode(modal, verifierCopyBtn); });
     }
+    if (verifierAddDiffBtn && typeof ops.addVerifierToDiff === 'function') {
+        verifierAddDiffBtn.addEventListener('click', () => { ops.addVerifierToDiff(modal); });
+    }
+    if (verifierAddChatBtn && typeof ops.queueVerifierToChat === 'function') {
+        verifierAddChatBtn.addEventListener('click', () => { ops.queueVerifierToChat(modal); });
+    }
+    modal.addEventListener('click', (e) => {
+        const removeBtn = e.target && e.target.closest
+            ? e.target.closest('[data-wf-pending-remove]')
+            : null;
+        if (!removeBtn || !modal.contains(removeBtn)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const key = removeBtn.getAttribute('data-wf-pending-remove') || '';
+        removeVerifierChatQueueItem(modal, key);
+        syncVerifierPendingAttachTray(modal);
+        const opsTab = Context.opsTab;
+        if (opsTab && typeof opsTab.setVerifierStatus === 'function') {
+            const n = getVerifierChatQueue(modal).length;
+            opsTab.setVerifierStatus(
+                modal,
+                n === 0 ? '' : (n === 1 ? '1 verifier queued' : (n + ' verifiers queued'))
+            );
+        }
+    });
     if (typeof ops.restoreVerifierTabState === 'function') ops.restoreVerifierTabState(modal);
     syncVerifierAiUi(modal);
+    syncVerifierPendingAttachTray(modal);
 }
 
 const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '7.6',
+    _version: '8.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1002,6 +1245,13 @@ const plugin = {
             captureScratchpadTabState: (modal) => captureVerifierScratchpadTabState(modal),
             restoreScratchpadTabState: (modal, state) => restoreVerifierScratchpadTabState(modal, state),
             setChatFetchContext: (modal, ctx) => setVerifierChatFetchContext(modal, ctx),
+            queueChatAttachment: (modal, ctx) => queueVerifierChatAttachmentAndShow(modal, ctx),
+            getChatQueueLength: (modal) => getVerifierChatQueue(modal).length,
+            clearChatQueue: (modal) => {
+                clearVerifierChatQueue(modal);
+                syncVerifierPendingAttachTray(modal);
+            },
+            syncPendingAttachTray: (modal) => syncVerifierPendingAttachTray(modal),
         };
         Context.dashboard.registerTab({
             id: 'verifier-fetcher',
@@ -1011,6 +1261,7 @@ const plugin = {
             onActivate(modal) {
                 syncVerifierOutputToolbar(modal);
                 syncVerifierAiUi(modal);
+                syncVerifierPendingAttachTray(modal);
                 Logger.debug('tab activated');
             },
             captureState(modal, dash) {
@@ -1018,6 +1269,6 @@ const plugin = {
                 if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
             }
         });
-        Logger.log('tab registered v7.3');
+        Logger.log('tab registered');
     }
 };

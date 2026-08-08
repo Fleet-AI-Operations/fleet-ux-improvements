@@ -145,6 +145,7 @@ const DASH_LIB_MANUAL_FILTER_FIELDS = [
     { id: 'qa_time_minutes', label: 'QA Time Minutes', type: 'number', hydrateHint: true },
     { id: 'dispute_resolution_time_minutes', label: 'Dispute Resolution Time Minutes', type: 'number', hydrateHint: true },
     { id: 'rejection_issue_count', label: 'Unique Task Issues', type: 'number' },
+    { id: 'qa_rounds_count', label: 'Number of QA Rounds', type: 'number', hydrateHint: true },
     { id: 'prompt_version_count', label: 'Unique Task Versions †', type: 'number', hydrateHint: true },
     { id: 'v1_creation_time_minutes', label: 'v1 Creation Time Minutes', type: 'number', hydrateHint: true }
 ];
@@ -804,7 +805,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.3',
+    _version: '8.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -960,6 +961,7 @@ const plugin = {
             itemFeedbackIdsForHelpfulness: bind(self._itemFeedbackIdsForHelpfulness),
             itemQaHelpfulness: bind(self._itemQaHelpfulness),
             itemPromptHistory: bind(self._itemPromptHistory),
+            itemQaRoundsCount: bind(self._itemQaRoundsCount),
             itemSessionQaOutcomes: bind(self._itemSessionQaOutcomes),
             itemDisputeOutcomes: bind(self._itemDisputeOutcomes),
             itemSrReviewOutcomes: bind(self._itemSrReviewOutcomes),
@@ -983,6 +985,8 @@ const plugin = {
         for (const v of sorted) {
             const prompt = String(v.prompt ?? '');
             const notes = String(v.resubmission_notes ?? '').trim();
+            const verifierId = v.verifier_id ? String(v.verifier_id) : '';
+            const verifierVersionId = v.verifier_version_id ? String(v.verifier_version_id) : '';
             if (prompt !== prevPrompt) {
                 displayNo += 1;
                 result.push({
@@ -992,15 +996,29 @@ const plugin = {
                     prompt,
                     envKey: String(v.env_key ?? ''),
                     createdAt: String(v.created_at ?? ''),
-                    resubmissionNotes: notes
+                    resubmissionNotes: notes,
+                    verifierId,
+                    verifierVersionId
                 });
                 prevPrompt = prompt;
-            } else if (notes && result.length) {
+            } else if (result.length) {
                 const last = result[result.length - 1];
-                if (!last.resubmissionNotes) {
-                    last.resubmissionNotes = notes;
-                } else if (last.resubmissionNotes !== notes) {
-                    last.resubmissionNotes += '\n\n' + notes;
+                if (notes) {
+                    if (!last.resubmissionNotes) {
+                        last.resubmissionNotes = notes;
+                    } else if (last.resubmissionNotes !== notes) {
+                        last.resubmissionNotes += '\n\n' + notes;
+                    }
+                }
+                // Prefer latest non-null verifier pin when same-prompt rows collapse
+                if (verifierVersionId) {
+                    last.verifierVersionId = verifierVersionId;
+                    if (verifierId) last.verifierId = verifierId;
+                    last.id = String(v.id ?? last.id);
+                    last.versionNo = v.version_no != null ? v.version_no : last.versionNo;
+                    last.createdAt = String(v.created_at ?? last.createdAt);
+                } else if (verifierId && !last.verifierId) {
+                    last.verifierId = verifierId;
                 }
             }
         }
@@ -1118,6 +1136,17 @@ const plugin = {
         if (entry.isEscalated) return 'escalated';
         if (entry.isFlaggedAsBugged) return 'bugged';
         return 'returned';
+    },
+
+    /** Human QA dispositions that leave the QA's possession (accept / return / escalate / flag). Excludes system feedback, Sr Review flags, and disputes. */
+    _itemQaRoundsCount(item) {
+        const task = item && item.task;
+        if (!task || !Array.isArray(task.allFeedback)) return 0;
+        let n = 0;
+        for (const entry of task.allFeedback) {
+            if (this._returnTypeOf(entry) != null) n += 1;
+        }
+        return n;
     },
 
     _feedbackFieldsOf(entry) {

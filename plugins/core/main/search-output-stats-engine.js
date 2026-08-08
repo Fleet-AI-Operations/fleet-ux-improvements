@@ -45,7 +45,8 @@ const STATS_TIME_GROUP_DIMENSIONS = [
 
 const STATS_METRIC_LABELS = {
     count: 'Count of results',
-    prompt_version_count: 'Unique task versions'
+    prompt_version_count: 'Unique task versions',
+    qa_rounds_count: 'Number of QA rounds'
 };
 
 const STATS_AGGREGATIONS = [
@@ -1156,7 +1157,8 @@ function statsValidateChart(chart, catalog, items, ctx) {
 
 const STATS_HISTOGRAM_INTEGER_METRICS = new Set([
     'prompt_version_count',
-    'rejection_issue_count'
+    'rejection_issue_count',
+    'qa_rounds_count'
 ]);
 
 const STATS_HISTOGRAM_TIME_METRICS = new Set([
@@ -1174,6 +1176,9 @@ function statsHistogramBinMode(metricId) {
 function statsHistogramIntegerLabel(metricId, value) {
     if (metricId === 'prompt_version_count') {
         return value === 1 ? '1 version' : value + ' versions';
+    }
+    if (metricId === 'qa_rounds_count') {
+        return value === 1 ? '1 round' : value + ' rounds';
     }
     return String(value);
 }
@@ -1905,7 +1910,7 @@ const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
     description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '8.3',
+    _version: '8.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

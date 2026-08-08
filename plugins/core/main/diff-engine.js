@@ -166,30 +166,43 @@ function _deBacktrack(dp, a, b) {
     let j = b.length;
     while (i > 0 || j > 0) {
         if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
-            diff.unshift({ type: 'equal', value: a[i - 1] });
+            diff.push({ type: 'equal', value: a[i - 1] });
             i--;
             j--;
         } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-            diff.unshift({ type: 'add', value: b[j - 1] });
+            diff.push({ type: 'add', value: b[j - 1] });
             j--;
         } else {
-            diff.unshift({ type: 'remove', value: a[i - 1] });
+            diff.push({ type: 'remove', value: a[i - 1] });
             i--;
         }
     }
+    diff.reverse();
     return diff;
 }
 
 function _deComputeWordDiff(oldText, newText) {
     const a = _deTokenize(oldText);
     const b = _deTokenize(newText);
-    return _deBacktrack(_deComputeLCS(a, b), a, b);
+    const dp = _deComputeLCS(a, b);
+    return {
+        diff: _deBacktrack(dp, a, b),
+        lcsLength: dp[a.length][b.length],
+        unitLenA: a.length,
+        unitLenB: b.length
+    };
 }
 
 function _deComputeCharDiff(oldText, newText) {
     const a = oldText.split('');
     const b = newText.split('');
-    return _deBacktrack(_deComputeLCS(a, b), a, b);
+    const dp = _deComputeLCS(a, b);
+    return {
+        diff: _deBacktrack(dp, a, b),
+        lcsLength: dp[a.length][b.length],
+        unitLenA: a.length,
+        unitLenB: b.length
+    };
 }
 
 function _deIsWhitespaceOnlyValues(values) {
@@ -313,7 +326,8 @@ function _deSectionUnitLength(group, granularity, ignorePunctuation) {
     let values = group.values || [];
     if (ignorePunctuation) values = values.filter((v) => !_deIsPunctuationToken(v));
     if (granularity === 'line') {
-        return values.join('').split('\n').filter((line) => line.trim().length > 0).length;
+        // Line-mode tokens are already whole lines (no embedded newlines).
+        return values.filter((v) => String(v).trim().length > 0).length;
     }
     if (granularity === 'char') {
         return values.join('').replace(/[\s\n\r\t]/g, '').length;
@@ -331,28 +345,233 @@ function _deHighlightTypes(highlightModality) {
 
 function _deComputeDiff(baseText, compareText, granularity, _punctuationMode) {
     const isChar = granularity === 'char';
+    const isLine = granularity === 'line';
     let diff;
     let effectiveGranularity;
+    let lcsLength = 0;
+    let unitLenA = 0;
+    let unitLenB = 0;
     if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
         Logger.warn('texts too large for char diff (' + (baseText.length + compareText.length) + ' chars), falling back to word diff');
-        diff = _deComputeWordDiff(baseText, compareText);
+        const word = _deComputeWordDiff(baseText, compareText);
+        diff = word.diff;
+        lcsLength = word.lcsLength;
+        unitLenA = word.unitLenA;
+        unitLenB = word.unitLenB;
         effectiveGranularity = 'word';
     } else if (isChar) {
-        diff = _deComputeCharDiff(baseText, compareText);
+        const ch = _deComputeCharDiff(baseText, compareText);
+        diff = ch.diff;
+        lcsLength = ch.lcsLength;
+        unitLenA = ch.unitLenA;
+        unitLenB = ch.unitLenB;
         effectiveGranularity = 'char';
+    } else if (isLine) {
+        const units = _deDiffUnits(baseText, compareText, 'line');
+        const dp = _deComputeLCS(units.a, units.b);
+        diff = _deBacktrack(dp, units.a, units.b);
+        lcsLength = dp[units.a.length][units.b.length];
+        unitLenA = units.a.length;
+        unitLenB = units.b.length;
+        effectiveGranularity = 'line';
     } else {
-        const units = _deDiffUnits(baseText, compareText, granularity);
-        effectiveGranularity = units.effectiveGranularity;
-        if (effectiveGranularity === 'line') {
-            diff = _deBacktrack(_deComputeLCS(units.a, units.b), units.a, units.b);
-        } else {
-            diff = _deComputeWordDiff(baseText, compareText);
-        }
+        _deDiffUnits(baseText, compareText, 'word'); // debug warn only when oversized
+        const word = _deComputeWordDiff(baseText, compareText);
+        diff = word.diff;
+        lcsLength = word.lcsLength;
+        unitLenA = word.unitLenA;
+        unitLenB = word.unitLenB;
+        effectiveGranularity = 'word';
     }
     // Ignore mode must NOT demote side-only punctuation add/remove to equal — that
     // paints characters onto the opposite pane. Ignore is handled at highlight /
     // similarity time (skip punct-only highlights; filter punct from scoring).
-    return { diff, effectiveGranularity };
+    return { diff, effectiveGranularity, lcsLength, unitLenA, unitLenB };
+}
+
+function _deSimilarityMetrics(baseText, compareText, granularity, punctuationMode, reuse) {
+    const base = baseText || '';
+    const compare = compareText || '';
+    if (base === compare) {
+        const gran = (reuse && reuse.effectiveGranularity)
+            || (granularity === 'char' ? 'char' : (granularity === 'line' ? 'line' : 'word'));
+        return { percent: 100, noDifference: true, effectiveGranularity: gran };
+    }
+    // Highlight punctuation: reuse the same LCS as the rendered diff.
+    if (punctuationMode !== 'ignore' && reuse
+        && typeof reuse.lcsLength === 'number'
+        && typeof reuse.unitLenA === 'number'
+        && typeof reuse.unitLenB === 'number') {
+        const denom = reuse.unitLenA + reuse.unitLenB;
+        if (denom === 0) {
+            return { percent: 100, noDifference: true, effectiveGranularity: reuse.effectiveGranularity };
+        }
+        const percent = (2 * reuse.lcsLength / denom) * 100;
+        const noDifference = reuse.lcsLength === reuse.unitLenA && reuse.unitLenA === reuse.unitLenB;
+        return { percent, noDifference, effectiveGranularity: reuse.effectiveGranularity };
+    }
+    let { a, b, effectiveGranularity } = _deDiffUnits(base, compare, granularity);
+    if (reuse && reuse.effectiveGranularity) effectiveGranularity = reuse.effectiveGranularity;
+    if (punctuationMode === 'ignore') {
+        a = _deFilterPunctuationTokens(a);
+        b = _deFilterPunctuationTokens(b);
+    }
+    if (punctuationMode === 'ignore' && a.length === b.length && a.every((t, i) => t === b[i])) {
+        return { percent: 100, noDifference: true, effectiveGranularity };
+    }
+    if (a.length === 0 && b.length === 0) {
+        return { percent: 100, noDifference: true, effectiveGranularity };
+    }
+    const dp = _deComputeLCS(a, b);
+    const lcs = dp[a.length][b.length];
+    const percent = (2 * lcs / (a.length + b.length)) * 100;
+    return { percent, noDifference: false, effectiveGranularity };
+}
+
+function _deDiffBundle(baseText, compareText, opts) {
+    const o = opts || {};
+    const granularity = o.granularity || 'word';
+    const showHighlights = o.showHighlights !== false;
+    const highlightModality = o.highlightModality || 'differences';
+    const minHighlightLength = o.minHighlightLength || 0;
+    const linkSplits = !!o.linkSplits;
+    const punctuationMode = o.punctuationMode === 'ignore' ? 'ignore' : 'highlight';
+    const ignorePunctuation = punctuationMode === 'ignore';
+    const left = baseText || '';
+    const right = compareText || '';
+
+    let diff = o.diff;
+    let effectiveGranularity = o.effectiveGranularity;
+    let lcsLength = o.lcsLength;
+    let unitLenA = o.unitLenA;
+    let unitLenB = o.unitLenB;
+    if (!diff || !effectiveGranularity) {
+        const computed = _deComputeDiff(left, right, granularity, punctuationMode);
+        diff = computed.diff;
+        effectiveGranularity = computed.effectiveGranularity;
+        lcsLength = computed.lcsLength;
+        unitLenA = computed.unitLenA;
+        unitLenB = computed.unitLenB;
+    }
+
+    let percent = o.percent;
+    let noDifference = o.noDifference;
+    const includeSimilarity = o.includeSimilarity !== false;
+    if (includeSimilarity && (typeof percent !== 'number' || noDifference == null)) {
+        const sim = _deSimilarityMetrics(left, right, granularity, punctuationMode, {
+            effectiveGranularity,
+            lcsLength,
+            unitLenA,
+            unitLenB
+        });
+        percent = sim.percent;
+        noDifference = sim.noDifference;
+        effectiveGranularity = sim.effectiveGranularity || effectiveGranularity;
+    } else if (!includeSimilarity) {
+        if (typeof percent !== 'number') percent = null;
+        if (noDifference == null) noDifference = null;
+    }
+
+    let baseHtml;
+    let compareHtml;
+    if (!showHighlights) {
+        baseHtml = _deEqualSpanHtml(left);
+        compareHtml = _deEqualSpanHtml(right);
+    } else {
+        const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
+        const styles = _deHighlightStyles();
+        const renderOpts = {
+            minHighlightLength,
+            effectiveGranularity,
+            linkSplits,
+            ignorePunctuation
+        };
+        if (highlightModality === 'similarities') {
+            renderOpts.qualifyingEqualIndices = _deQualifyingEqualIndexSet(
+                diff, effectiveGranularity, minHighlightLength, linkSplits, ignorePunctuation
+            );
+        }
+        baseHtml = _deRenderBaseHtml(diff, styles[baseHighlight], baseHighlight, renderOpts);
+        compareHtml = _deRenderCompareHtml(diff, styles[compareHighlight], compareHighlight, renderOpts);
+    }
+
+    return {
+        diff,
+        effectiveGranularity,
+        baseHtml,
+        compareHtml,
+        percent,
+        noDifference,
+        lcsLength,
+        unitLenA,
+        unitLenB
+    };
+}
+
+function _deSimilarityLabelHtml(opts) {
+    const showHighlights = opts && opts.showHighlights !== false;
+    if (!showHighlights) return '';
+    const leftText = (opts && opts.leftText) || '';
+    const rightText = (opts && opts.rightText) || '';
+    if (!leftText && !rightText) return '';
+    const granularity = (opts && opts.granularity) || 'word';
+    const highlightModality = (opts && opts.highlightModality) || 'differences';
+    const minHighlightLength = (opts && opts.minHighlightLength) || 0;
+    const linkSplits = !!(opts && opts.linkSplits);
+    const punctuationMode = (opts && opts.punctuationMode) === 'ignore' ? 'ignore' : 'highlight';
+    const ignorePunctuation = punctuationMode === 'ignore';
+    const lengthRange = (opts && opts.lengthRange) || null;
+    const bundle = (opts && opts.bundle) || null;
+
+    let percent;
+    let noDifference;
+    let effectiveGranularity;
+    let diff = opts && opts.diff;
+    if (bundle) {
+        percent = bundle.percent;
+        noDifference = bundle.noDifference;
+        effectiveGranularity = bundle.effectiveGranularity;
+        if (!diff) diff = bundle.diff;
+    } else if (typeof (opts && opts.percent) === 'number' && opts.noDifference != null && opts.effectiveGranularity) {
+        percent = opts.percent;
+        noDifference = opts.noDifference;
+        effectiveGranularity = opts.effectiveGranularity;
+    } else {
+        const sim = _deSimilarityMetrics(leftText, rightText, granularity, punctuationMode, null);
+        percent = sim.percent;
+        noDifference = sim.noDifference;
+        effectiveGranularity = sim.effectiveGranularity;
+    }
+
+    const granLabel = effectiveGranularity === 'char' ? 'char' : (effectiveGranularity === 'line' ? 'line' : 'word');
+    if (noDifference) {
+        return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
+    }
+    const displayPercent = highlightModality === 'similarities' ? percent : (100 - percent);
+    const formatted = _deFormatPercent(displayPercent);
+    const metricWord = highlightModality === 'similarities' ? 'similarity' : 'difference';
+    let html = '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' ' + metricWord;
+    const rangeMin = lengthRange ? lengthRange.min : 0;
+    const subsetActive = minHighlightLength > 0 && lengthRange && minHighlightLength > rangeMin;
+    if (subsetActive) {
+        if (!diff) {
+            diff = _deComputeDiff(leftText, rightText, granularity, punctuationMode).diff;
+        }
+        const { baseSubset, compareSubset } = _deJoinQualifyingSubsetTexts(
+            diff, highlightModality, effectiveGranularity, minHighlightLength, linkSplits, ignorePunctuation
+        );
+        if (baseSubset || compareSubset) {
+            const subsetResult = _deSimilarityMetrics(
+                baseSubset, compareSubset, granularity, punctuationMode, null
+            );
+            const subsetDisplay = highlightModality === 'similarities'
+                ? subsetResult.percent
+                : (100 - subsetResult.percent);
+            html += ' (' + _deFormatPercent(subsetDisplay) + '% subset ' + granLabel + ' ' + metricWord + ')';
+        }
+    }
+    html += '</span>';
+    return html;
 }
 
 /** Maximal consecutive equal-token runs in the full (unfiltered) diff. */
@@ -679,7 +898,18 @@ function _deRenderCompareHtml(diff, highlightStyle, highlightType, renderOpts) {
     return _deRenderSideHtml(diff, ['equal', 'add'], highlightStyle, highlightType, renderOpts);
 }
 
+function _deSplitLines(text) {
+    return String(text ?? '').split(/\r\n|\r|\n/);
+}
+
 function _deDiffUnits(baseText, compareText, granularity) {
+    if (granularity === 'line') {
+        return {
+            a: _deSplitLines(baseText),
+            b: _deSplitLines(compareText),
+            effectiveGranularity: 'line'
+        };
+    }
     const isChar = granularity === 'char';
     if (isChar && (baseText.length + compareText.length > DE_CHAR_DIFF_LIMIT)) {
         return { a: _deTokenize(baseText), b: _deTokenize(compareText), effectiveGranularity: 'word' };
@@ -690,10 +920,8 @@ function _deDiffUnits(baseText, compareText, granularity) {
     const a = _deTokenize(baseText);
     const b = _deTokenize(compareText);
     if (a.length + b.length > DE_WORD_DIFF_TOKEN_LIMIT) {
-        Logger.debug('word token count ' + (a.length + b.length) + ' > ' + DE_WORD_DIFF_TOKEN_LIMIT + '; falling back to line diff');
-        const aLines = baseText.split('\n');
-        const bLines = compareText.split('\n');
-        return { a: aLines, b: bLines, effectiveGranularity: 'line' };
+        Logger.debug('word token count ' + (a.length + b.length) + ' > ' + DE_WORD_DIFF_TOKEN_LIMIT
+            + '; keeping word granularity (Line is an explicit choice)');
     }
     return { a, b, effectiveGranularity: 'word' };
 }
@@ -702,7 +930,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.7',
+    _version: '3.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -721,24 +949,31 @@ const plugin = {
             similarityPercent(baseText, compareText, opts) {
                 const granularity = (opts && opts.granularity) || 'word';
                 const punctuationMode = (opts && opts.punctuationMode) === 'ignore' ? 'ignore' : 'highlight';
-                let { a, b, effectiveGranularity } = _deDiffUnits(baseText, compareText, granularity);
-                if (punctuationMode === 'ignore') {
-                    a = _deFilterPunctuationTokens(a);
-                    b = _deFilterPunctuationTokens(b);
+                if (opts && opts.bundle) {
+                    return {
+                        percent: opts.bundle.percent,
+                        noDifference: opts.bundle.noDifference,
+                        effectiveGranularity: opts.bundle.effectiveGranularity
+                    };
                 }
-                if (baseText === compareText) {
-                    return { percent: 100, noDifference: true, effectiveGranularity };
+                if (opts && typeof opts.percent === 'number' && opts.noDifference != null && opts.effectiveGranularity) {
+                    return {
+                        percent: opts.percent,
+                        noDifference: opts.noDifference,
+                        effectiveGranularity: opts.effectiveGranularity
+                    };
                 }
-                if (punctuationMode === 'ignore' && a.length === b.length && a.every((t, i) => t === b[i])) {
-                    return { percent: 100, noDifference: true, effectiveGranularity };
-                }
-                if (a.length === 0 && b.length === 0) {
-                    return { percent: 100, noDifference: true, effectiveGranularity };
-                }
-                const dp = _deComputeLCS(a, b);
-                const lcs = dp[a.length][b.length];
-                const percent = (2 * lcs / (a.length + b.length)) * 100;
-                return { percent, noDifference: false, effectiveGranularity };
+                const reuse = (opts && opts.diff && opts.effectiveGranularity)
+                    ? {
+                        effectiveGranularity: opts.effectiveGranularity,
+                        lcsLength: opts.lcsLength,
+                        unitLenA: opts.unitLenA,
+                        unitLenB: opts.unitLenB
+                    }
+                    : null;
+                return _deSimilarityMetrics(
+                    baseText || '', compareText || '', granularity, punctuationMode, reuse
+                );
             },
 
             highlightSectionLengthRange(baseText, compareText, opts) {
@@ -748,97 +983,47 @@ const plugin = {
                 const punctuationMode = (opts && opts.punctuationMode) === 'ignore' ? 'ignore' : 'highlight';
                 const ignorePunctuation = punctuationMode === 'ignore';
                 if (!baseText && !compareText) return { min: 0, max: 0, lengths: [] };
-                const { diff, effectiveGranularity } = _deComputeDiff(
-                    baseText || '', compareText || '', granularity, punctuationMode
-                );
+                let diff;
+                let effectiveGranularity;
+                if (opts && opts.diff && opts.effectiveGranularity) {
+                    diff = opts.diff;
+                    effectiveGranularity = opts.effectiveGranularity;
+                } else if (opts && opts.bundle) {
+                    diff = opts.bundle.diff;
+                    effectiveGranularity = opts.bundle.effectiveGranularity;
+                } else {
+                    const computed = _deComputeDiff(
+                        baseText || '', compareText || '', granularity, punctuationMode
+                    );
+                    diff = computed.diff;
+                    effectiveGranularity = computed.effectiveGranularity;
+                }
                 return _deCollectHighlightSectionLengths(
                     diff, highlightModality, effectiveGranularity, linkSplits, ignorePunctuation
                 );
             },
 
+            diffBundle(baseText, compareText, opts) {
+                return _deDiffBundle(baseText || '', compareText || '', opts || {});
+            },
+
             diffPair(baseText, compareText, opts) {
-                const granularity = (opts && opts.granularity) || 'word';
-                const showHighlights = opts && opts.showHighlights !== false;
-                const highlightModality = (opts && opts.highlightModality) || 'differences';
-                const minHighlightLength = (opts && opts.minHighlightLength) || 0;
-                const linkSplits = !!(opts && opts.linkSplits);
-                const punctuationMode = (opts && opts.punctuationMode) === 'ignore' ? 'ignore' : 'highlight';
-                const ignorePunctuation = punctuationMode === 'ignore';
-                if (!showHighlights) {
-                    return {
-                        baseHtml: _deEqualSpanHtml(baseText || ''),
-                        compareHtml: _deEqualSpanHtml(compareText || '')
-                    };
-                }
-                const { baseHighlight, compareHighlight } = _deHighlightTypes(highlightModality);
-                const styles = _deHighlightStyles();
-                const { diff, effectiveGranularity } = _deComputeDiff(
-                    baseText || '', compareText || '', granularity, punctuationMode
-                );
-                const renderOpts = {
-                    minHighlightLength,
-                    effectiveGranularity,
-                    linkSplits,
-                    ignorePunctuation
-                };
-                if (highlightModality === 'similarities') {
-                    renderOpts.qualifyingEqualIndices = _deQualifyingEqualIndexSet(
-                        diff, effectiveGranularity, minHighlightLength, linkSplits, ignorePunctuation
-                    );
-                }
+                const bundle = _deDiffBundle(baseText || '', compareText || '', opts || {});
                 return {
-                    baseHtml: _deRenderBaseHtml(diff, styles[baseHighlight], baseHighlight, renderOpts),
-                    compareHtml: _deRenderCompareHtml(diff, styles[compareHighlight], compareHighlight, renderOpts)
+                    baseHtml: bundle.baseHtml,
+                    compareHtml: bundle.compareHtml,
+                    diff: bundle.diff,
+                    effectiveGranularity: bundle.effectiveGranularity,
+                    percent: bundle.percent,
+                    noDifference: bundle.noDifference,
+                    lcsLength: bundle.lcsLength,
+                    unitLenA: bundle.unitLenA,
+                    unitLenB: bundle.unitLenB
                 };
             },
 
             similarityLabelHtml(opts) {
-                const showHighlights = opts && opts.showHighlights !== false;
-                if (!showHighlights) return '';
-                const leftText = (opts && opts.leftText) || '';
-                const rightText = (opts && opts.rightText) || '';
-                if (!leftText && !rightText) return '';
-                const granularity = (opts && opts.granularity) || 'word';
-                const highlightModality = (opts && opts.highlightModality) || 'differences';
-                const minHighlightLength = (opts && opts.minHighlightLength) || 0;
-                const linkSplits = !!(opts && opts.linkSplits);
-                const punctuationMode = (opts && opts.punctuationMode) === 'ignore' ? 'ignore' : 'highlight';
-                const ignorePunctuation = punctuationMode === 'ignore';
-                const lengthRange = (opts && opts.lengthRange) || null;
-                const { percent, noDifference, effectiveGranularity } = this.similarityPercent(leftText, rightText, {
-                    granularity,
-                    punctuationMode
-                });
-                const granLabel = effectiveGranularity === 'char' ? 'char' : (effectiveGranularity === 'line' ? 'line' : 'word');
-                if (noDifference) {
-                    return '<span class="dv-slot-above-label-nodiff">NO DIFFERENCE</span>';
-                }
-                const displayPercent = highlightModality === 'similarities' ? percent : (100 - percent);
-                const formatted = _deFormatPercent(displayPercent);
-                const metricWord = highlightModality === 'similarities' ? 'similarity' : 'difference';
-                let html = '<span class="dv-slot-above-label-sim">' + formatted + '% ' + granLabel + ' ' + metricWord;
-                const rangeMin = lengthRange ? lengthRange.min : 0;
-                const subsetActive = minHighlightLength > 0 && lengthRange && minHighlightLength > rangeMin;
-                if (subsetActive) {
-                    const diff = (opts && opts.diff) || _deComputeDiff(
-                        leftText, rightText, granularity, punctuationMode
-                    ).diff;
-                    const { baseSubset, compareSubset } = _deJoinQualifyingSubsetTexts(
-                        diff, highlightModality, effectiveGranularity, minHighlightLength, linkSplits, ignorePunctuation
-                    );
-                    if (baseSubset || compareSubset) {
-                        const subsetResult = this.similarityPercent(baseSubset, compareSubset, {
-                            granularity,
-                            punctuationMode
-                        });
-                        const subsetDisplay = highlightModality === 'similarities'
-                            ? subsetResult.percent
-                            : (100 - subsetResult.percent);
-                        html += ' (' + _deFormatPercent(subsetDisplay) + '% subset ' + granLabel + ' ' + metricWord + ')';
-                    }
-                }
-                html += '</span>';
-                return html;
+                return _deSimilarityLabelHtml(opts || {});
             }
         };
         Logger.log('module registered (Context.diffEngine)');
