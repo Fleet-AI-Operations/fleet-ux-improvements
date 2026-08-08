@@ -12,7 +12,7 @@ const SHOW_PANEL_SUBOPTION = {
 const FORCE_DARK_SUBOPTION = {
     id: FORCE_DARK_SUBOPTION_ID,
     name: 'Force dark mode',
-    description: 'When off, helper chrome stays light. When on, helper chrome stays dark.',
+    description: 'Overrides Preferred mode for this helper panel only.',
     enabledByDefault: false
 };
 
@@ -20,7 +20,7 @@ const plugin = {
     id: 'envHelper',
     name: 'External Env Helper',
     description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.3',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],

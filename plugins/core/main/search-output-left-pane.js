@@ -1214,63 +1214,34 @@ const searchOutputLeftPaneMethods = {
     },
 
     _ensureDashSessionRefreshBannerStyles() {
-        if (document.getElementById('wf-dash-session-refresh-banner-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'wf-dash-session-refresh-banner-styles';
-        style.textContent = [
-            '.wf-dash-session-refresh-banner-inner {',
-            '  padding: 12px;',
-            '  background: #fee2e2;',
-            '  border: 2px solid #dc2626;',
-            '  border-radius: 8px;',
-            '}',
-            '.wf-dash-session-refresh-banner-inner .wf-dash-session-title {',
-            '  font-size: 13px; font-weight: 600; color: #991b1b; margin-bottom: 6px;',
-            '}',
-            '.wf-dash-session-refresh-banner-inner .wf-dash-session-body {',
-            '  font-size: 12px; color: #991b1b; margin: 0; line-height: 1.45;',
-            '}',
-            '.wf-dash-session-refresh-banner-inner .wf-dash-session-footer {',
-            '  margin-top: 10px; padding-top: 10px; border-top: 1px solid #fecaca; text-align: center;',
-            '}',
-            '#wf-dash-session-reload {',
-            '  display: inline-block; padding: 8px 14px; font-size: 12px; font-weight: 600;',
-            '  color: #991b1b; background: #fef2f2; border: 1px solid #dc2626; border-radius: 6px;',
-            '  cursor: pointer; text-decoration: none;',
-            '}',
-            'html.dark .wf-dash-session-refresh-banner-inner {',
-            '  background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));',
-            '}',
-            'html.dark .wf-dash-session-refresh-banner-inner .wf-dash-session-title,',
-            'html.dark .wf-dash-session-refresh-banner-inner .wf-dash-session-body {',
-            '  color: #fca5a5;',
-            '}',
-            'html.dark .wf-dash-session-refresh-banner-inner .wf-dash-session-footer {',
-            '  border-top-color: #7f1d1d;',
-            '}',
-            'html.dark #wf-dash-session-reload {',
-            '  color: #fecaca;',
-            '  background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));',
-            '}'
-        ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
+        if (Context.uiLib && typeof Context.uiLib.ensureAlertBannerStyles === 'function') {
+            Context.uiLib.ensureAlertBannerStyles();
+        }
     },
 
     _renderDashSessionRefreshBannerHtml() {
         this._ensureDashSessionRefreshBannerStyles();
+        const ab = (Context.uiLib && Context.uiLib.ALERT_BANNER_CLASSES) || {
+            root: 'fleet-ui-alert-banner',
+            danger: 'fleet-ui-alert-banner--danger',
+            title: 'fleet-ui-alert-banner__title',
+            body: 'fleet-ui-alert-banner__body',
+            footer: 'fleet-ui-alert-banner__footer',
+            btnSecondary: 'fleet-ui-alert-banner__btn-secondary'
+        };
         return [
-            '<div class="wf-dash-session-refresh-banner-inner">',
+            '<div class="' + ab.root + ' ' + ab.danger + '">',
             '<div style="display: flex; align-items: flex-start; gap: 10px;">',
             '<span style="color: #dc2626; font-size: 16px; line-height: 1.2;" aria-hidden="true">⚠</span>',
             '<div style="flex: 1; min-width: 0;">',
-            '<div class="wf-dash-session-title">Fleet session token not yet captured</div>',
-            '<p class="wf-dash-session-body">',
+            '<div class="' + ab.title + '" style="font-size: 13px; font-weight: 600; margin-bottom: 6px;">Fleet session token not yet captured</div>',
+            '<p class="' + ab.body + '" style="font-size: 12px; margin: 0; line-height: 1.45;">',
             'Navigate to a Fleet data page (e.g. Tasks or QA), then close and reopen the dashboard or retry your search.',
             '</p>',
             '</div>',
             '</div>',
-            '<div class="wf-dash-session-footer">',
-            '<a href="', dashEscHtml(dashFleetOrigin()), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload">Reload Fleet</a>',
+            '<div class="' + ab.footer + '">',
+            '<a href="', dashEscHtml(dashFleetOrigin()), '/" target="_blank" rel="noopener noreferrer" id="wf-dash-session-reload" class="' + ab.btnSecondary + '" style="font-size: 12px;">Reload Fleet</a>',
             '</div>',
             '</div>'
         ].join('');
@@ -2579,7 +2550,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.9',
+    _version: '5.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

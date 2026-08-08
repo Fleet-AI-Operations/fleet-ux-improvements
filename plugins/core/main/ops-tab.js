@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '11.1',
+    _version: '11.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1272,8 +1272,7 @@ const plugin = {
             };
         }
 
-        const scenRows = await this._opsPostgrestGet('task_scenarios', {
-            select: 'scenario_title,user_story,human_annotator_instructions',
+        const scenRows = await this._opsPostgrestQuery('task_scenarios.select_by_id', {
             id: 'eq.' + scenarioId,
             limit: 1
         });
@@ -1388,8 +1387,7 @@ const plugin = {
         if (!force && cache && cache.profileId === id && Array.isArray(cache.teams)) {
             return cache.teams;
         }
-        const rows = await this._opsPostgrestGet('team_member', {
-            select: 'role,team(id,name,logo_url)',
+        const rows = await this._opsPostgrestQuery('team_member.select_catalog', {
             profile_id: 'eq.' + id,
             status: 'eq.ACTIVE'
         });
@@ -2674,55 +2672,30 @@ const plugin = {
     },
 
     _ensureOpsAlertBannerStyles() {
-        if (document.getElementById('wf-ops-alert-banner-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'wf-ops-alert-banner-styles';
-        style.textContent = [
-            '.wf-ops-alert-banner-red {',
-            '  margin-bottom: 4px; padding: 14px; padding-top: 20px;',
-            '  background: #fee2e2; border: 2px solid #dc2626; border-radius: 8px;',
-            '}',
-            '.wf-ops-alert-banner-red .wf-ops-alert-title,',
-            '.wf-ops-alert-banner-red .wf-ops-alert-body { color: #991b1b; }',
-            '.wf-ops-alert-banner-red .wf-ops-alert-footer {',
-            '  margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca;',
-            '  text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;',
-            '}',
-            '.wf-ops-alert-banner-red .wf-ops-alert-btn-secondary {',
-            '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
-            '  border-radius: 6px; cursor: pointer; border: 1px solid #dc2626;',
-            '  color: #991b1b; background: #fef2f2;',
-            '}',
-            '.wf-ops-alert-banner-red .wf-ops-alert-btn-primary {',
-            '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
-            '  border-radius: 6px; cursor: pointer; border: 1px solid #dc2626;',
-            '  color: #fff; background: #dc2626;',
-            '}',
-            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red {',
-            '  background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));',
-            '}',
-            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-title,',
-            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-body { color: #fca5a5; }',
-            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-footer { border-top-color: #7f1d1d; }',
-            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-red .wf-ops-alert-btn-secondary {',
-            '  color: #fecaca; background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));',
-            '}',
-            '.wf-ops-alert-banner-amber {',
-            '  margin-top: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45;',
-            '  color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px;',
-            '}',
-            'html[data-fleet-ux-theme="dark"] .wf-ops-alert-banner-amber {',
-            '  color: #fcd34d;',
-            '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));',
-            '}'
-        ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
+        if (Context.uiLib && typeof Context.uiLib.ensureAlertBannerStyles === 'function') {
+            Context.uiLib.ensureAlertBannerStyles();
+        }
+    },
+
+    _opsAlertBannerClasses() {
+        return (Context.uiLib && Context.uiLib.ALERT_BANNER_CLASSES) || {
+            root: 'fleet-ui-alert-banner',
+            danger: 'fleet-ui-alert-banner--danger',
+            amber: 'fleet-ui-alert-banner--amber',
+            amberSoft: 'fleet-ui-alert-banner--amber-soft',
+            title: 'fleet-ui-alert-banner__title',
+            body: 'fleet-ui-alert-banner__body',
+            footer: 'fleet-ui-alert-banner__footer',
+            btnSecondary: 'fleet-ui-alert-banner__btn-secondary',
+            btnPrimary: 'fleet-ui-alert-banner__btn-primary'
+        };
     },
 
     _renderOpsTeamSearchActionRefreshBannerHtml() {
         this._ensureOpsAlertBannerStyles();
+        const ab = this._opsAlertBannerClasses();
         return [
-            '<div id="wf-ops-team-search-action-refresh-banner" class="wf-ops-alert-banner-red">',
+            '<div id="wf-ops-team-search-action-refresh-banner" class="' + ab.root + ' ' + ab.danger + '">',
             '<div style="display: flex; align-items: flex-start; margin-bottom: 10px;">',
             '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">',
             '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
@@ -2730,18 +2703,18 @@ const plugin = {
             '<line x1="12" y1="17" x2="12.01" y2="17"></line>',
             '</svg>',
             '<div style="flex: 1;">',
-            '<h3 class="wf-ops-alert-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">Team Search Unavailable</h3>',
-            '<p class="wf-ops-alert-body" style="font-size: 13px; margin: 0; line-height: 1.5;">',
+            '<h3 class="' + ab.title + '" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">Team Search Unavailable</h3>',
+            '<p class="' + ab.body + '" style="font-size: 13px; margin: 0; line-height: 1.5;">',
             'Team search credentials are missing or out of date after a Fleet update. ',
             'Click <strong>Refresh credentials</strong> to open the Team page in a new tab — ',
             'credentials refresh automatically and the tab closes on its own.',
             '</p>',
-            '<p id="wf-ops-team-search-stale-retry-status" class="wf-ops-alert-body" style="display: none; font-size: 12px; margin: 8px 0 0 0; line-height: 1.45;"></p>',
+            '<p id="wf-ops-team-search-stale-retry-status" class="' + ab.body + '" style="display: none; font-size: 12px; margin: 8px 0 0 0; line-height: 1.45;"></p>',
             '</div>',
             '</div>',
-            '<div class="wf-ops-alert-footer">',
-            '<button type="button" id="wf-ops-team-search-open-team" class="wf-ops-alert-btn-secondary">Refresh credentials</button>',
-            '<button type="button" id="wf-ops-team-search-retry-btn" class="wf-ops-alert-btn-primary">Retry search</button>',
+            '<div class="' + ab.footer + '">',
+            '<button type="button" id="wf-ops-team-search-open-team" class="' + ab.btnSecondary + '">Refresh credentials</button>',
+            '<button type="button" id="wf-ops-team-search-retry-btn" class="' + ab.btnPrimary + '">Retry search</button>',
             '</div>',
             '</div>'
         ].join('');
@@ -3098,8 +3071,15 @@ const plugin = {
     },
 
     _injectOpsSpinnerStyle() {
-        if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
-            Context.uiLib.ensureStyles();
+        if (Context.uiLib) {
+            if (typeof Context.uiLib.ensureStyles === 'function') Context.uiLib.ensureStyles();
+            if (typeof Context.uiLib.ensureButtonStyles === 'function') {
+                Context.uiLib.ensureButtonStyles('#wf-dash-modal');
+                Context.uiLib.ensureButtonStyles('#wf-settings-modal');
+            }
+            if (typeof Context.uiLib.ensureAlertBannerStyles === 'function') {
+                Context.uiLib.ensureAlertBannerStyles();
+            }
         }
         if (document.getElementById('wf-ops-spinner-style')) return;
         const style = document.createElement('style');
@@ -3107,16 +3087,7 @@ const plugin = {
         style.textContent = [
             '.wf-ops-member-details:not([open]) .wf-ops-member-edit-actions{display:none!important;}',
             '.wf-ops-member-details[open] .wf-ops-member-edit-actions{display:flex!important;}',
-            '.wf-ops-edit-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#a16207;background:color-mix(in srgb,#ca8a04 14%,transparent);border:1px solid #ca8a04;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,border-color 0.15s,color 0.15s;}',
-            '.wf-ops-edit-btn:hover{background:#ca8a04!important;color:#fff!important;border-color:#ca8a04!important;}',
             '.wf-ops-profile-link-btn{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;text-decoration:none;}',
-            '.wf-ops-confirm-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#22c55e;background:transparent;border:1px solid #22c55e;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
-            '.wf-ops-confirm-btn:hover:not(:disabled){background:#22c55e!important;color:#fff!important;}',
-            '.wf-ops-confirm-btn:disabled{opacity:0.45;cursor:not-allowed!important;border-color:#d1d5db!important;color:#9ca3af!important;}',
-            '.wf-ops-confirm-btn:disabled:hover{background:transparent!important;color:#9ca3af!important;}',
-            '.wf-ops-cancel-btn{padding:2px 8px;font-size:11px;font-weight:600;color:#dc2626;background:transparent;border:1px solid #dc2626;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background 0.15s,color 0.15s;}',
-            '.wf-ops-cancel-btn:hover{background:#dc2626!important;color:#fff!important;}',
-            '.wf-ops-cancel-btn:disabled{opacity:0.55;cursor:not-allowed!important;}',
             '.wf-ops-staged-add{background:rgba(34,197,94,0.14)!important;}',
             '.wf-ops-staged-remove{background:rgba(239,68,68,0.14)!important;}',
             '.wf-ops-edit-item-btn{cursor:pointer;width:100%;text-align:left;border:none;background:transparent;font:inherit;padding:2px 4px;border-radius:3px;display:block;line-height:1.35;transition:background 0.12s;}',
@@ -3765,14 +3736,14 @@ const plugin = {
             const hasChanges = this._opsMemberEditHasChanges(session);
             const confirmDisabled = !hasChanges || session.applying;
             return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-left:8px;align-items:center;">' +
-                '<button type="button" class="wf-ops-confirm-btn" data-ops-member-id="' + attrId + '" data-ops-action="confirm"' +
+                '<button type="button" class="' + this._opsDashBtnClass('success', 'compact') + '" data-ops-member-id="' + attrId + '" data-ops-action="confirm"' +
                     (confirmDisabled ? ' disabled' : '') + '>Confirm</button>' +
-                '<button type="button" class="wf-ops-cancel-btn" data-ops-member-id="' + attrId + '" data-ops-action="cancel"' +
+                '<button type="button" class="' + this._opsDashBtnClass('danger', 'compact') + '" data-ops-member-id="' + attrId + '" data-ops-action="cancel"' +
                     (session.applying ? ' disabled' : '') + '>Cancel</button>' +
                 '</span>';
         }
         return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-left:8px;align-items:center;">' +
-            '<button type="button" class="wf-ops-edit-btn" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
+            '<button type="button" class="' + this._opsDashBtnClass('warning', 'compact') + '" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
             '</span>';
     },
 
@@ -5115,9 +5086,10 @@ const plugin = {
         const c = (Context.uiLib && typeof Context.uiLib.chromeColors === 'function')
             ? Context.uiLib.chromeColors()
             : { bg: '#ffffff', card: '#fafafa', border: '#e5e5e5', fg: '#333333', muted: '#666666' };
+        const ab = this._opsAlertBannerClasses();
         const externalHostNotice = hostAllowsDashboard
             ? ''
-            : `<div id="wf-ops-external-host-notice" class="wf-ops-alert-banner-amber">
+            : `<div id="wf-ops-external-host-notice" class="${ab.root} ${ab.amber}" style="margin-top: 10px; margin-bottom: 0; padding: 10px 12px; font-size: 12px; line-height: 1.45;">
                     Ops Dashboard cannot open on external env instances. Open it from fleetai.com.
                 </div>`;
         this._ensureOpsAlertBannerStyles();
@@ -5147,7 +5119,7 @@ const plugin = {
                             margin-top: 10px;
                             box-sizing: border-box;
                         ">Open Dashboard</button>
-                        <div id="wf-ops-dashboard-incomplete-msg" class="wf-ops-alert-banner-amber" style="display: none;">
+                        <div id="wf-ops-dashboard-incomplete-msg" class="${ab.root} ${ab.amber}" style="display: none; margin-top: 10px; margin-bottom: 0; padding: 10px 12px; font-size: 12px; line-height: 1.45;">
                             Search Output module failed to load. Check the console or refresh the page.
                         </div>
                     </div>

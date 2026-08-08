@@ -358,7 +358,7 @@ const searchOutputResultsPaneMethods = {
                                 <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
                                 <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
                                 <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
-                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON (dev builds only)" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
+                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
                                 <button type="button" id="wf-dash-export-user-stories" title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
                                 <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Retrieve Clipboard</button>
                                 <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
@@ -679,8 +679,7 @@ const searchOutputResultsPaneMethods = {
             const chunk = unique.slice(i, i + DASH_HELPFULNESS_BATCH_CHUNK);
             const inFilter = this._helpfulnessFeedbackIdInFilter(chunk);
             if (!inFilter) continue;
-            const rows = await this._dashPostgrestListGet('feedback_helpfulness_ratings', {
-                select: 'feedback_id,is_helpful,report_text',
+            const rows = await this._pgQuery('feedback_helpfulness_ratings.select_for_user', {
                 feedback_id: inFilter,
                 user_id: 'eq.' + userId
             });
@@ -7675,7 +7674,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.14',
+    _version: '9.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

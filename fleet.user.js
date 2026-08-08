@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/max-spend] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.6
+// @version      13.7
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.6';
+    const VERSION = '13.7';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -1976,6 +1976,24 @@
     };
 
     function runFleet() {
+    // ============= VERSION HELPERS =============
+    /**
+     * Compare two version strings (e.g., "3.4.0" vs "3.4.1")
+     * Returns: -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2
+     */
+    function compareVersions(v1, v2) {
+        const parts1 = String(v1 || '').split('.').map(Number);
+        const parts2 = String(v2 || '').split('.').map(Number);
+        const maxLength = Math.max(parts1.length, parts2.length);
+        for (let i = 0; i < maxLength; i++) {
+            const part1 = parts1[i] || 0;
+            const part2 = parts2[i] || 0;
+            if (part1 < part2) return -1;
+            if (part1 > part2) return 1;
+        }
+        return 0;
+    }
+
     // ============= CLEANUP REGISTRY =============
     const CleanupRegistry = {
         _items: {
@@ -2390,7 +2408,7 @@
                                     Context.latestVersion = latestVersion;
                                     // Simple version comparison: if versions don't match, consider outdated
                                     // This handles semantic versioning (e.g., "3.4.0" vs "3.4.1")
-                                    Context.isOutdated = this._compareVersions(VERSION, latestVersion) < 0;
+                                    Context.isOutdated = compareVersions(VERSION, latestVersion) < 0;
                                     if (Context.isOutdated) {
                                         Logger.warn(`Script version ${VERSION} is outdated. Latest version is ${latestVersion}`);
                                     }
@@ -2502,17 +2520,7 @@
          * Returns: -1 if v1 < v2, 0 if v1 === v2, 1 if v1 > v2
          */
         _compareVersions(v1, v2) {
-            const parts1 = v1.split('.').map(Number);
-            const parts2 = v2.split('.').map(Number);
-            const maxLength = Math.max(parts1.length, parts2.length);
-            
-            for (let i = 0; i < maxLength; i++) {
-                const part1 = parts1[i] || 0;
-                const part2 = parts2[i] || 0;
-                if (part1 < part2) return -1;
-                if (part1 > part2) return 1;
-            }
-            return 0;
+            return compareVersions(v1, v2);
         },
         
         /**
@@ -2593,7 +2601,6 @@
         _disambiguateWithSelectors(candidates, resolve) {
             let attempts = 0;
             const maxAttempts = 20;
-            const checkInterval = 250;
             
             const checkSelectors = () => {
                 attempts++;
@@ -2745,7 +2752,6 @@
         _disambiguateDevArchetypeWithSelectors(candidates, resolve) {
             let attempts = 0;
             const maxAttempts = 20;
-            const checkInterval = 250;
             
             const checkSelectors = () => {
                 attempts++;
@@ -2784,6 +2790,7 @@
                     if (allPresent) {
                         Logger.debug(`Disambiguated to dev archetype: ${archetype.id} - ${archetype.name}`);
                         this.currentDevArchetype = archetype;
+                        observer && observer.disconnect();
                         resolve(archetype);
                         return;
                     }
@@ -2792,18 +2799,26 @@
                 // No disambiguation match yet
                 if (attempts < maxAttempts) {
                     Logger.debug(`Dev archetype disambiguation attempt ${attempts}/${maxAttempts}, retrying...`);
-                    setTimeout(checkSelectors, checkInterval);
                 } else {
                     // Fallback to most specific URL match
                     const fallback = candidates[0];
                     Logger.warn(`Dev archetype disambiguation failed after ${maxAttempts} attempts, falling back to: ${fallback.id}`);
                     this.currentDevArchetype = fallback;
+                    observer && observer.disconnect();
                     resolve(fallback);
                 }
             };
-            
-            // Start checking
-            checkSelectors();
+
+            // Use MutationObserver instead of polling — same pattern as main archetype path.
+            let observer = null;
+            if (typeof MutationObserver !== 'undefined') {
+                observer = new MutationObserver(() => {
+                    if (attempts >= maxAttempts) { observer.disconnect(); return; }
+                    checkSelectors();
+                });
+                observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+            }
+            checkSelectors(); // Run immediately in case selectors already match
         },
         
         getPluginsForCurrentDevArchetype() {
@@ -3009,7 +3024,7 @@
                     const fetchedVersion = parsedPlugin._version || parsedPlugin.version || null;
 
                     if (fetchedVersion && fetchedVersion !== version) {
-                        const versionComparison = this._compareVersions(fetchedVersion, version);
+                        const versionComparison = compareVersions(fetchedVersion, version);
 
                         if (versionComparison > 0) {
                             Logger.debug(`Fetched ${filename} has newer version v${fetchedVersion} (required v${version}). Using newer version.`);

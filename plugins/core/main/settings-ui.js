@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.11',
+    _version: '11.12',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -124,6 +124,17 @@ const plugin = {
     },
 
     _ensureDialogBackdropStyles() {
+        if (Context.uiLib) {
+            if (typeof Context.uiLib.ensureButtonStyles === 'function') {
+                Context.uiLib.ensureButtonStyles('#wf-settings-modal');
+            }
+            if (typeof Context.uiLib.ensureAlertBannerStyles === 'function') {
+                Context.uiLib.ensureAlertBannerStyles();
+            }
+            if (typeof Context.uiLib.ensureSegmentStyles === 'function') {
+                Context.uiLib.ensureSegmentStyles('#wf-settings-modal');
+            }
+        }
         let style = document.getElementById('wf-settings-dialog-styles');
         if (!style) {
             style = document.createElement('style');
@@ -151,122 +162,38 @@ const plugin = {
                 border: 2px solid rgba(220, 38, 38, 0.9);
                 animation: wf-settings-update-flash 1.2s ease-in-out infinite;
             }
-            #wf-update-notification-banner {
-                margin-bottom: 20px;
-                padding: 14px;
-                padding-top: 20px;
-                background: #fee2e2;
-                border: 2px solid #dc2626;
-                border-radius: 8px;
-            }
-            #wf-update-notification-banner .wf-update-banner-title,
-            #wf-update-notification-banner .wf-update-banner-body,
-            #wf-update-notification-banner .wf-update-banner-body a {
-                color: #991b1b;
-            }
-            #wf-update-notification-banner .wf-update-banner-body a {
-                text-decoration: underline;
-                font-weight: 600;
-            }
-            #wf-update-refresh-row {
-                margin-top: 12px;
-                padding-top: 10px;
-                border-top: 1px solid #fecaca;
-                text-align: center;
-            }
-            #wf-update-refresh-btn {
-                padding: 8px 14px;
-                font-size: 13px;
-                font-weight: 600;
-                color: #991b1b;
-                background: #fef2f2;
-                border: 1px solid #dc2626;
-                border-radius: 6px;
-                cursor: pointer;
-            }
-            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner {
-                background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));
-            }
-            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-title,
-            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-body,
-            html[data-fleet-ux-theme="dark"] #wf-update-notification-banner .wf-update-banner-body a {
-                color: #fca5a5;
-            }
-            html[data-fleet-ux-theme="dark"] #wf-update-refresh-row {
-                border-top-color: #7f1d1d;
-            }
-            html[data-fleet-ux-theme="dark"] #wf-update-refresh-btn {
-                color: #fecaca;
-                background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));
-            }
-            .wf-amber-banner {
-                margin-bottom: 20px;
-                padding: 14px;
-                background: #fef3c7;
-                border: 2px solid #f59e0b;
-                border-radius: 8px;
-            }
-            .wf-amber-banner--soft {
-                margin-bottom: 20px;
-                padding: 12px;
-                background: #fef3c7;
-                border: 1px solid #f59e0b;
-                border-radius: 6px;
-            }
-            .wf-amber-banner-title,
-            .wf-amber-banner-body,
-            .wf-amber-banner-body a,
-            #wf-settings-message,
-            #wf-settings-message a {
-                color: #92400e;
-            }
-            #wf-settings-message {
-                background: #fef3c7;
-                border: 1px solid #f59e0b;
-            }
-            #wf-ops-refresh-fetch-btn {
-                padding: 8px 14px;
-                font-size: 13px;
-                font-weight: 600;
-                color: #92400e;
-                background: #fffbeb;
-                border: 1px solid #f59e0b;
-                border-radius: 6px;
-                cursor: pointer;
-            }
-            .wf-amber-banner .wf-amber-banner-footer {
-                margin-top: 12px;
-                padding-top: 10px;
-                border-top: 1px solid #fcd34d;
-                text-align: center;
-            }
-            html[data-fleet-ux-theme="dark"] .wf-amber-banner,
-            html[data-fleet-ux-theme="dark"] .wf-amber-banner--soft,
-            html[data-fleet-ux-theme="dark"] #wf-settings-message {
-                background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));
-            }
-            html[data-fleet-ux-theme="dark"] .wf-amber-banner-title,
-            html[data-fleet-ux-theme="dark"] .wf-amber-banner-body,
-            html[data-fleet-ux-theme="dark"] .wf-amber-banner-body a,
-            html[data-fleet-ux-theme="dark"] #wf-settings-message,
-            html[data-fleet-ux-theme="dark"] #wf-settings-message a {
-                color: #fcd34d;
-            }
-            html[data-fleet-ux-theme="dark"] .wf-amber-banner .wf-amber-banner-footer {
-                border-top-color: #92400e;
-            }
-            html[data-fleet-ux-theme="dark"] #wf-ops-refresh-fetch-btn {
-                color: #fef3c7;
-                background: color-mix(in srgb, #f59e0b 28%, var(--background, #121212));
+            #wf-settings-message.fleet-ui-alert-banner {
+                margin-bottom: 12px;
             }
         `;
+    },
+
+    _settingsBtnClass(variant, size) {
+        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
+            return Context.uiLib.btnClass(variant, size);
+        }
+        return 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--' + (size || 'nav');
+    },
+
+    _alertBannerClasses() {
+        return (Context.uiLib && Context.uiLib.ALERT_BANNER_CLASSES) || {
+            root: 'fleet-ui-alert-banner',
+            danger: 'fleet-ui-alert-banner--danger',
+            amber: 'fleet-ui-alert-banner--amber',
+            amberSoft: 'fleet-ui-alert-banner--amber-soft',
+            title: 'fleet-ui-alert-banner__title',
+            body: 'fleet-ui-alert-banner__body',
+            footer: 'fleet-ui-alert-banner__footer',
+            btnSecondary: 'fleet-ui-alert-banner__btn-secondary',
+            btnPrimary: 'fleet-ui-alert-banner__btn-primary'
+        };
     },
 
     _isFleetDark() {
         if (Context.uiLib && typeof Context.uiLib.isFleetDark === 'function') {
             return Context.uiLib.isFleetDark();
         }
-        return document.documentElement.classList.contains('dark');
+        return document.documentElement.dataset.fleetUxTheme === 'dark';
     },
 
     _getPreferredThemeMode() {
@@ -712,30 +639,8 @@ const plugin = {
                     ${this._createSwitchHTML('wf-dev-global-enabled', devGlobalEnabled)}
                 </div>
                 <div id="wf-all-dev-plugins-buttons" style="display: ${devGlobalEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
-                    <button id="wf-all-dev-plugins-on" style="
-                        flex: 1;
-                        padding: 8px 12px;
-                        font-size: 13px;
-                        font-weight: 500;
-                        color: ${c.fg};
-                        background: ${this._settingsThemeColors().card};
-                        border: 1px solid ${c.border};
-                        border-radius: 6px;
-                        cursor: pointer;
-                        transition: all 0.2s;
-                    ">All On</button>
-                    <button id="wf-all-dev-plugins-off" style="
-                        flex: 1;
-                        padding: 8px 12px;
-                        font-size: 13px;
-                        font-weight: 500;
-                        color: ${c.fg};
-                        background: ${this._settingsThemeColors().card};
-                        border: 1px solid ${c.border};
-                        border-radius: 6px;
-                        cursor: pointer;
-                        transition: all 0.2s;
-                    ">All Off</button>
+                    <button id="wf-all-dev-plugins-on" type="button" class="${this._settingsBtnClass('basic', 'regular')}" style="flex: 1;">All On</button>
+                    <button id="wf-all-dev-plugins-off" type="button" class="${this._settingsBtnClass('basic', 'regular')}" style="flex: 1;">All Off</button>
                 </div>
             </div>
 
@@ -759,30 +664,8 @@ const plugin = {
                     <div>
                         ${this._createToggleHTML('wf-submodule-logging-enabled', 'Enable Submodule Logging', submoduleLoggingEnabled, 'log')}
                         <div id="wf-all-module-logging-buttons" style="display: ${submoduleLoggingEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
-                            <button id="wf-all-module-logging-on" type="button" style="
-                                flex: 1;
-                                padding: 6px 10px;
-                                font-size: 12px;
-                                font-weight: 500;
-                                color: ${c.fg};
-                                background: ${this._settingsThemeColors().card};
-                                border: 1px solid ${c.border};
-                                border-radius: 6px;
-                                cursor: pointer;
-                                transition: all 0.2s;
-                            ">All On</button>
-                            <button id="wf-all-module-logging-off" type="button" style="
-                                flex: 1;
-                                padding: 6px 10px;
-                                font-size: 12px;
-                                font-weight: 500;
-                                color: ${c.fg};
-                                background: ${this._settingsThemeColors().card};
-                                border: 1px solid ${c.border};
-                                border-radius: 6px;
-                                cursor: pointer;
-                                transition: all 0.2s;
-                            ">All Off</button>
+                            <button id="wf-all-module-logging-on" type="button" class="${this._settingsBtnClass('basic', 'compact')}" style="flex: 1;">All On</button>
+                            <button id="wf-all-module-logging-off" type="button" class="${this._settingsBtnClass('basic', 'compact')}" style="flex: 1;">All Off</button>
                         </div>
                         <div id="wf-core-lib-module-logging" style="display: ${submoduleLoggingEnabled ? 'block' : 'none'}; margin-top: 12px;">
                             ${this._createCoreLibModuleLoggingHTML()}
@@ -826,8 +709,8 @@ const plugin = {
                 ${updateNotificationHTML}
                 ${opsRefreshBannerHTML}
                 ${tabRowHTML}
-                <div id="wf-settings-message" style="display: none; margin-top: 12px; padding: 10px 12px; border-radius: 6px; font-size: 13px; text-align: center; color: ${c.fg};">
-                    Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: var(--brand, #4f46e5); text-decoration: underline;">Refresh</a> the page for changes to take effect.
+                <div id="wf-settings-message" class="${this._alertBannerClasses().root} ${this._alertBannerClasses().amberSoft}" style="display: none; margin-top: 12px; margin-bottom: 0; padding: 10px 12px; font-size: 13px; text-align: center;">
+                    <span class="${this._alertBannerClasses().body}">Settings changed. <a href="#" id="wf-settings-refresh-link" style="color: var(--brand, #4f46e5); text-decoration: underline;">Refresh</a> the page for changes to take effect.</span>
                 </div>
             </div>
             
@@ -845,30 +728,8 @@ const plugin = {
                     ${this._createSwitchHTML('wf-global-enabled', globalEnabled)}
                 </div>
                 <div id="wf-all-plugins-buttons" style="display: ${globalEnabled ? 'flex' : 'none'}; gap: 8px; margin-top: 10px;">
-                    <button id="wf-all-plugins-on" style="
-                        flex: 1;
-                        padding: 8px 12px;
-                        font-size: 13px;
-                        font-weight: 500;
-                        color: ${c.fg};
-                        background: ${this._settingsThemeColors().card};
-                        border: 1px solid ${c.border};
-                        border-radius: 6px;
-                        cursor: pointer;
-                        transition: all 0.2s;
-                    ">All On</button>
-                    <button id="wf-all-plugins-off" style="
-                        flex: 1;
-                        padding: 8px 12px;
-                        font-size: 13px;
-                        font-weight: 500;
-                        color: ${c.fg};
-                        background: ${this._settingsThemeColors().card};
-                        border: 1px solid ${c.border};
-                        border-radius: 6px;
-                        cursor: pointer;
-                        transition: all 0.2s;
-                    ">All Off</button>
+                    <button id="wf-all-plugins-on" type="button" class="${this._settingsBtnClass('basic', 'regular')}" style="flex: 1;">All On</button>
+                    <button id="wf-all-plugins-off" type="button" class="${this._settingsBtnClass('basic', 'regular')}" style="flex: 1;">All Off</button>
                 </div>
             </div>
 
@@ -897,18 +758,7 @@ const plugin = {
             
             <!-- Clear Cache Button -->
             <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid ${c.border};">
-                <button id="wf-clear-cache" style="
-                    width: 100%;
-                    padding: 10px 16px;
-                    font-size: 13px;
-                    font-weight: 500;
-                    color: #dc2626;
-                    background: transparent;
-                    border: 1px solid #dc2626;
-                    border-radius: 6px;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                ">Clear Cache</button>
+                <button id="wf-clear-cache" type="button" class="${this._settingsBtnClass('danger', 'regular')} wf-dash-btn--full">Clear Cache</button>
             </div>
             </div>
             ${devPaneHTML}
@@ -1545,14 +1395,6 @@ const plugin = {
                     }
                 }
             });
-            clearCacheBtn.addEventListener('mouseenter', () => {
-                clearCacheBtn.style.background = '#fee2e2';
-                clearCacheBtn.style.borderColor = '#b91c1c';
-            });
-            clearCacheBtn.addEventListener('mouseleave', () => {
-                clearCacheBtn.style.background = 'transparent';
-                clearCacheBtn.style.borderColor = '#dc2626';
-            });
         }
 
         // Feedback: Create GitHub Issue
@@ -2163,17 +2005,12 @@ const plugin = {
     _ensureMessageElement(modal) {
         let msg = modal.querySelector('#wf-settings-message');
         if (!msg) {
+            const ab = this._alertBannerClasses();
             msg = document.createElement('div');
             msg.id = 'wf-settings-message';
-            msg.style.cssText = `
-                display: none;
-                margin-top: 12px;
-                padding: 10px 12px;
-                border-radius: 6px;
-                font-size: 13px;
-                text-align: center;
-            `;
-            msg.innerHTML = 'Settings changed. <a href="#" id="wf-settings-refresh-link" style="text-decoration: underline;">Refresh</a> the page for changes to take effect.';
+            msg.className = ab.root + ' ' + ab.amberSoft;
+            msg.style.cssText = 'display: none; margin-top: 12px; margin-bottom: 0; padding: 10px 12px; font-size: 13px; text-align: center;';
+            msg.innerHTML = '<span class="' + ab.body + '">Settings changed. <a href="#" id="wf-settings-refresh-link" style="text-decoration: underline;">Refresh</a> the page for changes to take effect.</span>';
             const tabRow = modal.querySelector('#wf-settings-tab-row');
             if (tabRow && tabRow.parentElement) {
                 tabRow.parentElement.insertBefore(msg, tabRow.nextSibling);
@@ -2327,18 +2164,20 @@ const plugin = {
     },
 
     _syncTabRowActiveState(modal, tabId) {
-        const c = this._settingsThemeColors();
         const tabRow = Context.dom.query('#wf-settings-tab-row', {
             root: modal,
             context: `${this.id}.tabRowSync`
         });
         if (!tabRow) return;
-        tabRow.querySelectorAll('.wf-settings-tab').forEach(btn => {
+        const group = tabRow.querySelector('.fleet-ui-seg-group');
+        if (group && Context.uiLib && typeof Context.uiLib.syncSegmentGroup === 'function') {
+            Context.uiLib.syncSegmentGroup(group, tabId, 'data-tab');
+            return;
+        }
+        tabRow.querySelectorAll('.wf-settings-tab').forEach((btn) => {
             const id = btn.getAttribute('data-tab');
             const isActive = id === tabId;
-            btn.style.color = isActive ? c.fg : c.muted;
-            btn.style.background = isActive ? c.card : 'transparent';
-            btn.style.border = isActive ? `1px solid ${c.border}` : '1px solid transparent';
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
         });
     },
 
@@ -2391,23 +2230,24 @@ const plugin = {
     },
 
     _createTabRowHTML(tabs, activeTabId) {
-        const c = this._settingsThemeColors();
         const activeTab = activeTabId || this._getDefaultSettingsTabId();
-        const buttons = tabs.map(t => {
+        const ui = Context.uiLib;
+        if (ui && typeof ui.segmentGroupHtml === 'function') {
+            return (
+                '<div id="wf-settings-tab-row" style="margin-top: 12px; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">'
+                + ui.segmentGroupHtml({
+                    value: activeTab,
+                    valueAttr: 'data-tab',
+                    fill: true,
+                    ariaLabel: 'Settings tabs',
+                    options: tabs.map((t) => ({ value: t.id, label: t.label }))
+                })
+                + '</div>'
+            );
+        }
+        const buttons = tabs.map((t) => {
             const isActive = t.id === activeTab;
-            return `<button type="button" class="wf-settings-tab" data-tab="${t.id}" style="
-                flex-shrink: 0;
-                white-space: nowrap;
-                padding: 6px 14px;
-                font-size: 13px;
-                font-weight: 500;
-                color: ${isActive ? c.fg : c.muted};
-                background: ${isActive ? this._settingsThemeColors().card : 'transparent'};
-                border: 1px solid ${isActive ? c.border : 'transparent'};
-                border-radius: 6px;
-                cursor: pointer;
-                transition: all 0.2s;
-            ">${t.label}</button>`;
+            return `<button type="button" class="wf-settings-tab ${this._settingsBtnClass('basic', 'compact')}" data-tab="${t.id}" aria-pressed="${isActive ? 'true' : 'false'}">${t.label}</button>`;
         }).join('');
         return `<div id="wf-settings-tab-row" style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; max-width: 100%; -webkit-overflow-scrolling: touch;">${buttons}</div>`;
     },
@@ -2418,8 +2258,16 @@ const plugin = {
             context: `${this.id}.tabRow`
         });
         if (!tabRow) return;
-        const tabs = this._getSettingsTabs();
-        tabRow.querySelectorAll('.wf-settings-tab').forEach(btn => {
+        const group = tabRow.querySelector('.fleet-ui-seg-group');
+        if (group && Context.uiLib && typeof Context.uiLib.bindSegmentGroup === 'function') {
+            delete group.dataset.fleetUiSegBound;
+            Context.uiLib.bindSegmentGroup(group, {
+                valueAttr: 'data-tab',
+                onChange: (tabId) => this._switchSettingsTab(modal, tabId)
+            });
+            return;
+        }
+        tabRow.querySelectorAll('.wf-settings-tab').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const tabId = btn.getAttribute('data-tab');
                 this._switchSettingsTab(modal, tabId);
@@ -2766,24 +2614,25 @@ const plugin = {
             return `<li style="margin: 4px 0;"><strong>${p.filename}</strong>: ${versionInfo}</li>`;
         }).join('');
         
+        const ab = this._alertBannerClasses();
         return `
-            <div class="wf-amber-banner--soft">
+            <div class="${ab.root} ${ab.amberSoft}">
                 <div style="display: flex; align-items: center; margin-bottom: 8px;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px; color: #f59e0b;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
                         <line x1="12" y1="9" x2="12" y2="13"></line>
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
-                    <h3 class="wf-amber-banner-title" style="font-size: 14px; font-weight: 600; margin: 0;">
+                    <h3 class="${ab.title}" style="font-size: 14px; font-weight: 600; margin: 0;">
                         Outdated Plugins (${outdatedPlugins.length})
                     </h3>
                 </div>
-                <p class="wf-amber-banner-body" style="font-size: 12px; margin: 8px 0 0 0; line-height: 1.5;">
+                <p class="${ab.body}" style="font-size: 12px; margin: 8px 0 0 0; line-height: 1.5;">
                     The following plugins could not be updated to the required version. 
                     This may happen if you're offline, the server is unavailable, or GitHub's CDN 
                     hasn't updated yet (can take up to 5 minutes after a change).
                 </p>
-                <ul class="wf-amber-banner-body" style="font-size: 12px; margin: 8px 0 0 0; padding-left: 20px;">
+                <ul class="${ab.body}" style="font-size: 12px; margin: 8px 0 0 0; padding-left: 20px;">
                     ${pluginsList}
                 </ul>
             </div>
@@ -2845,8 +2694,9 @@ const plugin = {
     },
 
     _createOpsRefreshBannerHTML() {
+        const ab = this._alertBannerClasses();
         return `
-            <div id="wf-ops-refresh-banner" class="wf-amber-banner">
+            <div id="wf-ops-refresh-banner" class="${ab.root} ${ab.amber}">
                 <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #b45309; flex-shrink: 0; margin-top: 2px;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -2854,16 +2704,16 @@ const plugin = {
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
                     <div style="flex: 1;">
-                        <h3 class="wf-amber-banner-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
+                        <h3 class="${ab.title}" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
                             Ops Tab Unlock Pending
                         </h3>
-                        <p class="wf-amber-banner-body" style="font-size: 13px; margin: 0; line-height: 1.5;">
+                        <p class="${ab.body}" style="font-size: 13px; margin: 0; line-height: 1.5;">
                             Refresh the page to activate the Ops tab and load the dashboard plugins.
                         </p>
                     </div>
                 </div>
-                <div class="wf-amber-banner-footer">
-                    <button type="button" id="wf-ops-refresh-fetch-btn">Refresh to Fetch</button>
+                <div class="${ab.footer}">
+                    <button type="button" id="wf-ops-refresh-fetch-btn" class="${ab.btnSecondary}">Refresh to Fetch</button>
                 </div>
             </div>
         `;
@@ -2952,8 +2802,9 @@ const plugin = {
             latestVersion = Context.latestVersion || 'unknown';
         }
         
+        const ab = this._alertBannerClasses();
         return `
-            <div id="wf-update-notification-banner">
+            <div id="wf-update-notification-banner" class="${ab.root} ${ab.danger}">
                 <div style="display: flex; align-items: flex-start; margin-bottom: 10px;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">
                         <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -2961,16 +2812,16 @@ const plugin = {
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
                     <div style="flex: 1;">
-                        <h3 class="wf-update-banner-title" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
+                        <h3 class="${ab.title}" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">
                             Extension Update Available
                         </h3>
-                        <p class="wf-update-banner-body" style="font-size: 13px; margin: 0 0 10px 0; line-height: 1.5;">
+                        <p class="${ab.body}" style="font-size: 13px; margin: 0 0 10px 0; line-height: 1.5;">
                             Your current version of this extension (<strong>${currentVersion}</strong>) is outdated. Please update to the <a id="wf-update-newest-link" href="${this._getUpdateUrl()}" target="_blank" rel="noopener noreferrer">newest version</a> (<strong>${latestVersion}</strong>).
                         </p>
                     </div>
                 </div>
-                <div id="wf-update-refresh-row" style="display: ${this._updateTabOpenedAutomatically ? 'block' : 'none'};">
-                    <button type="button" id="wf-update-refresh-btn">Refresh Page with New Version</button>
+                <div id="wf-update-refresh-row" class="${ab.footer}" style="display: ${this._updateTabOpenedAutomatically ? 'flex' : 'none'};">
+                    <button type="button" id="wf-update-refresh-btn" class="${ab.btnSecondary}">Refresh Page with New Version</button>
                 </div>
             </div>
         `;

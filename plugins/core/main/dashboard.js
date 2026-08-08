@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.34',
+    _version: '11.35',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1213,7 +1213,7 @@ const plugin = {
                 </div>
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
-                <div id="wf-dash-incomplete-banner" style="display: none; margin-bottom: 12px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; flex-shrink: 0;"></div>
+                <div id="wf-dash-incomplete-banner" class="fleet-ui-alert-banner fleet-ui-alert-banner--amber" style="display: none; margin-bottom: 12px; margin-top: 0; padding: 10px 12px; font-size: 12px; line-height: 1.45; flex-shrink: 0;"></div>
                 ${panelHtml}
             </div>
         `;
@@ -1383,6 +1383,9 @@ const plugin = {
         if (!this._modal) return;
         if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
             Context.uiLib.ensureButtonStyles('#wf-dash-modal', this._modal);
+        }
+        if (Context.uiLib && typeof Context.uiLib.ensureAlertBannerStyles === 'function') {
+            Context.uiLib.ensureAlertBannerStyles();
         }
     },
 

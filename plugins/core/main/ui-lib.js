@@ -9,6 +9,7 @@ const FLEET_UI_SEGMENT_STYLE_ID = 'fleet-ui-segment-styles';
 const FLEET_UI_SEGMENT_SCOPED_PREFIX = 'fleet-ui-seg-scope-';
 const FLEET_UI_FILTER_TOGGLE_STYLE_ID = 'fleet-ui-filter-toggle-styles';
 const FLEET_UI_FILTER_TOGGLE_SCOPED_PREFIX = 'fleet-ui-ft-scope-';
+const FLEET_UI_ALERT_BANNER_STYLE_ID = 'fleet-ui-alert-banner-styles';
 const FLEET_UI_USER_STORY_PROSE_STYLE_ID = 'fleet-ui-user-story-prose';
 const FLEET_UI_THEME_OVERRIDE_STYLE_ID = 'fleet-ui-theme-overrides';
 const FLEET_UI_THEME_MODE_KEY = 'extension-theme-mode';
@@ -43,6 +44,22 @@ const PANEL_CLASSES = {
     ghostBtn: 'fleet-ui-panel__ghost-btn'
 };
 
+/**
+ * Preferred-mode alert banners (session refresh, update notice, ops credential gaps).
+ * Variants: danger (red), amber, amberSoft.
+ */
+const ALERT_BANNER_CLASSES = {
+    root: 'fleet-ui-alert-banner',
+    danger: 'fleet-ui-alert-banner--danger',
+    amber: 'fleet-ui-alert-banner--amber',
+    amberSoft: 'fleet-ui-alert-banner--amber-soft',
+    title: 'fleet-ui-alert-banner__title',
+    body: 'fleet-ui-alert-banner__body',
+    footer: 'fleet-ui-alert-banner__footer',
+    btnSecondary: 'fleet-ui-alert-banner__btn-secondary',
+    btnPrimary: 'fleet-ui-alert-banner__btn-primary'
+};
+
 /** Exclusive connected segment control (Match/Light/Dark, Diff Viewer On/Off, Clear/Add). */
 const SEGMENT_CLASSES = {
     group: 'fleet-ui-seg-group',
@@ -64,7 +81,10 @@ const BTN_VARIANTS = {
     primary: 'wf-dash-btn--primary',
     secondary: 'wf-dash-btn--secondary',
     tertiary: 'wf-dash-btn--basic',
-    basic: 'wf-dash-btn--basic'
+    basic: 'wf-dash-btn--basic',
+    danger: 'wf-dash-btn--danger',
+    success: 'wf-dash-btn--success',
+    warning: 'wf-dash-btn--warning'
 };
 
 const BTN_SIZES = {
@@ -483,6 +503,95 @@ function fleetUiPanelCssLines(scopePrefix) {
     ];
 }
 
+function fleetUiAlertBannerCssLines() {
+    const root = '.fleet-ui-alert-banner';
+    const danger = root + '--danger';
+    const amber = root + '--amber';
+    const amberSoft = root + '--amber-soft';
+    const title = root + '__title';
+    const body = root + '__body';
+    const footer = root + '__footer';
+    const btnSec = root + '__btn-secondary';
+    const btnPri = root + '__btn-primary';
+    const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
+    return [
+        danger + ' {',
+        '  margin-bottom: 4px; padding: 14px; padding-top: 20px;',
+        '  background: #fee2e2; border: 2px solid #dc2626; border-radius: 8px;',
+        '}',
+        danger + ' ' + title + ',',
+        danger + ' ' + body + ',',
+        danger + ' ' + body + ' a { color: #991b1b; }',
+        danger + ' ' + body + ' a { text-decoration: underline; font-weight: 600; }',
+        danger + ' ' + footer + ' {',
+        '  margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca;',
+        '  text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;',
+        '}',
+        danger + ' ' + btnSec + ',',
+        danger + ' ' + btnPri + ' {',
+        '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
+        '  border-radius: 6px; cursor: pointer; border: 1px solid #dc2626;',
+        '  text-decoration: none;',
+        '}',
+        danger + ' ' + btnSec + ' { color: #991b1b; background: #fef2f2; }',
+        danger + ' ' + btnPri + ' { color: #fff; background: #dc2626; }',
+        dark(danger) + ' {',
+        '  background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));',
+        '}',
+        dark(danger + ' ' + title) + ',',
+        dark(danger + ' ' + body) + ',',
+        dark(danger + ' ' + body + ' a') + ' { color: #fca5a5; }',
+        dark(danger + ' ' + footer) + ' { border-top-color: #7f1d1d; }',
+        dark(danger + ' ' + btnSec) + ' {',
+        '  color: #fecaca; background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));',
+        '}',
+        amber + ',',
+        amberSoft + ' {',
+        '  margin-bottom: 20px; padding: 14px;',
+        '  background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px;',
+        '}',
+        amberSoft + ' {',
+        '  padding: 12px; border-width: 1px; border-radius: 6px;',
+        '}',
+        amber + ' ' + title + ',',
+        amber + ' ' + body + ',',
+        amber + ' ' + body + ' a,',
+        amberSoft + ' ' + title + ',',
+        amberSoft + ' ' + body + ',',
+        amberSoft + ' ' + body + ' a { color: #92400e; }',
+        amber + ' ' + body + ' a,',
+        amberSoft + ' ' + body + ' a { text-decoration: underline; font-weight: 600; }',
+        amber + ' ' + footer + ',',
+        amberSoft + ' ' + footer + ' {',
+        '  margin-top: 12px; padding-top: 10px; border-top: 1px solid #fcd34d;',
+        '  text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;',
+        '}',
+        amber + ' ' + btnSec + ',',
+        amberSoft + ' ' + btnSec + ' {',
+        '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
+        '  border-radius: 6px; cursor: pointer; border: 1px solid #f59e0b;',
+        '  color: #92400e; background: #fffbeb; text-decoration: none;',
+        '}',
+        dark(amber) + ',',
+        dark(amberSoft) + ' {',
+        '  color: #fcd34d;',
+        '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));',
+        '}',
+        dark(amber + ' ' + title) + ',',
+        dark(amber + ' ' + body) + ',',
+        dark(amber + ' ' + body + ' a') + ',',
+        dark(amberSoft + ' ' + title) + ',',
+        dark(amberSoft + ' ' + body) + ',',
+        dark(amberSoft + ' ' + body + ' a') + ' { color: #fcd34d; }',
+        dark(amber + ' ' + footer) + ',',
+        dark(amberSoft + ' ' + footer) + ' { border-top-color: #92400e; }',
+        dark(amber + ' ' + btnSec) + ',',
+        dark(amberSoft + ' ' + btnSec) + ' {',
+        '  color: #fef3c7; background: color-mix(in srgb, #f59e0b 28%, var(--background, #121212));',
+        '}'
+    ];
+}
+
 function fleetUiBtnBaseCssLines(scopePrefix) {
     const p = scopePrefix ? scopePrefix + ' ' : '';
     const btn = p + '.wf-dash-btn';
@@ -494,6 +603,9 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
     const primary = p + '.wf-dash-btn--primary';
     const secondary = p + '.wf-dash-btn--secondary';
     const tertiary = p + '.wf-dash-btn--basic';
+    const danger = p + '.wf-dash-btn--danger';
+    const success = p + '.wf-dash-btn--success';
+    const warning = p + '.wf-dash-btn--warning';
     const headerBasic = p + '.wf-dash-header-btn.wf-dash-btn--basic';
     const light = (sel) => 'html[data-fleet-ux-theme="light"] ' + sel;
     const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
@@ -619,7 +731,37 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  background: color-mix(in srgb, #000000 15%, transparent);',
         '  color: #999999;',
         '}',
-        light(primary + ':disabled') + ', ' + light(secondary + ':disabled') + ', ' + light(tertiary + ':disabled') + ' {',
+        light(danger) + ' {',
+        '  border: 1px solid #dc2626;',
+        '  background: transparent;',
+        '  color: #dc2626;',
+        '}',
+        light(danger) + ':hover:not(:disabled) {',
+        '  background: #fee2e2;',
+        '  border-color: #b91c1c;',
+        '  color: #b91c1c;',
+        '}',
+        light(success) + ' {',
+        '  border: 1px solid #16a34a;',
+        '  background: transparent;',
+        '  color: #16a34a;',
+        '}',
+        light(success) + ':hover:not(:disabled) {',
+        '  background: #16a34a;',
+        '  border-color: #16a34a;',
+        '  color: #ffffff;',
+        '}',
+        light(warning) + ' {',
+        '  border: 1px solid #ca8a04;',
+        '  background: color-mix(in srgb, #ca8a04 14%, transparent);',
+        '  color: #a16207;',
+        '}',
+        light(warning) + ':hover:not(:disabled) {',
+        '  background: #ca8a04;',
+        '  border-color: #ca8a04;',
+        '  color: #ffffff;',
+        '}',
+        light(primary + ':disabled') + ', ' + light(secondary + ':disabled') + ', ' + light(tertiary + ':disabled') + ', ' + light(danger + ':disabled') + ', ' + light(success + ':disabled') + ', ' + light(warning + ':disabled') + ' {',
         '  border-color: #e5e5e5;',
         '  background: #f0f0f0;',
         '  color: #999999;',
@@ -660,7 +802,37 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  background: color-mix(in srgb, #000000 15%, transparent);',
         '  color: #71717a;',
         '}',
-        dark(primary + ':disabled') + ', ' + dark(secondary + ':disabled') + ', ' + dark(tertiary + ':disabled') + ' {',
+        dark(danger) + ' {',
+        '  border-color: #dc2626;',
+        '  background: transparent;',
+        '  color: #fca5a5;',
+        '}',
+        dark(danger) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, #dc2626 22%, #18181b);',
+        '  border-color: #f87171;',
+        '  color: #fecaca;',
+        '}',
+        dark(success) + ' {',
+        '  border-color: #22c55e;',
+        '  background: transparent;',
+        '  color: #86efac;',
+        '}',
+        dark(success) + ':hover:not(:disabled) {',
+        '  background: #16a34a;',
+        '  border-color: #16a34a;',
+        '  color: #ffffff;',
+        '}',
+        dark(warning) + ' {',
+        '  border-color: #ca8a04;',
+        '  background: color-mix(in srgb, #ca8a04 18%, transparent);',
+        '  color: #fde68a;',
+        '}',
+        dark(warning) + ':hover:not(:disabled) {',
+        '  background: #ca8a04;',
+        '  border-color: #ca8a04;',
+        '  color: #ffffff;',
+        '}',
+        dark(primary + ':disabled') + ', ' + dark(secondary + ':disabled') + ', ' + dark(tertiary + ':disabled') + ', ' + dark(danger + ':disabled') + ', ' + dark(success + ':disabled') + ', ' + dark(warning + ':disabled') + ' {',
         '  border-color: #3f3f46;',
         '  background: #27272a;',
         '  color: #71717a;',
@@ -1137,7 +1309,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, segments, filter toggles, panels, and copy feedback',
-    _version: '3.8',
+    _version: '3.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1235,6 +1407,16 @@ const plugin = {
             target.appendChild(style);
         }
 
+        function ensureAlertBannerStyles() {
+            ensureStyles();
+            fleetUiEnsureThemeObserver();
+            if (document.getElementById(FLEET_UI_ALERT_BANNER_STYLE_ID)) return;
+            const style = document.createElement('style');
+            style.id = FLEET_UI_ALERT_BANNER_STYLE_ID;
+            style.textContent = fleetUiAlertBannerCssLines().join('\n');
+            (document.head || document.documentElement).appendChild(style);
+        }
+
         ensureStyles();
         fleetUiEnsureThemeObserver();
 
@@ -1248,6 +1430,7 @@ const plugin = {
             SPIN_DURATION,
             TAB_PULSE_MS,
             PANEL_CLASSES,
+            ALERT_BANNER_CLASSES,
             SEGMENT_CLASSES,
             FILTER_TOGGLE_CLASSES,
 
@@ -1257,6 +1440,7 @@ const plugin = {
             ensureUserStoryMarkdownStyles,
             ensureSegmentStyles,
             ensureFilterToggleStyles,
+            ensureAlertBannerStyles,
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,

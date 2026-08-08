@@ -41,7 +41,7 @@ const SHOW_PANEL_SUBOPTION = {
 const FORCE_DARK_SUBOPTION = {
     id: FORCE_DARK_SUBOPTION_ID,
     name: 'Force dark mode',
-    description: 'When off, helper chrome stays light. When on, helper chrome stays dark.',
+    description: 'Overrides Preferred mode for this helper panel only.',
     enabledByDefault: false
 };
 
@@ -50,7 +50,7 @@ const VncHelperApi = {
     name: 'External VNC Helper',
     description:
         'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '3.2',
+    _version: '3.3',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -69,15 +69,32 @@ const VncHelperApi = {
         return Storage.getSubOptionEnabled(this.id, FORCE_DARK_SUBOPTION_ID, false);
     },
 
-    helperChromeColors(forceDark) {
-        if (forceDark) {
+    helperChromeColors() {
+        const forceDark = this.isForceDarkEnabled();
+        const ui = Context.uiLib;
+        const preferredDark = !!(ui && typeof ui.isFleetDark === 'function' && ui.isFleetDark());
+        const dark = forceDark || preferredDark;
+        if (!forceDark && ui && typeof ui.chromeColors === 'function') {
+            const c = ui.chromeColors();
+            return {
+                bg: c.bg,
+                fg: c.fg,
+                border: c.border,
+                headerBg: c.hover || c.card,
+                inputBg: c.bg,
+                dark: preferredDark,
+                fromPreferred: true
+            };
+        }
+        if (dark) {
             return {
                 bg: '#1c1c1e',
                 fg: '#e5e7eb',
                 border: '#3f3f46',
                 headerBg: 'rgba(255,255,255,0.06)',
                 inputBg: '#121212',
-                dark: true
+                dark: true,
+                fromPreferred: false
             };
         }
         return {
@@ -86,18 +103,55 @@ const VncHelperApi = {
             border: '#e2e8f0',
             headerBg: '#f1f5f9',
             inputBg: '#ffffff',
-            dark: false
+            dark: false,
+            fromPreferred: false
         };
     },
 
+    ensurePreferredThemeSubscription() {
+        if (this._preferredThemeUnsub) return;
+        const ui = Context.uiLib;
+        if (!ui || typeof ui.onThemeChange !== 'function') return;
+        this._preferredThemeUnsub = ui.onThemeChange(() => {
+            this.applyHelperChromeToMounted();
+        });
+    },
+
     applyHelperChrome(root, chip) {
+        this.ensurePreferredThemeSubscription();
         const forceDark = this.isForceDarkEnabled();
-        const c = this.helperChromeColors(forceDark);
-        const theme = forceDark ? 'dark' : 'light';
-        const shadow = forceDark
+        const c = this.helperChromeColors();
+        const theme = c.dark ? 'dark' : 'light';
+        // When following Preferred mode (force-dark off), clear inline overpaint so
+        // PANEL_CLASSES + data-fleet-ux-theme own the chrome.
+        if (!forceDark && c.fromPreferred) {
+            const clearInline = (el) => {
+                if (!el) return;
+                el.style.background = '';
+                el.style.color = '';
+                el.style.border = '';
+                el.style.borderRadius = '';
+                el.style.boxShadow = '';
+                el.style.borderBottom = '';
+            };
+            if (root) {
+                root.dataset.fleetHelperTheme = theme;
+                clearInline(root);
+                const header = root.querySelector('.fleet-ui-panel__header') || root.firstElementChild;
+                clearInline(header);
+                root.querySelectorAll('textarea, input, button').forEach(clearInline);
+            }
+            if (chip) {
+                chip.dataset.fleetHelperTheme = theme;
+                clearInline(chip);
+                chip.querySelectorAll('button').forEach(clearInline);
+            }
+            return;
+        }
+        const shadow = c.dark
             ? '0 12px 40px rgba(0,0,0,0.55)'
             : '0 12px 40px rgba(15,23,42,0.18)';
-        const chipShadow = forceDark
+        const chipShadow = c.dark
             ? '0 6px 18px rgba(0,0,0,0.35)'
             : '0 6px 18px rgba(15,23,42,0.14)';
         if (root) {
@@ -849,7 +903,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'External VNC Helper (library)',
     description: 'Shared API for External VNC Helper panel and clipboard helpers',
-    _version: '3.2',
+    _version: '3.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -23,7 +23,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
     description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -218,34 +218,16 @@ const plugin = {
             order: 'created_at.desc',
             limit: '100'
         };
-        let rows;
-        try {
-            rows = await ops.postgrestQuery('qa_feedback.select_row', params);
-        } catch (_e) {
-            rows = await ops.postgrestGet('qa_feedback', Object.assign({ select: '*' }, params));
-        }
+        const rows = await ops.postgrestQuery('qa_feedback.select_row', params);
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
     },
 
     async _fetchTaskRow(ops, taskId) {
-        try {
-            const rows = await ops.postgrestQuery('tasks.select_search', {
-                id: 'eq.' + taskId,
-                limit: '1'
-            });
-            return Array.isArray(rows) ? rows[0] : rows;
-        } catch (_e) {
-            try {
-                const rows = await ops.postgrestGet('tasks', {
-                    select: 'id,key,created_by',
-                    id: 'eq.' + taskId,
-                    limit: '1'
-                });
-                return Array.isArray(rows) ? rows[0] : rows;
-            } catch (_e2) {
-                return null;
-            }
-        }
+        const rows = await ops.postgrestQuery('tasks.select_search', {
+            id: 'eq.' + taskId,
+            limit: '1'
+        });
+        return Array.isArray(rows) ? rows[0] : rows;
     },
 
     async _fetchProfiles(ops, userIds) {

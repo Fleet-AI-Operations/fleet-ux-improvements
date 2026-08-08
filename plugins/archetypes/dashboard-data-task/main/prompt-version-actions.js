@@ -13,7 +13,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
     description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -202,20 +202,11 @@ const plugin = {
     },
 
     async _lookupTaskRow(opsTab, taskKey) {
-        try {
-            const rows = await opsTab.postgrestQuery('tasks.select_verifier_lookup', {
-                key: 'eq.' + taskKey,
-                limit: '1'
-            });
-            return Array.isArray(rows) ? rows[0] : rows;
-        } catch (_e) {
-            const rows = await opsTab.postgrestGet('tasks', {
-                select: 'id,key',
-                key: 'eq.' + taskKey,
-                limit: '1'
-            });
-            return Array.isArray(rows) ? rows[0] : rows;
-        }
+        const rows = await opsTab.postgrestQuery('tasks.select_verifier_lookup', {
+            key: 'eq.' + taskKey,
+            limit: '1'
+        });
+        return Array.isArray(rows) ? rows[0] : rows;
     },
 
     async _fetchVersionHistory(opsTab, taskId) {
@@ -224,14 +215,7 @@ const plugin = {
             order: 'version_no.asc',
             limit: '100'
         };
-        let rows;
-        try {
-            rows = await opsTab.postgrestQuery('task_versions.select_history', params);
-        } catch (_e) {
-            rows = await opsTab.postgrestGet('task_versions', Object.assign({
-                select: 'id,task_id,version_no,created_at,prompt,env_key,resubmission_notes'
-            }, params));
-        }
+        const rows = await opsTab.postgrestQuery('task_versions.select_history', params);
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
     },
 

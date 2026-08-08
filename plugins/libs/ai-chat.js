@@ -70,8 +70,8 @@ async function aiChatCopyWithFeedback(el, text, logLabel) {
         return false;
     }
     try {
-        if (Context.buttonFeedback && typeof Context.buttonFeedback.copyWithFeedback === 'function') {
-            const ok = await Context.buttonFeedback.copyWithFeedback(el, value, {
+        if (Context.uiLib && typeof Context.uiLib.copyWithFeedback === 'function') {
+            const ok = await Context.uiLib.copyWithFeedback(el, value, {
                 logLabel: logLabel || 'chat copy',
             });
             if (!ok) aiChatFlashCopyButton(el, false);
@@ -964,20 +964,30 @@ function aiChatSetupCopyButtons(el, opts) {
     };
     if (attach()) return;
     const prev = el.onComponentRender;
+    const stopWait = () => {
+        if (!el._wfCopyWaitObserver) return;
+        try { el._wfCopyWaitObserver.disconnect(); } catch (_e) { /* ignore */ }
+        el._wfCopyWaitObserver = null;
+    };
     el.onComponentRender = (ref) => {
         if (typeof prev === 'function') {
             try { prev(ref); } catch (_e) { /* ignore */ }
         }
-        attach();
+        if (attach()) stopWait();
     };
     // Shadow root can appear shortly after mount even without the render callback.
-    let tries = 0;
-    const poll = () => {
-        if (attach() || tries >= 20) return;
-        tries += 1;
-        setTimeout(poll, 50);
-    };
-    setTimeout(poll, 0);
+    stopWait();
+    const waitObs = new MutationObserver(() => {
+        if (!attach()) return;
+        stopWait();
+    });
+    el._wfCopyWaitObserver = waitObs;
+    try {
+        const target = el.parentNode || el;
+        waitObs.observe(target, { childList: true, subtree: true, attributes: true });
+    } catch (_e) {
+        el._wfCopyWaitObserver = null;
+    }
 }
 
 /**
@@ -2439,7 +2449,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '8.0',
+    _version: '8.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
