@@ -7444,10 +7444,10 @@ const searchOutputResultsPaneMethods = {
         this._ensureCardActionStyles();
         const itemId = item.id;
         const tabsRow = this._cardTabsRowHtml(item);
-        const chromeShell = 'border: ' + DASH_CARD_BORDER + '; border-bottom: 1px solid var(--border, #e2e8f0);'
-            + ' border-radius: 10px 10px 0 0; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
-        const bodyShell = 'border: ' + DASH_CARD_BORDER + '; border-top: none;'
-            + ' border-radius: 0 0 10px 10px; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
+        const chromeShell = 'border: ' + DASH_CARD_BORDER + '; background: ' + DASH_TASK_CARD_BG + ';'
+            + ' border-radius: 10px; overflow: visible;';
+        const bodyShell = 'border: ' + DASH_CARD_BORDER + '; background: ' + DASH_TASK_CARD_BG + ';'
+            + ' border-radius: 10px; overflow: visible;';
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
                 <div class="wf-dash-card-sticky">
@@ -7650,7 +7650,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.10',
+    _version: '9.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
