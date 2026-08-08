@@ -7468,12 +7468,12 @@ const searchOutputResultsPaneMethods = {
         this._ensureCardActionStyles();
         const itemId = item.id;
         const tabsRow = this._cardTabsRowHtml(item);
-        const chromeShell = 'border: ' + DASH_CARD_BORDER + '; background: ' + DASH_TASK_CARD_BG + ';'
-            + ' border-radius: 10px; overflow: visible;';
-        const bodyShell = 'border: ' + DASH_CARD_BORDER + '; background: ' + DASH_TASK_CARD_BG + ';'
-            + ' border-radius: 10px; overflow: visible;';
+        const chromeShell = 'border: ' + DASH_CARD_BORDER + '; border-bottom: 1px solid var(--border, #e2e8f0);'
+            + ' border-radius: 10px 10px 0 0; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
+        const bodyShell = 'border: ' + DASH_CARD_BORDER + '; border-top: none;'
+            + ' border-radius: 0 0 10px 10px; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
         return `
-            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
+            <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column; padding-bottom: 10px; box-sizing: border-box;">
                 <div class="wf-dash-card-sticky">
                     ${tabsRow}
                     <div class="wf-dash-card-shell wf-dash-card-shell--chrome" style="${chromeShell}">
@@ -7621,10 +7621,9 @@ const searchOutputResultsPaneMethods = {
                 ${this._cardHeaderMetaRowHtml(task, itemId)}
                 ${this._flagCreatePanelHtml(itemId, task.id)}
                 ${row2Html}
-                ${expanded ? this._supplementalControlsHtml(itemId) : ''}
                 ${row3Html}`;
         const bodyHtml = `
-                ${expanded ? '' : this._supplementalControlsHtml(itemId)}
+                ${this._supplementalControlsHtml(itemId)}
                 ${this._supplementalPanelsHtml(itemId)}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
                     ${versionsInnerHtml}
@@ -7676,7 +7675,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.12',
+    _version: '9.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
