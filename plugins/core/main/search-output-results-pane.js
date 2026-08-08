@@ -7350,13 +7350,12 @@ const searchOutputResultsPaneMethods = {
         });
         const tabsRow = '<div class="wf-dash-card-tabs-row">'
                 + '<div class="wf-dash-card-tabs-left">' + statusTabHtml + createdTabHtml + keyTabHtml + '</div>'
+                + this._cardActionAreaHtml(itemId)
                 + '</div>';
-        const actionRow = `<div class="wf-dash-card-action-row">${this._cardActionAreaHtml(itemId)}</div>`;
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
                 ${tabsRow}
                 <div class="wf-dash-card-shell">
-                    ${actionRow}
                     ${cardHtml}
                 </div>
             </div>`;
@@ -7551,7 +7550,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.3',
+    _version: '9.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
