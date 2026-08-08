@@ -2655,7 +2655,7 @@ const searchOutputResultsPaneMethods = {
             + '</div>';
     },
 
-    _supplementalSectionHtml(itemId) {
+    _supplementalControlsHtml(itemId) {
         return `
             <div style="padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;" data-wf-dash-supplemental-section data-wf-dash-user-story-section data-item-id="${dashEscHtml(itemId)}">
                 <div data-wf-dash-supplemental-controls>
@@ -2666,10 +2666,20 @@ const searchOutputResultsPaneMethods = {
                     </div>
                     ${this._supplementalActionMessageHtml(itemId)}
                 </div>
+            </div>`;
+    },
+
+    _supplementalPanelsHtml(itemId) {
+        return `
+            <div style="padding: 0 14px 8px; font-size: 12px;" data-wf-dash-supplemental-panels data-item-id="${dashEscHtml(itemId)}">
                 ${this._userStoryPanelHtml(itemId)}
                 ${this._verifierOutputPanelHtml(itemId)}
                 ${this._sessionQaPanelHtml(itemId)}
             </div>`;
+    },
+
+    _supplementalSectionHtml(itemId) {
+        return this._supplementalControlsHtml(itemId) + this._supplementalPanelsHtml(itemId);
     },
 
     _findSupplementalSection(itemId) {
@@ -2682,14 +2692,24 @@ const searchOutputResultsPaneMethods = {
         return null;
     },
 
+    _findSupplementalPanels(itemId) {
+        const wrap = this._q('#wf-dash-results');
+        if (!wrap || !itemId) return null;
+        for (const card of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+            if (card.getAttribute('data-item-id') !== itemId) continue;
+            return card.querySelector('[data-wf-dash-supplemental-panels]');
+        }
+        return null;
+    },
+
     _findUserStorySection(itemId) {
         return this._findSupplementalSection(itemId);
     },
 
     _animateSupplementalPanelOpen(itemId, panelSelector, getVisible) {
         if (!getVisible()) return;
-        const section = this._findSupplementalSection(itemId);
-        const panel = section ? section.querySelector(panelSelector) : null;
+        const panelsHost = this._findSupplementalPanels(itemId);
+        const panel = panelsHost ? panelsHost.querySelector(panelSelector) : null;
         if (!panel) return;
         panel.setAttribute('data-open', '0');
         panel.setAttribute('aria-hidden', 'true');
@@ -2729,8 +2749,8 @@ const searchOutputResultsPaneMethods = {
     },
 
     _syncSupplementalPanelOpen(itemId, panelSelector, visible) {
-        const section = this._findSupplementalSection(itemId);
-        const panel = section ? section.querySelector(panelSelector) : null;
+        const panelsHost = this._findSupplementalPanels(itemId);
+        const panel = panelsHost ? panelsHost.querySelector(panelSelector) : null;
         if (!panel) return;
         panel.setAttribute('data-open', visible ? '1' : '0');
         panel.setAttribute('aria-hidden', visible ? 'false' : 'true');
@@ -2941,7 +2961,8 @@ const searchOutputResultsPaneMethods = {
         const section = this._findSupplementalSection(itemId);
         if (!section) return false;
         this._patchUserStoryControls(section, itemId);
-        this._patchUserStoryPanel(section, itemId);
+        const panelsHost = this._findSupplementalPanels(itemId);
+        if (panelsHost) this._patchUserStoryPanel(panelsHost, itemId);
         this._patchSupplementalActionMessage(section, itemId);
         return true;
     },
@@ -2951,7 +2972,8 @@ const searchOutputResultsPaneMethods = {
         const section = this._findSupplementalSection(itemId);
         if (!section) return false;
         this._patchSessionQaControls(section, itemId);
-        this._patchSessionQaPanel(section, itemId);
+        const panelsHost = this._findSupplementalPanels(itemId);
+        if (panelsHost) this._patchSessionQaPanel(panelsHost, itemId);
         this._patchSupplementalActionMessage(section, itemId);
         return true;
     },
@@ -2961,7 +2983,8 @@ const searchOutputResultsPaneMethods = {
         const section = this._findSupplementalSection(itemId);
         if (!section) return false;
         this._patchVerifierOutputControls(section, itemId);
-        this._patchVerifierOutputPanel(section, itemId);
+        const panelsHost = this._findSupplementalPanels(itemId);
+        if (panelsHost) this._patchVerifierOutputPanel(panelsHost, itemId);
         this._patchSupplementalActionMessage(section, itemId);
         return true;
     },
@@ -7418,9 +7441,10 @@ const searchOutputResultsPaneMethods = {
         }
         const stickyChromeHtml = `
                 ${this._cardHeaderMetaRowHtml(task, itemId)}
-                ${this._flagCreatePanelHtml(itemId, task.id)}
-                ${this._supplementalSectionHtml(itemId)}`;
-        const bodyHtml = `<div style="padding: 12px 14px; font-size: 12px;">${bodyInner}</div>`;
+                ${this._flagCreatePanelHtml(itemId, task.id)}`;
+        const bodyHtml = this._supplementalControlsHtml(itemId)
+            + this._supplementalPanelsHtml(itemId)
+            + `<div style="padding: 12px 14px; font-size: 12px;">${bodyInner}</div>`;
         return this._resultCardOuterWrap(item, stickyChromeHtml, bodyHtml);
     },
 
@@ -7597,9 +7621,11 @@ const searchOutputResultsPaneMethods = {
                 ${this._cardHeaderMetaRowHtml(task, itemId)}
                 ${this._flagCreatePanelHtml(itemId, task.id)}
                 ${row2Html}
-                ${this._supplementalSectionHtml(itemId)}
+                ${expanded ? this._supplementalControlsHtml(itemId) : ''}
                 ${row3Html}`;
         const bodyHtml = `
+                ${expanded ? '' : this._supplementalControlsHtml(itemId)}
+                ${this._supplementalPanelsHtml(itemId)}
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
                     ${versionsInnerHtml}
                 </div>`;
@@ -7650,7 +7676,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.11',
+    _version: '9.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
