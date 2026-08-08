@@ -5678,7 +5678,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.stopPropagation();
                 e.preventDefault();
                 const itemId = flagCreateToggleBtn.getAttribute('data-item-id');
-                if (itemId) dash._toggleFlagCreatePanel(itemId, true);
+                if (itemId) dash._toggleFlagCreatePanel(itemId);
                 return;
             }
             const flagCreateCancelBtn = e.target.closest('[data-wf-dash-flag-create-cancel]');
@@ -5686,7 +5686,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.stopPropagation();
                 e.preventDefault();
                 const itemId = flagCreateCancelBtn.getAttribute('data-item-id');
-                if (itemId) dash._toggleFlagCreatePanel(itemId, false);
+                if (itemId) dash._resetFlagCreatePanel(itemId);
                 return;
             }
             const flagCreateSubmitBtn = e.target.closest('[data-wf-dash-flag-create-submit]');
@@ -5953,7 +5953,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.40',
+    _version: '9.41',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

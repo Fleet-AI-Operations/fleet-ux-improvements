@@ -968,13 +968,20 @@ const searchOutputResultsPaneMethods = {
         const iid = String(itemId || '').trim();
         if (!iid) return;
         const ui = this._getFlagCreateUi(iid);
-        ui.open = Boolean(open);
-        if (!ui.open) {
-            ui.note = '';
-            ui.reason = '';
-            ui.submitting = false;
-        }
+        ui.open = open == null ? !ui.open : Boolean(open);
         Logger.log('search-output: flag create panel ' + (ui.open ? 'opened' : 'closed') + ' — ' + iid);
+        this._patchTaskCard(iid);
+    },
+
+    _resetFlagCreatePanel(itemId) {
+        const iid = String(itemId || '').trim();
+        if (!iid) return;
+        const ui = this._getFlagCreateUi(iid);
+        ui.note = '';
+        ui.reason = '';
+        ui.submitting = false;
+        ui.open = false;
+        Logger.log('search-output: flag create panel closed — ' + iid);
         this._patchTaskCard(iid);
     },
 
@@ -6379,7 +6386,7 @@ const searchOutputResultsPaneMethods = {
     _flagIconSvg() {
         return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
             + `<line x1="7.5" y1="2" x2="7.5" y2="24"></line>`
-            + `<path d="M7.5 3.5h11L14 9.5l4.5 6H7.5z" fill="currentColor" stroke="none"></path>`
+            + `<path d="M7.5 3.5 L19.5 10 L7.5 16.5 Z" fill="#dc2626" stroke="none"></path>`
             + `</svg>`;
     },
 
@@ -6621,8 +6628,12 @@ const searchOutputResultsPaneMethods = {
 
     _flagForSeniorReviewBtnHtml(task, itemId) {
         if (!this._shouldShowFlagCreateBtn(task)) return '';
-        const escItemId = dashEscHtml(String(itemId || '').trim());
-        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" class="${this._dashBtnClass('basic', 'icon')}">${this._flagIconSvg()}</button>`;
+        const iid = String(itemId || '').trim();
+        const escItemId = dashEscHtml(iid);
+        const ui = this._getFlagCreateUi(iid);
+        const pressed = Boolean(ui.open);
+        const flagStyle = pressed ? ' color: var(--foreground, #0f172a);' : '';
+        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" aria-pressed="${pressed ? 'true' : 'false'}" class="${this._dashBtnClass('basic', 'icon')}" style="${flagStyle}">${this._flagIconSvg()}</button>`;
     },
 
     _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive, opts) {
@@ -7550,7 +7561,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.4',
+    _version: '9.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
