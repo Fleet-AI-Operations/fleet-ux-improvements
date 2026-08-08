@@ -7332,24 +7332,21 @@ const searchOutputResultsPaneMethods = {
             headerRow,
             `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
         );
-        let bodyHtml;
+        let bodyInner;
         if (item.qaFeedback) {
-            bodyHtml = taskActionsHtml;
+            bodyInner = taskActionsHtml;
         } else {
-            bodyHtml = promptSectionHtml + taskActionsHtml;
+            bodyInner = promptSectionHtml + taskActionsHtml;
         }
-        const cardHtml = `
-            <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
+        const stickyChromeHtml = `
                 ${this._cardHeaderMetaRowHtml(task, itemId)}
                 ${this._flagCreatePanelHtml(itemId, task.id)}
-                ${this._supplementalSectionHtml(itemId)}
-                <div style="padding: 12px 14px; font-size: 12px;">${bodyHtml}</div>
-            </article>`;
-        return this._resultCardOuterWrap(item, cardHtml);
+                ${this._supplementalSectionHtml(itemId)}`;
+        const bodyHtml = `<div style="padding: 12px 14px; font-size: 12px;">${bodyInner}</div>`;
+        return this._resultCardOuterWrap(item, stickyChromeHtml, bodyHtml);
     },
 
-    _resultCardOuterWrap(item, cardHtml) {
-        this._ensureCardActionStyles();
+    _cardTabsRowHtml(item) {
         const itemId = item.id;
         const createdTabHtml = this._cardCreatedTabHtml(item.task);
         const statusTabHtml = this._cardStatusTabHtml(item.task);
@@ -7359,15 +7356,30 @@ const searchOutputResultsPaneMethods = {
             fuzzy: Boolean(item.highlightFuzzy),
             regex: Boolean(item.highlightRegex)
         });
-        const tabsRow = '<div class="wf-dash-card-tabs-row">'
-                + '<div class="wf-dash-card-tabs-left">' + statusTabHtml + createdTabHtml + keyTabHtml + '</div>'
-                + this._cardActionAreaHtml(itemId)
-                + '</div>';
+        return '<div class="wf-dash-card-tabs-row">'
+            + '<div class="wf-dash-card-tabs-left">' + statusTabHtml + createdTabHtml + keyTabHtml + '</div>'
+            + this._cardActionAreaHtml(itemId)
+            + '</div>';
+    },
+
+    _resultCardOuterWrap(item, stickyChromeHtml, bodyHtml) {
+        this._ensureCardActionStyles();
+        const itemId = item.id;
+        const tabsRow = this._cardTabsRowHtml(item);
+        const chromeShell = 'border: ' + DASH_CARD_BORDER + '; border-bottom: 1px solid var(--border, #e2e8f0);'
+            + ' border-radius: 10px 10px 0 0; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
+        const bodyShell = 'border: ' + DASH_CARD_BORDER + '; border-top: none;'
+            + ' border-radius: 0 0 10px 10px; background: ' + DASH_TASK_CARD_BG + '; overflow: visible;';
         return `
             <div data-wf-dash-task-card="1" data-item-id="${dashEscHtml(itemId)}" style="display: flex; flex-direction: column;">
-                ${tabsRow}
-                <div class="wf-dash-card-shell">
-                    ${cardHtml}
+                <div class="wf-dash-card-sticky">
+                    ${tabsRow}
+                    <div class="wf-dash-card-shell wf-dash-card-shell--chrome" style="${chromeShell}">
+                        ${stickyChromeHtml}
+                    </div>
+                </div>
+                <div class="wf-dash-card-shell wf-dash-card-shell--body" style="${bodyShell}">
+                    ${bodyHtml}
                 </div>
             </div>`;
     },
@@ -7503,19 +7515,18 @@ const searchOutputResultsPaneMethods = {
             ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 12px;">${versionSections}</div>`
             : versionSections;
 
-        const cardHtml = `
-            <article class="wf-dash-task-card-article" style="position: relative; border: ${DASH_CARD_BORDER}; border-radius: 10px; background: ${DASH_TASK_CARD_BG}; overflow: hidden;">
+        const stickyChromeHtml = `
                 ${this._cardHeaderMetaRowHtml(task, itemId)}
                 ${this._flagCreatePanelHtml(itemId, task.id)}
                 ${row2Html}
                 ${this._supplementalSectionHtml(itemId)}
-                ${row3Html}
+                ${row3Html}`;
+        const bodyHtml = `
                 <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
                     ${versionsInnerHtml}
-                </div>
-            </article>`;
+                </div>`;
 
-        return this._resultCardOuterWrap(item, cardHtml);
+        return this._resultCardOuterWrap(item, stickyChromeHtml, bodyHtml);
     },
 
     async _copyText(text) {
@@ -7561,7 +7572,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.6',
+    _version: '9.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

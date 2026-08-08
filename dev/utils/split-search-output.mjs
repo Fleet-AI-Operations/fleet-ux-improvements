@@ -104,7 +104,7 @@ const RESULTS_METHODS = new Set([
     '_disputeClaimControlHtml', '_disputeBlockHtml', '_noneProvidedBadgeHtml', '_flagBlockHtml',
     '_promptVersionsRawLike', '_orphanDisputesByDisplayNo', '_orphanFlagsByDisplayNo',
     '_feedbackEntryAt', '_feedbackEntriesOldestFirst', '_sortTaskActionBlocksByDate', '_versionTaskActionsHtml', '_quickTaskActionsHtml',
-    '_versionSectionHtml', '_resultCardHtml', '_quickResultCardHtml', '_resultCardOuterWrap', '_taskCardHtml',
+    '_versionSectionHtml', '_resultCardHtml', '_quickResultCardHtml', '_cardTabsRowHtml', '_resultCardOuterWrap', '_taskCardHtml',
     '_copyText', '_copyWithFeedback',
     '_syncAutoGrowTextarea', '_syncAutoGrowTextareasIn',
     '_fetchHelpfulnessRatingsBatch', '_handleThumbClick', '_handleQaReviewSubmit', '_handleQaReviewRemoveConfirm',
