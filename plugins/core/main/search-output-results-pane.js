@@ -4479,6 +4479,77 @@ const searchOutputResultsPaneMethods = {
         cardEl.removeAttribute('data-wf-dash-rolling-attached');
     },
 
+    _clearAllRollingOverlayListeners() {
+        const cards = this._soRollingCards;
+        if (cards && cards.size) {
+            for (const cardEl of [...cards]) {
+                this._detachCardRollingListeners(cardEl);
+            }
+            cards.clear();
+        }
+        this._teardownSharedRollingResultsListener();
+    },
+
+    _ensureSharedRollingResultsListener() {
+        if (this._soRollingResultsBound) return;
+        const resultsWrap = this._q('#wf-dash-results');
+        if (!resultsWrap) return;
+        if (!this._soRollingCards) this._soRollingCards = new Set();
+        const schedule = () => this._scheduleRollingOverlaysFlush();
+        resultsWrap.addEventListener('scroll', schedule, { passive: true });
+        this._soRollingResultsBound = { resultsWrap, schedule };
+        this._soRollingSchedule = schedule;
+    },
+
+    _teardownSharedRollingResultsListener() {
+        const bound = this._soRollingResultsBound;
+        if (bound) {
+            bound.resultsWrap.removeEventListener('scroll', bound.schedule);
+            this._soRollingResultsBound = null;
+        }
+        this._soRollingSchedule = null;
+        if (this._soRollingRaf) {
+            cancelAnimationFrame(this._soRollingRaf);
+            this._soRollingRaf = 0;
+        }
+    },
+
+    _teardownSharedRollingResultsListenerIfIdle() {
+        if (this._soRollingCards && this._soRollingCards.size > 0) return;
+        this._teardownSharedRollingResultsListener();
+    },
+
+    _scheduleRollingOverlaysFlush() {
+        if (this._soRollingRaf) return;
+        this._soRollingRaf = requestAnimationFrame(() => {
+            this._soRollingRaf = 0;
+            this._flushRollingOverlays();
+        });
+    },
+
+    _flushRollingOverlays() {
+        const cards = this._soRollingCards;
+        if (!cards || !cards.size) return;
+        const resultsWrap = this._q('#wf-dash-results');
+        if (!resultsWrap) return;
+        const wrapRect = resultsWrap.getBoundingClientRect();
+        for (const cardEl of [...cards]) {
+            if (!cardEl.isConnected) {
+                cards.delete(cardEl);
+                continue;
+            }
+            const area = cardEl.querySelector('[data-wf-dash-versions-area]');
+            if (!area) {
+                this._removeCardRollingOverlay(cardEl);
+                continue;
+            }
+            const areaRect = area.getBoundingClientRect();
+            if (areaRect.bottom < wrapRect.top || areaRect.top > wrapRect.bottom) continue;
+            this._updateCardRollingOverlay(cardEl);
+        }
+        this._teardownSharedRollingResultsListenerIfIdle();
+    },
+
     _removeCardRollingOverlay(cardEl) {
         if (!cardEl) return;
         const area = cardEl.querySelector('[data-wf-dash-versions-area]');
@@ -4556,21 +4627,21 @@ const searchOutputResultsPaneMethods = {
 
         cardEl.setAttribute('data-wf-dash-rolling-attached', '1');
         this._ensureRollingDiffStyles();
+        this._ensureSharedRollingResultsListener();
+        if (!this._soRollingCards) this._soRollingCards = new Set();
+        this._soRollingCards.add(cardEl);
 
         const area = cardEl.querySelector('[data-wf-dash-versions-area]');
-        const resultsWrap = this._q('#wf-dash-results');
         const cleanups = [];
 
-        const onScroll = () => this._updateCardRollingOverlay(cardEl);
-        if (area) area.addEventListener('scroll', onScroll, { passive: true });
-        if (resultsWrap) resultsWrap.addEventListener('scroll', onScroll, { passive: true });
+        const onAreaScrollOrResize = () => this._scheduleRollingOverlaysFlush();
+        if (area) area.addEventListener('scroll', onAreaScrollOrResize, { passive: true });
         cleanups.push(() => {
-            if (area) area.removeEventListener('scroll', onScroll);
-            if (resultsWrap) resultsWrap.removeEventListener('scroll', onScroll);
+            if (area) area.removeEventListener('scroll', onAreaScrollOrResize);
         });
 
         if (typeof ResizeObserver !== 'undefined' && area) {
-            const ro = new ResizeObserver(onScroll);
+            const ro = new ResizeObserver(onAreaScrollOrResize);
             ro.observe(area);
             cleanups.push(() => ro.disconnect());
         }
@@ -4589,10 +4660,12 @@ const searchOutputResultsPaneMethods = {
 
         cardEl._soRollingCleanup = () => {
             for (const fn of cleanups) fn();
+            if (this._soRollingCards) this._soRollingCards.delete(cardEl);
             this._removeCardRollingOverlay(cardEl);
+            this._teardownSharedRollingResultsListenerIfIdle();
         };
 
-        requestAnimationFrame(() => this._updateCardRollingOverlay(cardEl));
+        this._scheduleRollingOverlaysFlush();
     },
 
     _renderedVersionsForItem(item) {
@@ -5738,14 +5811,17 @@ const searchOutputResultsPaneMethods = {
             return;
         }
         if (s.searchError && !s.cachedItems) {
+            this._clearAllRollingOverlayListeners();
             wrap.innerHTML = '';
             return;
         }
         if (!s.hasSearched) {
+            this._clearAllRollingOverlayListeners();
             wrap.innerHTML = `<p style="${muted}">Results will appear here after you run a search.</p>`;
             return;
         }
         if (s.filteredItems === null) {
+            this._clearAllRollingOverlayListeners();
             wrap.innerHTML = '';
             return;
         }
@@ -5757,11 +5833,13 @@ const searchOutputResultsPaneMethods = {
                 : scopeTotal === 0
                     ? 'No results in this tab.'
                     : 'No results match the current filters.';
+            this._clearAllRollingOverlayListeners();
             wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
             this._syncResultsToolbarDerivedUi();
             return;
         }
         const pageItems = this._getPaginatedViewItems();
+        this._clearAllRollingOverlayListeners();
         wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
         this._syncResultsToolbarDerivedUi();
         this._animateSeededSessionQaPanels(pageItems);
@@ -7572,7 +7650,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.8',
+    _version: '9.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
