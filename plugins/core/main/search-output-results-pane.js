@@ -6386,7 +6386,7 @@ const searchOutputResultsPaneMethods = {
     _flagIconSvg() {
         return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
             + `<line x1="7.5" y1="2" x2="7.5" y2="24"></line>`
-            + `<path d="M7.5 3.5 L19.5 10 L7.5 16.5 Z" fill="#dc2626" stroke="none"></path>`
+            + `<path d="M7.5 3.5 L22.5 10 L7.5 16.5 Z" fill="#dc2626" stroke="none"></path>`
             + `</svg>`;
     },
 
@@ -7561,7 +7561,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.5',
+    _version: '9.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
