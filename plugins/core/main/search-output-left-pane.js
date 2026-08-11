@@ -437,7 +437,7 @@ const searchOutputLeftPaneMethods = {
                             <div id="wf-dash-section-retrieve" style="${section}">
                                 <div style="${label} font-weight: 600;">Retrieve Task</div>
                                 <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, task key, or list of such items. URLs also accepted</p>
-                                <textarea id="wf-dash-retrieve-input" rows="2" autocomplete="off" placeholder="Task ID(s), key(s), URL(s), or list" style="${input} resize: vertical; min-height: 36px; line-height: 1.4;">${retrieveInputVal}</textarea>
+                                <textarea id="wf-dash-retrieve-input" rows="1" autocomplete="off" placeholder="Task ID(s), key(s), URL(s), or list" style="${input} resize: vertical; min-height: 36px; line-height: 1.4;">${retrieveInputVal}</textarea>
                                 <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                 ${this._resultsModeToggleHtml('retrieve')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
@@ -2569,7 +2569,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.12',
+    _version: '5.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
