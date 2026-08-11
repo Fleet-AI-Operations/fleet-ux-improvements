@@ -15,7 +15,7 @@ const plugin = {
     name: 'Environment Verifier Tab',
     description:
         'Adds Environment | Verifier tabs on the dispute instance status bar and shows searchable verifier source',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -59,6 +59,18 @@ const plugin = {
     },
 
     /**
+     * Match `"key":"uuid"` or RSC-escaped `\"key\":\"uuid\"` inside __next_f string literals.
+     * @param {string} field
+     * @returns {RegExp}
+     */
+    _evalTaskUuidFieldRe(field) {
+        return new RegExp(
+            '\\\\?"' + field + '\\\\?"\\s*:\\s*\\\\?"' + UUID_CAPTURE + '\\\\?"',
+            'i'
+        );
+    },
+
+    /**
      * Pins from DisputeReviewClient RSC (`result.data.evalTask`).
      * Page may stream after CSR bailout — call on every mutation until found.
      */
@@ -84,21 +96,13 @@ const plugin = {
                 ? blob.slice(evalIdx, evalIdx + EVAL_TASK_SLICE_CHARS)
                 : blob;
 
-        const versionMatch = slice.match(
-            new RegExp('"verifier_version_id"\\s*:\\s*"' + UUID_CAPTURE + '"', 'i')
-        );
+        const versionMatch = slice.match(this._evalTaskUuidFieldRe('verifier_version_id'));
         const versionId = versionMatch && versionMatch[1] ? versionMatch[1] : '';
         if (!versionId || !UUID_RE.test(versionId)) return null;
 
-        const verifierMatch = slice.match(
-            new RegExp('"verifier_id"\\s*:\\s*"' + UUID_CAPTURE + '"', 'i')
-        );
-        const teamMatch = slice.match(
-            new RegExp('"team_id"\\s*:\\s*"' + UUID_CAPTURE + '"', 'i')
-        );
-        const idMatch = slice.match(
-            new RegExp('"id"\\s*:\\s*"' + UUID_CAPTURE + '"', 'i')
-        );
+        const verifierMatch = slice.match(this._evalTaskUuidFieldRe('verifier_id'));
+        const teamMatch = slice.match(this._evalTaskUuidFieldRe('team_id'));
+        const idMatch = slice.match(this._evalTaskUuidFieldRe('id'));
 
         return {
             versionId,

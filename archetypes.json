@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.327",
+  "archetypesVersion": "14.328",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -968,8 +968,8 @@
         },
         {
           "name": "verifier-source-tab.js",
-          "version": "1.2",
-          "hash": "sha256-dcd3b8c3d4c343dda1eb5a379edc44fb26b7feb4f397d5ff2842aedc7f06d723",
+          "version": "1.3",
+          "hash": "sha256-ce3ebd37f84cfa124594eaa8bb0b33d96bbe8602e322ed1d6f33e3b83547aacd",
           "log": false
         },
         {
