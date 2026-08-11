@@ -6981,8 +6981,7 @@ const searchOutputResultsPaneMethods = {
         const actionBadge = this._feedbackActionBadgeHtml(entry, true);
         const c = typeof this._dashThemeColors === 'function' ? this._dashThemeColors() : null;
         const border = active
-            ? ('border: 1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)')
-                + '; background: ' + (c ? c.hover : 'var(--muted, var(--accent, #f1f5f9))') + ';')
+            ? 'border: 2px solid var(--brand, var(--primary, #2563eb)); background: transparent;'
             : ('border: 1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)') + '; background: transparent;');
         const nameColor = c ? c.fg : 'var(--foreground, #0f172a)';
         if (isSystem) {
@@ -7680,7 +7679,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.22',
+    _version: '9.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
