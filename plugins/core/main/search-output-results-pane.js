@@ -3327,9 +3327,9 @@ const searchOutputResultsPaneMethods = {
             this._logDashApiSkip('get-verifier', 'missing task key/id', id);
             return;
         }
-        const opsTab = Context.opsTab;
-        if (!opsTab || typeof opsTab.handleVerifierFetch !== 'function') {
-            this._logDashApiSkip('get-verifier', 'ops module missing');
+        const verifierFetcher = Context.verifierFetcher;
+        if (!verifierFetcher || typeof verifierFetcher.handleVerifierFetch !== 'function') {
+            this._logDashApiSkip('get-verifier', 'verifier fetcher missing');
             return;
         }
         const verifierVersionId = opts && opts.verifierVersionId
@@ -3346,7 +3346,7 @@ const searchOutputResultsPaneMethods = {
         const overrides = verifierVersionId && DASH_UUID_RE.test(verifierVersionId)
             ? { verifierVersionId }
             : undefined;
-        await opsTab.handleVerifierFetch(this._modal, overrides);
+        await verifierFetcher.handleVerifierFetch(this._modal, overrides);
     },
 
     _versionVerifierButtonHtml(itemId, version) {
@@ -7651,7 +7651,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.18',
+    _version: '9.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

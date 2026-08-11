@@ -1,8 +1,9 @@
 // ops-tab.js
-// Core plugin for the Ops dashboard backend: secrets/password gate, PostgREST,
-// team member search backend, verifier fetch backend, and task link helpers.
-// Dashboard tab UI lives in search-output.js, team-members.js, verifier-fetcher.js,
-// dashboard-settings.js; settings-ui.js hosts enable/password toggles only.
+// Core plugin for the Ops platform: secrets/password gate, PostgREST, team
+// catalog and search/mutate APIs, verifier fetch backend, and task link helpers.
+// Tab panel controllers live in team-members.js (Context.teamMembers) and
+// verifier-fetcher.js (Context.verifierFetcher). Dashboard chrome/settings UI
+// live in search-output.js, dashboard-settings.js, and settings-ui.js.
 
 const OPS_TASK_ID_FROM_URL_RE = /(?:tasks\/|view-task\/)([^/?#\s]+)/i;
 const OPS_TASK_KEY_RE = /task_[A-Za-z0-9_]+/;
@@ -50,7 +51,6 @@ const OPS_EXPERT_PATH_RE = /^\/dashboard\/data\/experts\/[^/]+$/;
 /** Script storage key for expert profile summary stats server action (creator + QA via body[1]) */
 const OPS_EXPERT_STATS_ACTION_STORAGE_KEY = 'fleet-ux:ops-expert-stats-next-action';
 const OPS_EXPERT_STATS_ROUTER_STATE_STORAGE_KEY = 'fleet-ux:ops-expert-stats-router-state';
-const OPS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 /** Query param on programmatic expert profile opens for stats credential refresh (auto-close when captured) */
 const OPS_EXPERT_CRED_REFRESH_QUERY = 'wfOpsExpertCredRefresh';
 const OPS_EXPERT_CRED_REFRESH_TIMEOUT_MS = 90000;
@@ -69,13 +69,6 @@ const OPS_CURRENT_USER_ID_STORAGE_KEY = 'fleet-ux:ops-current-user-id';
 const OPS_NEXT_F_USER_ID_RE = /"user"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
 /** Fleet API prefix for teams included in dashboard / ops team search. */
 const OPS_TASK_DESIGNERS_TEAM_PREFIX = 'Task Designers - ';
-/** Display labels that alone do not qualify a member for the UI badge. */
-const OPS_FLEET_FELLOWS_TEAM_LABEL = 'Fleet Fellows';
-const OPS_TEAM_UI_BADGE_EXCLUDED_LABELS = new Set(['Tryouts', OPS_FLEET_FELLOWS_TEAM_LABEL]);
-const OPS_TEAM_VERTICALS_ONLY_LABEL = 'Fellows - SMB Banking Project';
-const OPS_TEAM_EPIC_EXPERTS_LABEL = 'Fleet: Epic Experts';
-const OPS_TEAM_EPIC_TRYOUTS_LABEL = 'Fleet: Epic Tryouts';
-const OPS_TEAM_EPIC_LABELS = new Set([OPS_TEAM_EPIC_EXPERTS_LABEL, OPS_TEAM_EPIC_TRYOUTS_LABEL]);
 
 /** Same-site Fleet web origin (apex or www). Avoids cross-origin API calls when the page is on fleetai.com. */
 function opsFleetOrigin() {
@@ -136,22 +129,6 @@ function opsNormalizeTeamCatalogEntry(team) {
         membershipCreatedAt: team.membershipCreatedAt || null
     };
 }
-/** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
-const OPS_ALL_PERMISSIONS = [
-    ['QA_CUA_TASKS', 'QA CUA Tasks'],
-    ['MAKE_CUA_TASKS', 'Make CUA Tasks'],
-    ['QA_TOOL_USE_TASKS', 'QA Tool Use Tasks'],
-    ['MAKE_TOOL_USE_TASKS', 'Make Tool Use Tasks'],
-    ['MAKE_TAIGA_TASKS', 'Make Tundra Tasks'],
-    ['QA_CUA_ENVS', 'QA CUA Environments'],
-    ['QA_TOOL_USE_ENVS', 'QA Tool Use Environments'],
-    ['QA_SESSIONS', 'QA Agent Sessions'],
-    ['COMMENT_AGENT_SESSIONS', 'Comment Agent Sessions'],
-    ['REVIEW_DISPUTES', 'Review Disputes (Senior QA)'],
-    ['VIEW_OWN_TASK_RESULTS', 'View Own Task Results'],
-    ['REVIEW_CONTRACTOR_APPLICATIONS', 'Contractor Review']
-];
-const OPS_PERMISSION_LABEL_BY_KEY = Object.fromEntries(OPS_ALL_PERMISSIONS);
 
 async function computeSha256Hex(text) {
     const buffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -271,24 +248,11 @@ async function opsDecryptWithPassword(blob, password) {
 const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
-    description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '11.6',
+    description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch, task links',
+    _version: '12.0',
     phase: 'core',
     enabledByDefault: true,
 
-    _opsVerifierFetchState: null,
-    _opsVerifierPendingSelectPin: '',
-    _opsVerifierSourceText: '',
-    _opsVerifierContentSearch: { query: '', index: 0, matchStarts: [] },
-    _opsTeamSearchActive: null,
-    _opsTeamSearchAbortController: null,
-    _opsTeamSearchMemberCache: null,
-    /** Last-applied team member filters (categorical + numeric); null = show all */
-    _opsTeamActiveFilters: null,
-    /** Legacy Fellows-search gate; team member search uses all user teams. */
-    _opsFellowsSearchComplete: null,
-    /** memberId → staged edit session while permissions tray is in edit mode */
-    _opsMemberEditState: null,
     /** Dynamically discovered team search server action parameters (populated at runtime, never hardcoded) */
     _opsTeamSearchActionCache: { nextAction: null, routerState: null },
     /** Team page cred refresh: { modal, startedAt } while waiting for capture */
@@ -305,11 +269,6 @@ const plugin = {
     _opsExpertCredRefreshTimeout: null,
     _opsSyncChannel: null,
     _opsSyncChannelSubscribed: false,
-    /** memberId → { loading?, creator?, qa?, error? } */
-    _opsExpertStatsCache: null,
-    _opsExpertStatsHydrateGen: 0,
-    /** Set of member IDs whose card details are open; null = all-expanded default */
-    _opsMemberDetailsOpenIds: null,
     /** Logged-in Fleet user UUID captured from __next_f, cookie, JWT, or persisted storage */
     _opsCurrentUserIdCache: '',
     _opsCurrentUserIdCaptureInstalled: false,
@@ -325,15 +284,7 @@ const plugin = {
     },
     _opsBundleNotLoadedLogged: false,
     _opsTabState: {
-        taskInput: '',
-        verifierInput: '',
-        verifierStatus: '',
-        verifierStatusIsError: false,
-        verifierOutput: '',
-        verifierFetchState: null,
-        teamSearchQuery: '',
-        teamSearchStatus: '',
-        teamSearchStatusIsError: false
+        taskInput: ''
     },
 
     init(state, context) {
@@ -353,35 +304,13 @@ const plugin = {
             attachSettingsListeners: (modal, settingsPlugin) => this._attachOpsSettingsListeners(modal, settingsPlugin),
             attachTaskLinkListeners: (dashModal) => this._attachOpsTaskLinkListeners(dashModal),
             injectSpinnerStyle: () => this._injectOpsSpinnerStyle(),
-            handleTeamSearch: (modal) => this._handleOpsTeamSearch(modal),
-            clearTeamSearchResults: (modal) => this._clearOpsTeamSearchResults(modal),
-            filterTeamSearchCards: (modal) => this._filterOpsTeamSearchCards(modal),
-            applyTeamFilters: (modal) => this._applyOpsTeamFilters(modal),
-            populateTeamMemberConstraintLists: (teams, opts) => this._populateOpsTeamMemberConstraintLists(teams, opts),
-            toggleTeamExpandAll: (modal) => this._toggleOpsTeamExpandAll(modal),
-            attachTeamMemberDetailsToggle: (modal) => this._attachOpsTeamMemberDetailsToggle(modal),
-            attachTeamMemberEditDelegation: (modal) => this._attachOpsTeamMemberEditDelegation(modal),
-            captureTeamTabState: (modal) => this._captureOpsTeamTabState(modal),
-            restoreTeamTabState: (modal) => this._restoreOpsTeamTabState(modal),
-            handleVerifierFetch: (modal, overrides) => this._handleOpsVerifierFetch(modal, overrides),
-            handleVerifierVersionChange: (modal) => this._handleOpsVerifierVersionChange(modal),
-            hydrateVerifierTaskVersionOptions: (modal, opts) => this._hydrateOpsVerifierTaskVersionOptions(modal, opts),
-            setVerifierStatus: (modal, msg, isError) => this._setOpsVerifierStatus(modal, msg, isError),
-            clearVerifierVersionPicker: (modal) => this._clearOpsVerifierVersionPicker(modal),
-            addVerifierToDiff: (modal) => this._addOpsVerifierToDiff(modal),
-            queueVerifierToChat: (modal) => this._queueOpsVerifierToChat(modal),
-            applyVerifierContentSearch: (modal, query) => this._applyVerifierContentSearch(modal, query),
-            clearVerifierContentSearch: (modal) => this._clearVerifierContentSearch(modal),
-            stepVerifierContentMatch: (modal, dir) => this._stepVerifierContentMatch(modal, dir),
             findVerifierContentMatchStarts: (text, query) => this._findVerifierContentMatchStarts(text, query),
             renderVerifierCodeElement: (codeEl, opts) => this._renderVerifierCodeElement(codeEl, opts),
             setVerifierContentMatchActive: (codeEl, activeIndex) => this._setVerifierContentMatchActive(codeEl, activeIndex),
             scrollVerifierActiveContentMatch: (codeEl) => this._scrollVerifierActiveContentMatchInElement(codeEl),
             stepVerifierContentMatchInElement: (codeEl, searchState, delta, rerender) =>
                 this._stepVerifierContentMatchInElement(codeEl, searchState, delta, rerender),
-            captureVerifierTabState: (modal) => this._captureOpsVerifierTabState(modal),
-            restoreVerifierTabState: (modal) => this._restoreOpsVerifierTabState(modal),
-            copyVerifierCode: (modal, btn) => this._copyOpsVerifierCode(modal, btn),
+            listTaskVerifierVersionOptions: (parsed) => this._listOpsTaskVerifierVersionOptions(parsed),
             captureTaskLinkState: (modal) => this._captureOpsTaskLinkState(modal),
             captureState: (root) => this._captureOpsTabState(root),
             revalidateOnDashboardTabActivated: (dashModal) => this._revalidateOnDashboardTabActivated(dashModal),
@@ -416,6 +345,30 @@ const plugin = {
                 this._loadOpsTeamSearchActionFromStorage();
                 return !!this._opsTeamSearchActionCache.nextAction;
             },
+            hasTeamAddMemberCredentials: () => {
+                if (!this._opsTeamAddMemberActionCache.nextAction) {
+                    this._loadOpsTeamAddMemberActionFromStorage();
+                }
+                return !!this._opsTeamAddMemberActionCache.nextAction;
+            },
+            hasExpertStatsCredentials: () => {
+                if (!this._opsExpertStatsActionCache.nextAction) {
+                    this._loadOpsExpertStatsActionFromStorage();
+                }
+                return !!this._opsExpertStatsActionCache.nextAction;
+            },
+            reloadTeamDashboardActionsFromStorage: () => this._reloadOpsTeamDashboardActionsFromStorage(),
+            clearTeamSearchActionCache: () => this._clearOpsTeamSearchActionCache(),
+            isTeamSearchActionStaleError: (err) => this._isOpsTeamSearchActionStaleError(err),
+            openTeamPageForCredRefresh: (modal) => this._openOpsTeamPageForCredRefresh(modal),
+            openExpertProfileForCredRefresh: (modal, expertId) => this._openOpsExpertProfileForCredRefresh(modal, expertId),
+            fetchExpertStats: (expertId, qaMode) => this._fetchOpsExpertStats(expertId, qaMode),
+            addMemberToTeam: (teamId, email, permissionKeys) => this._opsAddMemberToTeam(teamId, email, permissionKeys),
+            removeMemberFromTeam: (teamId, email) => this._opsRemoveMemberFromTeam(teamId, email),
+            modifyMemberPermission: (profileId, permission, action) => this._opsModifyMemberPermission(profileId, permission, action),
+            getTeamUuidByLabel: (label) => this._getOpsTeamUuidByLabel(label),
+            getTeamDashboardUrl: () => opsTeamSearchUrl(),
+            getFleetOrigin: () => opsFleetOrigin(),
             fetchTeamSearchAllMembers: (teamId, userId, query, sessionId, signal) =>
                 this._fetchOpsTeamSearchAllMembers(teamId, userId, query, sessionId, signal),
             getTaskDataActionCache: () => this._opsTaskDataActionCache,
@@ -435,7 +388,6 @@ const plugin = {
         this._loadOpsTaskDataActionFromStorage();
         this._loadOpsExpertStatsActionFromStorage();
         this._loadOpsCurrentUserIdFromStorage();
-        this._opsExpertStatsCache = new Map();
         this._subscribeOpsTeamDashboardActionCapture();
         this._subscribeOpsTaskDataActionCapture();
         this._subscribeOpsExpertActionCapture();
@@ -1896,265 +1848,12 @@ const plugin = {
         return lines;
     },
 
-    _opsFormatDurationMinutes(seconds) {
-        const s = Number(seconds);
-        if (!Number.isFinite(s) || s <= 0) return '—';
-        return Math.max(1, Math.round(s / 60)) + 'm';
-    },
-
-    _opsExpertQaAcceptanceRatePercent(data) {
-        if (!data || typeof data !== 'object') return null;
-        if (data.acceptanceRate != null) {
-            const rate = Number(data.acceptanceRate);
-            if (Number.isFinite(rate)) return Math.round(rate);
-        }
-        const accepted = data.acceptedReviews ?? data.acceptedCount ?? data.qaAccepted;
-        const rejected = data.rejectedReviews ?? data.rejectedCount ?? data.qaRejected;
-        if (accepted != null && rejected != null) {
-            const total = Number(accepted) + Number(rejected);
-            if (Number.isFinite(total) && total > 0) {
-                return Math.round((Number(accepted) / total) * 100);
-            }
-        }
-        return null;
-    },
-
-    _opsExpertCreatorStatsColumns(data) {
-        if (!data || typeof data !== 'object') return ['Creator', '—', '—', '—'];
-        return [
-            'Creator',
-            data.totalSubmissions != null ? data.totalSubmissions + ' submitted' : '—',
-            data.acceptanceRate != null ? data.acceptanceRate + '% AR' : '—',
-            data.avgCreationTimeSeconds != null
-                ? '~' + this._opsFormatDurationMinutes(data.avgCreationTimeSeconds) + ' avg'
-                : '—'
-        ];
-    },
-
-    _opsExpertQaStatsColumns(data) {
-        if (!data || typeof data !== 'object') return ['QA', '—', '—', '—'];
-        const reviews = data.reviewsCompleted ?? data.totalReviews ?? data.tasksReviewed ?? data.tasksCompleted;
-        const avgSec = data.avgReviewTimeSeconds ?? data.avgQaTimeSeconds ?? data.avgTimePerQaSeconds
-            ?? data.avgReviewDurationSeconds;
-        const arPercent = this._opsExpertQaAcceptanceRatePercent(data);
-        return [
-            'QA',
-            reviews != null ? reviews + ' reviews' : '—',
-            arPercent != null ? arPercent + '% AR' : '—',
-            avgSec != null ? '~' + this._opsFormatDurationMinutes(avgSec) + ' avg' : '—'
-        ];
-    },
-
-    _opsExpertStatsStatusColumns(role, message) {
-        return [role, message, '—', '—'];
-    },
-
     _opsExpertProfileUrl(expertId, credRefresh) {
         const id = String(expertId || '').trim();
         if (!id) return '';
         let url = opsFleetOrigin() + '/dashboard/data/experts/' + encodeURIComponent(id);
         if (credRefresh) url += '?' + OPS_EXPERT_CRED_REFRESH_QUERY + '=1';
         return url;
-    },
-
-    _opsExpertStatsCredRefreshBtnHtml(memberId) {
-        const id = String(memberId || '').trim();
-        if (!id) return '';
-        const attrId = this._opsEscapeAttr(id);
-        const title = 'Open expert profile to refresh stats';
-        const icon = (Context.uiLib && Context.uiLib.externalLinkIconSvg)
-            ? Context.uiLib.externalLinkIconSvg()
-            : '';
-        return '<button type="button" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
-            'data-ops-action="expert-stats-cred-refresh" data-ops-member-id="' + attrId + '" ' +
-            'title="' + this._opsEscapeHtml(title) + '" aria-label="' + this._opsEscapeHtml(title) + '">' +
-            icon + '</button>';
-    },
-
-    _opsExpertStatsUnavailableHtml(memberId) {
-        return '<div class="wf-ops-member-stats-grid wf-ops-member-stats-grid--plain" data-ops-member-stats-grid>' +
-            '<span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-            this._opsEscapeHtml('Stats unavailable (open expert profile once)') +
-            this._opsExpertStatsCredRefreshBtnHtml(memberId) +
-            '</span></div>';
-    },
-
-    _opsExpertStatsGridHtml(creatorCols, qaCols, opts) {
-        const plain = !!(opts && opts.plain);
-        const gridClass = plain
-            ? 'wf-ops-member-stats-grid wf-ops-member-stats-grid--plain'
-            : 'wf-ops-member-stats-grid';
-        const rows = plain ? creatorCols : creatorCols.concat(qaCols);
-        const cells = rows.map((col) => '<span>' + this._opsEscapeHtml(col || '—') + '</span>').join('');
-        return '<div class="' + gridClass + '" data-ops-member-stats-grid>' + cells + '</div>';
-    },
-
-    _renderOpsTeamMemberStatsInnerHtml(entry, memberId) {
-        if (!this._opsExpertStatsActionCache.nextAction) {
-            return this._opsExpertStatsUnavailableHtml(memberId);
-        }
-        if (!entry || entry.loading || entry.error === 'missing-credentials') {
-            const msg = 'Loading stats…';
-            return this._opsExpertStatsGridHtml(
-                this._opsExpertStatsStatusColumns('Creator', msg),
-                this._opsExpertStatsStatusColumns('QA', msg)
-            );
-        }
-        if (entry.error) {
-            const msg = 'Stats unavailable';
-            return this._opsExpertStatsGridHtml(
-                this._opsExpertStatsStatusColumns('Creator', msg),
-                this._opsExpertStatsStatusColumns('QA', msg)
-            );
-        }
-        return this._opsExpertStatsGridHtml(
-            this._opsExpertCreatorStatsColumns(entry.creator),
-            this._opsExpertQaStatsColumns(entry.qa)
-        );
-    },
-
-    _renderOpsTeamMemberStatsHtml(memberId) {
-        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
-        return '<div data-ops-member-stats style="margin-top:6px;font-size:10px;line-height:1.5;color:var(--muted-foreground,#666);">' +
-            this._renderOpsTeamMemberStatsInnerHtml(entry, memberId) +
-        '</div>';
-    },
-
-    _patchOpsTeamMemberCard(modal, memberId) {
-        const tile = modal.querySelector('[data-ops-member-tile="' + this._opsEscapeAttr(String(memberId)) + '"]');
-        if (!tile) return;
-        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
-        const statsSlot = tile.querySelector('[data-ops-member-stats]');
-        if (statsSlot) statsSlot.innerHTML = this._renderOpsTeamMemberStatsInnerHtml(entry, memberId);
-    },
-
-    _patchOpsTeamMemberStats(modal, memberId) {
-        this._patchOpsTeamMemberCard(modal, memberId);
-    },
-
-    _getVisibleTeamMemberIds(modal, cache) {
-        if (!cache || !cache.memberMap) return [];
-        const active = this._opsTeamActiveFilters;
-        const numericRows = active && active.numericFilters ? active.numericFilters : [];
-        const andOr = active ? active.andOr : 'and';
-        return [...cache.memberMap.values()]
-            .filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr))
-            .map((m) => m.id)
-            .filter(Boolean);
-    },
-
-    async _hydrateOpsTeamMemberStatsForVisible(modal) {
-        if (!modal || !this._opsExpertStatsCache) return;
-        const cache = this._opsTeamSearchMemberCache;
-        if (!cache) return;
-
-        const memberIds = this._getVisibleTeamMemberIds(modal, cache);
-        const hasStats = !!this._opsExpertStatsActionCache.nextAction;
-        const toFetch = memberIds.filter((id) => {
-            const entry = this._opsExpertStatsCache.get(id);
-            if (!entry) return true;
-            if (entry.loading) return false;
-            if (entry.creator || entry.qa) return false;
-            if (entry.error === 'missing-credentials') return hasStats;
-            return !entry.error;
-        });
-        if (toFetch.length === 0) return;
-
-        if (!hasStats) {
-            for (const id of toFetch) {
-                this._opsExpertStatsCache.set(id, { error: 'missing-credentials' });
-                this._patchOpsTeamMemberCard(modal, id);
-            }
-            return;
-        }
-
-        const gen = ++this._opsExpertStatsHydrateGen;
-        for (const id of toFetch) {
-            this._opsExpertStatsCache.set(id, { loading: true });
-            this._patchOpsTeamMemberCard(modal, id);
-        }
-
-        let cursor = 0;
-        const worker = async () => {
-            while (cursor < toFetch.length) {
-                if (gen !== this._opsExpertStatsHydrateGen) return;
-                const id = toFetch[cursor++];
-                try {
-                    const [creator, qa] = await Promise.all([
-                        hasStats ? this._fetchOpsExpertStats(id, false) : Promise.resolve(null),
-                        hasStats ? this._fetchOpsExpertStats(id, true) : Promise.resolve(null)
-                    ]);
-                    if (gen !== this._opsExpertStatsHydrateGen) return;
-                    this._opsExpertStatsCache.set(id, { creator, qa });
-                    Logger.debug('expert card data loaded for ' + id.slice(0, 8) + '…');
-                } catch (e) {
-                    if (gen !== this._opsExpertStatsHydrateGen) return;
-                    Logger.warn('expert card data failed for ' + id.slice(0, 8) + '…', e);
-                    this._opsExpertStatsCache.set(id, { error: e.message || String(e) });
-                }
-                this._patchOpsTeamMemberCard(modal, id);
-            }
-        };
-
-        const poolSize = Math.min(OPS_EXPERT_STATS_HYDRATE_CONCURRENCY, toFetch.length);
-        await Promise.all(Array.from({ length: poolSize }, () => worker()));
-
-        if (this._opsTeamActiveFilters && this._opsTeamActiveFilters.numericFilters
-            && this._opsTeamActiveFilters.numericFilters.length > 0) {
-            this._filterOpsTeamSearchCards(modal);
-        }
-    },
-
-    _populateOpsTeamMemberConstraintLists(allTeams, options) {
-        const dash = Context.dashboard;
-        if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
-        const opts = options || {};
-        const modal = opts.modal || null;
-        if (opts.loading) {
-            dash.renderTeamMemberConstraintLists({ loading: true, preserveSelections: false, modal });
-            return;
-        }
-        const teamItems = (allTeams || [])
-            .map(([, label]) => ({ id: label, label }))
-            .sort((a, b) => a.label.localeCompare(b.label));
-        const permItems = OPS_ALL_PERMISSIONS.map(([id, label]) => ({ id, label }));
-        dash.renderTeamMemberConstraintLists({
-            loading: false,
-            teamItems,
-            permItems,
-            preserveSelections: opts.preserveSelections !== false,
-            modal
-        });
-    },
-
-    _indexOpsTeamMemberFiltersFromResults(memberMap, options) {
-        const dash = Context.dashboard;
-        if (!dash || typeof dash.renderTeamMemberConstraintLists !== 'function') return;
-        const opts = options || {};
-        const modal = opts.modal || null;
-        const teamLabels = new Set();
-        const permKeys = new Set();
-        if (memberMap) {
-            for (const member of memberMap.values()) {
-                const labels = member.teamLabels;
-                if (labels) {
-                    for (const label of labels) teamLabels.add(label);
-                }
-                for (const key of this._opsMemberPermissionKeys(member)) permKeys.add(key);
-            }
-        }
-        const teamItems = [...teamLabels].sort((a, b) => a.localeCompare(b))
-            .map((label) => ({ id: label, label }));
-        const permItems = [...permKeys].sort((a, b) => a.localeCompare(b))
-            .map((key) => ({ id: key, label: OPS_PERMISSION_LABEL_BY_KEY[key] || key }));
-        dash.renderTeamMemberConstraintLists({
-            loading: false,
-            teamItems,
-            permItems,
-            preserveSelections: opts.preserveSelections !== false,
-            modal
-        });
-        Logger.debug('team member filters indexed — ' + teamItems.length + ' teams, ' + permItems.length + ' permissions');
     },
 
     _loadOpsTeamSearchActionFromStorage() {
@@ -2285,6 +1984,13 @@ const plugin = {
         }, 300);
     },
 
+    _setOpsTeamSearchStaleRetryStatusViaController(modal, message) {
+        const tm = Context.teamMembers;
+        if (tm && typeof tm.setTeamSearchStaleRetryStatus === 'function') {
+            tm.setTeamSearchStaleRetryStatus(modal, message);
+        }
+    },
+
     _onOpsTeamCredRefreshComplete() {
         const pending = this._opsTeamCredRefreshPending;
         if (!pending) return;
@@ -2292,14 +1998,17 @@ const plugin = {
         this._clearOpsTeamCredRefreshPending();
         this._reloadOpsTeamDashboardActionsFromStorage();
         if (!this._opsTeamSearchActionCache.nextAction) {
-            this._setOpsTeamSearchStaleRetryStatus(modal,
+            this._setOpsTeamSearchStaleRetryStatusViaController(modal,
                 'Credentials not ready yet — try Refresh credentials again.');
             Logger.warn('team cred refresh signaled but search action still missing');
             return;
         }
-        this._setOpsTeamSearchStaleRetryStatus(modal, 'Credentials refreshed — retrying search…');
+        this._setOpsTeamSearchStaleRetryStatusViaController(modal, 'Credentials refreshed — retrying search…');
         Logger.log('team cred refresh captured — auto-retrying search');
-        void this._handleOpsTeamSearchCredentialRetry(modal);
+        const tm = Context.teamMembers;
+        if (tm && typeof tm.handleTeamSearchCredentialRetry === 'function') {
+            void tm.handleTeamSearchCredentialRetry(modal);
+        }
     },
 
     _openOpsTeamPageForCredRefresh(modal) {
@@ -2309,7 +2018,7 @@ const plugin = {
         const opened = pageWindow.open(url, '_blank', 'noopener,noreferrer');
         if (!opened) {
             if (modal) {
-                this._setOpsTeamSearchStaleRetryStatus(modal,
+                this._setOpsTeamSearchStaleRetryStatusViaController(modal,
                     'Popup blocked — allow popups for Fleet, then try again.');
             }
             Logger.warn('team cred refresh tab blocked (popup blocker)');
@@ -2317,13 +2026,13 @@ const plugin = {
         }
         if (modal) {
             this._opsTeamCredRefreshPending = { modal, startedAt: Date.now() };
-            this._setOpsTeamSearchStaleRetryStatus(modal, 'Opening Team page…');
+            this._setOpsTeamSearchStaleRetryStatusViaController(modal, 'Opening Team page…');
             const self = this;
             this._opsTeamCredRefreshTimeout = pageWindow.setTimeout(() => {
                 if (!self._opsTeamCredRefreshPending) return;
                 const pendingModal = self._opsTeamCredRefreshPending.modal;
                 self._clearOpsTeamCredRefreshPending();
-                self._setOpsTeamSearchStaleRetryStatus(pendingModal,
+                self._setOpsTeamSearchStaleRetryStatusViaController(pendingModal,
                     'Credential refresh timed out — try Refresh credentials again.');
                 Logger.warn('team cred refresh timed out');
             }, OPS_TEAM_CRED_REFRESH_TIMEOUT_MS);
@@ -2394,11 +2103,13 @@ const plugin = {
 
         this._clearOpsExpertCredRefreshPending();
 
-        if (this._opsTeamSearchMemberCache) {
-            if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
-            this._opsExpertStatsHydrateGen++;
+        const tm = Context.teamMembers;
+        if (tm && typeof tm.hasMemberSearchCache === 'function' && tm.hasMemberSearchCache()) {
+            if (typeof tm.clearExpertStatsCache === 'function') tm.clearExpertStatsCache();
             Logger.log('expert cred refresh captured — re-hydrating stats for visible members');
-            void this._hydrateOpsTeamMemberStatsForVisible(modal);
+            if (typeof tm.hydrateStatsForVisible === 'function') {
+                void tm.hydrateStatsForVisible(modal);
+            }
             return;
         }
 
@@ -2666,14 +2377,6 @@ const plugin = {
         return !!(err && err.opsTeamAddMemberActionStale);
     },
 
-    _getOpsInvokerPermissionKeys() {
-        const userId = this._getOpsCurrentUserId();
-        const cache = this._opsTeamSearchMemberCache;
-        if (!userId || !cache || !cache.memberMap) return [];
-        const invoker = cache.memberMap.get(userId);
-        return invoker ? this._opsMemberPermissionKeys(invoker) : [];
-    },
-
     _ensureOpsAlertBannerStyles() {
         if (Context.uiLib && typeof Context.uiLib.ensureAlertBannerStyles === 'function') {
             Context.uiLib.ensureAlertBannerStyles();
@@ -2692,121 +2395,6 @@ const plugin = {
             btnSecondary: 'fleet-ui-alert-banner__btn-secondary',
             btnPrimary: 'fleet-ui-alert-banner__btn-primary'
         };
-    },
-
-    _renderOpsTeamSearchActionRefreshBannerHtml() {
-        this._ensureOpsAlertBannerStyles();
-        const ab = this._opsAlertBannerClasses();
-        return [
-            '<div id="wf-ops-team-search-action-refresh-banner" class="' + ab.root + ' ' + ab.danger + '">',
-            '<div style="display: flex; align-items: flex-start; margin-bottom: 10px;">',
-            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">',
-            '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
-            '<line x1="12" y1="9" x2="12" y2="13"></line>',
-            '<line x1="12" y1="17" x2="12.01" y2="17"></line>',
-            '</svg>',
-            '<div style="flex: 1;">',
-            '<h3 class="' + ab.title + '" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">Team Search Unavailable</h3>',
-            '<p class="' + ab.body + '" style="font-size: 13px; margin: 0; line-height: 1.5;">',
-            'Team search credentials are missing or out of date after a Fleet update. ',
-            'Click <strong>Refresh credentials</strong> to open the Team page in a new tab — ',
-            'credentials refresh automatically and the tab closes on its own.',
-            '</p>',
-            '<p id="wf-ops-team-search-stale-retry-status" class="' + ab.body + '" style="display: none; font-size: 12px; margin: 8px 0 0 0; line-height: 1.45;"></p>',
-            '</div>',
-            '</div>',
-            '<div class="' + ab.footer + '">',
-            '<button type="button" id="wf-ops-team-search-open-team" class="' + ab.btnSecondary + '">Refresh credentials</button>',
-            '<button type="button" id="wf-ops-team-search-retry-btn" class="' + ab.btnPrimary + '">Retry search</button>',
-            '</div>',
-            '</div>'
-        ].join('');
-    },
-
-    _setOpsTeamSearchStaleRetryStatus(modal, message) {
-        const banner = this._opsQuery(modal, '#wf-ops-team-search-action-refresh-banner', 'teamSearchStaleRetryStatus');
-        if (!banner) return;
-        const statusEl = banner.querySelector('#wf-ops-team-search-stale-retry-status');
-        if (!statusEl) return;
-        if (message) {
-            statusEl.textContent = message;
-            statusEl.style.display = 'block';
-        } else {
-            statusEl.textContent = '';
-            statusEl.style.display = 'none';
-        }
-    },
-
-    _clearOpsTeamSearchStaleBanner(modal) {
-        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchStaleClear');
-        const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchStalePlaceholderRestore');
-        if (cards) cards.innerHTML = '';
-        if (placeholder) placeholder.style.display = '';
-    },
-
-    _showOpsTeamSearchActionRefreshBanner(modal) {
-        const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchStaleBanner');
-        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapStaleHide');
-        const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchStalePlaceholder');
-        if (filterWrap) filterWrap.style.display = 'none';
-        if (placeholder) placeholder.style.display = 'none';
-        if (outputWrap) {
-            outputWrap.style.display = 'block';
-            let cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchStaleCards');
-            if (!cards) {
-                cards = document.createElement('div');
-                cards.id = 'wf-ops-team-search-cards';
-                outputWrap.innerHTML = '';
-                outputWrap.appendChild(cards);
-            }
-            cards.innerHTML = this._renderOpsTeamSearchActionRefreshBannerHtml();
-            const self = this;
-            const openTeamBtn = cards.querySelector('#wf-ops-team-search-open-team');
-            if (openTeamBtn) {
-                openTeamBtn.addEventListener('click', () => {
-                    self._openOpsTeamPageForCredRefresh(modal);
-                });
-            }
-            const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
-            if (retryBtn) {
-                retryBtn.addEventListener('click', () => {
-                    void self._handleOpsTeamSearchCredentialRetry(modal);
-                });
-            }
-        } else {
-            this._setOpsTeamSearchStatus(
-                modal,
-                'Team search credentials are missing or out of date. Open the Team page in Fleet, then retry.',
-                true,
-                false,
-                false
-            );
-            Logger.warn('team search refresh banner fallback — output wrap missing');
-            Logger.info('team search refresh banner shown — open Team page then retry');
-            return;
-        }
-        this._setOpsTeamSearchStatus(modal, '', false, false, false);
-        Logger.info('team search refresh banner shown — open Team page then retry');
-    },
-
-    _opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams) {
-        if (!allTeams || allTeams.length === 0) return false;
-        if (memberMap && memberMap.size > 0) return false;
-        const q = String(query || '').trim();
-        return q === '';
-    },
-
-    async _handleOpsTeamSearchCredentialRetry(modal) {
-        this._setOpsTeamSearchStaleRetryStatus(modal, '');
-        const hasSearchAction = this._reloadOpsTeamDashboardActionsFromStorage();
-        if (!hasSearchAction) {
-            this._setOpsTeamSearchStaleRetryStatus(modal,
-                'Credentials not ready yet — wait for the Team page to finish loading, then retry.');
-            Logger.debug('team search credential retry — no action in storage yet');
-            return;
-        }
-        Logger.log('team search credentials reloaded from storage — retrying search');
-        await this._handleOpsTeamSearch(modal);
     },
 
     async _fetchOpsTeamSearchPage(teamId, userId, query, offset, signal) {
@@ -2936,18 +2524,6 @@ const plugin = {
         Logger.debug('added ' + email + ' to team ' + teamId.slice(0, 8) + '… (' + perms.length + ' permissions)');
     },
 
-    _abortOpsTeamSearchInFlight(reason) {
-        if (this._opsTeamSearchAbortController) {
-            this._opsTeamSearchAbortController.abort();
-            this._opsTeamSearchAbortController = null;
-            Logger.debug('team search in-flight requests aborted — ' + reason);
-        }
-    },
-
-    _isOpsTeamSearchAbortError(err) {
-        return !!(err && (err.name === 'AbortError' || err.code === 20));
-    },
-
     async _fetchOpsTeamSearchAllMembers(teamId, userId, query, sessionId, signal) {
         const allMembers = [];
         const seenIds = new Set();
@@ -2957,7 +2533,7 @@ const plugin = {
         const maxPages = 200;
 
         while (hasMore && pageCount < maxPages) {
-            if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
+            if (sessionId != null && Context.teamMembers && !Context.teamMembers.isSearchSessionActive(sessionId)) {
                 Logger.debug('team search pagination stopped — session superseded');
                 break;
             }
@@ -2968,14 +2544,14 @@ const plugin = {
             try {
                 raw = await this._fetchOpsTeamSearchPage(teamId, userId, query, offset, signal);
             } catch (e) {
-                if (this._isOpsTeamSearchAbortError(e)) {
+                if (e && (e.name === 'AbortError' || e.code === 20)) {
                     Logger.debug('team search page fetch aborted');
                     break;
                 }
                 throw e;
             }
 
-            if (sessionId != null && this._opsTeamSearchActive !== sessionId) {
+            if (sessionId != null && Context.teamMembers && !Context.teamMembers.isSearchSessionActive(sessionId)) {
                 Logger.debug('team search pagination stopped after fetch — session superseded');
                 break;
             }
@@ -3011,29 +2587,6 @@ const plugin = {
         }
 
         return allMembers;
-    },
-
-    _mergeOpsTeamSearchMembers(memberMap, members, teamLabel) {
-        if (!members || !members.length) return;
-        for (const member of members) {
-            if (!memberMap.has(member.id)) {
-                memberMap.set(member.id, { ...member, teamLabels: new Set() });
-            }
-            memberMap.get(member.id).teamLabels.add(teamLabel);
-        }
-    },
-
-    _getOpsPermissionDisplayLabel(permKey) {
-        return OPS_PERMISSION_LABEL_BY_KEY[permKey] || String(permKey || '').replace(/_/g, ' ');
-    },
-
-    _opsMemberPermissionKeys(member) {
-        return Array.isArray(member.permissions) ? member.permissions : [];
-    },
-
-    _opsMemberKnownPermissionCount(member) {
-        const keys = new Set(this._opsMemberPermissionKeys(member));
-        return OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (keys.has(key) ? 1 : 0), 0);
     },
 
     _opsDashBtnClass(variant, size) {
@@ -3115,255 +2668,15 @@ const plugin = {
         return lines.length > 0 ? lines[0].obj : null;
     },
 
-    _setOpsTeamSearchStatus(modal, message, isError, isHtml, showClear) {
-        const row = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRow');
-        const status = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatus');
-        const clearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtn');
-        const expandAllBtn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtn');
-        const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchStatusPlaceholder');
-        if (!status) return;
-        if (!message) {
-            if (row) row.style.display = 'none';
-            if (clearBtn) clearBtn.style.display = 'none';
-            if (expandAllBtn) expandAllBtn.style.display = 'none';
-            if (placeholder) placeholder.style.display = '';
-            return;
-        }
-        if (row) row.style.display = 'flex';
-        if (placeholder) placeholder.style.display = 'none';
-        status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
-        if (isHtml) { status.innerHTML = message; } else { status.textContent = message; }
-        if (clearBtn) clearBtn.style.display = showClear ? 'inline-block' : 'none';
-        if (expandAllBtn) expandAllBtn.style.display = showClear ? 'inline-block' : 'none';
-    },
-
-    _syncOpsExpandAllBtn(modal) {
-        const btn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtnSync');
-        if (!btn || btn.style.display === 'none') return;
-        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
-        if (!cards) return;
-        const details = cards.querySelectorAll('.wf-ops-member-details');
-        const anyOpen = Array.from(details).some((d) => d.open);
-        btn.textContent = anyOpen ? 'Collapse All' : 'Expand All';
-    },
-
-    _clearOpsTeamSearchResults(modal) {
-        this._abortOpsTeamSearchInFlight('results cleared');
-        this._opsTeamSearchActive = null;
-        this._opsTeamSearchMemberCache = null;
-        this._opsTeamActiveFilters = null;
-        this._opsMemberDetailsOpenIds = null;
-        this._opsFellowsSearchComplete = null;
-        this._opsExpertStatsHydrateGen++;
-        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
-        this._clearOpsMemberEditState();
-        this._setOpsTeamSearchStatus(modal, '', false, false, false);
-
-        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapClear');
-        const outputWrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOutputClear');
-        const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtnClear');
-
-        if (filterWrap) filterWrap.style.display = 'none';
-        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
-            Context.dashboard.resetTeamMemberFilters(modal);
-        } else if (Context.dashboard && typeof Context.dashboard.resetTeamMemberMsDropdowns === 'function') {
-            Context.dashboard.resetTeamMemberMsDropdowns(modal);
-        }
-        if (outputWrap) {
-            outputWrap.style.display = 'none';
-            const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchCardsClear');
-            if (cards) cards.innerHTML = '';
-        }
-        const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchPlaceholderClear');
-        if (placeholder) placeholder.style.display = '';
-        if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
-        this._captureOpsTabState(modal);
-        Logger.log('team search results cleared');
-    },
-
     _onOpsModalClosed() {
-        this._abortOpsTeamSearchInFlight('modal closed');
-        this._opsTeamSearchActive = null;
-        this._clearOpsMemberEditState();
-        this._opsExpertStatsCache.clear();
-    },
-
-    _getOpsTeamMemberTeamConstraints() {
-        const dash = Context.dashboard;
-        if (dash && typeof dash.readTeamMemberConstraints === 'function') {
-            return dash.readTeamMemberConstraints('team-members-teams');
+        const tm = Context.teamMembers;
+        if (tm && typeof tm.onModalClosed === 'function') {
+            tm.onModalClosed();
         }
-        return { include: new Set(), exclude: new Set() };
-    },
-
-    _getOpsTeamMemberPermConstraints() {
-        const dash = Context.dashboard;
-        if (dash && typeof dash.readTeamMemberConstraints === 'function') {
-            return dash.readTeamMemberConstraints('team-members-permissions');
+        const vf = Context.verifierFetcher;
+        if (vf && typeof vf.onModalClosed === 'function') {
+            vf.onModalClosed();
         }
-        return { include: new Set(), exclude: new Set() };
-    },
-
-    _opsMemberMatchesTeamConstraints(member, constraints) {
-        const include = constraints && constraints.include ? constraints.include : new Set();
-        const exclude = constraints && constraints.exclude ? constraints.exclude : new Set();
-        const teamLabels = member.teamLabels || new Set();
-        if (include.size > 0) {
-            let matched = false;
-            for (const label of include) {
-                if (teamLabels.has(label)) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) return false;
-        }
-        for (const label of exclude) {
-            if (teamLabels.has(label)) return false;
-        }
-        return true;
-    },
-
-    _opsMemberMatchesPermConstraints(member, constraints) {
-        const include = constraints && constraints.include ? constraints.include : new Set();
-        const exclude = constraints && constraints.exclude ? constraints.exclude : new Set();
-        const memberPerms = new Set(this._opsMemberPermissionKeys(member));
-        if (include.size > 0) {
-            let matched = false;
-            for (const key of include) {
-                if (memberPerms.has(key)) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) return false;
-        }
-        for (const key of exclude) {
-            if (memberPerms.has(key)) return false;
-        }
-        return true;
-    },
-
-    _opsMemberHasActiveConstraints(constraints) {
-        if (!constraints) return false;
-        return (constraints.include && constraints.include.size > 0)
-            || (constraints.exclude && constraints.exclude.size > 0);
-    },
-
-    _opsTeamSearchHasActiveFilters() {
-        const active = this._opsTeamActiveFilters;
-        if (active && active.numericFilters && active.numericFilters.length > 0) return true;
-        const tc = this._getOpsTeamMemberTeamConstraints();
-        const pc = this._getOpsTeamMemberPermConstraints();
-        const bc = this._getOpsTeamMemberBadgeConstraints();
-        return (tc.include.size > 0 || tc.exclude.size > 0 || pc.include.size > 0 || pc.exclude.size > 0
-            || bc.size > 0);
-    },
-
-    _opsTeamMemberNumericFieldValue(memberId, field) {
-        const entry = this._opsExpertStatsCache && this._opsExpertStatsCache.get(memberId);
-        if (!entry || entry.loading || entry.error) return null;
-        if (!entry.creator && !entry.qa) return null;
-        switch (field) {
-            case 'tasks_submitted':
-                return entry.creator && entry.creator.totalSubmissions != null
-                    ? Number(entry.creator.totalSubmissions) : null;
-            case 'tasks_reviewed': {
-                if (!entry.qa) return null;
-                const reviews = entry.qa.reviewsCompleted ?? entry.qa.totalReviews
-                    ?? entry.qa.tasksReviewed ?? entry.qa.tasksCompleted;
-                return reviews != null ? Number(reviews) : null;
-            }
-            case 'submission_ar':
-                return entry.creator && entry.creator.acceptanceRate != null
-                    ? Number(entry.creator.acceptanceRate) : null;
-            case 'qa_ar':
-                return this._opsExpertQaAcceptanceRatePercent(entry.qa);
-            case 'avg_writing_time':
-                return entry.creator && entry.creator.avgCreationTimeSeconds != null
-                    ? Number(entry.creator.avgCreationTimeSeconds) / 60 : null;
-            case 'avg_qa_time': {
-                if (!entry.qa) return null;
-                const avgSec = entry.qa.avgReviewTimeSeconds ?? entry.qa.avgQaTimeSeconds
-                    ?? entry.qa.avgTimePerQaSeconds ?? entry.qa.avgReviewDurationSeconds;
-                return avgSec != null ? Number(avgSec) / 60 : null;
-            }
-            default:
-                return null;
-        }
-    },
-
-    _opsEvaluateNumericComparison(actual, comparator, expected) {
-        if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
-        switch (comparator) {
-            case 'gt': return actual > expected;
-            case 'gte': return actual >= expected;
-            case 'lt': return actual < expected;
-            case 'lte': return actual <= expected;
-            case 'eq': return actual === expected;
-            case 'neq': return actual !== expected;
-            default: return true;
-        }
-    },
-
-    _opsMemberMatchesNumericFilters(member, rows, andOr) {
-        if (!rows || rows.length === 0) return true;
-        const results = rows.map((row) => {
-            const actual = this._opsTeamMemberNumericFieldValue(member.id, row.field);
-            if (actual == null || !Number.isFinite(actual)) return null;
-            return this._opsEvaluateNumericComparison(actual, row.comparator, row.value);
-        });
-        if (results.some((r) => r === null)) return true;
-        if (andOr === 'or') return results.some((r) => r === true);
-        return results.every((r) => r === true);
-    },
-
-    _opsCountTeamMembersPendingNumericStats(members, numericRows) {
-        if (!numericRows || numericRows.length === 0 || !members || !members.length) return 0;
-        let pending = 0;
-        for (const member of members) {
-            let needsStats = false;
-            for (const row of numericRows) {
-                const actual = this._opsTeamMemberNumericFieldValue(member.id, row.field);
-                if (actual == null || !Number.isFinite(actual)) {
-                    needsStats = true;
-                    break;
-                }
-            }
-            if (needsStats) pending++;
-        }
-        return pending;
-    },
-
-    _applyOpsTeamFilters(modal) {
-        const cache = this._opsTeamSearchMemberCache;
-        if (!cache) {
-            Logger.warn('team filters apply skipped — no search cache');
-            return;
-        }
-        const dash = Context.dashboard;
-        if (dash && typeof dash.logApiClick === 'function') {
-            dash.logApiClick('team-filters-apply');
-        }
-        const numeric = dash && typeof dash.readTeamMembersNumericFilters === 'function'
-            ? dash.readTeamMembersNumericFilters(modal)
-            : { rows: [], andOr: 'and' };
-        const teamC = this._getOpsTeamMemberTeamConstraints();
-        const permC = this._getOpsTeamMemberPermConstraints();
-        this._opsTeamActiveFilters = {
-            numericFilters: numeric.rows || [],
-            andOr: numeric.andOr || 'and',
-            teamConstraints: teamC,
-            permConstraints: permC
-        };
-        if (dash && typeof dash.resetTeamMembersPage === 'function') dash.resetTeamMembersPage();
-        this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
-        void this._hydrateOpsTeamMemberStatsForVisible(modal);
-        Logger.log('team filters applied — '
-            + this._opsTeamActiveFilters.numericFilters.length + ' numeric, mode '
-            + this._opsTeamActiveFilters.andOr
-            + ', team constraints ' + (teamC.include.size + teamC.exclude.size)
-            + ', perm constraints ' + (permC.include.size + permC.exclude.size));
     },
 
     _opsEscapeAttr(str) {
@@ -3371,159 +2684,6 @@ const plugin = {
             .replace(/&/g, '&amp;')
             .replace(/"/g, '&quot;')
             .replace(/</g, '&lt;');
-    },
-
-    _opsMemberQualifiesForUiBadge(member) {
-        const teamLabels = member.teamLabels;
-        if (!teamLabels || teamLabels.size === 0) return false;
-        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return false;
-        for (const label of teamLabels) {
-            if (!OPS_TEAM_UI_BADGE_EXCLUDED_LABELS.has(label)) return true;
-        }
-        return false;
-    },
-
-    _opsMemberEmailDomainHasFleet(member) {
-        const email = String(member && member.email || '');
-        const at = email.lastIndexOf('@');
-        if (at < 0) return false;
-        return email.slice(at + 1).toLowerCase().includes('fleet');
-    },
-
-    _opsMemberBadgeCategory(member) {
-        // Fleet-domain emails always get MTS, regardless of team labels.
-        if (this._opsMemberEmailDomainHasFleet(member)) return 'mts';
-        const teamLabels = member.teamLabels || new Set();
-        if (teamLabels.has(OPS_FLEET_FELLOWS_TEAM_LABEL)) return 'fellows';
-        for (const label of teamLabels) {
-            if (OPS_TEAM_EPIC_LABELS.has(label)) return 'epic';
-        }
-        if (teamLabels.size === 1 && teamLabels.has(OPS_TEAM_VERTICALS_ONLY_LABEL)) return 'verticals';
-        if (this._opsMemberQualifiesForUiBadge(member)) return 'ui';
-        return 'fellows';
-    },
-
-    _opsMemberBadgeHtml(category) {
-        const styles = {
-            mts: 'background:var(--foreground, #0f172a);color:var(--background, #fff);',
-            ui: 'background:var(--brand,#4f46e5);color:#fff;',
-            verticals: 'background:#0d9488;color:#fff;',
-            epic: 'background:#7c3aed;color:#fff;',
-            fellows: 'background:#64748b;color:#fff;'
-        };
-        const labels = {
-            mts: 'MTS',
-            ui: 'UI',
-            verticals: 'VERTICALS',
-            epic: 'EPIC',
-            fellows: 'FELLOWS'
-        };
-        const key = labels[category] ? category : 'fellows';
-        return '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;'
-            + (styles[key] || styles.fellows)
-            + 'line-height:1.4;flex-shrink:0;">'
-            + labels[key] + '</span>';
-    },
-
-    _getOpsTeamMemberBadgeConstraints() {
-        const dash = Context.dashboard;
-        if (dash && typeof dash.selectedMsValues === 'function') {
-            return new Set(dash.selectedMsValues('team-members-badges'));
-        }
-        return new Set();
-    },
-
-    _opsMemberMatchesBadgeConstraints(member, selectedBadges) {
-        const selected = selectedBadges || new Set();
-        if (selected.size === 0) return true;
-        return selected.has(this._opsMemberBadgeCategory(member));
-    },
-
-    _opsMemberEditStateMap() {
-        if (!(this._opsMemberEditState instanceof Map)) {
-            this._opsMemberEditState = new Map();
-        }
-        return this._opsMemberEditState;
-    },
-
-    _clearOpsMemberEditState() {
-        this._opsMemberEditState = new Map();
-    },
-
-    _opsCloneStringSet(setOrArray) {
-        if (setOrArray instanceof Set) return new Set(setOrArray);
-        if (Array.isArray(setOrArray)) return new Set(setOrArray);
-        return new Set();
-    },
-
-    _opsSetsEqual(a, b) {
-        if (!a || !b || a.size !== b.size) return false;
-        for (const value of a) {
-            if (!b.has(value)) return false;
-        }
-        return true;
-    },
-
-    _getOpsMemberEditSession(memberId) {
-        return this._opsMemberEditStateMap().get(memberId) || null;
-    },
-
-    _startOpsMemberEdit(member) {
-        const memberId = member.id;
-        const session = {
-            editing: true,
-            email: member.email || '',
-            baselineTeams: this._opsCloneStringSet(member.teamLabels),
-            baselinePerms: this._opsCloneStringSet(this._opsMemberPermissionKeys(member)),
-            stagedTeams: this._opsCloneStringSet(member.teamLabels),
-            stagedPerms: this._opsCloneStringSet(this._opsMemberPermissionKeys(member)),
-            applying: false
-        };
-        this._opsMemberEditStateMap().set(memberId, session);
-        Logger.log('member edit started for ' + (member.email || memberId));
-        return session;
-    },
-
-    _cancelOpsMemberEdit(memberId) {
-        if (this._opsMemberEditStateMap().has(memberId)) {
-            this._opsMemberEditStateMap().delete(memberId);
-            Logger.log('member edit cancelled for ' + memberId);
-        }
-    },
-
-    _opsMemberEditHasChanges(session) {
-        if (!session) return false;
-        return !this._opsSetsEqual(session.baselineTeams, session.stagedTeams) ||
-            !this._opsSetsEqual(session.baselinePerms, session.stagedPerms);
-    },
-
-    _toggleOpsMemberEditTeam(session, label) {
-        if (!session || !label) return;
-        if (session.stagedTeams.has(label)) {
-            session.stagedTeams.delete(label);
-        } else {
-            session.stagedTeams.add(label);
-        }
-    },
-
-    _toggleOpsMemberEditPermission(session, permKey) {
-        if (!session) return;
-        if (session.stagedPerms.has(permKey)) {
-            session.stagedPerms.delete(permKey);
-        } else {
-            session.stagedPerms.add(permKey);
-        }
-    },
-
-    _captureOpsOpenMemberDetails(modal) {
-        const openIds = new Set();
-        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchOpenCapture');
-        if (!wrap) return openIds;
-        wrap.querySelectorAll('.wf-ops-member-details[open][data-member-id]').forEach((el) => {
-            const id = el.getAttribute('data-member-id');
-            if (id) openIds.add(id);
-        });
-        return openIds;
     },
 
     async _opsPostOrchestratorPrivate(url, body) {
@@ -3568,610 +2728,6 @@ const plugin = {
             action
         });
         Logger.debug('permission ' + action + ' ' + permission + ' for ' + profileId.slice(0, 8) + '…');
-    },
-
-    _getOpsMemberFromCache(memberId) {
-        const cache = this._opsTeamSearchMemberCache;
-        if (!cache || !cache.memberMap) return null;
-        return cache.memberMap.get(memberId) || null;
-    },
-
-    _updateOpsMemberTileDom(modal, memberId, forceOpen) {
-        const cache = this._opsTeamSearchMemberCache;
-        const member = this._getOpsMemberFromCache(memberId);
-        if (!cache || !member) return;
-
-        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchTileUpdate');
-        if (!wrap) return;
-
-        const attrId = this._opsEscapeAttr(memberId);
-        const tileEl = wrap.querySelector('[data-ops-member-tile="' + attrId + '"]');
-        const detailsEl = tileEl ? tileEl.querySelector('.wf-ops-member-details') : null;
-        const wasOpen = forceOpen === true || (detailsEl && detailsEl.open);
-        const html = this._renderOpsTeamMemberTileHtml(member, cache.allTeams, wasOpen);
-
-        if (tileEl) {
-            tileEl.outerHTML = html;
-        }
-    },
-
-    async _applyOpsMemberEditChanges(modal, memberId) {
-        const session = this._getOpsMemberEditSession(memberId);
-        const member = this._getOpsMemberFromCache(memberId);
-        const cache = this._opsTeamSearchMemberCache;
-        if (!session || !member || !cache || session.applying) return;
-        if (!this._opsMemberEditHasChanges(session)) return;
-
-        const teamAdds = [...session.stagedTeams].filter((label) => !session.baselineTeams.has(label));
-        const teamRemovals = [...session.baselineTeams].filter((label) => !session.stagedTeams.has(label));
-        const permAdds = [...session.stagedPerms].filter((key) => !session.baselinePerms.has(key));
-        const permRemovals = [...session.baselinePerms].filter((key) => !session.stagedPerms.has(key));
-
-        if (teamAdds.length && !this._opsTeamAddMemberActionCache.nextAction) {
-            this._setOpsTeamSearchStatus(modal,
-                'Cannot add to team: add-member credentials missing. Open ' +
-                '<a href="' + this._opsEscapeAttr(opsTeamSearchUrl()) + '" target="_blank" rel="noopener noreferrer" style="color:inherit;text-decoration:underline;">' +
-                'Fleet /dashboard/team</a> and add a member once, then retry.',
-                true, true, true);
-            return;
-        }
-
-        const addMemberPerms = [...session.stagedPerms];
-        if (!addMemberPerms.length) {
-            addMemberPerms.push(...this._getOpsInvokerPermissionKeys());
-        }
-
-        session.applying = true;
-        this._updateOpsMemberTileDom(modal, memberId, true);
-
-        try {
-            for (const label of teamAdds) {
-                const teamId = this._getOpsTeamUuidByLabel(label);
-                if (!teamId) throw new Error('No team UUID for "' + label + '"');
-                await this._opsAddMemberToTeam(teamId, session.email, addMemberPerms);
-            }
-            for (const label of teamRemovals) {
-                const teamId = this._getOpsTeamUuidByLabel(label);
-                if (!teamId) throw new Error('No team UUID for "' + label + '"');
-                await this._opsRemoveMemberFromTeam(teamId, session.email);
-            }
-            const permAddsToApply = teamAdds.length
-                ? permAdds.filter((key) => !addMemberPerms.includes(key))
-                : permAdds;
-            for (const permKey of permAddsToApply) {
-                await this._opsModifyMemberPermission(memberId, permKey, 'add');
-            }
-            for (const permKey of permRemovals) {
-                await this._opsModifyMemberPermission(memberId, permKey, 'remove');
-            }
-
-            member.teamLabels = this._opsCloneStringSet(session.stagedTeams);
-            member.permissions = [...session.stagedPerms];
-            this._cancelOpsMemberEdit(memberId);
-
-            Logger.log('member edit applied for ' + session.email +
-                ' (teams +' + teamAdds.length + ' -' + teamRemovals.length +
-                ', perms +' + permAddsToApply.length + ' -' + permRemovals.length + ')');
-
-            const openIds = this._captureOpsOpenMemberDetails(modal);
-            openIds.add(memberId);
-            this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0, openIds);
-        } catch (e) {
-            session.applying = false;
-            Logger.error('member edit failed for ' + memberId, e);
-            this._setOpsTeamSearchStatus(modal,
-                'Failed to apply changes: ' + (e && e.message ? e.message : String(e)), true, false, true);
-            this._updateOpsMemberTileDom(modal, memberId, true);
-        }
-    },
-
-    _handleOpsMemberEditClick(e, modal) {
-        const actionEl = e.target.closest('[data-ops-action][data-ops-member-id]');
-        if (!actionEl || !modal.contains(actionEl)) return;
-        if (!actionEl.closest('#wf-ops-team-search-output-wrap')) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const memberId = actionEl.getAttribute('data-ops-member-id');
-        const action = actionEl.getAttribute('data-ops-action');
-        if (!memberId || !action) return;
-
-        if (action === 'expert-stats-cred-refresh') {
-            this._openOpsExpertProfileForCredRefresh(modal, memberId);
-            return;
-        }
-
-        const member = this._getOpsMemberFromCache(memberId);
-        if (!member) {
-            Logger.warn('member edit action skipped — member not in cache');
-            return;
-        }
-
-        if (action === 'search-worker-output') {
-            this._openMemberInWorkerSearch(member);
-            return;
-        }
-
-        if (action === 'edit') {
-            this._startOpsMemberEdit(member);
-            this._updateOpsMemberTileDom(modal, memberId, true);
-            return;
-        }
-
-        const session = this._getOpsMemberEditSession(memberId);
-        if (!session) return;
-
-        if (action === 'cancel') {
-            if (session.applying) return;
-            this._cancelOpsMemberEdit(memberId);
-            this._updateOpsMemberTileDom(modal, memberId, true);
-            return;
-        }
-
-        if (action === 'confirm') {
-            if (session.applying || !this._opsMemberEditHasChanges(session)) return;
-            void this._applyOpsMemberEditChanges(modal, memberId);
-            return;
-        }
-
-        if (session.applying) return;
-
-        if (action === 'toggle-team') {
-            const label = actionEl.getAttribute('data-ops-team-label');
-            if (!label) return;
-            this._toggleOpsMemberEditTeam(session, label);
-            this._updateOpsMemberTileDom(modal, memberId, true);
-            return;
-        }
-
-        if (action === 'toggle-perm') {
-            const permKey = actionEl.getAttribute('data-ops-perm-key');
-            if (!permKey) return;
-            this._toggleOpsMemberEditPermission(session, permKey);
-            this._updateOpsMemberTileDom(modal, memberId, true);
-        }
-    },
-
-    _renderOpsMemberEditActionsHtml(memberId, session) {
-        const attrId = this._opsEscapeAttr(memberId);
-        if (session && session.editing) {
-            const hasChanges = this._opsMemberEditHasChanges(session);
-            const confirmDisabled = !hasChanges || session.applying;
-            return '<span class="wf-ops-member-edit-actions" style="gap:6px;flex-shrink:0;margin-left:8px;align-items:center;">' +
-                '<button type="button" class="' + this._opsDashBtnClass('success', 'compact') + '" data-ops-member-id="' + attrId + '" data-ops-action="confirm"' +
-                    (confirmDisabled ? ' disabled' : '') + '>Confirm</button>' +
-                '<button type="button" class="' + this._opsDashBtnClass('danger', 'compact') + '" data-ops-member-id="' + attrId + '" data-ops-action="cancel"' +
-                    (session.applying ? ' disabled' : '') + '>Cancel</button>' +
-                '</span>';
-        }
-        return '<span class="wf-ops-member-edit-actions" style="flex-shrink:0;margin-left:8px;align-items:center;">' +
-            '<button type="button" class="' + this._opsDashBtnClass('warning', 'compact') + '" data-ops-member-id="' + attrId + '" data-ops-action="edit">Edit</button>' +
-            '</span>';
-    },
-
-    _opsProfileLinkHtml(profileUrl, title) {
-        const url = String(profileUrl || '').trim();
-        if (!url) return '';
-        const label = title || 'Open profile in Fleet';
-        const icon = (Context.uiLib && Context.uiLib.externalLinkIconSvg)
-            ? Context.uiLib.externalLinkIconSvg()
-            : '';
-        return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
-            'title="' + this._opsEscapeHtml(label) + '" aria-label="' + this._opsEscapeHtml(label) + '">' +
-            icon + '</a>';
-    },
-
-    _opsSearchWorkerOutputBtnHtml(memberId) {
-        const attrId = this._opsEscapeAttr(memberId);
-        const icon = (Context.uiLib && Context.uiLib.eyeIconSvg)
-            ? Context.uiLib.eyeIconSvg()
-            : '';
-        return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;white-space:nowrap;gap:6px;">Search Worker Output' + icon + '</button>';
-    },
-
-    _opsMemberToAuthorPerson(member) {
-        if (!member || !member.id) return null;
-        return {
-            id: member.id,
-            full_name: member.full_name,
-            email: member.email
-        };
-    },
-
-    _openMemberInWorkerSearch(member) {
-        const person = this._opsMemberToAuthorPerson(member);
-        if (!person) {
-            Logger.warn('Search Worker Output skipped — missing member id');
-            return;
-        }
-        const dash = Context.dashboard;
-        if (!dash || typeof dash.runContributorWorkerOutputDeepDive !== 'function') {
-            Logger.warn('Search Worker Output skipped — dashboard deep dive unavailable');
-            return;
-        }
-        Logger.log('Search Worker Output deep dive for ' + (person.full_name || person.id));
-        void dash.runContributorWorkerOutputDeepDive(person, { activeTab: 'search-output' });
-    },
-
-    _renderOpsMemberTeamRowHtml(label, member, session) {
-        const memberId = member.id || '';
-        const attrId = this._opsEscapeAttr(memberId);
-        const attrLabel = this._opsEscapeAttr(label);
-        const editing = session && session.editing;
-        const teamLabels = member.teamLabels || new Set();
-        const inBaseline = editing ? session.baselineTeams.has(label) : teamLabels.has(label);
-        const inStaged = editing ? session.stagedTeams.has(label) : inBaseline;
-
-        if (editing) {
-            if (!inBaseline) {
-                const changed = inStaged;
-                const stagedClass = changed ? ' wf-ops-staged-add' : '';
-                const icon = changed ? '✅ ' : '<span style="opacity:0.35;">—</span> ';
-                const color = changed ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)';
-                return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-team" data-ops-member-id="' +
-                    attrId + '" data-ops-team-label="' + attrLabel + '" style="font-size:11px;color:' + color + ';">' +
-                    icon + this._opsEscapeHtml(label) + '</button>';
-            }
-            const changed = inStaged !== inBaseline;
-            const stagedClass = changed ? ' wf-ops-staged-remove' : '';
-            const icon = changed ? '❌ ' : '✅ ';
-            const color = 'var(--foreground,#333)';
-            return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-team" data-ops-member-id="' +
-                attrId + '" data-ops-team-label="' + attrLabel + '" style="font-size:11px;color:' + color + ';">' +
-                icon + this._opsEscapeHtml(label) + '</button>';
-        }
-
-        return '<div style="font-size:11px;padding:2px 0;color:' +
-            (inBaseline ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
-            (inBaseline ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
-            this._opsEscapeHtml(label) + '</div>';
-    },
-
-    _renderOpsMemberPermRowHtml(permKey, permLabel, member, session) {
-        const memberId = member.id || '';
-        const attrId = this._opsEscapeAttr(memberId);
-        const attrPerm = this._opsEscapeAttr(permKey);
-        const editing = session && session.editing;
-        const permissionKeys = new Set(this._opsMemberPermissionKeys(member));
-        const inBaseline = editing ? session.baselinePerms.has(permKey) : permissionKeys.has(permKey);
-        const inStaged = editing ? session.stagedPerms.has(permKey) : inBaseline;
-
-        if (editing) {
-            const changed = inStaged !== inBaseline;
-            const stagedClass = changed ? (inStaged ? ' wf-ops-staged-add' : ' wf-ops-staged-remove') : '';
-            let icon;
-            if (changed) {
-                icon = inStaged ? '✅ ' : '❌ ';
-            } else {
-                icon = inStaged ? '✅ ' : '<span style="opacity:0.35;">—</span> ';
-            }
-            const color = inStaged || changed ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)';
-            return '<button type="button" class="wf-ops-edit-item-btn' + stagedClass + '" data-ops-action="toggle-perm" data-ops-member-id="' +
-                attrId + '" data-ops-perm-key="' + attrPerm + '" style="font-size:11px;color:' + color + ';">' +
-                icon + this._opsEscapeHtml(permLabel) + '</button>';
-        }
-
-        return '<div style="font-size:11px;padding:2px 0;color:' +
-            (inBaseline ? 'var(--foreground,#333)' : 'var(--muted-foreground,#999)') + ';">' +
-            (inBaseline ? '✅ ' : '<span style="opacity:0.35;">—</span> ') +
-            this._opsEscapeHtml(permLabel) + '</div>';
-    },
-
-    _renderOpsTeamMemberPersonChipsHtml(member) {
-        const dash = Context.dashboard;
-        const memberId = String(member.id || '').trim();
-        if (dash && typeof dash.personChipsHtml === 'function') {
-            let html = dash.personChipsHtml(member.full_name, member.email, member.id, 'Open profile in Fleet');
-            if (memberId && typeof dash.copyChipHtml === 'function') {
-                html = html.replace(/(<a href)/, dash.copyChipHtml(memberId) + '$1');
-            }
-            return html;
-        }
-        const name = this._opsEscapeHtml(member.full_name || 'Unknown');
-        const email = this._opsEscapeHtml(member.email || '');
-        const profileUrl = opsFleetOrigin() + '/dashboard/data/experts/' + encodeURIComponent(memberId);
-        const idChip = memberId && dash && typeof dash.copyChipHtml === 'function'
-            ? dash.copyChipHtml(memberId)
-            : (memberId ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(memberId) + '</span>' : '');
-        return '<span style="display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%;min-width:0;">' +
-            '<span style="font-size:13px;font-weight:600;color:var(--foreground,#333);">' + name + '</span>' +
-            (email ? '<span style="font-size:11px;color:var(--muted-foreground,#666);">' + email + '</span>' : '') +
-            idChip +
-            this._opsProfileLinkHtml(profileUrl, 'Open profile in Fleet') +
-        '</span>';
-    },
-
-    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen, teamsSearchComplete = true) {
-        const memberId = member.id || '';
-        const personChipsHtml = this._renderOpsTeamMemberPersonChipsHtml(member);
-        const teamLabels = member.teamLabels || new Set();
-        const session = this._getOpsMemberEditSession(memberId);
-        const displayTeamLabels = session ? session.stagedTeams : teamLabels;
-        const displayPermKeys = session ? session.stagedPerms : new Set(this._opsMemberPermissionKeys(member));
-        const knownPermCount = OPS_ALL_PERMISSIONS.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
-        const memberBadgeHtml = teamsSearchComplete
-            ? this._opsMemberBadgeHtml(this._opsMemberBadgeCategory(member))
-            : '';
-
-        const teamsColHtml = allTeams.map(([, label]) =>
-            this._renderOpsMemberTeamRowHtml(label, member, session)).join('');
-
-        const permsColHtml = OPS_ALL_PERMISSIONS.map(([permKey, permLabel]) =>
-            this._renderOpsMemberPermRowHtml(permKey, permLabel, member, session)).join('');
-
-        const summaryLabel = 'Teams (' + displayTeamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
-            knownPermCount + '/' + OPS_ALL_PERMISSIONS.length + ')';
-
-        const colHeader = (text) =>
-            '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
-            text + '</div>';
-
-        const openAttr = isOpen !== false ? ' open' : '';
-
-        return '<div data-ops-member-tile="' + this._opsEscapeAttr(memberId) + '" style="border:1px solid var(--border,#e5e5e5);border-radius:6px;padding:10px 12px;margin-bottom:8px;background:var(--card,#fafafa);">' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">' +
-                '<div style="min-width:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;">' +
-                    memberBadgeHtml +
-                    personChipsHtml +
-                '</div>' +
-                this._opsSearchWorkerOutputBtnHtml(memberId) +
-            '</div>' +
-            this._renderOpsTeamMemberStatsHtml(memberId) +
-            '<details class="wf-ops-member-details" data-member-id="' + this._opsEscapeAttr(memberId) + '" style="margin-top:8px;"' + openAttr + '>' +
-                '<summary style="font-size:11px;cursor:pointer;color:var(--muted-foreground,#666);list-style:none;user-select:none;display:flex;align-items:center;gap:8px;">' +
-                    '<span style="min-width:0;flex:1;">▾ ' + this._opsEscapeHtml(summaryLabel) + '</span>' +
-                    this._renderOpsMemberEditActionsHtml(memberId, session) +
-                '</summary>' +
-                '<div style="margin-top:6px;padding:6px 8px;background:var(--background,white);border:1px solid var(--border,#e5e5e5);border-radius:4px;' +
-                    'display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">' +
-                    '<div>' + colHeader('Teams') + teamsColHtml + '</div>' +
-                    '<div>' + colHeader('Permissions') + permsColHtml + '</div>' +
-                '</div>' +
-            '</details>' +
-        '</div>';
-    },
-
-    _filterOpsTeamSearchCards(modal) {
-        const cache = this._opsTeamSearchMemberCache;
-        if (!cache) return;
-        this._renderOpsTeamSearchCards(modal, cache.memberMap, cache.allTeams, 0);
-        void this._hydrateOpsTeamMemberStatsForVisible(modal);
-    },
-
-    _renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount, openMemberIds) {
-        const wrap = this._opsQuery(modal, '#wf-ops-team-search-output-wrap', 'teamSearchCards');
-        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchCardsInner');
-        if (!wrap || !cards) return;
-
-        const totalCount = memberMap.size;
-        let members = [...memberMap.values()];
-
-        const active = this._opsTeamActiveFilters;
-        const numericRows = active && active.numericFilters ? active.numericFilters : [];
-        const andOr = active ? active.andOr : 'and';
-        members = members.filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr));
-
-        const teamC = this._getOpsTeamMemberTeamConstraints();
-        const permC = this._getOpsTeamMemberPermConstraints();
-        const badgeC = this._getOpsTeamMemberBadgeConstraints();
-        members = members.filter((m) => this._opsMemberMatchesTeamConstraints(m, teamC));
-        members = members.filter((m) => this._opsMemberMatchesPermConstraints(m, permC));
-        members = members.filter((m) => this._opsMemberMatchesBadgeConstraints(m, badgeC));
-
-        let resolvedOpenIds;
-        if (this._opsMemberDetailsOpenIds !== null) {
-            resolvedOpenIds = this._opsMemberDetailsOpenIds;
-        } else if (openMemberIds instanceof Set) {
-            resolvedOpenIds = openMemberIds;
-        } else if (pendingCount === 0 && members.length > 0) {
-            resolvedOpenIds = new Set(members.map((m) => m.id));
-        } else {
-            resolvedOpenIds = this._captureOpsOpenMemberDetails(modal);
-        }
-
-        if (members.length === 0) {
-            if (pendingCount > 0) {
-                wrap.style.display = 'none';
-            } else {
-                wrap.style.display = 'block';
-                let msg = 'No members found.';
-                const hasNumericFilters = numericRows && numericRows.length > 0;
-                const hasConstraintFilters = (teamC.include.size > 0 || teamC.exclude.size > 0
-                    || permC.include.size > 0 || permC.exclude.size > 0 || badgeC.size > 0);
-                if (hasNumericFilters || hasConstraintFilters) msg = 'No results match filters.';
-                cards.innerHTML = '<div style="text-align:center;padding:12px 0;font-size:12px;color:var(--muted-foreground,#666);">' + this._opsEscapeHtml(msg) + '</div>';
-            }
-            const dashEmpty = Context.dashboard;
-            if (dashEmpty && typeof dashEmpty.syncTeamMembersPagerUi === 'function') {
-                dashEmpty.syncTeamMembersPagerUi(modal, 0, pendingCount === 0);
-            }
-            return;
-        }
-
-        members.sort((a, b) => {
-            const diff = (b.teamLabels ? b.teamLabels.size : 0) - (a.teamLabels ? a.teamLabels.size : 0);
-            return diff !== 0 ? diff : (a.full_name || '').localeCompare(b.full_name || '');
-        });
-
-        const totalFiltered = members.length;
-        const dash = Context.dashboard;
-        if (dash && typeof dash.syncTeamMembersPagerUi === 'function') {
-            dash.syncTeamMembersPagerUi(modal, totalFiltered, pendingCount === 0);
-        }
-        if (dash && typeof dash.getTeamMembersPageSlice === 'function') {
-            members = dash.getTeamMembersPageSlice(members);
-        }
-
-        wrap.style.display = 'block';
-        const teamsSearchComplete = pendingCount === 0;
-        cards.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id), teamsSearchComplete)).join('');
-
-        this._syncOpsExpandAllBtn(modal);
-
-        if (pendingCount === 0) {
-            if (this._opsTeamSearchHasActiveFilters()) {
-                let statusMsg = members.length + ' of ' + totalCount + ' member'
-                    + (totalCount !== 1 ? 's' : '') + ' match filters.';
-                const pendingStats = this._opsCountTeamMembersPendingNumericStats(members, numericRows);
-                if (pendingStats > 0) {
-                    statusMsg += ' Stats still loading for ' + pendingStats + ' member'
-                        + (pendingStats !== 1 ? 's' : '') + '; results will update.';
-                }
-                this._setOpsTeamSearchStatus(modal, statusMsg, false, false, true);
-            } else if (totalCount > 0) {
-                this._setOpsTeamSearchStatus(modal,
-                    totalCount + ' unique member' + (totalCount !== 1 ? 's' : '')
-                        + ' across ' + allTeams.length + ' teams.',
-                    false, false, true);
-            }
-            void this._hydrateOpsTeamMemberStatsForVisible(modal);
-        }
-    },
-
-    async _handleOpsTeamSearch(modal) {
-        const input = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInput');
-        const btn = this._opsQuery(modal, '#wf-ops-team-search-btn', 'teamSearchBtn');
-        const query = input ? input.value.trim() : '';
-        const dashLog = Context.dashboard;
-
-        const userId = this._getOpsCurrentUserId();
-        if (!userId) {
-            if (dashLog && typeof dashLog.logApiSkip === 'function') dashLog.logApiSkip('team-search', 'no user id');
-            this._setOpsTeamSearchStatus(modal, 'No user ID found. Open Fleet while logged in and try again.', true);
-            return;
-        }
-
-        let allTeams = this.getUserTeamCatalog();
-        if (!allTeams.length) {
-            try {
-                await this.fetchUserTeamCatalog(userId);
-                allTeams = this.getUserTeamCatalog();
-            } catch (e) {
-                Logger.warn('team search — failed to load user team catalog', e);
-                this._setOpsTeamSearchStatus(modal, 'Failed to load your teams: ' + (e.message || String(e)), true);
-                return;
-            }
-        }
-        if (!allTeams.length) {
-            this._setOpsTeamSearchStatus(modal, 'No teams found for your account.', true);
-            return;
-        }
-
-        this._reloadOpsTeamDashboardActionsFromStorage();
-        if (!this._opsTeamSearchActionCache.nextAction) {
-            this._showOpsTeamSearchActionRefreshBanner(modal);
-            return;
-        }
-
-        this._clearOpsTeamSearchStaleBanner(modal);
-        this._injectOpsSpinnerStyle();
-
-        this._abortOpsTeamSearchInFlight('new search started');
-        const abortController = new AbortController();
-        this._opsTeamSearchAbortController = abortController;
-
-        const sessionId = Date.now();
-        this._opsTeamSearchActive = sessionId;
-        this._opsTeamSearchMemberCache = null;
-        this._opsTeamActiveFilters = null;
-        this._opsMemberDetailsOpenIds = null;
-        this._opsExpertStatsHydrateGen++;
-        if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
-        this._clearOpsMemberEditState();
-
-        if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
-
-        const filterWrap = this._opsQuery(modal, '#wf-ops-team-filter-wrap', 'teamFilterWrapShow');
-        if (filterWrap) filterWrap.style.display = 'flex';
-        if (Context.dashboard && typeof Context.dashboard.resetTeamMemberFilters === 'function') {
-            Context.dashboard.resetTeamMemberFilters(modal);
-        }
-        this._populateOpsTeamMemberConstraintLists(allTeams, { loading: false, preserveSelections: false, modal });
-        if (Context.dashboard && typeof Context.dashboard.resetTeamMembersPage === 'function') {
-            Context.dashboard.resetTeamMembersPage();
-        }
-        if (Context.dashboard && typeof Context.dashboard.syncTeamMemberConstraintListsUi === 'function') {
-            Context.dashboard.syncTeamMemberConstraintListsUi(modal);
-        }
-
-        const memberMap = new Map();
-        let pendingCount = allTeams.length;
-        let doneCount = 0;
-        let staleActionDetected = false;
-
-        this._opsFellowsSearchComplete = true;
-
-        if (dashLog && typeof dashLog.logApiClick === 'function') {
-            dashLog.logApiClick('team-search', (query ? '"' + query + '" · ' : '') + allTeams.length + ' team(s)');
-        }
-
-        const spinnerHtml = Context.uiLib && typeof Context.uiLib.spinnerHtml === 'function'
-            ? Context.uiLib.spinnerHtml(10).replace('class="fleet-ui-spinner"', 'class="fleet-ui-spinner" style="vertical-align:middle;margin-right:5px;"')
-            : '<span style="display:inline-block;width:10px;height:10px;border:2px solid rgba(79,70,229,0.2);border-top-color:var(--brand,#4f46e5);border-radius:50%;animation:fleet-ui-spin 0.7s linear infinite;vertical-align:middle;margin-right:5px;"></span>';
-        this._setOpsTeamSearchStatus(modal, spinnerHtml + 'Searching ' + allTeams.length + ' teams…', false, true, false);
-
-        const finishTeamSearch = (_teamLabel) => {
-            pendingCount--;
-            doneCount++;
-            if (this._opsTeamSearchActive !== sessionId) return;
-            this._renderOpsTeamSearchCards(modal, memberMap, allTeams, pendingCount);
-            if (pendingCount > 0) {
-                this._setOpsTeamSearchStatus(modal,
-                    spinnerHtml + doneCount + '/' + allTeams.length + ' teams searched, ' + memberMap.size + ' member' + (memberMap.size !== 1 ? 's' : '') + ' so far…',
-                    false, true, false);
-            } else {
-                this._setOpsTeamSearchStatus(modal,
-                    memberMap.size + ' unique member' + (memberMap.size !== 1 ? 's' : '') + ' across ' + allTeams.length + ' teams.',
-                    false, false, true);
-                Logger.log('team search complete — ' + memberMap.size + ' unique members, ' + allTeams.length + ' teams');
-            }
-        };
-
-        const searches = allTeams.map(async ([teamId, teamLabel]) => {
-            try {
-                const members = await this._fetchOpsTeamSearchAllMembers(
-                    teamId, userId, query, sessionId, abortController.signal);
-                if (this._opsTeamSearchActive !== sessionId) return;
-                if (staleActionDetected) return;
-                this._mergeOpsTeamSearchMembers(memberMap, members, teamLabel);
-                Logger.debug('team search got ' + members.length + ' members from ' + teamLabel);
-            } catch (e) {
-                if (this._isOpsTeamSearchAbortError(e)) return;
-                if (this._isOpsTeamSearchActionStaleError(e)) {
-                    staleActionDetected = true;
-                    Logger.warn('team search credentials stale for ' + teamLabel);
-                } else {
-                    Logger.warn('team search failed for ' + teamLabel, e);
-                }
-            } finally {
-                finishTeamSearch(teamLabel);
-            }
-        });
-
-        await Promise.allSettled(searches);
-
-        if (this._opsTeamSearchActive === sessionId) {
-            this._opsTeamSearchAbortController = null;
-            if (!staleActionDetected && this._opsTeamSearchLikelyStaleEmptyResults(query, memberMap, allTeams)) {
-                staleActionDetected = true;
-                this._clearOpsTeamSearchActionCache();
-                Logger.warn('team search returned zero members for all teams — treating credentials as stale');
-            }
-            if (staleActionDetected) {
-                this._showOpsTeamSearchActionRefreshBanner(modal);
-                this._opsTeamSearchMemberCache = null;
-            } else {
-                this._opsTeamSearchMemberCache = { memberMap, allTeams };
-                this._indexOpsTeamMemberFiltersFromResults(memberMap, { preserveSelections: true, modal });
-                this._renderOpsTeamSearchCards(modal, memberMap, allTeams, 0);
-                void this._hydrateOpsTeamMemberStatsForVisible(modal);
-            }
-            if (btn) { btn.disabled = false; btn.textContent = 'Search'; }
-            this._captureOpsTabState(modal);
-        }
     },
 
     _extractOpsOrchestratorVerifierSource(payload) {
@@ -4361,86 +2917,6 @@ const plugin = {
         return out;
     },
 
-    _opsVerifierOptionCurrentPin(options) {
-        const list = Array.isArray(options) ? options : [];
-        const current = list.find((o) => o && o.isCurrent && o.value);
-        if (current && OPS_UUID_RE.test(String(current.value))) return String(current.value);
-        const first = list.find((o) => o && o.value && OPS_UUID_RE.test(String(o.value)));
-        return first ? String(first.value) : '';
-    },
-
-    _resolveOpsVerifierPreferPin(requested, result) {
-        const candidates = [
-            requested,
-            result && result.verifierVersionId,
-            result && result.selectedVersion,
-            result && result.versionId
-        ];
-        for (let i = 0; i < candidates.length; i++) {
-            const pin = candidates[i] != null ? String(candidates[i]).trim() : '';
-            if (pin && OPS_UUID_RE.test(pin)) return pin;
-        }
-        return '';
-    },
-
-    _renderOpsTaskVerifierVersionSelect(modal, optionPayload, selectedValue) {
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierTaskVersionSet');
-        if (!select) return;
-        const options = optionPayload && Array.isArray(optionPayload.options)
-            ? optionPayload.options
-            : [];
-        const prefer = selectedValue != null ? String(selectedValue).trim() : '';
-        select.innerHTML = '';
-        options.forEach((entry) => {
-            const option = document.createElement('option');
-            option.value = String(entry.value || '');
-            option.textContent = entry.label
-                || this._formatOpsTaskVerifierVersionLabel(entry);
-            select.appendChild(option);
-        });
-        const values = [...select.options].map((o) => o.value);
-        if (prefer && values.indexOf(prefer) >= 0) {
-            select.value = prefer;
-        } else {
-            const currentPin = this._opsVerifierOptionCurrentPin(options);
-            select.value = (currentPin && values.indexOf(currentPin) >= 0)
-                ? currentPin
-                : (values[0] || '');
-        }
-        select.style.display = options.length > 0 ? 'block' : 'none';
-        select.disabled = false;
-    },
-
-    async _hydrateOpsVerifierTaskVersionOptions(modal, opts) {
-        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputHydrate');
-        if (!input) return null;
-        const parsed = this._parseOpsVerifierInput(input.value);
-        if (!parsed.taskKey && !parsed.taskId) {
-            this._renderOpsTaskVerifierVersionSelect(modal, null, '');
-            return null;
-        }
-        const preferPin = opts && opts.preferVerifierVersionId
-            ? String(opts.preferVerifierVersionId).trim()
-            : '';
-        const pendingPin = this._opsVerifierPendingSelectPin
-            ? String(this._opsVerifierPendingSelectPin).trim()
-            : '';
-        const selected = (preferPin && OPS_UUID_RE.test(preferPin))
-            ? preferPin
-            : (pendingPin && OPS_UUID_RE.test(pendingPin) ? pendingPin : '');
-        try {
-            const payload = await this._listOpsTaskVerifierVersionOptions(parsed);
-            this._renderOpsTaskVerifierVersionSelect(modal, payload, selected);
-            if (selected && this._opsVerifierPendingSelectPin === selected) {
-                this._opsVerifierPendingSelectPin = '';
-            }
-            return payload;
-        } catch (e) {
-            Logger.debug('hydrate task version options failed', e);
-            return null;
-        }
-    },
-
     async _fetchOpsVerifierCodeForVersion(resolved, versionId) {
         const pin = String(versionId || resolved.verifierVersionId || '').trim();
         const request = {
@@ -4608,22 +3084,6 @@ const plugin = {
         copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
-    _syncVerifierStatusRow(modal) {
-        const row = this._opsQuery(modal, '#wf-ops-verifier-status-row', 'verifierStatusRow');
-        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
-        if (!row) return;
-        const hasStatus = Boolean(status && (status.textContent || '').trim());
-        row.style.display = hasStatus ? 'block' : 'none';
-    },
-
-    _setOpsVerifierStatus(modal, message, isError) {
-        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
-        if (!status) return;
-        status.textContent = message || '';
-        status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
-        this._syncVerifierStatusRow(modal);
-    },
-
     _findVerifierContentMatchStarts(text, query) {
         const starts = [];
         const haystack = String(text || '');
@@ -4720,75 +3180,12 @@ const plugin = {
         });
     },
 
-    _updateVerifierContentSearchUi(modal) {
-        const toolbar = this._opsQuery(modal, '#wf-ops-verifier-output-toolbar', 'verifierOutputToolbar');
-        const searchWrap = this._opsQuery(modal, '#wf-ops-verifier-content-search-wrap', 'verifierContentSearchWrap');
-        const countEl = this._opsQuery(modal, '#wf-ops-verifier-content-match-count', 'verifierContentMatchCount');
-        const prevBtn = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrev');
-        const nextBtn = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNext');
-        const clearBtn = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClear');
-        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
-        const hasOutput = Boolean(this._opsVerifierSourceText);
-        const search = this._opsVerifierContentSearch;
-        const matchCount = search.matchStarts ? search.matchStarts.length : 0;
-        const hasQuery = Boolean((search.query || '').trim());
-
-        if (toolbar) {
-            toolbar.style.display = hasOutput ? 'flex' : 'none';
-        }
-        if (searchWrap && !toolbar) {
-            searchWrap.style.display = hasOutput ? 'flex' : 'none';
-        }
-        if (copyBtn) {
-            copyBtn.style.display = hasOutput ? 'inline-block' : 'none';
-        }
-        const addDiffBtn = this._opsQuery(modal, '#wf-ops-verifier-add-diff', 'verifierAddDiff');
-        const addChatBtn = this._opsQuery(modal, '#wf-ops-verifier-add-chat', 'verifierAddChat');
-        if (addDiffBtn) {
-            addDiffBtn.style.display = hasOutput ? 'inline-block' : 'none';
-        }
-        if (addChatBtn) {
-            addChatBtn.style.display = hasOutput ? 'inline-block' : 'none';
-        }
-        if (clearBtn) {
-            clearBtn.style.display = hasQuery ? 'inline-flex' : 'none';
-        }
-        if (countEl) {
-            if (!hasQuery) {
-                countEl.textContent = '';
-            } else if (matchCount === 0) {
-                countEl.textContent = 'No matches';
-            } else {
-                countEl.textContent = (search.index + 1) + ' / ' + matchCount;
-            }
-        }
-        const navDisabled = !hasQuery || matchCount === 0;
-        if (prevBtn) prevBtn.disabled = navDisabled;
-        if (nextBtn) nextBtn.disabled = navDisabled;
-        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.syncOutputToolbar === 'function') {
-            Context.verifierFetcherUi.syncOutputToolbar(modal);
-        }
-    },
-
-    _clearVerifierContentSearch(modal) {
-        const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClearInput');
-        if (contentInput) contentInput.value = '';
-        this._applyVerifierContentSearch(modal, '');
-        this._captureOpsTabState(modal);
-        Logger.log('verifier content search cleared');
-    },
-
     _scrollVerifierActiveContentMatchInElement(codeEl) {
         if (!codeEl) return;
         const active = codeEl.querySelector('.wf-ops-verifier-hit-active');
         if (active && typeof active.scrollIntoView === 'function') {
             active.scrollIntoView({ block: 'center', inline: 'nearest' });
         }
-    },
-
-    _scrollVerifierActiveContentMatch(modal) {
-        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputScroll');
-        this._scrollVerifierActiveContentMatchInElement(output);
     },
 
     async _renderVerifierCodeElement(codeEl, options) {
@@ -4823,32 +3220,6 @@ const plugin = {
         return searchState;
     },
 
-    async _refreshVerifierOutputDisplay(modal) {
-        const wrap = this._opsQuery(modal, '#wf-ops-verifier-output-wrap', 'verifierOutputWrap');
-        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutput');
-        const text = this._opsVerifierSourceText || '';
-        const query = (this._opsVerifierContentSearch.query || '').trim();
-
-        if (wrap) {
-            wrap.style.display = text ? 'flex' : 'none';
-            wrap.style.flexDirection = 'row';
-        }
-        if (!output) {
-            this._updateVerifierContentSearchUi(modal);
-            return;
-        }
-
-        this._opsVerifierContentSearch = await this._renderVerifierCodeElement(output, {
-            text,
-            searchState: this._opsVerifierContentSearch
-        });
-
-        if (query) {
-            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
-        }
-        this._updateVerifierContentSearchUi(modal);
-    },
-
     async _stepVerifierContentMatchInElement(codeEl, searchState, delta, rerender) {
         const search = searchState || { query: '', index: 0, matchStarts: [] };
         const count = search.matchStarts ? search.matchStarts.length : 0;
@@ -4864,168 +3235,18 @@ const plugin = {
         return search;
     },
 
-    _applyVerifierContentSearch(modal, rawQuery) {
-        this._opsVerifierContentSearch.query = String(rawQuery || '');
-        this._opsVerifierContentSearch.index = 0;
-        void this._refreshVerifierOutputDisplay(modal);
-        const q = this._opsVerifierContentSearch.query.trim();
-        if (q) {
-            const n = this._opsVerifierContentSearch.matchStarts.length;
-            Logger.log('verifier content search — ' + n + ' match(es) for "' + q + '"');
-        }
-    },
-
-    _stepVerifierContentMatch(modal, delta) {
-        const search = this._opsVerifierContentSearch;
-        const count = search.matchStarts ? search.matchStarts.length : 0;
-        if (!count || !delta) return;
-        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputStep');
-        void this._stepVerifierContentMatchInElement(output, search, delta, () =>
-            this._refreshVerifierOutputDisplay(modal)
-        ).then((nextSearch) => {
-            this._opsVerifierContentSearch = nextSearch;
-            this._updateVerifierContentSearchUi(modal);
-            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
-            Logger.debug('verifier content match ' + (nextSearch.index + 1) + '/' + count);
-        });
-    },
-
-    async _setOpsVerifierOutput(modal, value) {
-        const text = value || '';
-        this._opsVerifierSourceText = text;
-        if (!text) {
-            this._opsVerifierContentSearch = { query: '', index: 0, matchStarts: [] };
-            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClear');
-            if (contentInput) contentInput.value = '';
-        }
-        await this._refreshVerifierOutputDisplay(modal);
-    },
-
-    _clearOpsVerifierVersionPicker(modal) {
-        this._renderOpsTaskVerifierVersionSelect(modal, null, '');
-        this._opsVerifierFetchState = null;
-        this._opsVerifierPendingSelectPin = '';
-    },
-
-    _syncOpsVerifierFetchState(modal, result, selectedVersion) {
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierFetchStateSync');
-        const pin = selectedVersion != null
-            ? String(selectedVersion)
-            : String((result && (result.verifierVersionId || result.selectedVersion || result.versionId)) || '');
-        if (select) {
-            const values = [...select.options].map((opt) => opt.value);
-            if (pin && values.indexOf(pin) >= 0) {
-                select.value = pin;
-            } else if (values.length) {
-                const currentOpt = [...select.options].find((opt) =>
-                    /—\s*current$/i.test(String(opt.textContent || ''))
-                );
-                select.value = (currentOpt && currentOpt.value) || values[0];
-            }
-        }
-        if (result && (result.verifierId || result.source || result.taskId || result.taskKey)) {
-            this._opsVerifierFetchState = {
-                resolved: result,
-                selectedVersion: (select && select.value != null) ? select.value : pin,
-                displayVersionNo: result.displayVersionNo != null ? result.displayVersionNo : null
-            };
-        } else {
-            this._opsVerifierFetchState = null;
-        }
-    },
-
-    _readOpsVerifierVersionSelectPin(modal) {
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionRead');
-        if (!select || select.style.display === 'none') return '';
-        const value = String(select.value || '').trim();
-        return (value && OPS_UUID_RE.test(value)) ? value : '';
-    },
-
-    _addOpsVerifierToDiff(modal) {
-        const state = this._opsVerifierFetchState;
-        const resolved = state && state.resolved;
-        const taskId = resolved && resolved.taskId ? String(resolved.taskId) : '';
-        const key = resolved && resolved.taskKey ? String(resolved.taskKey) : '';
-        if (!taskId && !key) {
-            this._setOpsVerifierStatus(modal, 'Fetch a task verifier first.', true);
-            return;
-        }
-        const dv = Context.diffViewer;
-        if (!dv || typeof dv.addVerifier !== 'function') {
-            this._setOpsVerifierStatus(modal, 'Diff Viewer unavailable.', true);
-            Logger.warn('Add to Diff skipped — Context.diffViewer.addVerifier missing');
-            return;
-        }
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierAddDiffSelect');
-        let preferredVerifierVersionId = this._readOpsVerifierVersionSelectPin(modal)
-            || (state && state.selectedVersion ? String(state.selectedVersion).trim() : '')
-            || (resolved && (resolved.versionId || resolved.verifierVersionId)
-                ? String(resolved.versionId || resolved.verifierVersionId).trim()
-                : '');
-        if (preferredVerifierVersionId && !OPS_UUID_RE.test(preferredVerifierVersionId)) {
-            preferredVerifierVersionId = '';
-        }
-        let preferredDisplayVersionNo = state && state.displayVersionNo != null
-            ? state.displayVersionNo
-            : null;
-        if (preferredDisplayVersionNo == null && select && select.selectedOptions && select.selectedOptions[0]) {
-            const label = String(select.selectedOptions[0].textContent || '');
-            const m = label.match(/^v(\d+)/);
-            if (m) preferredDisplayVersionNo = Number(m[1]);
-        }
-        dv.addVerifier({
-            taskId,
-            key,
-            preferredVerifierVersionId,
-            preferredDisplayVersionNo
-        });
-        Logger.log('verifier history added to Diff — ' + (key || taskId)
-            + (preferredDisplayVersionNo != null ? ' v' + preferredDisplayVersionNo : ''));
-        this._setOpsVerifierStatus(modal, 'Added verifier history to Diff.');
-    },
-
-    _queueOpsVerifierToChat(modal) {
-        const source = String(this._opsVerifierSourceText || '').trim();
-        const state = this._opsVerifierFetchState;
-        const resolved = (state && state.resolved) || {};
-        if (!source) {
-            this._setOpsVerifierStatus(modal, 'Fetch verifier code first.', true);
-            return;
-        }
-        const ui = Context.verifierFetcherUi;
-        if (!ui || typeof ui.queueChatAttachment !== 'function') {
-            this._setOpsVerifierStatus(modal, 'Chat queue unavailable.', true);
-            return;
-        }
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierQueueSelect');
-        let displayVersionNo = state && state.displayVersionNo != null ? state.displayVersionNo : null;
-        if (displayVersionNo == null && select && select.selectedOptions && select.selectedOptions[0]) {
-            const label = String(select.selectedOptions[0].textContent || '');
-            const m = label.match(/^v(\d+)/);
-            if (m) displayVersionNo = Number(m[1]);
-        }
-        const count = ui.queueChatAttachment(modal, {
-            taskId: resolved.taskId || '',
-            taskKey: resolved.taskKey || '',
-            verifierId: resolved.verifierId || '',
-            verifierKey: resolved.verifierKey || '',
-            version: resolved.version != null ? resolved.version : null,
-            versionId: resolved.versionId || resolved.verifierVersionId
-                || (state && state.selectedVersion) || '',
-            displayVersionNo,
-            source
-        });
-        const label = count === 1 ? '1 verifier queued' : (count + ' verifiers queued');
-        this._setOpsVerifierStatus(modal, label);
-        Logger.log('verifier queued for chat — ' + label);
-    },
-
     _captureOpsTabState(modal) {
         if (!modal) return;
         if (!this._opsTabState) this._opsTabState = {};
         this._captureOpsTaskLinkState(modal);
-        this._captureOpsTeamTabState(modal);
-        this._captureOpsVerifierTabState(modal);
+        const tm = Context.teamMembers;
+        if (tm && typeof tm.captureTeamTabState === 'function') {
+            tm.captureTeamTabState(modal);
+        }
+        const vf = Context.verifierFetcher;
+        if (vf && typeof vf.captureVerifierTabState === 'function') {
+            vf.captureVerifierTabState(modal);
+        }
     },
 
     _restoreOpsTabState(modal) {
@@ -5038,8 +3259,14 @@ const plugin = {
             taskInput.value = state.taskInput;
             this._updateOpsTaskLinkUI(modal);
         }
-        this._restoreOpsTeamTabState(modal);
-        this._restoreOpsVerifierTabState(modal);
+        const tm = Context.teamMembers;
+        if (tm && typeof tm.restoreTeamTabState === 'function') {
+            tm.restoreTeamTabState(modal);
+        }
+        const vf = Context.verifierFetcher;
+        if (vf && typeof vf.restoreVerifierTabState === 'function') {
+            vf.restoreVerifierTabState(modal);
+        }
     },
 
     _setOpsPasswordPanelVisible(modal, visible) {
@@ -5323,147 +3550,6 @@ const plugin = {
     },
 
 
-    _buildVerifierChatFetchContext(result) {
-        if (!result || !String(result.source || '').trim()) return null;
-        return {
-            taskId: result.taskId || '',
-            taskKey: result.taskKey || '',
-            verifierId: result.verifierId || '',
-            verifierKey: result.verifierKey || '',
-            version: result.version != null ? result.version : null,
-            versionId: result.versionId || result.verifierVersionId || '',
-            displayVersionNo: result.displayVersionNo != null ? result.displayVersionNo : null,
-            source: String(result.source || ''),
-        };
-    },
-
-    _notifyVerifierChatFetchContext(modal, ctx) {
-        // Legacy no-op: chat attach is explicit via Add to Chat queue.
-        void modal;
-        void ctx;
-    },
-
-    async _handleOpsVerifierFetch(modal, overrides) {
-        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInput');
-        const fetchBtn = this._opsQuery(modal, '#wf-ops-fetch-verifier', 'verifierFetch');
-        const dashLog = Context.dashboard;
-        if (!input) return;
-        const parsed = this._parseOpsVerifierInput(input.value);
-        const overrideVersionId = overrides && overrides.verifierVersionId
-            ? String(overrides.verifierVersionId).trim()
-            : '';
-        if (overrideVersionId && OPS_UUID_RE.test(overrideVersionId)) {
-            parsed.verifierVersionId = overrideVersionId;
-            this._opsVerifierPendingSelectPin = overrideVersionId;
-        }
-        if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) {
-            if (dashLog && typeof dashLog.logApiSkip === 'function') {
-                dashLog.logApiSkip('verifier-fetch', 'empty or invalid input');
-            }
-            this._setOpsVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
-            void this._setOpsVerifierOutput(modal, '');
-            this._captureOpsTabState(modal);
-            return;
-        }
-        if (dashLog && typeof dashLog.logApiClick === 'function') {
-            const detail = parsed.taskKey || parsed.taskId || parsed.verifierKey || parsed.verifierId || '';
-            dashLog.logApiClick('verifier-fetch', String(detail).slice(0, 80));
-        }
-        if (fetchBtn) {
-            fetchBtn.disabled = true;
-            fetchBtn.textContent = 'Fetching...';
-        }
-        this._setOpsVerifierStatus(modal, 'Fetching verifier code...');
-        void this._setOpsVerifierOutput(modal, '');
-        Logger.debug('handle verifier fetch', {
-            input: (input.value || '').slice(0, 120),
-            parsed: {
-                taskKey: parsed.taskKey || '',
-                taskId: parsed.taskId || '',
-                verifierId: parsed.verifierId || '',
-                verifierKey: parsed.verifierKey || '',
-                teamId: parsed.teamId || '',
-                verifierVersionId: parsed.verifierVersionId || ''
-            }
-        });
-        try {
-            if (parsed.taskKey || parsed.taskId) {
-                await this._hydrateOpsVerifierTaskVersionOptions(modal, {
-                    preferVerifierVersionId: parsed.verifierVersionId || ''
-                });
-                if (!parsed.verifierVersionId) {
-                    const selectPin = this._readOpsVerifierVersionSelectPin(modal);
-                    if (selectPin) parsed.verifierVersionId = selectPin;
-                }
-            }
-            const requestedPin = String(parsed.verifierVersionId || '').trim();
-            const result = await this._fetchOpsVerifierCode(parsed);
-            const preferSelected = this._resolveOpsVerifierPreferPin(requestedPin, result);
-            if (parsed.taskKey || parsed.taskId || result.taskKey || result.taskId) {
-                await this._hydrateOpsVerifierTaskVersionOptions(modal, {
-                    preferVerifierVersionId: preferSelected
-                });
-            }
-            this._syncOpsVerifierFetchState(modal, result, preferSelected);
-            await this._setOpsVerifierOutput(modal, result.source);
-            this._setOpsVerifierStatus(modal, '');
-            const versionText = result.version != null ? 'v' + result.version : 'current version';
-            Logger.log('verifier fetched ' + (result.verifierId || result.taskKey || result.taskId || 'unknown') + ' ' + versionText);
-        } catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
-            this._setOpsVerifierStatus(modal, message, true);
-            Logger.warn('verifier fetch failed', e);
-        } finally {
-            if (fetchBtn) {
-                fetchBtn.disabled = false;
-                fetchBtn.textContent = 'Fetch';
-            }
-            this._captureOpsTabState(modal);
-        }
-    },
-
-    async _handleOpsVerifierVersionChange(modal) {
-        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionChange');
-        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierVersionChangeInput');
-        if (!select || !input) return;
-
-        const versionId = String(select.value || '').trim();
-        const parsed = this._parseOpsVerifierInput(input.value);
-        if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) return;
-
-        if (!versionId || !OPS_UUID_RE.test(versionId)) {
-            this._setOpsVerifierStatus(modal, 'Select a verifier version.', true);
-            return;
-        }
-        parsed.verifierVersionId = versionId;
-        this._opsVerifierPendingSelectPin = versionId;
-
-        select.disabled = true;
-        const label = (select.selectedOptions && select.selectedOptions[0]
-            ? String(select.selectedOptions[0].textContent || '').trim()
-            : '') || (versionId.slice(0, 8) + '…');
-        this._setOpsVerifierStatus(modal, 'Loading verifier ' + label + '...');
-        try {
-            const result = await this._fetchOpsVerifierCode(parsed);
-            this._syncOpsVerifierFetchState(modal, result, versionId);
-            await this._setOpsVerifierOutput(modal, result.source);
-            this._setOpsVerifierStatus(modal, '');
-            Logger.log(
-                'verifier version selected ' +
-                    (result.verifierId || result.taskKey || 'unknown') +
-                    ' ' +
-                    label
-            );
-        } catch (e) {
-            const message = e instanceof Error ? e.message : String(e);
-            this._setOpsVerifierStatus(modal, message, true);
-            Logger.warn('verifier version change failed', e);
-        } finally {
-            select.disabled = false;
-            this._captureOpsTabState(modal);
-        }
-    },
-
     _attachOpsPasswordListeners(modal, settingsPlugin) {
         if (!modal || modal.dataset.wfOpsPasswordListenersAttached === '1') return;
         modal.dataset.wfOpsPasswordListenersAttached = '1';
@@ -5573,168 +3659,6 @@ const plugin = {
         this._attachOpsDashboardOpenOnSettingsListener(modal);
         this._attachOpsOpenDashboardButtonListener(modal);
         this._syncOpsSettingsSubmoduleVisibility(modal);
-    },
-
-    _captureOpsTeamTabState(modal) {
-        if (!modal) return;
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputCapture');
-        const teamSearchStatusRow = this._opsQuery(modal, '#wf-ops-team-search-status-row', 'teamSearchStatusRowCapture');
-        const teamSearchStatus = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatusCapture');
-        if (!this._opsTabState) this._opsTabState = {};
-        this._opsTabState.teamSearchQuery = teamSearchInput ? teamSearchInput.value : '';
-        this._opsTabState.teamSearchStatus = teamSearchStatusRow && teamSearchStatusRow.style.display !== 'none' && teamSearchStatus
-            ? (teamSearchStatus.textContent || '')
-            : '';
-        this._opsTabState.teamSearchStatusIsError = teamSearchStatus ? teamSearchStatus.style.color === '#dc2626' : false;
-    },
-
-    _restoreOpsTeamTabState(modal) {
-        if (!modal) return;
-        const state = this._opsTabState;
-        if (!state) return;
-        const teamSearchInput = this._opsQuery(modal, '#wf-ops-team-search-input', 'teamSearchInputRestore');
-        if (teamSearchInput && state.teamSearchQuery != null) {
-            teamSearchInput.value = state.teamSearchQuery;
-        }
-        if (state.teamSearchStatus) {
-            const showClear = /unique member/.test(state.teamSearchStatus) && /across/.test(state.teamSearchStatus);
-            this._setOpsTeamSearchStatus(modal, state.teamSearchStatus, state.teamSearchStatusIsError, false, showClear);
-        }
-    },
-
-    _captureOpsVerifierTabState(modal) {
-        if (!modal) return;
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
-        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
-        const fetchState = this._opsVerifierFetchState;
-        if (!this._opsTabState) this._opsTabState = {};
-        this._opsTabState.verifierInput = verifierInput ? verifierInput.value : '';
-        this._opsTabState.verifierStatus = status ? (status.textContent || '') : '';
-        this._opsTabState.verifierStatusIsError = status ? status.style.color === '#dc2626' : false;
-        this._opsTabState.verifierOutput = this._opsVerifierSourceText || '';
-        this._opsTabState.verifierContentSearchQuery = this._opsVerifierContentSearch.query || '';
-        this._opsTabState.verifierContentSearchIndex = this._opsVerifierContentSearch.index || 0;
-        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.captureScratchpadTabState === 'function') {
-            this._opsTabState.verifierScratchpad = Context.verifierFetcherUi.captureScratchpadTabState(modal);
-        }
-        this._opsTabState.verifierFetchState = fetchState
-            ? {
-                resolved: fetchState.resolved,
-                selectedVersion: fetchState.selectedVersion,
-                displayVersionNo: fetchState.displayVersionNo
-            }
-            : null;
-    },
-
-    _restoreOpsVerifierTabState(modal) {
-        if (!modal) return;
-        const state = this._opsTabState;
-        if (!state) return;
-        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputRestore');
-        if (verifierInput && state.verifierInput) {
-            verifierInput.value = state.verifierInput;
-        }
-        if (state.verifierStatus) {
-            this._setOpsVerifierStatus(modal, state.verifierStatus, state.verifierStatusIsError);
-        }
-        if (state.verifierOutput) {
-            void this._setOpsVerifierOutput(modal, state.verifierOutput);
-        }
-        if (state.verifierContentSearchQuery != null) {
-            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
-            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
-            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
-            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
-            if (state.verifierOutput) {
-                void this._refreshVerifierOutputDisplay(modal);
-            }
-        }
-        if (state.verifierFetchState && state.verifierFetchState.resolved) {
-            this._opsVerifierFetchState = {
-                resolved: state.verifierFetchState.resolved,
-                selectedVersion: state.verifierFetchState.selectedVersion || '',
-                displayVersionNo: state.verifierFetchState.displayVersionNo != null
-                    ? state.verifierFetchState.displayVersionNo
-                    : null
-            };
-            const prefer = state.verifierFetchState.selectedVersion || '';
-            if (prefer) this._opsVerifierPendingSelectPin = prefer;
-            void this._hydrateOpsVerifierTaskVersionOptions(modal, {
-                preferVerifierVersionId: prefer
-            });
-        } else {
-            this._opsVerifierFetchState = null;
-            if (state.verifierInput) {
-                void this._hydrateOpsVerifierTaskVersionOptions(modal, {});
-            }
-        }
-        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.restoreScratchpadTabState === 'function') {
-            Context.verifierFetcherUi.restoreScratchpadTabState(modal, state.verifierScratchpad || null);
-        }
-    },
-
-    async _copyOpsVerifierCode(modal, verifierCopyBtn) {
-        const value = this._opsVerifierSourceText || '';
-        if (!value) {
-            this._showOpsCopyFailurePulse(verifierCopyBtn);
-            Logger.warn('verifier copy skipped (no code)');
-            return;
-        }
-        const ok = await this._copyOpsTextToClipboard(value);
-        if (ok) {
-            this._showOpsCopySuccessFlash(verifierCopyBtn);
-            Logger.log('verifier code copied (' + value.length + ' chars)');
-        } else {
-            this._showOpsCopyFailurePulse(verifierCopyBtn);
-            Logger.warn('verifier copy failed');
-        }
-    },
-
-    _toggleOpsTeamExpandAll(modal) {
-        const cards = this._opsQuery(modal, '#wf-ops-team-search-cards', 'teamSearchExpandAllCards');
-        if (!cards) return;
-        const details = [...cards.querySelectorAll('.wf-ops-member-details')];
-        const anyOpen = details.some((d) => d.open);
-        const shouldOpen = !anyOpen;
-        if (this._opsMemberDetailsOpenIds === null) {
-            this._opsMemberDetailsOpenIds = new Set();
-        }
-        details.forEach((d) => {
-            d.open = shouldOpen;
-            const memberId = d.getAttribute('data-member-id');
-            if (!memberId) return;
-            if (shouldOpen) this._opsMemberDetailsOpenIds.add(memberId);
-            else this._opsMemberDetailsOpenIds.delete(memberId);
-        });
-        this._syncOpsExpandAllBtn(modal);
-        Logger.log('team member cards ' + (shouldOpen ? 'expanded' : 'collapsed') + ' (' + details.length + ')');
-    },
-
-    _attachOpsTeamMemberDetailsToggle(modal) {
-        if (!modal || modal.dataset.wfOpsMemberDetailsToggle === '1') return;
-        modal.dataset.wfOpsMemberDetailsToggle = '1';
-        modal.addEventListener('toggle', (e) => {
-            const detailsEl = e.target;
-            if (!detailsEl || !detailsEl.classList.contains('wf-ops-member-details')) return;
-            const memberId = detailsEl.getAttribute('data-member-id');
-            if (!memberId) return;
-            if (this._opsMemberDetailsOpenIds === null) {
-                const cache = this._opsTeamSearchMemberCache;
-                const allIds = cache ? [...cache.memberMap.keys()] : [];
-                this._opsMemberDetailsOpenIds = new Set(allIds);
-            }
-            if (detailsEl.open) this._opsMemberDetailsOpenIds.add(memberId);
-            else this._opsMemberDetailsOpenIds.delete(memberId);
-            this._syncOpsExpandAllBtn(modal);
-        }, true);
-    },
-
-    _attachOpsTeamMemberEditDelegation(modal) {
-        if (!modal || modal.dataset.wfOpsMemberEditDelegation === '1') return;
-        modal.dataset.wfOpsMemberEditDelegation = '1';
-        modal.addEventListener('click', (e) => {
-            this._handleOpsMemberEditClick(e, modal);
-        });
     },
 
     async _ensureOpsSessionReady(dashModal) {
