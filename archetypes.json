@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.328",
+  "archetypesVersion": "14.329",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -23,7 +23,7 @@
     {
       "name": "highlight-js.js",
       "version": "1.8",
-      "hash": "sha256-1ae4eac93c5f639cdd55358a519bc91b0ef84890f474f343690c151eb6e341bf",
+      "hash": "sha256-44d5035e68d1a1c6865568184c962381acbc93e7c4b8ed054d9cce7d224bd690",
       "log": false
     },
     {
@@ -34,8 +34,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "11.13",
-      "hash": "sha256-9bfa2c3c0569583a7b9906042b3ed37f2636b750d940ab0fac305ddd49384bee",
+      "version": "11.14",
+      "hash": "sha256-e0bf8a28ae58094257c4527153ae59147bcb3c835643e20989c60f3fe94d2b81",
       "log": false
     },
     {
@@ -162,14 +162,14 @@
     },
     {
       "name": "vnc-helper.js",
-      "version": "3.3",
-      "hash": "sha256-05a52c3a6a2bc21cc2e8252e1de46e4f1480bd0e960a1bc6e535f4fa3811d915",
+      "version": "3.4",
+      "hash": "sha256-aa55460dc25dfc2cbb5186a36fa548333139bc182d9114b5393e62706dd355f3",
       "log": false
     },
     {
       "name": "env-helper.js",
-      "version": "2.3",
-      "hash": "sha256-1a487b43de9ed1750c1a9eabb283c47daab6bd835a731e09d1ced9e01570f657",
+      "version": "2.4",
+      "hash": "sha256-38a274d22761d1a2bdae657d40cb0559b744452c22bf5bc7bcb134f1de508d6e",
       "log": false
     }
   ],
@@ -1065,14 +1065,14 @@
       "plugins": [
         {
           "name": "vnc-helper.js",
-          "version": "1.12",
-          "hash": "sha256-25944d385d4954af0c0be680553a6516c471fa18d6a5479c1c14860b80db9446",
+          "version": "1.13",
+          "hash": "sha256-ff810da3d3f1a18d93b2a24cc7b2d214a2c1e86c3879c1eb8eef31ef7c425a03",
           "log": false
         },
         {
           "name": "env-helper.js",
-          "version": "1.4",
-          "hash": "sha256-9c79aa708b813841ebfa1acf203385d6012ea6bd967529303177e7235799e60f",
+          "version": "1.5",
+          "hash": "sha256-e86c9a6a1750ee28bb89baf9c4a4030fcb5191b4f8beba999ed20db03eb8588a",
           "log": false
         }
       ]

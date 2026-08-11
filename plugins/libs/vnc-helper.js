@@ -41,7 +41,7 @@ const SHOW_PANEL_SUBOPTION = {
 const FORCE_DARK_SUBOPTION = {
     id: FORCE_DARK_SUBOPTION_ID,
     name: 'Force dark mode',
-    description: 'Overrides Preferred mode for this helper panel only.',
+    description: 'Overrides Preferred Visual Mode for this helper panel only.',
     enabledByDefault: false
 };
 
@@ -50,7 +50,7 @@ const VncHelperApi = {
     name: 'External VNC Helper',
     description:
         'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '3.3',
+    _version: '3.4',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -903,7 +903,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'External VNC Helper (library)',
     description: 'Shared API for External VNC Helper panel and clipboard helpers',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

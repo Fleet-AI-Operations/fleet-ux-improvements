@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.13',
+    _version: '11.14',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -222,7 +222,7 @@ const plugin = {
                 value: mode,
                 valueAttr: 'data-theme-mode',
                 fill: true,
-                ariaLabel: 'Preferred mode',
+                ariaLabel: 'Preferred Visual Mode',
                 options: [
                     { value: 'match', label: 'Match site', id: 'wf-theme-mode-match' },
                     { value: 'light', label: 'Light', id: 'wf-theme-mode-light' },
@@ -233,7 +233,7 @@ const plugin = {
         return `
             <div style="margin-bottom: 20px;">
                 <div style="padding: 12px 14px; border: 1px solid ${c.border}; border-radius: 8px; background: ${c.card};">
-                    <div style="font-size: 14px; font-weight: 600; color: ${c.fg}; margin-bottom: 10px;">Preferred mode</div>
+                    <div style="font-size: 14px; font-weight: 600; color: ${c.fg}; margin-bottom: 10px;">Preferred Visual Mode</div>
                     ${groupHtml}
                 </div>
             </div>
@@ -1070,7 +1070,7 @@ const plugin = {
             });
         }
 
-        const themeModeGroup = Context.dom.query('.fleet-ui-seg-group[aria-label="Preferred mode"]', {
+        const themeModeGroup = Context.dom.query('.fleet-ui-seg-group[aria-label="Preferred Visual Mode"]', {
             root: modal,
             context: `${this.id}.themeModeGroup`
         });
@@ -1084,7 +1084,7 @@ const plugin = {
                         if (next === prev) return;
                         this._pendingSettingsTabId = this._getActiveSettingsTabId(modal);
                         this._setPreferredThemeMode(next);
-                        Logger.log(`Preferred mode → ${next}`);
+                        Logger.log(`Preferred Visual Mode → ${next}`);
                         this._captureOpsState(modal);
                         const wasOpen = this._modalOpen;
                         modal.remove();
