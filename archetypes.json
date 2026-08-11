@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.329",
+  "archetypesVersion": "14.330",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,14 +16,14 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.12",
-      "hash": "sha256-1b761586ab58a8b31e772d4e8f870178b166be0ac856c60967b80bd9729d3477",
+      "version": "3.13",
+      "hash": "sha256-f939809f52df810c710423a48e253001a130b9c3f7fde4cb5578b226374bd999",
       "log": false
     },
     {
       "name": "highlight-js.js",
       "version": "1.8",
-      "hash": "sha256-44d5035e68d1a1c6865568184c962381acbc93e7c4b8ed054d9cce7d224bd690",
+      "hash": "sha256-1ae4eac93c5f639cdd55358a519bc91b0ef84890f474f343690c151eb6e341bf",
       "log": false
     },
     {
@@ -54,8 +54,8 @@
     },
     {
       "name": "action-counter.js",
-      "version": "3.4",
-      "hash": "sha256-b9ba259e05c2f2e0c994d0e1f80d2a31c23fb3ab576ba8ba0345ebfcc9e08eaa",
+      "version": "3.5",
+      "hash": "sha256-86569fec5340956e34eb3e1e4b2fd22aaf42354a3661eb207b799d52e069ff1a",
       "log": false
     },
     {
