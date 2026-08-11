@@ -6477,7 +6477,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _eyeIconSvg() {
-        return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
+        return `<svg width="15.4" height="15.4" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
             + `<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>`
             + `<circle cx="13" cy="13.2" r="3.2"></circle>`
             + `</svg>`;
@@ -7674,7 +7674,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.16',
+    _version: '9.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
