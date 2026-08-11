@@ -72,16 +72,20 @@ async function gmFetchTextVerified(url) {
 }
 
 function resolveFleetSyntaxTheme() {
+    const ui = Context.uiLib;
+    if (ui && typeof ui.getFleetTheme === 'function') {
+        return ui.getFleetTheme() === 'dark' ? 'dark' : 'light';
+    }
     const de = Context.diffEngine;
     if (de && typeof de.getFleetTheme === 'function') return de.getFleetTheme();
-    return document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+    return document.documentElement.dataset.fleetUxTheme === 'dark' ? 'dark' : 'light';
 }
 
 const plugin = {
     id: 'highlight-js',
     name: 'Highlight.js Loader',
     description: 'Lazy-loads highlight.js from jsDelivr for Python syntax highlighting',
-    _version: '1.7',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
 
@@ -106,6 +110,12 @@ const plugin = {
 
     _ensureFleetThemeSubscription() {
         if (this._fleetThemeSubscribed) return;
+        const ui = Context.uiLib;
+        if (ui && typeof ui.onThemeChange === 'function') {
+            ui.onThemeChange(() => { void this._onFleetThemeChanged(); });
+            this._fleetThemeSubscribed = true;
+            return;
+        }
         const de = Context.diffEngine;
         if (!de || typeof de.onFleetThemeChange !== 'function') return;
         de.onFleetThemeChange(() => { void this._onFleetThemeChanged(); });
@@ -126,7 +136,7 @@ const plugin = {
         const next = resolveFleetSyntaxTheme();
         if (next === this._activeTheme) return;
         this._applyThemeToDocument(next);
-        Logger.log('theme synced to fleet site → ' + next);
+        Logger.log('theme synced to Preferred mode → ' + next);
         await this._refreshAllHighlighted();
     },
 

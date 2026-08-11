@@ -12,7 +12,7 @@ const SHOW_PANEL_SUBOPTION = {
 const FORCE_DARK_SUBOPTION = {
     id: FORCE_DARK_SUBOPTION_ID,
     name: 'Force dark mode',
-    description: 'When off, helper chrome stays light. When on, helper chrome stays dark.',
+    description: 'Overrides Preferred mode for this helper panel only.',
     enabledByDefault: false
 };
 
@@ -21,7 +21,7 @@ const plugin = {
     name: 'External VNC Helper',
     description:
         'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.11',
+    _version: '1.12',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],

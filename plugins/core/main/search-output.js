@@ -111,30 +111,35 @@ const DASH_OUTPUT_KIND_CONFIG = {
         label: 'Task Creation',
         tabBg: '#16a34a',
         toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #4ade80; color: #86efac; background: transparent;',
         textHighlight: 'font-weight: 600; color: #15803d;'
     },
     qa: {
         label: 'QA',
         tabBg: '#2563eb',
         toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #60a5fa; color: #93c5fd; background: transparent;',
         textHighlight: 'font-weight: 600; color: #1d4ed8;'
     },
     dispute: {
         label: 'Disputes',
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #c4b5fd; color: #ddd6fe; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
     },
     senior_review: {
         label: 'Sr Review',
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #facc15; color: #fde68a; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
     },
     sessions: {
         label: 'Sessions',
         tabBg: '#0891b2',
         toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #22d3ee; color: #a5f3fc; background: transparent;',
         textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
@@ -866,7 +871,16 @@ const searchOutputCoreMethods = {
         return { baseUrl, anonKey };
     },
 
-    async _dashPostgrestListGet(table, params) {
+    _dashResolveTable(tableKey) {
+        const ops = this._dashOpsTab();
+        if (typeof ops.resolveTable !== 'function') {
+            throw new Error('Ops table resolver unavailable. Unlock Ops and retry.');
+        }
+        return ops.resolveTable(tableKey);
+    },
+
+    async _dashPostgrestListGet(tableKey, params) {
+        const table = this._dashResolveTable(tableKey);
         const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
         const ops = this._dashOpsTab();
         const pageWindow = this._pageWindow();
@@ -903,8 +917,7 @@ const searchOutputCoreMethods = {
         if (!id || !DASH_UUID_RE.test(id)) {
             throw new Error('Fleet user id unavailable. Open Fleet while logged in.');
         }
-        const rows = await this._dashPostgrestListGet('team_member', {
-            select: 'role,team(id,name,logo_url)',
+        const rows = await this._pgQuery('team_member.select_catalog', {
             profile_id: 'eq.' + id,
             status: 'eq.ACTIVE'
         });
@@ -929,7 +942,8 @@ const searchOutputCoreMethods = {
         return teams;
     },
 
-    async _dashPostgrestObjectGet(table, params) {
+    async _dashPostgrestObjectGet(tableKey, params) {
+        const table = this._dashResolveTable(tableKey);
         const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
         const ops = this._dashOpsTab();
         const pageWindow = this._pageWindow();
@@ -960,7 +974,8 @@ const searchOutputCoreMethods = {
         return res.json();
     },
 
-    async _dashPostgrestUpsert(table, conflictCols, body) {
+    async _dashPostgrestUpsert(tableKey, conflictCols, body) {
+        const table = this._dashResolveTable(tableKey);
         const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
         const ops = this._dashOpsTab();
         const pageWindow = this._pageWindow();
@@ -991,7 +1006,8 @@ const searchOutputCoreMethods = {
         }
     },
 
-    async _dashPostgrestInsert(table, body) {
+    async _dashPostgrestInsert(tableKey, body) {
+        const table = this._dashResolveTable(tableKey);
         const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
         const ops = this._dashOpsTab();
         const pageWindow = this._pageWindow();
@@ -1025,7 +1041,8 @@ const searchOutputCoreMethods = {
         return null;
     },
 
-    async _dashPostgrestPatch(table, params, body) {
+    async _dashPostgrestPatch(tableKey, params, body) {
+        const table = this._dashResolveTable(tableKey);
         const { baseUrl, anonKey } = this._dashEnsureRuntimeAccess();
         const ops = this._dashOpsTab();
         const pageWindow = this._pageWindow();
@@ -1123,8 +1140,7 @@ const searchOutputCoreMethods = {
             Logger.log('rescue lease claimed — ' + tid.slice(0, 8));
             return { leased: true, alreadyHeld: false };
         } catch (e) {
-            const rows = await this._dashPostgrestListGet('eval_task_leases', {
-                select: 'expires_at,ended_at',
+            const rows = await this._pgQuery('eval_task_leases.select_open', {
                 task_id: 'eq.' + tid,
                 owner_id: 'eq.' + userId,
                 ended_at: 'is.null',
@@ -1273,11 +1289,12 @@ const searchOutputCoreMethods = {
         const teamLabel = this._teamName(id) || id.slice(0, 8) + '…';
         Logger.debug('switching active team to ' + teamLabel);
         this._dashSetCookie('current-team-id', id);
-        const membership = await this._dashPostgrestObjectGet('team_member', {
-            select: 'role',
+        const rows = await this._pgQuery('team_member.select_role', {
             profile_id: 'eq.' + userId,
-            team_id: 'eq.' + id
+            team_id: 'eq.' + id,
+            limit: '1'
         });
+        const membership = Array.isArray(rows) ? rows[0] : rows;
         if (membership && membership.role) {
             this._dashSetCookie('current-team-role', String(membership.role));
         }
@@ -5953,7 +5970,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.41',
+    _version: '9.43',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

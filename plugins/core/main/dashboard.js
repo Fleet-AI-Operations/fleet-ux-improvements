@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '11.34',
+    _version: '12.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -131,6 +131,7 @@ const plugin = {
     _activeTabFallbackLogged: false,
     /** In-memory only: last active dashboard tab when the modal was closed (not persisted). */
     _sessionActiveTabId: null,
+    _themeUnsub: null,
 
     init(state) {
         if (state && state.loaderRegistered) {
@@ -496,6 +497,167 @@ const plugin = {
         return window;
     },
 
+    _dashThemeColors() {
+        if (Context.uiLib && typeof Context.uiLib.chromeColors === 'function') {
+            return Context.uiLib.chromeColors();
+        }
+        const dark = Context.uiLib && typeof Context.uiLib.isFleetDark === 'function'
+            ? Context.uiLib.isFleetDark()
+            : (document.documentElement.dataset.fleetUxTheme === 'dark');
+        if (dark) {
+            return {
+                bg: '#18181b',
+                card: '#27272a',
+                hover: '#3f3f46',
+                border: '#3f3f46',
+                borderHover: '#52525b',
+                fg: '#e4e4e7',
+                muted: '#a1a1aa'
+            };
+        }
+        return {
+            bg: '#ffffff',
+            card: '#fafafa',
+            hover: '#f0f0f0',
+            border: '#e5e5e5',
+            borderHover: '#d1d5db',
+            fg: '#333333',
+            muted: '#666666'
+        };
+    },
+
+    _applyDashShellTheme() {
+        const modal = this._modal;
+        if (!modal) return;
+        const c = this._dashThemeColors();
+        const dark = Context.uiLib && typeof Context.uiLib.isFleetDark === 'function'
+            ? Context.uiLib.isFleetDark()
+            : (document.documentElement.dataset.fleetUxTheme === 'dark');
+        modal.style.background = c.bg;
+        modal.style.color = c.fg;
+        modal.style.borderColor = c.border;
+        modal.style.colorScheme = dark ? 'dark' : 'light';
+
+        const doc = modal.ownerDocument || this._pageWindow().document;
+        let style = modal.querySelector('#wf-dash-preferred-vars')
+            || doc.getElementById('wf-dash-preferred-vars');
+        if (!style) {
+            style = doc.createElement('style');
+            style.id = 'wf-dash-preferred-vars';
+            modal.appendChild(style);
+        } else if (style.parentNode !== modal) {
+            modal.appendChild(style);
+        }
+        style.textContent = [
+            '#wf-dash-modal, #wf-dash-modal * {',
+            '  --background: ' + c.bg + ' !important;',
+            '  --card: ' + c.card + ' !important;',
+            '  --foreground: ' + c.fg + ' !important;',
+            '  --muted: ' + c.hover + ' !important;',
+            '  --muted-foreground: ' + c.muted + ' !important;',
+            '  --border: ' + c.border + ' !important;',
+            '  --input: ' + c.border + ' !important;',
+            // Host --accent is dark under html.dark; reviewer/active chips use it.
+            '  --accent: ' + c.hover + ' !important;',
+            '  --accent-foreground: ' + c.fg + ' !important;',
+            '  --secondary: ' + c.card + ' !important;',
+            '  --secondary-foreground: ' + c.fg + ' !important;',
+            '  --popover: ' + c.card + ' !important;',
+            '  --popover-foreground: ' + c.fg + ' !important;',
+            '}'
+        ].join('\n');
+    },
+
+    _dashTextTabStyle(active, options) {
+        const opts = options || {};
+        const c = this._dashThemeColors();
+        const pad = opts.padding || '3px 14px';
+        const fontSize = opts.fontSize || '13px';
+        const base = 'position: relative; padding: ' + pad + '; font-size: ' + fontSize
+            + '; background: transparent; border: none; border-bottom: 2px solid transparent;'
+            + ' margin-bottom: -1px; cursor: pointer;';
+        if (active) {
+            return base + ' font-weight: 600; color: ' + c.fg
+                + '; border-bottom-color: var(--brand, var(--primary, #2563eb));';
+        }
+        return base + ' font-weight: 500; color: ' + c.muted + ';';
+    },
+
+    _applyDashTextTabButton(btn, active, options) {
+        if (!btn) return;
+        const opts = options || {};
+        const c = this._dashThemeColors();
+        btn.style.color = active ? c.fg : c.muted;
+        btn.style.fontWeight = active ? '600' : '500';
+        btn.style.borderBottomColor = active
+            ? 'var(--brand, var(--primary, #2563eb))'
+            : 'transparent';
+        if (opts.fullCss) {
+            btn.style.cssText = this._dashTextTabStyle(active, opts);
+        }
+    },
+
+    _ensureDashThemeListener() {
+        if (this._themeUnsub) return;
+        if (!Context.uiLib || typeof Context.uiLib.onThemeChange !== 'function') return;
+        this._themeUnsub = Context.uiLib.onThemeChange(() => {
+            this._onDashThemeChange();
+        });
+    },
+
+    _onDashThemeChange() {
+        if (!this._built || !this._modal) return;
+        this._applyDashShellTheme();
+        try {
+            this._syncHeaderTabChrome(this._state.activeTab || this._resolveActiveTabId());
+        } catch (e) {
+            Logger.warn('header tab theme refresh failed', e);
+        }
+        if (typeof this._syncLeftTabUi === 'function') {
+            try {
+                this._syncLeftTabUi();
+            } catch (e) {
+                Logger.warn('left tab theme refresh failed', e);
+            }
+        }
+        if (typeof this._syncStatsTabUi === 'function') {
+            try {
+                this._syncStatsTabUi();
+            } catch (e) {
+                Logger.warn('stats tab theme refresh failed', e);
+            }
+        }
+        if (typeof this._syncOutputToggleUi === 'function') {
+            try {
+                this._syncOutputToggleUi();
+            } catch (e) {
+                Logger.warn('filter toggle theme refresh failed', e);
+            }
+        }
+        if (typeof this._refreshStatsForTheme === 'function') {
+            try {
+                this._refreshStatsForTheme();
+            } catch (e) {
+                Logger.warn('stats theme refresh failed', e);
+            }
+        }
+        if (typeof this._renderResults === 'function' && this._state && Array.isArray(this._state.cachedItems) && this._state.cachedItems.length) {
+            try {
+                this._renderResults();
+            } catch (e) {
+                Logger.warn('results theme refresh failed', e);
+            }
+        }
+        for (const tab of this._tabs || []) {
+            if (typeof tab.onThemeChange !== 'function') continue;
+            try {
+                tab.onThemeChange(this);
+            } catch (e) {
+                Logger.warn('onThemeChange failed for tab ' + tab.id, e);
+            }
+        }
+    },
+
     _logDashApiClick(action, detail) {
         const label = String(action || 'unknown').trim();
         const suffix = detail != null && String(detail).trim() ? ' — ' + String(detail).trim() : '';
@@ -702,11 +864,12 @@ const plugin = {
 
             const modal = doc.createElement('div');
             modal.id = 'wf-dash-modal';
+            const theme = this._dashThemeColors();
             modal.style.cssText = [
                 'position: relative', 'display: flex', 'flex-direction: column',
                 'width: 100vw', 'height: 100vh', 'max-width: 100vw', 'max-height: 100vh',
-                'background: var(--background, #ffffff)', 'color: var(--foreground, #0f172a)',
-                'border: 1px solid var(--border, #e2e8f0)', 'border-radius: 12px',
+                'background: ' + theme.bg, 'color: ' + theme.fg,
+                'border: 1px solid ' + theme.border, 'border-radius: 12px',
                 'box-shadow: 0 20px 60px rgba(0,0,0,0.35)', 'overflow: hidden',
                 'font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif)',
                 'font-size: 13px', 'box-sizing: border-box'
@@ -715,6 +878,9 @@ const plugin = {
 
             overlay.appendChild(modal);
             doc.body.appendChild(overlay);
+            this._modal = modal;
+            this._applyDashShellTheme();
+            this._ensureDashThemeListener();
 
             overlay.addEventListener('mousedown', (e) => {
                 if (e.target === overlay) this.close();
@@ -1168,11 +1334,7 @@ const plugin = {
                 { id: 'dash-settings', label: 'Settings' }
             ];
         const tabBtns = tabs.map((t) => `
-            <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="
-                position: relative; padding: 3px 14px; font-size: 13px; font-weight: 500;
-                background: transparent; border: none; border-bottom: 2px solid transparent;
-                margin-bottom: -1px; cursor: pointer; color: var(--muted-foreground, #64748b);
-            ">${t.label}</button>`).join('');
+            <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="${this._dashTextTabStyle(false)}">${t.label}</button>`).join('');
         const taskLinkBar = ops && typeof ops.renderTaskLinkBar === 'function' ? ops.renderTaskLinkBar() : '';
         const gradeAssessmentsLink = ops && typeof ops.renderGradeAssessmentsHeaderLink === 'function'
             ? ops.renderGradeAssessmentsHeaderLink()
@@ -1213,7 +1375,7 @@ const plugin = {
                 </div>
             </div>
             <div id="wf-dash-body" style="flex: 1; min-height: 0; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column;">
-                <div id="wf-dash-incomplete-banner" style="display: none; margin-bottom: 12px; padding: 10px 12px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; flex-shrink: 0;"></div>
+                <div id="wf-dash-incomplete-banner" class="fleet-ui-alert-banner fleet-ui-alert-banner--amber" style="display: none; margin-bottom: 12px; margin-top: 0; padding: 10px 12px; font-size: 12px; line-height: 1.45; flex-shrink: 0;"></div>
                 ${panelHtml}
             </div>
         `;
@@ -1383,6 +1545,9 @@ const plugin = {
         if (!this._modal) return;
         if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
             Context.uiLib.ensureButtonStyles('#wf-dash-modal', this._modal);
+        }
+        if (Context.uiLib && typeof Context.uiLib.ensureAlertBannerStyles === 'function') {
+            Context.uiLib.ensureAlertBannerStyles();
         }
     },
 
@@ -2055,13 +2220,16 @@ const plugin = {
             '  border: 1px solid #b45309;',
             '  border-bottom: none;',
             '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #fff));',
-            '  color: #fff7ed;',
+            '  color: #92400e;',
             '  padding: 0 8px;',
+            '}',
+            'html[data-fleet-ux-theme="dark"] #wf-dash-modal .wf-dash-card-action--rescue {',
+            '  color: #fff7ed;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
             '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
             '  border-color: var(--brand, var(--primary, #2563eb));',
-            '  color: #ffffff;',
+            '  color: var(--foreground, #0f172a);',
             '}',
             '#wf-dash-modal .wf-dash-card-action--get-verifier:hover,',
             '#wf-dash-modal .wf-dash-card-action--rehydrate:hover,',
@@ -2074,6 +2242,11 @@ const plugin = {
             '  background: #78350f;',
             '  border-color: #92400e;',
             '  color: #fff7ed;',
+            '}',
+            'html[data-fleet-ux-theme="light"] #wf-dash-modal .wf-dash-card-action--rescue:hover {',
+            '  background: color-mix(in srgb, #f59e0b 38%, var(--background, #fff));',
+            '  border-color: #b45309;',
+            '  color: #78350f;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--rehydrate:disabled,',
             '#wf-dash-modal .wf-dash-card-action--rescue:disabled {',
@@ -3324,14 +3497,14 @@ const plugin = {
         this._updateMsCount(scopeKey);
     },
 
-    _setActiveTab(tabId) {
+    _syncHeaderTabChrome(tabId) {
+        if (!this._modal) return;
         tabId = this._resolveActiveTabId(tabId);
         this._state.activeTab = tabId;
         this._modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
             const id = btn.getAttribute('data-wf-dash-tab');
             const active = id === tabId;
-            btn.style.color = active ? 'var(--foreground, #0f172a)' : 'var(--muted-foreground, #64748b)';
-            btn.style.borderBottomColor = active ? 'var(--brand, var(--primary, #2563eb))' : 'transparent';
+            this._applyDashTextTabButton(btn, active);
         });
         const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'diff-viewer']);
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
@@ -3342,6 +3515,11 @@ const plugin = {
                 panel.style.display = active ? '' : 'none';
             }
         });
+    },
+
+    _setActiveTab(tabId) {
+        tabId = this._resolveActiveTabId(tabId);
+        this._syncHeaderTabChrome(tabId);
         const tabDef = this._tabsById[tabId];
         if (tabDef && typeof tabDef.onActivate === 'function') {
             tabDef.onActivate(this._modal, this);

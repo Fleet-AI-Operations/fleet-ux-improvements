@@ -1064,17 +1064,695 @@ function verifierFetcherPanelHtml() {
             </div>`;
 }
 
+const VERIFIER_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const verifierFetcherController = {
+    _opsVerifierFetchState: null,
+    _opsVerifierPendingSelectPin: '',
+    _opsVerifierSourceText: '',
+    _opsVerifierContentSearch: { query: '', index: 0, matchStarts: [] },
+    _tabState: {
+        verifierInput: '',
+        verifierStatus: '',
+        verifierStatusIsError: false,
+        verifierOutput: '',
+        verifierContentSearchQuery: '',
+        verifierContentSearchIndex: 0,
+        verifierScratchpad: null,
+        verifierFetchState: null
+    },
+
+    onModalClosed() {
+        this._opsVerifierPendingSelectPin = '';
+        this._opsVerifierFetchState = null;
+        this._opsVerifierContentSearch = { query: '', index: 0, matchStarts: [] };
+    },
+
+    _opsQuery(modal, selector, contextSuffix) {
+        if (!modal) return null;
+        if (Context.dom && typeof Context.dom.query === 'function') {
+            return Context.dom.query(selector, {
+                root: modal,
+                context: 'verifier-fetcher.' + (contextSuffix || 'query')
+            });
+        }
+        return modal.querySelector(selector);
+    },
+
+    _formatVersionLabel(entry) {
+        const n = entry && entry.displayVersionNo != null ? entry.displayVersionNo : null;
+        if (n == null) return entry && entry.isCurrent ? 'Current' : 'Unknown';
+        return entry.isCurrent ? ('v' + n + ' — current') : ('v' + n);
+    },
+
+    _flashCopySuccess(button) {
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+            Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
+        }
+    },
+
+    _flashCopyFailure(button) {
+        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+            Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
+        }
+    },
+
+    async _copyTextToClipboard(text) {
+        if (!text) return false;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return true;
+            }
+        } catch (_e) { /* fall through */ }
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (_e2) {
+            return false;
+        }
+    },
+
+    _captureOpsState(modal) {
+        const ops = Context.opsTab;
+        if (ops && typeof ops.captureState === 'function') {
+            ops.captureState(modal);
+        }
+    },
+
+    _opsVerifierOptionCurrentPin(options) {
+        const list = Array.isArray(options) ? options : [];
+        const current = list.find((o) => o && o.isCurrent && o.value);
+        if (current && VERIFIER_UUID_RE.test(String(current.value))) return String(current.value);
+        const first = list.find((o) => o && o.value && VERIFIER_UUID_RE.test(String(o.value)));
+        return first ? String(first.value) : '';
+    },
+
+    _resolveOpsVerifierPreferPin(requested, result) {
+        const candidates = [
+            requested,
+            result && result.verifierVersionId,
+            result && result.selectedVersion,
+            result && result.versionId
+        ];
+        for (let i = 0; i < candidates.length; i++) {
+            const pin = candidates[i] != null ? String(candidates[i]).trim() : '';
+            if (pin && VERIFIER_UUID_RE.test(pin)) return pin;
+        }
+        return '';
+    },
+
+    _renderOpsTaskVerifierVersionSelect(modal, optionPayload, selectedValue) {
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierTaskVersionSet');
+        if (!select) return;
+        const options = optionPayload && Array.isArray(optionPayload.options)
+            ? optionPayload.options
+            : [];
+        const prefer = selectedValue != null ? String(selectedValue).trim() : '';
+        select.innerHTML = '';
+        options.forEach((entry) => {
+            const option = document.createElement('option');
+            option.value = String(entry.value || '');
+            option.textContent = entry.label
+                || this._formatVersionLabel(entry);
+            select.appendChild(option);
+        });
+        const values = [...select.options].map((o) => o.value);
+        if (prefer && values.indexOf(prefer) >= 0) {
+            select.value = prefer;
+        } else {
+            const currentPin = this._opsVerifierOptionCurrentPin(options);
+            select.value = (currentPin && values.indexOf(currentPin) >= 0)
+                ? currentPin
+                : (values[0] || '');
+        }
+        select.style.display = options.length > 0 ? 'block' : 'none';
+        select.disabled = false;
+    },
+
+    async hydrateVerifierTaskVersionOptions(modal, opts) {
+        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputHydrate');
+        if (!input) return null;
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.parseVerifierInput !== 'function') return null;
+        const parsed = ops.parseVerifierInput(input.value);
+        if (!parsed.taskKey && !parsed.taskId) {
+            this._renderOpsTaskVerifierVersionSelect(modal, null, '');
+            return null;
+        }
+        const preferPin = opts && opts.preferVerifierVersionId
+            ? String(opts.preferVerifierVersionId).trim()
+            : '';
+        const pendingPin = this._opsVerifierPendingSelectPin
+            ? String(this._opsVerifierPendingSelectPin).trim()
+            : '';
+        const selected = (preferPin && VERIFIER_UUID_RE.test(preferPin))
+            ? preferPin
+            : (pendingPin && VERIFIER_UUID_RE.test(pendingPin) ? pendingPin : '');
+        try {
+            const payload = await ops.listTaskVerifierVersionOptions(parsed);
+            this._renderOpsTaskVerifierVersionSelect(modal, payload, selected);
+            if (selected && this._opsVerifierPendingSelectPin === selected) {
+                this._opsVerifierPendingSelectPin = '';
+            }
+            return payload;
+        } catch (e) {
+            Logger.debug('hydrate task version options failed', e);
+            return null;
+        }
+    },
+
+    _syncVerifierStatusRow(modal) {
+        const row = this._opsQuery(modal, '#wf-ops-verifier-status-row', 'verifierStatusRow');
+        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
+        if (!row) return;
+        const hasStatus = Boolean(status && (status.textContent || '').trim());
+        row.style.display = hasStatus ? 'block' : 'none';
+    },
+
+    setVerifierStatus(modal, message, isError) {
+        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatus');
+        if (!status) return;
+        status.textContent = message || '';
+        status.style.color = isError ? '#dc2626' : 'var(--muted-foreground, #666)';
+        this._syncVerifierStatusRow(modal);
+    },
+
+    _updateVerifierContentSearchUi(modal) {
+        const toolbar = this._opsQuery(modal, '#wf-ops-verifier-output-toolbar', 'verifierOutputToolbar');
+        const searchWrap = this._opsQuery(modal, '#wf-ops-verifier-content-search-wrap', 'verifierContentSearchWrap');
+        const countEl = this._opsQuery(modal, '#wf-ops-verifier-content-match-count', 'verifierContentMatchCount');
+        const prevBtn = this._opsQuery(modal, '#wf-ops-verifier-content-prev', 'verifierContentPrev');
+        const nextBtn = this._opsQuery(modal, '#wf-ops-verifier-content-next', 'verifierContentNext');
+        const clearBtn = this._opsQuery(modal, '#wf-ops-verifier-content-search-clear', 'verifierContentSearchClear');
+        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-verifier', 'verifierCopy');
+        const hasOutput = Boolean(this._opsVerifierSourceText);
+        const search = this._opsVerifierContentSearch;
+        const matchCount = search.matchStarts ? search.matchStarts.length : 0;
+        const hasQuery = Boolean((search.query || '').trim());
+
+        if (toolbar) {
+            toolbar.style.display = hasOutput ? 'flex' : 'none';
+        }
+        if (searchWrap && !toolbar) {
+            searchWrap.style.display = hasOutput ? 'flex' : 'none';
+        }
+        if (copyBtn) {
+            copyBtn.style.display = hasOutput ? 'inline-block' : 'none';
+        }
+        const addDiffBtn = this._opsQuery(modal, '#wf-ops-verifier-add-diff', 'verifierAddDiff');
+        const addChatBtn = this._opsQuery(modal, '#wf-ops-verifier-add-chat', 'verifierAddChat');
+        if (addDiffBtn) {
+            addDiffBtn.style.display = hasOutput ? 'inline-block' : 'none';
+        }
+        if (addChatBtn) {
+            addChatBtn.style.display = hasOutput ? 'inline-block' : 'none';
+        }
+        if (clearBtn) {
+            clearBtn.style.display = hasQuery ? 'inline-flex' : 'none';
+        }
+        if (countEl) {
+            if (!hasQuery) {
+                countEl.textContent = '';
+            } else if (matchCount === 0) {
+                countEl.textContent = 'No matches';
+            } else {
+                countEl.textContent = (search.index + 1) + ' / ' + matchCount;
+            }
+        }
+        const navDisabled = !hasQuery || matchCount === 0;
+        if (prevBtn) prevBtn.disabled = navDisabled;
+        if (nextBtn) nextBtn.disabled = navDisabled;
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.syncOutputToolbar === 'function') {
+            Context.verifierFetcherUi.syncOutputToolbar(modal);
+        }
+    },
+
+    clearVerifierContentSearch(modal) {
+        const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClearInput');
+        if (contentInput) contentInput.value = '';
+        this.applyVerifierContentSearch(modal, '');
+        this._captureOpsState(modal);
+        Logger.log('verifier content search cleared');
+    },
+
+    _scrollVerifierActiveContentMatch(modal) {
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputScroll');
+        const ops = Context.opsTab;
+        if (ops && typeof ops.scrollVerifierActiveContentMatch === 'function') {
+            ops.scrollVerifierActiveContentMatch(output);
+        }
+    },
+
+    async _refreshVerifierOutputDisplay(modal) {
+        const wrap = this._opsQuery(modal, '#wf-ops-verifier-output-wrap', 'verifierOutputWrap');
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutput');
+        const text = this._opsVerifierSourceText || '';
+        const query = (this._opsVerifierContentSearch.query || '').trim();
+
+        if (wrap) {
+            wrap.style.display = text ? 'flex' : 'none';
+            wrap.style.flexDirection = 'row';
+        }
+        if (!output) {
+            this._updateVerifierContentSearchUi(modal);
+            return;
+        }
+
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.renderVerifierCodeElement !== 'function') {
+            this._updateVerifierContentSearchUi(modal);
+            return;
+        }
+        this._opsVerifierContentSearch = await ops.renderVerifierCodeElement(output, {
+            text,
+            searchState: this._opsVerifierContentSearch
+        });
+
+        if (query) {
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+        }
+        this._updateVerifierContentSearchUi(modal);
+    },
+
+    applyVerifierContentSearch(modal, rawQuery) {
+        this._opsVerifierContentSearch.query = String(rawQuery || '');
+        this._opsVerifierContentSearch.index = 0;
+        void this._refreshVerifierOutputDisplay(modal);
+        const q = this._opsVerifierContentSearch.query.trim();
+        if (q) {
+            const n = this._opsVerifierContentSearch.matchStarts.length;
+            Logger.log('verifier content search — ' + n + ' match(es) for "' + q + '"');
+        }
+    },
+
+    stepVerifierContentMatch(modal, delta) {
+        const search = this._opsVerifierContentSearch;
+        const count = search.matchStarts ? search.matchStarts.length : 0;
+        if (!count || !delta) return;
+        const output = this._opsQuery(modal, '#wf-ops-verifier-output', 'verifierOutputStep');
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.stepVerifierContentMatchInElement !== 'function') return;
+        void ops.stepVerifierContentMatchInElement(output, search, delta, () =>
+            this._refreshVerifierOutputDisplay(modal)
+        ).then((nextSearch) => {
+            this._opsVerifierContentSearch = nextSearch;
+            this._updateVerifierContentSearchUi(modal);
+            requestAnimationFrame(() => this._scrollVerifierActiveContentMatch(modal));
+            Logger.debug('verifier content match ' + (nextSearch.index + 1) + '/' + count);
+        });
+    },
+
+    async _setOpsVerifierOutput(modal, value) {
+        const text = value || '';
+        this._opsVerifierSourceText = text;
+        if (!text) {
+            this._opsVerifierContentSearch = { query: '', index: 0, matchStarts: [] };
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchClear');
+            if (contentInput) contentInput.value = '';
+        }
+        await this._refreshVerifierOutputDisplay(modal);
+    },
+
+    clearVerifierVersionPicker(modal) {
+        this._renderOpsTaskVerifierVersionSelect(modal, null, '');
+        this._opsVerifierFetchState = null;
+        this._opsVerifierPendingSelectPin = '';
+    },
+
+    _syncOpsVerifierFetchState(modal, result, selectedVersion) {
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierFetchStateSync');
+        const pin = selectedVersion != null
+            ? String(selectedVersion)
+            : String((result && (result.verifierVersionId || result.selectedVersion || result.versionId)) || '');
+        if (select) {
+            const values = [...select.options].map((opt) => opt.value);
+            if (pin && values.indexOf(pin) >= 0) {
+                select.value = pin;
+            } else if (values.length) {
+                const currentOpt = [...select.options].find((opt) =>
+                    /—\s*current$/i.test(String(opt.textContent || ''))
+                );
+                select.value = (currentOpt && currentOpt.value) || values[0];
+            }
+        }
+        if (result && (result.verifierId || result.source || result.taskId || result.taskKey)) {
+            this._opsVerifierFetchState = {
+                resolved: result,
+                selectedVersion: (select && select.value != null) ? select.value : pin,
+                displayVersionNo: result.displayVersionNo != null ? result.displayVersionNo : null
+            };
+        } else {
+            this._opsVerifierFetchState = null;
+        }
+    },
+
+    _readOpsVerifierVersionSelectPin(modal) {
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionRead');
+        if (!select || select.style.display === 'none') return '';
+        const value = String(select.value || '').trim();
+        return (value && VERIFIER_UUID_RE.test(value)) ? value : '';
+    },
+
+    addVerifierToDiff(modal) {
+        const state = this._opsVerifierFetchState;
+        const resolved = state && state.resolved;
+        const taskId = resolved && resolved.taskId ? String(resolved.taskId) : '';
+        const key = resolved && resolved.taskKey ? String(resolved.taskKey) : '';
+        if (!taskId && !key) {
+            this.setVerifierStatus(modal, 'Fetch a task verifier first.', true);
+            return;
+        }
+        const dv = Context.diffViewer;
+        if (!dv || typeof dv.addVerifier !== 'function') {
+            this.setVerifierStatus(modal, 'Diff Viewer unavailable.', true);
+            Logger.warn('Add to Diff skipped — Context.diffViewer.addVerifier missing');
+            return;
+        }
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierAddDiffSelect');
+        let preferredVerifierVersionId = this._readOpsVerifierVersionSelectPin(modal)
+            || (state && state.selectedVersion ? String(state.selectedVersion).trim() : '')
+            || (resolved && (resolved.versionId || resolved.verifierVersionId)
+                ? String(resolved.versionId || resolved.verifierVersionId).trim()
+                : '');
+        if (preferredVerifierVersionId && !VERIFIER_UUID_RE.test(preferredVerifierVersionId)) {
+            preferredVerifierVersionId = '';
+        }
+        let preferredDisplayVersionNo = state && state.displayVersionNo != null
+            ? state.displayVersionNo
+            : null;
+        if (preferredDisplayVersionNo == null && select && select.selectedOptions && select.selectedOptions[0]) {
+            const label = String(select.selectedOptions[0].textContent || '');
+            const m = label.match(/^v(\d+)/);
+            if (m) preferredDisplayVersionNo = Number(m[1]);
+        }
+        dv.addVerifier({
+            taskId,
+            key,
+            preferredVerifierVersionId,
+            preferredDisplayVersionNo
+        });
+        Logger.log('verifier history added to Diff — ' + (key || taskId)
+            + (preferredDisplayVersionNo != null ? ' v' + preferredDisplayVersionNo : ''));
+        this.setVerifierStatus(modal, 'Added verifier history to Diff.');
+    },
+
+    queueVerifierToChat(modal) {
+        const source = String(this._opsVerifierSourceText || '').trim();
+        const state = this._opsVerifierFetchState;
+        const resolved = (state && state.resolved) || {};
+        if (!source) {
+            this.setVerifierStatus(modal, 'Fetch verifier code first.', true);
+            return;
+        }
+        const ui = Context.verifierFetcherUi;
+        if (!ui || typeof ui.queueChatAttachment !== 'function') {
+            this.setVerifierStatus(modal, 'Chat queue unavailable.', true);
+            return;
+        }
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierQueueSelect');
+        let displayVersionNo = state && state.displayVersionNo != null ? state.displayVersionNo : null;
+        if (displayVersionNo == null && select && select.selectedOptions && select.selectedOptions[0]) {
+            const label = String(select.selectedOptions[0].textContent || '');
+            const m = label.match(/^v(\d+)/);
+            if (m) displayVersionNo = Number(m[1]);
+        }
+        const count = ui.queueChatAttachment(modal, {
+            taskId: resolved.taskId || '',
+            taskKey: resolved.taskKey || '',
+            verifierId: resolved.verifierId || '',
+            verifierKey: resolved.verifierKey || '',
+            version: resolved.version != null ? resolved.version : null,
+            versionId: resolved.versionId || resolved.verifierVersionId
+                || (state && state.selectedVersion) || '',
+            displayVersionNo,
+            source
+        });
+        const label = count === 1 ? '1 verifier queued' : (count + ' verifiers queued');
+        this.setVerifierStatus(modal, label);
+        Logger.log('verifier queued for chat — ' + label);
+    },
+
+    _buildVerifierChatFetchContext(result) {
+        if (!result || !String(result.source || '').trim()) return null;
+        return {
+            taskId: result.taskId || '',
+            taskKey: result.taskKey || '',
+            verifierId: result.verifierId || '',
+            verifierKey: result.verifierKey || '',
+            version: result.version != null ? result.version : null,
+            versionId: result.versionId || result.verifierVersionId || '',
+            displayVersionNo: result.displayVersionNo != null ? result.displayVersionNo : null,
+            source: String(result.source || ''),
+        };
+    },
+
+    _notifyVerifierChatFetchContext(modal, ctx) {
+        // Legacy no-op: chat attach is explicit via Add to Chat queue.
+        void modal;
+        void ctx;
+    },
+
+    async handleVerifierFetch(modal, overrides) {
+        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInput');
+        const fetchBtn = this._opsQuery(modal, '#wf-ops-fetch-verifier', 'verifierFetch');
+        const dashLog = Context.dashboard;
+        if (!input) return;
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.parseVerifierInput !== 'function' || typeof ops.fetchVerifierCode !== 'function') {
+            this.setVerifierStatus(modal, 'Ops backend unavailable.', true);
+            return;
+        }
+        const parsed = ops.parseVerifierInput(input.value);
+        const overrideVersionId = overrides && overrides.verifierVersionId
+            ? String(overrides.verifierVersionId).trim()
+            : '';
+        if (overrideVersionId && VERIFIER_UUID_RE.test(overrideVersionId)) {
+            parsed.verifierVersionId = overrideVersionId;
+            this._opsVerifierPendingSelectPin = overrideVersionId;
+        }
+        if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) {
+            if (dashLog && typeof dashLog.logApiSkip === 'function') {
+                dashLog.logApiSkip('verifier-fetch', 'empty or invalid input');
+            }
+            this.setVerifierStatus(modal, 'Paste a task key, task URL, verifier key, verifier ID, or seed data first.', true);
+            void this._setOpsVerifierOutput(modal, '');
+            this._captureOpsState(modal);
+            return;
+        }
+        if (dashLog && typeof dashLog.logApiClick === 'function') {
+            const detail = parsed.taskKey || parsed.taskId || parsed.verifierKey || parsed.verifierId || '';
+            dashLog.logApiClick('verifier-fetch', String(detail).slice(0, 80));
+        }
+        if (fetchBtn) {
+            fetchBtn.disabled = true;
+            fetchBtn.textContent = 'Fetching...';
+        }
+        this.setVerifierStatus(modal, 'Fetching verifier code...');
+        void this._setOpsVerifierOutput(modal, '');
+        Logger.debug('handle verifier fetch', {
+            input: (input.value || '').slice(0, 120),
+            parsed: {
+                taskKey: parsed.taskKey || '',
+                taskId: parsed.taskId || '',
+                verifierId: parsed.verifierId || '',
+                verifierKey: parsed.verifierKey || '',
+                teamId: parsed.teamId || '',
+                verifierVersionId: parsed.verifierVersionId || ''
+            }
+        });
+        try {
+            if (parsed.taskKey || parsed.taskId) {
+                await this.hydrateVerifierTaskVersionOptions(modal, {
+                    preferVerifierVersionId: parsed.verifierVersionId || ''
+                });
+                if (!parsed.verifierVersionId) {
+                    const selectPin = this._readOpsVerifierVersionSelectPin(modal);
+                    if (selectPin) parsed.verifierVersionId = selectPin;
+                }
+            }
+            const requestedPin = String(parsed.verifierVersionId || '').trim();
+            const result = await ops.fetchVerifierCode(parsed);
+            const preferSelected = this._resolveOpsVerifierPreferPin(requestedPin, result);
+            if (parsed.taskKey || parsed.taskId || result.taskKey || result.taskId) {
+                await this.hydrateVerifierTaskVersionOptions(modal, {
+                    preferVerifierVersionId: preferSelected
+                });
+            }
+            this._syncOpsVerifierFetchState(modal, result, preferSelected);
+            await this._setOpsVerifierOutput(modal, result.source);
+            this.setVerifierStatus(modal, '');
+            const versionText = result.version != null ? 'v' + result.version : 'current version';
+            Logger.log('verifier fetched ' + (result.verifierId || result.taskKey || result.taskId || 'unknown') + ' ' + versionText);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            this.setVerifierStatus(modal, message, true);
+            Logger.warn('verifier fetch failed', e);
+        } finally {
+            if (fetchBtn) {
+                fetchBtn.disabled = false;
+                fetchBtn.textContent = 'Fetch';
+            }
+            this._captureOpsState(modal);
+        }
+    },
+
+    async handleVerifierVersionChange(modal) {
+        const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierVersionChange');
+        const input = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierVersionChangeInput');
+        if (!select || !input) return;
+
+        const ops = Context.opsTab;
+        if (!ops || typeof ops.parseVerifierInput !== 'function' || typeof ops.fetchVerifierCode !== 'function') {
+            this.setVerifierStatus(modal, 'Ops backend unavailable.', true);
+            return;
+        }
+        const versionId = String(select.value || '').trim();
+        const parsed = ops.parseVerifierInput(input.value);
+        if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) return;
+
+        if (!versionId || !VERIFIER_UUID_RE.test(versionId)) {
+            this.setVerifierStatus(modal, 'Select a verifier version.', true);
+            return;
+        }
+        parsed.verifierVersionId = versionId;
+        this._opsVerifierPendingSelectPin = versionId;
+
+        select.disabled = true;
+        const label = (select.selectedOptions && select.selectedOptions[0]
+            ? String(select.selectedOptions[0].textContent || '').trim()
+            : '') || (versionId.slice(0, 8) + '…');
+        this.setVerifierStatus(modal, 'Loading verifier ' + label + '...');
+        try {
+            const result = await ops.fetchVerifierCode(parsed);
+            this._syncOpsVerifierFetchState(modal, result, versionId);
+            await this._setOpsVerifierOutput(modal, result.source);
+            this.setVerifierStatus(modal, '');
+            Logger.log(
+                'verifier version selected ' +
+                    (result.verifierId || result.taskKey || 'unknown') +
+                    ' ' +
+                    label
+            );
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            this.setVerifierStatus(modal, message, true);
+            Logger.warn('verifier version change failed', e);
+        } finally {
+            select.disabled = false;
+            this._captureOpsState(modal);
+        }
+    },
+
+    captureVerifierTabState(modal) {
+        if (!modal) return;
+        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputCapture');
+        const status = this._opsQuery(modal, '#wf-ops-verifier-status', 'verifierStatusCapture');
+        const fetchState = this._opsVerifierFetchState;
+        if (!this._tabState) this._tabState = {};
+        this._tabState.verifierInput = verifierInput ? verifierInput.value : '';
+        this._tabState.verifierStatus = status ? (status.textContent || '') : '';
+        this._tabState.verifierStatusIsError = status ? status.style.color === '#dc2626' : false;
+        this._tabState.verifierOutput = this._opsVerifierSourceText || '';
+        this._tabState.verifierContentSearchQuery = this._opsVerifierContentSearch.query || '';
+        this._tabState.verifierContentSearchIndex = this._opsVerifierContentSearch.index || 0;
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.captureScratchpadTabState === 'function') {
+            this._tabState.verifierScratchpad = Context.verifierFetcherUi.captureScratchpadTabState(modal);
+        }
+        this._tabState.verifierFetchState = fetchState
+            ? {
+                resolved: fetchState.resolved,
+                selectedVersion: fetchState.selectedVersion,
+                displayVersionNo: fetchState.displayVersionNo
+            }
+            : null;
+    },
+
+    restoreVerifierTabState(modal) {
+        if (!modal) return;
+        const state = this._tabState;
+        if (!state) return;
+        const verifierInput = this._opsQuery(modal, '#wf-ops-verifier-input', 'verifierInputRestore');
+        if (verifierInput && state.verifierInput) {
+            verifierInput.value = state.verifierInput;
+        }
+        if (state.verifierStatus) {
+            this.setVerifierStatus(modal, state.verifierStatus, state.verifierStatusIsError);
+        }
+        if (state.verifierOutput) {
+            void this._setOpsVerifierOutput(modal, state.verifierOutput);
+        }
+        if (state.verifierContentSearchQuery != null) {
+            const contentInput = this._opsQuery(modal, '#wf-ops-verifier-content-search', 'verifierContentSearchRestore');
+            if (contentInput) contentInput.value = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.query = state.verifierContentSearchQuery;
+            this._opsVerifierContentSearch.index = Number(state.verifierContentSearchIndex) || 0;
+            if (state.verifierOutput) {
+                void this._refreshVerifierOutputDisplay(modal);
+            }
+        }
+        if (state.verifierFetchState && state.verifierFetchState.resolved) {
+            this._opsVerifierFetchState = {
+                resolved: state.verifierFetchState.resolved,
+                selectedVersion: state.verifierFetchState.selectedVersion || '',
+                displayVersionNo: state.verifierFetchState.displayVersionNo != null
+                    ? state.verifierFetchState.displayVersionNo
+                    : null
+            };
+            const prefer = state.verifierFetchState.selectedVersion || '';
+            if (prefer) this._opsVerifierPendingSelectPin = prefer;
+            void this.hydrateVerifierTaskVersionOptions(modal, {
+                preferVerifierVersionId: prefer
+            });
+        } else {
+            this._opsVerifierFetchState = null;
+            if (state.verifierInput) {
+                void this.hydrateVerifierTaskVersionOptions(modal, {});
+            }
+        }
+        if (Context.verifierFetcherUi && typeof Context.verifierFetcherUi.restoreScratchpadTabState === 'function') {
+            Context.verifierFetcherUi.restoreScratchpadTabState(modal, state.verifierScratchpad || null);
+        }
+    },
+
+    async copyVerifierCode(modal, verifierCopyBtn) {
+        const value = this._opsVerifierSourceText || '';
+        if (!value) {
+            this._flashCopyFailure(verifierCopyBtn);
+            Logger.warn('verifier copy skipped (no code)');
+            return;
+        }
+        const ok = await this._copyTextToClipboard(value);
+        if (ok) {
+            this._flashCopySuccess(verifierCopyBtn);
+            Logger.log('verifier code copied (' + value.length + ' chars)');
+        } else {
+            this._flashCopyFailure(verifierCopyBtn);
+            Logger.warn('verifier copy failed');
+        }
+    },
+};
+
 function attachVerifierFetcherListeners(modal) {
+    const vf = Context.verifierFetcher;
     const ops = Context.opsTab;
-    if (!ops) return;
+    if (!vf) return;
     if (modal.dataset.wfVerifierFetcherListenersAttached === '1') {
         restoreVerifierScratchpadState(modal);
         syncVerifierOutputToolbar(modal);
-        if (typeof ops.restoreVerifierTabState === 'function') ops.restoreVerifierTabState(modal);
+        if (typeof vf.restoreVerifierTabState === 'function') vf.restoreVerifierTabState(modal);
         return;
     }
     modal.dataset.wfVerifierFetcherListenersAttached = '1';
-    if (typeof ops.injectSpinnerStyle === 'function') ops.injectSpinnerStyle();
+    if (ops && typeof ops.injectSpinnerStyle === 'function') ops.injectSpinnerStyle();
     ensureVerifierBtnStyles();
     ensureVerifierPendingTrayStyles();
     if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
@@ -1106,7 +1784,7 @@ function attachVerifierFetcherListeners(modal) {
             writeVerifierScratchpadOpenPref(nextOpen);
             applyVerifierScratchpadLayout(modal, nextOpen);
             Logger.log('verifier output ' + (nextOpen ? 'shown' : 'hidden'));
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
     }
 
@@ -1116,7 +1794,7 @@ function attachVerifierFetcherListeners(modal) {
             writeVerifierChatOpenPref(nextOpen);
             syncVerifierAiUi(modal);
             Logger.log('chat ' + (nextOpen ? 'shown' : 'hidden'));
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
     }
 
@@ -1132,72 +1810,72 @@ function attachVerifierFetcherListeners(modal) {
 
     if (scratchpadTextarea) {
         scratchpadTextarea.addEventListener('input', () => {
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
     }
 
-    if (verifierFetchBtn && typeof ops.handleVerifierFetch === 'function') {
-        verifierFetchBtn.addEventListener('click', () => { void ops.handleVerifierFetch(modal); });
+    if (verifierFetchBtn && typeof vf.handleVerifierFetch === 'function') {
+        verifierFetchBtn.addEventListener('click', () => { void vf.handleVerifierFetch(modal); });
     }
-    if (verifierInput && typeof ops.handleVerifierFetch === 'function') {
+    if (verifierInput && typeof vf.handleVerifierFetch === 'function') {
         let hydrateTimer = null;
         const scheduleHydrate = () => {
-            if (typeof ops.hydrateVerifierTaskVersionOptions !== 'function') return;
+            if (typeof vf.hydrateVerifierTaskVersionOptions !== 'function') return;
             if (hydrateTimer) clearTimeout(hydrateTimer);
             hydrateTimer = setTimeout(() => {
                 hydrateTimer = null;
-                void ops.hydrateVerifierTaskVersionOptions(modal, {});
+                void vf.hydrateVerifierTaskVersionOptions(modal, {});
             }, 250);
         };
         verifierInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); void ops.handleVerifierFetch(modal); }
+            if (e.key === 'Enter') { e.preventDefault(); void vf.handleVerifierFetch(modal); }
         });
         const onVerifierInput = () => {
-            if (typeof ops.setVerifierStatus === 'function') ops.setVerifierStatus(modal, '');
+            if (typeof vf.setVerifierStatus === 'function') vf.setVerifierStatus(modal, '');
             scheduleHydrate();
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         };
         verifierInput.addEventListener('paste', () => requestAnimationFrame(onVerifierInput));
         verifierInput.addEventListener('input', onVerifierInput);
     }
-    if (verifierContentClear && typeof ops.clearVerifierContentSearch === 'function') {
-        verifierContentClear.addEventListener('click', () => ops.clearVerifierContentSearch(modal));
+    if (verifierContentClear && typeof vf.clearVerifierContentSearch === 'function') {
+        verifierContentClear.addEventListener('click', () => vf.clearVerifierContentSearch(modal));
     }
-    if (verifierContentSearch && typeof ops.applyVerifierContentSearch === 'function') {
+    if (verifierContentSearch && typeof vf.applyVerifierContentSearch === 'function') {
         verifierContentSearch.addEventListener('input', () => {
-            ops.applyVerifierContentSearch(modal, verifierContentSearch.value);
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            vf.applyVerifierContentSearch(modal, verifierContentSearch.value);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
         verifierContentSearch.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter') return;
             e.preventDefault();
-            if (typeof ops.stepVerifierContentMatch === 'function') ops.stepVerifierContentMatch(modal, e.shiftKey ? -1 : 1);
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            if (typeof vf.stepVerifierContentMatch === 'function') vf.stepVerifierContentMatch(modal, e.shiftKey ? -1 : 1);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
     }
-    if (verifierContentPrev && typeof ops.stepVerifierContentMatch === 'function') {
+    if (verifierContentPrev && typeof vf.stepVerifierContentMatch === 'function') {
         verifierContentPrev.addEventListener('click', () => {
-            ops.stepVerifierContentMatch(modal, -1);
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            vf.stepVerifierContentMatch(modal, -1);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
     }
-    if (verifierContentNext && typeof ops.stepVerifierContentMatch === 'function') {
+    if (verifierContentNext && typeof vf.stepVerifierContentMatch === 'function') {
         verifierContentNext.addEventListener('click', () => {
-            ops.stepVerifierContentMatch(modal, 1);
-            if (typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+            vf.stepVerifierContentMatch(modal, 1);
+            if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
     }
-    if (verifierVersionSelect && typeof ops.handleVerifierVersionChange === 'function') {
-        verifierVersionSelect.addEventListener('change', () => { void ops.handleVerifierVersionChange(modal); });
+    if (verifierVersionSelect && typeof vf.handleVerifierVersionChange === 'function') {
+        verifierVersionSelect.addEventListener('change', () => { void vf.handleVerifierVersionChange(modal); });
     }
-    if (verifierCopyBtn && typeof ops.copyVerifierCode === 'function') {
-        verifierCopyBtn.addEventListener('click', () => { void ops.copyVerifierCode(modal, verifierCopyBtn); });
+    if (verifierCopyBtn && typeof vf.copyVerifierCode === 'function') {
+        verifierCopyBtn.addEventListener('click', () => { void vf.copyVerifierCode(modal, verifierCopyBtn); });
     }
-    if (verifierAddDiffBtn && typeof ops.addVerifierToDiff === 'function') {
-        verifierAddDiffBtn.addEventListener('click', () => { ops.addVerifierToDiff(modal); });
+    if (verifierAddDiffBtn && typeof vf.addVerifierToDiff === 'function') {
+        verifierAddDiffBtn.addEventListener('click', () => { vf.addVerifierToDiff(modal); });
     }
-    if (verifierAddChatBtn && typeof ops.queueVerifierToChat === 'function') {
-        verifierAddChatBtn.addEventListener('click', () => { ops.queueVerifierToChat(modal); });
+    if (verifierAddChatBtn && typeof vf.queueVerifierToChat === 'function') {
+        verifierAddChatBtn.addEventListener('click', () => { vf.queueVerifierToChat(modal); });
     }
     modal.addEventListener('click', (e) => {
         const removeBtn = e.target && e.target.closest
@@ -1209,16 +1887,15 @@ function attachVerifierFetcherListeners(modal) {
         const key = removeBtn.getAttribute('data-wf-pending-remove') || '';
         removeVerifierChatQueueItem(modal, key);
         syncVerifierPendingAttachTray(modal);
-        const opsTab = Context.opsTab;
-        if (opsTab && typeof opsTab.setVerifierStatus === 'function') {
+        if (typeof vf.setVerifierStatus === 'function') {
             const n = getVerifierChatQueue(modal).length;
-            opsTab.setVerifierStatus(
+            vf.setVerifierStatus(
                 modal,
                 n === 0 ? '' : (n === 1 ? '1 verifier queued' : (n + ' verifiers queued'))
             );
         }
     });
-    if (typeof ops.restoreVerifierTabState === 'function') ops.restoreVerifierTabState(modal);
+    if (typeof vf.restoreVerifierTabState === 'function') vf.restoreVerifierTabState(modal);
     syncVerifierAiUi(modal);
     syncVerifierPendingAttachTray(modal);
 }
@@ -1227,7 +1904,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '8.1',
+    _version: '9.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1239,6 +1916,7 @@ const plugin = {
             Logger.error('dashboard loader not registered');
             return;
         }
+        Context.verifierFetcher = verifierFetcherController;
         Context.verifierFetcherUi = {
             syncOutputToolbar: (modal) => syncVerifierOutputToolbar(modal),
             syncAiUi: (modal) => syncVerifierAiUi(modal),
@@ -1265,10 +1943,11 @@ const plugin = {
                 Logger.debug('tab activated');
             },
             captureState(modal, dash) {
-                const ops = Context.opsTab;
-                if (ops && typeof ops.captureVerifierTabState === 'function') ops.captureVerifierTabState(modal);
+                const ctrl = Context.verifierFetcher;
+                if (ctrl && typeof ctrl.captureVerifierTabState === 'function') ctrl.captureVerifierTabState(modal);
             }
         });
+        Logger.log('module registered (Context.verifierFetcher)');
         Logger.log('tab registered');
     }
 };

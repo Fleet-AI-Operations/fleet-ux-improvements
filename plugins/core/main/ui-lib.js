@@ -9,10 +9,14 @@ const FLEET_UI_SEGMENT_STYLE_ID = 'fleet-ui-segment-styles';
 const FLEET_UI_SEGMENT_SCOPED_PREFIX = 'fleet-ui-seg-scope-';
 const FLEET_UI_FILTER_TOGGLE_STYLE_ID = 'fleet-ui-filter-toggle-styles';
 const FLEET_UI_FILTER_TOGGLE_SCOPED_PREFIX = 'fleet-ui-ft-scope-';
+const FLEET_UI_ALERT_BANNER_STYLE_ID = 'fleet-ui-alert-banner-styles';
 const FLEET_UI_USER_STORY_PROSE_STYLE_ID = 'fleet-ui-user-story-prose';
 const FLEET_UI_THEME_OVERRIDE_STYLE_ID = 'fleet-ui-theme-overrides';
 const FLEET_UI_THEME_MODE_KEY = 'extension-theme-mode';
 const FLEET_UI_THEME_MODES = ['match', 'light', 'dark'];
+/** Shared accent for Preferred chrome (segments, primary buttons, brand-tinted controls). */
+const FLEET_UI_ACCENT = '#2563eb';
+const FLEET_UI_ACCENT_FG = '#ffffff';
 
 const FLASH_PULSE_MS = 600;
 const FLASH_PULSE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -43,6 +47,22 @@ const PANEL_CLASSES = {
     ghostBtn: 'fleet-ui-panel__ghost-btn'
 };
 
+/**
+ * Preferred-mode alert banners (session refresh, update notice, ops credential gaps).
+ * Variants: danger (red), amber, amberSoft.
+ */
+const ALERT_BANNER_CLASSES = {
+    root: 'fleet-ui-alert-banner',
+    danger: 'fleet-ui-alert-banner--danger',
+    amber: 'fleet-ui-alert-banner--amber',
+    amberSoft: 'fleet-ui-alert-banner--amber-soft',
+    title: 'fleet-ui-alert-banner__title',
+    body: 'fleet-ui-alert-banner__body',
+    footer: 'fleet-ui-alert-banner__footer',
+    btnSecondary: 'fleet-ui-alert-banner__btn-secondary',
+    btnPrimary: 'fleet-ui-alert-banner__btn-primary'
+};
+
 /** Exclusive connected segment control (Match/Light/Dark, Diff Viewer On/Off, Clear/Add). */
 const SEGMENT_CLASSES = {
     group: 'fleet-ui-seg-group',
@@ -64,7 +84,10 @@ const BTN_VARIANTS = {
     primary: 'wf-dash-btn--primary',
     secondary: 'wf-dash-btn--secondary',
     tertiary: 'wf-dash-btn--basic',
-    basic: 'wf-dash-btn--basic'
+    basic: 'wf-dash-btn--basic',
+    danger: 'wf-dash-btn--danger',
+    success: 'wf-dash-btn--success',
+    warning: 'wf-dash-btn--warning'
 };
 
 const BTN_SIZES = {
@@ -186,14 +209,19 @@ function fleetUiThemeOverrideCssText() {
         .flatMap((sel) => [sel, sel + ' *'])
         .join(', ');
     return [
+        // Preferred light tokens match Settings chromeColors() light palette.
         'html[data-fleet-ux-theme="light"] ' + rootsAndDescendants + ' {',
         '  --background: #ffffff !important;',
-        '  --card: #ffffff !important;',
-        '  --foreground: #111111 !important;',
-        '  --border: #e7e7e7 !important;',
-        '  --muted: #f7f7f7 !important;',
-        '  --muted-foreground: #6d6d6d !important;',
-        '  --input: #e7e7e7 !important;',
+        '  --card: #fafafa !important;',
+        '  --foreground: #333333 !important;',
+        '  --border: #e5e5e5 !important;',
+        '  --muted: #f0f0f0 !important;',
+        '  --muted-foreground: #666666 !important;',
+        '  --input: #e5e5e5 !important;',
+        // Keep filled controls on the extension accent (not host indigo/--primary-foreground).
+        '  --brand: ' + FLEET_UI_ACCENT + ' !important;',
+        '  --primary: ' + FLEET_UI_ACCENT + ' !important;',
+        '  --primary-foreground: ' + FLEET_UI_ACCENT_FG + ' !important;',
         '}',
         'html[data-fleet-ux-theme="dark"] ' + rootsAndDescendants + ' {',
         '  --background: #121212 !important;',
@@ -203,6 +231,9 @@ function fleetUiThemeOverrideCssText() {
         '  --muted: #171717 !important;',
         '  --muted-foreground: #8c8c8c !important;',
         '  --input: #262626 !important;',
+        '  --brand: ' + FLEET_UI_ACCENT + ' !important;',
+        '  --primary: ' + FLEET_UI_ACCENT + ' !important;',
+        '  --primary-foreground: ' + FLEET_UI_ACCENT_FG + ' !important;',
         '}'
     ].join('\n');
 }
@@ -483,6 +514,95 @@ function fleetUiPanelCssLines(scopePrefix) {
     ];
 }
 
+function fleetUiAlertBannerCssLines() {
+    const root = '.fleet-ui-alert-banner';
+    const danger = root + '--danger';
+    const amber = root + '--amber';
+    const amberSoft = root + '--amber-soft';
+    const title = root + '__title';
+    const body = root + '__body';
+    const footer = root + '__footer';
+    const btnSec = root + '__btn-secondary';
+    const btnPri = root + '__btn-primary';
+    const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
+    return [
+        danger + ' {',
+        '  margin-bottom: 4px; padding: 14px; padding-top: 20px;',
+        '  background: #fee2e2; border: 2px solid #dc2626; border-radius: 8px;',
+        '}',
+        danger + ' ' + title + ',',
+        danger + ' ' + body + ',',
+        danger + ' ' + body + ' a { color: #991b1b; }',
+        danger + ' ' + body + ' a { text-decoration: underline; font-weight: 600; }',
+        danger + ' ' + footer + ' {',
+        '  margin-top: 12px; padding-top: 10px; border-top: 1px solid #fecaca;',
+        '  text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;',
+        '}',
+        danger + ' ' + btnSec + ',',
+        danger + ' ' + btnPri + ' {',
+        '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
+        '  border-radius: 6px; cursor: pointer; border: 1px solid #dc2626;',
+        '  text-decoration: none;',
+        '}',
+        danger + ' ' + btnSec + ' { color: #991b1b; background: #fef2f2; }',
+        danger + ' ' + btnPri + ' { color: #fff; background: #dc2626; }',
+        dark(danger) + ' {',
+        '  background: color-mix(in srgb, #dc2626 22%, var(--background, #121212));',
+        '}',
+        dark(danger + ' ' + title) + ',',
+        dark(danger + ' ' + body) + ',',
+        dark(danger + ' ' + body + ' a') + ' { color: #fca5a5; }',
+        dark(danger + ' ' + footer) + ' { border-top-color: #7f1d1d; }',
+        dark(danger + ' ' + btnSec) + ' {',
+        '  color: #fecaca; background: color-mix(in srgb, #dc2626 28%, var(--background, #121212));',
+        '}',
+        amber + ',',
+        amberSoft + ' {',
+        '  margin-bottom: 20px; padding: 14px;',
+        '  background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px;',
+        '}',
+        amberSoft + ' {',
+        '  padding: 12px; border-width: 1px; border-radius: 6px;',
+        '}',
+        amber + ' ' + title + ',',
+        amber + ' ' + body + ',',
+        amber + ' ' + body + ' a,',
+        amberSoft + ' ' + title + ',',
+        amberSoft + ' ' + body + ',',
+        amberSoft + ' ' + body + ' a { color: #92400e; }',
+        amber + ' ' + body + ' a,',
+        amberSoft + ' ' + body + ' a { text-decoration: underline; font-weight: 600; }',
+        amber + ' ' + footer + ',',
+        amberSoft + ' ' + footer + ' {',
+        '  margin-top: 12px; padding-top: 10px; border-top: 1px solid #fcd34d;',
+        '  text-align: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;',
+        '}',
+        amber + ' ' + btnSec + ',',
+        amberSoft + ' ' + btnSec + ' {',
+        '  display: inline-block; padding: 8px 14px; font-size: 13px; font-weight: 600;',
+        '  border-radius: 6px; cursor: pointer; border: 1px solid #f59e0b;',
+        '  color: #92400e; background: #fffbeb; text-decoration: none;',
+        '}',
+        dark(amber) + ',',
+        dark(amberSoft) + ' {',
+        '  color: #fcd34d;',
+        '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #121212));',
+        '}',
+        dark(amber + ' ' + title) + ',',
+        dark(amber + ' ' + body) + ',',
+        dark(amber + ' ' + body + ' a') + ',',
+        dark(amberSoft + ' ' + title) + ',',
+        dark(amberSoft + ' ' + body) + ',',
+        dark(amberSoft + ' ' + body + ' a') + ' { color: #fcd34d; }',
+        dark(amber + ' ' + footer) + ',',
+        dark(amberSoft + ' ' + footer) + ' { border-top-color: #92400e; }',
+        dark(amber + ' ' + btnSec) + ',',
+        dark(amberSoft + ' ' + btnSec) + ' {',
+        '  color: #fef3c7; background: color-mix(in srgb, #f59e0b 28%, var(--background, #121212));',
+        '}'
+    ];
+}
+
 function fleetUiBtnBaseCssLines(scopePrefix) {
     const p = scopePrefix ? scopePrefix + ' ' : '';
     const btn = p + '.wf-dash-btn';
@@ -494,6 +614,9 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
     const primary = p + '.wf-dash-btn--primary';
     const secondary = p + '.wf-dash-btn--secondary';
     const tertiary = p + '.wf-dash-btn--basic';
+    const danger = p + '.wf-dash-btn--danger';
+    const success = p + '.wf-dash-btn--success';
+    const warning = p + '.wf-dash-btn--warning';
     const headerBasic = p + '.wf-dash-header-btn.wf-dash-btn--basic';
     const light = (sel) => 'html[data-fleet-ux-theme="light"] ' + sel;
     const dark = (sel) => 'html[data-fleet-ux-theme="dark"] ' + sel;
@@ -522,23 +645,23 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         icon + ' { width: 26px; height: 26px; padding: 0; font-size: 13px; flex-shrink: 0; }',
         full + ' { width: 100%; box-sizing: border-box; }',
         primary + ' {',
-        '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-        '  background: var(--brand, var(--primary, #2563eb));',
-        '  color: var(--primary-foreground, #ffffff);',
+        '  border: 1px solid var(--brand, var(--primary, ' + FLEET_UI_ACCENT + '));',
+        '  background: var(--brand, var(--primary, ' + FLEET_UI_ACCENT + '));',
+        '  color: var(--primary-foreground, ' + FLEET_UI_ACCENT_FG + ');',
         '}',
         primary + ':hover:not(:disabled) {',
-        '  background: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-        '  border-color: color-mix(in srgb, var(--brand, #2563eb) 88%, #000);',
-        '  color: #ffffff;',
+        '  background: color-mix(in srgb, var(--brand, ' + FLEET_UI_ACCENT + ') 88%, #000);',
+        '  border-color: color-mix(in srgb, var(--brand, ' + FLEET_UI_ACCENT + ') 88%, #000);',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
         '}',
         secondary + ' {',
-        '  border: 1px solid var(--brand, var(--primary, #2563eb));',
+        '  border: 1px solid var(--brand, var(--primary, ' + FLEET_UI_ACCENT + '));',
         '  background: var(--background, #fff);',
         '  color: var(--foreground, #0f172a);',
         '}',
         secondary + ':hover:not(:disabled) {',
-        '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
-        '  border-color: var(--brand, var(--primary, #2563eb));',
+        '  background: color-mix(in srgb, var(--brand, ' + FLEET_UI_ACCENT + ') 10%, var(--background, #fff));',
+        '  border-color: var(--brand, var(--primary, ' + FLEET_UI_ACCENT + '));',
         '  color: var(--foreground, #0f172a);',
         '}',
         tertiary + ' {',
@@ -585,14 +708,24 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  border-color: var(--foreground, #0f172a);',
         '}',
         // Preferred-opaque recipes (do not trust host CSS vars alone)
+        light(primary) + ' {',
+        '  border-color: ' + FLEET_UI_ACCENT + ';',
+        '  background: ' + FLEET_UI_ACCENT + ';',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
+        '}',
+        light(primary) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, ' + FLEET_UI_ACCENT + ' 88%, #000);',
+        '  border-color: color-mix(in srgb, ' + FLEET_UI_ACCENT + ' 88%, #000);',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
+        '}',
         light(secondary) + ' {',
-        '  border-color: #2563eb;',
+        '  border-color: ' + FLEET_UI_ACCENT + ';',
         '  background: #ffffff;',
         '  color: #111111;',
         '}',
         light(secondary) + ':hover:not(:disabled) {',
-        '  background: color-mix(in srgb, #2563eb 10%, #ffffff);',
-        '  border-color: #2563eb;',
+        '  background: color-mix(in srgb, ' + FLEET_UI_ACCENT + ' 10%, #ffffff);',
+        '  border-color: ' + FLEET_UI_ACCENT + ';',
         '  color: #111111;',
         '}',
         light(tertiary) + ' {',
@@ -619,21 +752,61 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  background: color-mix(in srgb, #000000 15%, transparent);',
         '  color: #999999;',
         '}',
-        light(primary + ':disabled') + ', ' + light(secondary + ':disabled') + ', ' + light(tertiary + ':disabled') + ' {',
+        light(danger) + ' {',
+        '  border: 1px solid #dc2626;',
+        '  background: transparent;',
+        '  color: #dc2626;',
+        '}',
+        light(danger) + ':hover:not(:disabled) {',
+        '  background: #fee2e2;',
+        '  border-color: #b91c1c;',
+        '  color: #b91c1c;',
+        '}',
+        light(success) + ' {',
+        '  border: 1px solid #16a34a;',
+        '  background: transparent;',
+        '  color: #16a34a;',
+        '}',
+        light(success) + ':hover:not(:disabled) {',
+        '  background: #16a34a;',
+        '  border-color: #16a34a;',
+        '  color: #ffffff;',
+        '}',
+        light(warning) + ' {',
+        '  border: 1px solid #ca8a04;',
+        '  background: color-mix(in srgb, #ca8a04 14%, transparent);',
+        '  color: #a16207;',
+        '}',
+        light(warning) + ':hover:not(:disabled) {',
+        '  background: #ca8a04;',
+        '  border-color: #ca8a04;',
+        '  color: #ffffff;',
+        '}',
+        light(primary + ':disabled') + ', ' + light(secondary + ':disabled') + ', ' + light(tertiary + ':disabled') + ', ' + light(danger + ':disabled') + ', ' + light(success + ':disabled') + ', ' + light(warning + ':disabled') + ' {',
         '  border-color: #e5e5e5;',
         '  background: #f0f0f0;',
         '  color: #999999;',
         '}',
         light(headerBasic) + ' { color: #666666; }',
         light(headerBasic) + ':hover:not(:disabled) { color: #111111; border-color: #111111; }',
+        dark(primary) + ' {',
+        '  border-color: ' + FLEET_UI_ACCENT + ';',
+        '  background: ' + FLEET_UI_ACCENT + ';',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
+        '}',
+        dark(primary) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, ' + FLEET_UI_ACCENT + ' 88%, #000);',
+        '  border-color: color-mix(in srgb, ' + FLEET_UI_ACCENT + ' 88%, #000);',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
+        '}',
         dark(secondary) + ' {',
-        '  border-color: #2563eb;',
+        '  border-color: ' + FLEET_UI_ACCENT + ';',
         '  background: #18181b;',
         '  color: #e4e4e7;',
         '}',
         dark(secondary) + ':hover:not(:disabled) {',
-        '  background: color-mix(in srgb, #2563eb 14%, #18181b);',
-        '  border-color: #2563eb;',
+        '  background: color-mix(in srgb, ' + FLEET_UI_ACCENT + ' 14%, #18181b);',
+        '  border-color: ' + FLEET_UI_ACCENT + ';',
         '  color: #e4e4e7;',
         '}',
         dark(tertiary) + ' {',
@@ -660,7 +833,37 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  background: color-mix(in srgb, #000000 15%, transparent);',
         '  color: #71717a;',
         '}',
-        dark(primary + ':disabled') + ', ' + dark(secondary + ':disabled') + ', ' + dark(tertiary + ':disabled') + ' {',
+        dark(danger) + ' {',
+        '  border-color: #dc2626;',
+        '  background: transparent;',
+        '  color: #fca5a5;',
+        '}',
+        dark(danger) + ':hover:not(:disabled) {',
+        '  background: color-mix(in srgb, #dc2626 22%, #18181b);',
+        '  border-color: #f87171;',
+        '  color: #fecaca;',
+        '}',
+        dark(success) + ' {',
+        '  border-color: #22c55e;',
+        '  background: transparent;',
+        '  color: #86efac;',
+        '}',
+        dark(success) + ':hover:not(:disabled) {',
+        '  background: #16a34a;',
+        '  border-color: #16a34a;',
+        '  color: #ffffff;',
+        '}',
+        dark(warning) + ' {',
+        '  border-color: #ca8a04;',
+        '  background: color-mix(in srgb, #ca8a04 18%, transparent);',
+        '  color: #fde68a;',
+        '}',
+        dark(warning) + ':hover:not(:disabled) {',
+        '  background: #ca8a04;',
+        '  border-color: #ca8a04;',
+        '  color: #ffffff;',
+        '}',
+        dark(primary + ':disabled') + ', ' + dark(secondary + ':disabled') + ', ' + dark(tertiary + ':disabled') + ', ' + dark(danger + ':disabled') + ', ' + dark(success + ':disabled') + ', ' + dark(warning + ':disabled') + ' {',
         '  border-color: #3f3f46;',
         '  background: #27272a;',
         '  color: #71717a;',
@@ -908,8 +1111,8 @@ function fleetUiSegmentCssLines(prefix) {
         '  border-right: 1px solid var(--border, #e2e8f0);',
         '}',
         btn + '[aria-pressed="true"] {',
-        '  background: var(--brand, #2563eb);',
-        '  color: #ffffff;',
+        '  background: var(--brand, ' + FLEET_UI_ACCENT + ');',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
         '}',
         btn + ':not([aria-pressed="true"]):hover {',
         '  background: color-mix(in srgb, var(--foreground, #0f172a) 10%, transparent);',
@@ -925,8 +1128,8 @@ function fleetUiSegmentCssLines(prefix) {
         '}',
         light(p + '.fleet-ui-seg-btn--divider') + ' { border-right-color: #e5e5e5; }',
         light(btn + '[aria-pressed="true"]') + ' {',
-        '  background: #2563eb;',
-        '  color: #ffffff;',
+        '  background: ' + FLEET_UI_ACCENT + ';',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
         '}',
         light(btn + ':not([aria-pressed="true"]):hover') + ' {',
         '  background: #e5e5e5;',
@@ -942,8 +1145,8 @@ function fleetUiSegmentCssLines(prefix) {
         '}',
         dark(p + '.fleet-ui-seg-btn--divider') + ' { border-right-color: #3f3f46; }',
         dark(btn + '[aria-pressed="true"]') + ' {',
-        '  background: #2563eb;',
-        '  color: #ffffff;',
+        '  background: ' + FLEET_UI_ACCENT + ';',
+        '  color: ' + FLEET_UI_ACCENT_FG + ';',
         '}',
         dark(btn + ':not([aria-pressed="true"]):hover') + ' {',
         '  background: #27272a;',
@@ -1076,6 +1279,49 @@ function fleetUiLoadingDotsAttr() {
     return 'data-fleet-ui-dots';
 }
 
+/** Shared button-icon SVGs (basic+icon chrome). */
+function fleetUiEyeIconSvg() {
+    return '<svg width="15.4" height="15.4" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
+        + '<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>'
+        + '<circle cx="13" cy="13.2" r="3.2"></circle>'
+        + '</svg>';
+}
+
+function fleetUiFlagIconSvg() {
+    return '<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
+        + '<line x1="7.5" y1="2" x2="7.5" y2="24"></line>'
+        + '<path d="M7.5 3.5 L22.5 10 L7.5 16.5 Z" fill="#dc2626" stroke="none"></path>'
+        + '</svg>';
+}
+
+function fleetUiFunnelIconSvg() {
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true" style="flex-shrink:0;">'
+        + '<line x1="4" y1="7" x2="20" y2="7"></line>'
+        + '<line x1="7" y1="12" x2="17" y2="12"></line>'
+        + '<line x1="10" y1="17" x2="14" y2="17"></line>'
+        + '</svg>';
+}
+
+function fleetUiExternalLinkIconSvg(opts) {
+    const active = !(opts && opts.active === false);
+    const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
+    const opacity = active ? '1' : '0.45';
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="' + stroke + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity: ' + opacity + '; flex-shrink:0;">'
+        + '<path d="M15 3h6v6"></path>'
+        + '<path d="M10 14 21 3"></path>'
+        + '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'
+        + '</svg>';
+}
+
+function fleetUiCopyIconSvg(opts) {
+    const raw = opts && opts.size != null ? Number(opts.size) : 13;
+    const size = Number.isFinite(raw) && raw > 0 ? raw : 13;
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>'
+        + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>'
+        + '</svg>';
+}
+
 function fleetUiFlashTabSuccess(tabEl) {
     if (!tabEl) return;
     tabEl.classList.remove('fleet-ui-tab--pulse', 'wf-dash-tab--add-pulse');
@@ -1136,8 +1382,8 @@ function fleetUiUserStoryProseCssText() {
 const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
-    description: 'Shared UI tokens, buttons, segments, filter toggles, panels, and copy feedback',
-    _version: '3.8',
+    description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
+    _version: '3.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1235,6 +1481,16 @@ const plugin = {
             target.appendChild(style);
         }
 
+        function ensureAlertBannerStyles() {
+            ensureStyles();
+            fleetUiEnsureThemeObserver();
+            if (document.getElementById(FLEET_UI_ALERT_BANNER_STYLE_ID)) return;
+            const style = document.createElement('style');
+            style.id = FLEET_UI_ALERT_BANNER_STYLE_ID;
+            style.textContent = fleetUiAlertBannerCssLines().join('\n');
+            (document.head || document.documentElement).appendChild(style);
+        }
+
         ensureStyles();
         fleetUiEnsureThemeObserver();
 
@@ -1248,6 +1504,7 @@ const plugin = {
             SPIN_DURATION,
             TAB_PULSE_MS,
             PANEL_CLASSES,
+            ALERT_BANNER_CLASSES,
             SEGMENT_CLASSES,
             FILTER_TOGGLE_CLASSES,
 
@@ -1257,9 +1514,15 @@ const plugin = {
             ensureUserStoryMarkdownStyles,
             ensureSegmentStyles,
             ensureFilterToggleStyles,
+            ensureAlertBannerStyles,
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,
+            eyeIconSvg: fleetUiEyeIconSvg,
+            flagIconSvg: fleetUiFlagIconSvg,
+            funnelIconSvg: fleetUiFunnelIconSvg,
+            externalLinkIconSvg: fleetUiExternalLinkIconSvg,
+            copyIconSvg: fleetUiCopyIconSvg,
 
             segmentBtnClass: fleetUiSegmentBtnClass,
             segmentBtnHtml: fleetUiSegmentBtnHtml,

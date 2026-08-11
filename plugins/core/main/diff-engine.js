@@ -23,14 +23,22 @@ function _deFormatPercent(value) {
 let _deCachedHighlightStyles = null;
 let _deCachedHighlightDark = null;
 let _deFleetThemeListeners = [];
-let _deFleetThemeObserverStarted = false;
+let _deUiLibThemeUnsub = null;
 let _deLastFleetDark = null;
 
+function _deUiLib() {
+    return Context.uiLib || null;
+}
+
 function _deIsFleetDark() {
-    return document.documentElement.classList.contains('dark');
+    const ui = _deUiLib();
+    if (ui && typeof ui.isFleetDark === 'function') return !!ui.isFleetDark();
+    return document.documentElement.dataset.fleetUxTheme === 'dark';
 }
 
 function _deGetFleetTheme() {
+    const ui = _deUiLib();
+    if (ui && typeof ui.getFleetTheme === 'function') return ui.getFleetTheme() === 'dark' ? 'dark' : 'light';
     return _deIsFleetDark() ? 'dark' : 'light';
 }
 
@@ -55,20 +63,20 @@ function _deNotifyFleetThemeChange() {
 }
 
 function _deEnsureFleetThemeObserver() {
-    if (_deFleetThemeObserverStarted) return;
-    _deFleetThemeObserverStarted = true;
+    if (_deUiLibThemeUnsub) return;
     _deLastFleetDark = _deIsFleetDark();
-    try {
-        const observer = new MutationObserver(() => _deNotifyFleetThemeChange());
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        CleanupRegistry.registerObserver(observer);
-    } catch (err) {
-        Logger.warn('fleet theme observer failed', err);
+    const ui = _deUiLib();
+    if (ui && typeof ui.onThemeChange === 'function') {
+        _deUiLibThemeUnsub = ui.onThemeChange(() => _deNotifyFleetThemeChange());
+        return;
     }
+    // ui-lib should already be loaded before ops plugins; avoid a second site-dark observer.
+    Logger.debug('uiLib theme helpers unavailable — Preferred-mode sync deferred');
 }
 
 function _deOnFleetThemeChange(callback) {
     if (typeof callback !== 'function') return () => {};
+    _deEnsureFleetThemeObserver();
     _deFleetThemeListeners.push(callback);
     return () => {
         _deFleetThemeListeners = _deFleetThemeListeners.filter((fn) => fn !== callback);
@@ -930,7 +938,7 @@ const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
     description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '3.9',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

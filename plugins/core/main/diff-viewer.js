@@ -1936,7 +1936,9 @@ async function _dvCopyWithFeedback(el, text, logLabel) {
 }
 
 function _dvCopyIconSvg() {
-    return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>';
+    return (Context.uiLib && typeof Context.uiLib.copyIconSvg === 'function')
+        ? Context.uiLib.copyIconSvg({ size: 12 })
+        : '';
 }
 
 function _dvReelUnifiedChromeH() {
@@ -3721,7 +3723,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.7',
+    _version: '5.8',
     phase: 'core',
     enabledByDefault: true,
 

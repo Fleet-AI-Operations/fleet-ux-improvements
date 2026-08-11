@@ -1,60 +1,87 @@
 // ============= action-counter.js =============
-// Revision placement: Task/Notes tab bar via Context.actionCounter library.
+// Revision placement: page header right cluster via Context.actionCounter library.
 
 const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description:
-        'Persistent +/- counter in the Task/Notes tab bar (right-aligned); click the number to type a value',
-    _version: '2.2',
+        'Persistent +/- counter in the page header (right-aligned); click the number to type a value',
+    _version: '3.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
-        anchorMissingLogged: false,
-        tabBarMissingLogged: false,
+        headerMissingLogged: false,
         activationLogged: false,
-        hadAnchor: false,
+        hadHeader: false,
         migratedLegacy: false
     },
 
-    findContentAnchor() {
-        return (
-            document.getElementById('prompt-editor') ||
-            document.getElementById('problem-form') ||
-            document.querySelector('[data-ui="qa-task-detail-panel"]')
-        );
-    },
-
-    isTaskNotesTabBar(el) {
+    isPageHeaderRow(el) {
         if (!el || el.tagName !== 'DIV') return false;
-        const buttons = el.querySelectorAll(':scope > button');
-        if (buttons.length < 2) return false;
-        const labels = [...buttons].map((btn) => (btn.textContent || '').trim().toLowerCase());
-        return labels.some((label) => label.includes('task')) && labels.some((label) => label.includes('notes'));
+        const text = (el.textContent || '').toLowerCase();
+        return text.includes('edit problem') && text.includes('create demonstration');
     },
 
-    findTaskNotesTabBar(anchor) {
-        if (!anchor) return null;
-        // Current CU revision: Task/Notes bar is nested inside #prompt-editor.
-        const nested = anchor.querySelectorAll('div');
-        for (const el of nested) {
-            if (this.isTaskNotesTabBar(el)) return el;
-        }
-        // Fallback: older shapes where the bar is a sibling of content.
-        let node = anchor;
-        while (node && node !== document.body) {
-            const parent = node.parentElement;
-            if (!parent) break;
-            for (const child of parent.children) {
-                if (!this.isTaskNotesTabBar(child)) continue;
-                const contentSibling = [...parent.children].some(
-                    (sibling) => sibling !== child && sibling.contains(anchor)
-                );
-                if (contentSibling) return child;
+    findPageHeaderRow() {
+        const panel =
+            document.getElementById('prompt-editor') ||
+            document.getElementById('instance-preview');
+        let root = panel;
+        while (root && root !== document.body) {
+            if (root.tagName === 'MAIN' || (root.classList && root.classList.contains('flex-col'))) {
+                break;
             }
-            node = parent;
+            root = root.parentElement;
+        }
+        if (!root) {
+            root = document.querySelector('main') || document.body;
+        }
+
+        const candidates = root.querySelectorAll('div');
+        for (const el of candidates) {
+            if (!this.isPageHeaderRow(el)) continue;
+            // Prefer the innermost flex row that still contains both step labels.
+            let best = el;
+            for (const child of el.querySelectorAll('div')) {
+                if (this.isPageHeaderRow(child) && el.contains(child)) {
+                    best = child;
+                }
+            }
+            // Walk up to the justify-between row when nested.
+            let node = best;
+            while (node && node !== el.parentElement) {
+                const style = node.className || '';
+                if (
+                    typeof style === 'string' &&
+                    style.includes('justify-between') &&
+                    this.isPageHeaderRow(node)
+                ) {
+                    return node;
+                }
+                node = node.parentElement;
+            }
+            return best;
         }
         return null;
+    },
+
+    findRightHost(headerRow) {
+        if (!headerRow) return null;
+        for (const child of headerRow.children) {
+            if (child.tagName !== 'DIV') continue;
+            const cls = child.className || '';
+            if (typeof cls === 'string' && cls.includes('ml-auto')) {
+                return child;
+            }
+        }
+        // Fallback: any sibling of the steps cluster that holds buttons.
+        for (const child of headerRow.children) {
+            if (child.tagName !== 'DIV') continue;
+            const text = (child.textContent || '').toLowerCase();
+            if (text.includes('edit problem')) continue;
+            if (child.querySelector('button')) return child;
+        }
+        return headerRow;
     },
 
     onMutation(state) {
@@ -62,47 +89,39 @@ const plugin = {
         if (!api || typeof api.run !== 'function') return;
 
         const marker = api.COUNTER_MARKER || 'data-fleet-action-counter';
-        const anchor = this.findContentAnchor();
-        if (!anchor) {
-            if (state.hadAnchor) {
-                Logger.debug(`Task/Notes tab bar left DOM — counter inactive`);
-                state.hadAnchor = false;
+        const headerRow = this.findPageHeaderRow();
+        if (!headerRow) {
+            if (state.hadHeader) {
+                Logger.debug(`page header left DOM — counter inactive`);
+                state.hadHeader = false;
                 state.activationLogged = false;
             }
-            if (!state.anchorMissingLogged) {
-                Logger.debug(`content anchor not found yet`);
-                state.anchorMissingLogged = true;
-            }
-            state.tabBarMissingLogged = false;
-            return;
-        }
-
-        state.anchorMissingLogged = false;
-        const tabBar = this.findTaskNotesTabBar(anchor);
-        if (!tabBar) {
-            if (state.hadAnchor) {
-                Logger.debug(`Task/Notes tab bar left DOM — counter inactive`);
-                state.hadAnchor = false;
-                state.activationLogged = false;
-            }
-            if (!state.tabBarMissingLogged) {
-                Logger.debug(`Task/Notes tab bar not found yet (anchor present)`);
-                state.tabBarMissingLogged = true;
+            if (!state.headerMissingLogged) {
+                Logger.debug(`page header not found yet`);
+                state.headerMissingLogged = true;
             }
             return;
         }
 
-        state.tabBarMissingLogged = false;
-        state.hadAnchor = true;
+        state.headerMissingLogged = false;
+        state.hadHeader = true;
+
+        const host = this.findRightHost(headerRow);
+        if (!host) return;
 
         api.run(state, {
             pluginId: this.id,
             logTag: this.id,
-            activationDetail: 'counter injected in Task/Notes tab bar',
-            alreadyMounted: () => Boolean(tabBar.querySelector(`[${marker}="true"]`)),
+            activationDetail: 'counter injected in page header',
+            alreadyMounted: () => Boolean(host.querySelector(`[${marker}="true"]`)),
             mountCounter: (counter) => {
-                counter.style.marginLeft = 'auto';
-                tabBar.appendChild(counter);
+                if (host === headerRow) {
+                    counter.style.marginLeft = 'auto';
+                    host.appendChild(counter);
+                    return;
+                }
+                counter.style.marginLeft = '';
+                host.insertBefore(counter, host.firstChild);
             }
         });
     }

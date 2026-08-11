@@ -93,32 +93,19 @@ const ActionCounterApi = {
         input.style.color = this.countColor(val);
     },
 
-    makeBtn(label, title, onClick, extraStyle) {
+    makeBtn(label, title, onClick, extraStyle, variant) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = label;
         btn.title = title;
-        btn.style.cssText = `
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 5px;
-            border: 1px solid var(--border, #e2e8f0);
-            background: var(--accent, #f1f5f9);
-            color: var(--foreground, #111);
-            font-weight: 700;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-            transition: background 0.15s;
-            ${extraStyle || ''}
-        `;
-        btn.addEventListener('mouseenter', () => {
-            btn.style.background = 'var(--accent-foreground, #d4d8de)';
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.background = 'var(--accent, #f1f5f9)';
-        });
+        if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+            Context.uiLib.ensureButtonStyles('[data-fleet-action-counter="true"]');
+        }
+        const base = (Context.uiLib && typeof Context.uiLib.btnClass === 'function')
+            ? Context.uiLib.btnClass(variant || 'basic', 'compact')
+            : 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--compact';
+        btn.className = base;
+        btn.style.cssText = extraStyle || '';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
@@ -208,19 +195,22 @@ const ActionCounterApi = {
             '+',
             'Add 1',
             () => this.applyCountDisplay(input, this.setCount(this.getCount() + 1, '+')),
-            'width: 52px; height: 22px; font-size: 18px; border-color: #059669;'
+            'width: 52px; height: 22px; font-size: 18px; padding: 0;',
+            'success'
         );
         const btnMinus = this.makeBtn(
             '−',
             'Subtract 1',
             () => this.applyCountDisplay(input, this.setCount(this.getCount() - 1, '−')),
-            'width: 40px; height: 22px; font-size: 18px;'
+            'width: 40px; height: 22px; font-size: 18px; padding: 0;',
+            'basic'
         );
         const btnReset = this.makeBtn(
             '↺',
             'Reset to 0',
             () => this.applyCountDisplay(input, this.setCount(0, 'reset')),
-            'width: 20px; height: 20px; font-size: 13px; color: var(--muted-foreground, #888);'
+            'width: 20px; height: 20px; font-size: 13px; padding: 0;',
+            'basic'
         );
 
         counter.append(btnReset, input, btnMinus, btnPlus);
@@ -233,7 +223,7 @@ const plugin = {
     name: 'Action Counter (library)',
     description:
         'Shared API for action counter chrome and storage (archetype modules supply find/mount)',
-    _version: '3.3',
+    _version: '3.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -23,7 +23,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
     description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.5',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -218,34 +218,16 @@ const plugin = {
             order: 'created_at.desc',
             limit: '100'
         };
-        let rows;
-        try {
-            rows = await ops.postgrestQuery('qa_feedback.select_row', params);
-        } catch (_e) {
-            rows = await ops.postgrestGet('qa_feedback', Object.assign({ select: '*' }, params));
-        }
+        const rows = await ops.postgrestQuery('qa_feedback.select_row', params);
         return Array.isArray(rows) ? rows : (rows ? [rows] : []);
     },
 
     async _fetchTaskRow(ops, taskId) {
-        try {
-            const rows = await ops.postgrestQuery('tasks.select_search', {
-                id: 'eq.' + taskId,
-                limit: '1'
-            });
-            return Array.isArray(rows) ? rows[0] : rows;
-        } catch (_e) {
-            try {
-                const rows = await ops.postgrestGet('tasks', {
-                    select: 'id,key,created_by',
-                    id: 'eq.' + taskId,
-                    limit: '1'
-                });
-                return Array.isArray(rows) ? rows[0] : rows;
-            } catch (_e2) {
-                return null;
-            }
-        }
+        const rows = await ops.postgrestQuery('tasks.select_search', {
+            id: 'eq.' + taskId,
+            limit: '1'
+        });
+        return Array.isArray(rows) ? rows[0] : rows;
     },
 
     async _fetchProfiles(ops, userIds) {
@@ -610,7 +592,9 @@ const plugin = {
         link.className = 'inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground';
         link.title = 'Open profile in Fleet';
         link.setAttribute('aria-label', 'Open profile in Fleet');
-        link.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>';
+        link.innerHTML = (Context.uiLib && typeof Context.uiLib.externalLinkIconSvg === 'function')
+            ? Context.uiLib.externalLinkIconSvg()
+            : '';
         wrapper.appendChild(link);
 
         span.replaceWith(wrapper);
