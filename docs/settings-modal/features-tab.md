@@ -34,13 +34,13 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
-- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)
+- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 
 ### Computer Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
-- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)
+- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 
 ### QA Tool Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb

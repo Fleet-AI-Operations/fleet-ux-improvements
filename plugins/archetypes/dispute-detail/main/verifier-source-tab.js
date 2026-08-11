@@ -1,16 +1,21 @@
 // ============= verifier-source-tab.js (dispute-detail) =============
 // Placement: Environment | Verifier on the instance status-bar button row.
 // Shared library: Context.verifierSourceTab. Hides only the iframe stack.
-// Task identity: View Task link (/work/problems/view-task/<uuid>).
+// Task / verifier pins: View Task link + dispute page RSC evalTask
+// (verifier_version_id) — see local/api/apis/fleet-web-api/endpoints/disputes.md
+// "Dispute review page HTML / RSC".
 
 const VIEW_TASK_HREF_RE = /\/work\/problems\/view-task\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_CAPTURE = '([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})';
+const EVAL_TASK_SLICE_CHARS = 12000;
 
 const plugin = {
     id: 'disputeVerifierSourceTab',
     name: 'Environment Verifier Tab',
     description:
         'Adds Environment | Verifier tabs on the dispute instance status bar and shows searchable verifier source',
-    _version: '1.1',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -21,6 +26,8 @@ const plugin = {
         if (api && typeof api.createInitialState === 'function') {
             Object.assign(state, api.createInitialState());
         }
+        state.evalTaskHintsLogged = false;
+        state.evalTaskWaitingLogged = false;
     },
 
     normalizeLabel(el) {
@@ -49,6 +56,60 @@ const plugin = {
             if (match) return match[1];
         }
         return '';
+    },
+
+    /**
+     * Match `"key":"uuid"` or RSC-escaped `\"key\":\"uuid\"` inside __next_f string literals.
+     * @param {string} field
+     * @returns {RegExp}
+     */
+    _evalTaskUuidFieldRe(field) {
+        return new RegExp(
+            '\\\\?"' + field + '\\\\?"\\s*:\\s*\\\\?"' + UUID_CAPTURE + '\\\\?"',
+            'i'
+        );
+    },
+
+    /**
+     * Pins from DisputeReviewClient RSC (`result.data.evalTask`).
+     * Page may stream after CSR bailout — call on every mutation until found.
+     */
+    scrapeEvalTaskHints() {
+        const scripts = document.querySelectorAll('script');
+        let blob = '';
+        for (let i = 0; i < scripts.length; i++) {
+            const text = scripts[i].textContent || '';
+            if (
+                text.indexOf('verifier_version_id') === -1 &&
+                text.indexOf('evalTask') === -1
+            ) {
+                continue;
+            }
+            blob += text;
+            if (blob.length > 500000) break;
+        }
+        if (!blob) return null;
+
+        const evalIdx = blob.indexOf('evalTask');
+        const slice =
+            evalIdx >= 0
+                ? blob.slice(evalIdx, evalIdx + EVAL_TASK_SLICE_CHARS)
+                : blob;
+
+        const versionMatch = slice.match(this._evalTaskUuidFieldRe('verifier_version_id'));
+        const versionId = versionMatch && versionMatch[1] ? versionMatch[1] : '';
+        if (!versionId || !UUID_RE.test(versionId)) return null;
+
+        const verifierMatch = slice.match(this._evalTaskUuidFieldRe('verifier_id'));
+        const teamMatch = slice.match(this._evalTaskUuidFieldRe('team_id'));
+        const idMatch = slice.match(this._evalTaskUuidFieldRe('id'));
+
+        return {
+            versionId,
+            verifierId: verifierMatch && UUID_RE.test(verifierMatch[1]) ? verifierMatch[1] : '',
+            teamId: teamMatch && UUID_RE.test(teamMatch[1]) ? teamMatch[1] : '',
+            taskId: idMatch && UUID_RE.test(idMatch[1]) ? idMatch[1] : ''
+        };
     },
 
     findInstanceIframe() {
@@ -183,6 +244,37 @@ const plugin = {
         host.insertBefore(wrap, host.firstChild);
     },
 
+    buildHints(state) {
+        const fromPage = this.scrapeEvalTaskHints();
+        const viewTaskId = this.findViewTaskId();
+        if (fromPage && fromPage.versionId) {
+            if (!state.evalTaskHintsLogged) {
+                Logger.debug(
+                    'evalTask pin versionId=' +
+                        fromPage.versionId.slice(0, 8) +
+                        '…' +
+                        (fromPage.taskId ? ' task=' + fromPage.taskId.slice(0, 8) + '…' : '')
+                );
+                state.evalTaskHintsLogged = true;
+                state.evalTaskWaitingLogged = false;
+            }
+            return {
+                taskId: fromPage.taskId || viewTaskId || '',
+                verifierId: fromPage.verifierId || '',
+                versionId: fromPage.versionId,
+                teamId: fromPage.teamId || ''
+            };
+        }
+        if (viewTaskId) {
+            if (!state.evalTaskWaitingLogged) {
+                Logger.debug('waiting for evalTask verifier_version_id in page RSC');
+                state.evalTaskWaitingLogged = true;
+            }
+            return { taskId: viewTaskId };
+        }
+        return null;
+    },
+
     onMutation(state) {
         const api = Context.verifierSourceTab;
         if (!api || typeof api.run !== 'function') {
@@ -196,15 +288,20 @@ const plugin = {
 
         if (!state.cache) {
             Object.assign(state, api.createInitialState());
+            state.evalTaskHintsLogged = false;
+            state.evalTaskWaitingLogged = false;
         }
 
         const placement = this.findPlacement();
-        const taskId = this.findViewTaskId();
-        if (!taskId && !state.viewTaskMissingLogged) {
-            Logger.debug('View Task link not found yet');
-            state.viewTaskMissingLogged = true;
+        const hints = this.buildHints(state);
+        if (!hints || !hints.taskId) {
+            if (!state.viewTaskMissingLogged) {
+                Logger.debug('View Task link / evalTask not found yet');
+                state.viewTaskMissingLogged = true;
+            }
+        } else {
+            state.viewTaskMissingLogged = false;
         }
-        if (taskId) state.viewTaskMissingLogged = false;
 
         api.run(state, {
             pluginId: this.id,
@@ -214,7 +311,7 @@ const plugin = {
             primaryContent: placement && placement.primaryContent,
             contentParent: placement && placement.contentParent,
             chromeToHide: [],
-            hints: taskId ? { taskId } : null,
+            hints,
             mountTabs: (host, primaryTab, verifierTab) => this.mountTabs(host, primaryTab, verifierTab)
         });
     }

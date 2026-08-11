@@ -41,7 +41,7 @@ const SHOW_PANEL_SUBOPTION = {
 const FORCE_DARK_SUBOPTION = {
     id: FORCE_DARK_SUBOPTION_ID,
     name: 'Force dark mode',
-    description: 'Overrides Preferred mode for this helper panel only.',
+    description: 'Overrides Preferred Visual Mode for this helper panel only.',
     enabledByDefault: false
 };
 
@@ -49,7 +49,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'External Env Helper',
     description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '2.3',
+    _version: '2.4',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -754,7 +754,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'External Env Helper (library)',
     description: 'Shared API for External Env Helper panel on non-VNC env pages',
-    _version: '2.3',
+    _version: '2.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

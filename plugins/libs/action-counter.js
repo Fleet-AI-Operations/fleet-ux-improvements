@@ -195,7 +195,7 @@ const ActionCounterApi = {
             '+',
             'Add 1',
             () => this.applyCountDisplay(input, this.setCount(this.getCount() + 1, '+')),
-            'width: 52px; height: 22px; font-size: 18px; padding: 0;',
+            'width: 52px; height: 22px; font-size: 18px; padding: 0; border: 1px solid var(--border, #e2e8f0);',
             'success'
         );
         const btnMinus = this.makeBtn(
@@ -223,7 +223,7 @@ const plugin = {
     name: 'Action Counter (library)',
     description:
         'Shared API for action counter chrome and storage (archetype modules supply find/mount)',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -249,7 +249,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch, task links',
-    _version: '12.1',
+    _version: '12.2',
     phase: 'core',
     enabledByDefault: true,
 
@@ -468,6 +468,45 @@ const plugin = {
     _clearOpsStoredPassword() {
         Storage.delete('ops-tab-stored-password');
         this._clearOpsSecretsCache();
+    },
+
+    /**
+     * Full revoke when Ops Dashboard is disabled: password, secrets, action
+     * credentials, and GM-cached ops plugin/library sources. Returns whether
+     * ops plugins were already loaded this session (caller may reload).
+     * @returns {boolean}
+     */
+    _revokeOpsAccessOnDisable() {
+        const pluginsWereLoaded = Context.opsDashboardPluginsLoaded === true;
+
+        this._clearOpsStoredPassword();
+        this._clearOpsTeamSearchActionCache();
+        this._clearOpsTeamAddMemberActionCache();
+        this._clearOpsTaskDataActionCache();
+        this._clearOpsExpertStatsActionCache();
+        this._clearOpsTeamCredRefreshPending();
+        this._clearOpsExpertCredRefreshPending();
+        this._opsCurrentUserIdCache = '';
+        this._opsUserTeamCatalogCache = null;
+        try {
+            Storage.deleteData(OPS_CURRENT_USER_ID_STORAGE_KEY);
+            Storage.deleteData(OPS_TEAM_CRED_REFRESH_DONE_STORAGE_KEY);
+        } catch (e) {
+            Logger.debug('ops session data clear failed', e);
+        }
+
+        if (typeof Context.clearOpsDashboardCaches === 'function') {
+            try {
+                Context.clearOpsDashboardCaches();
+            } catch (e) {
+                Logger.warn('clearOpsDashboardCaches failed', e);
+                Context.opsDashboardPluginsLoaded = false;
+            }
+        } else {
+            Context.opsDashboardPluginsLoaded = false;
+        }
+
+        return pluginsWereLoaded;
     },
 
     /**
@@ -3592,6 +3631,7 @@ const plugin = {
             if (!wantsEnabled) {
                 handleToggleChange(e);
                 self._setOpsTabWanted(false);
+                const pluginsWereLoaded = self._revokeOpsAccessOnDisable();
                 self._setOpsPasswordPanelVisible(modal, false);
                 self._setOpsPasswordError(modal, '');
                 self._syncOpsSettingsSubmoduleVisibility(modal);
@@ -3599,6 +3639,9 @@ const plugin = {
                     Context.dashboard.close();
                 }
                 Logger.log('Ops dashboard disabled');
+                if (pluginsWereLoaded && typeof Context.requestExtensionReload === 'function') {
+                    Context.requestExtensionReload('ops dashboard disabled');
+                }
                 return;
             }
             self._setOpsTabWanted(true);
