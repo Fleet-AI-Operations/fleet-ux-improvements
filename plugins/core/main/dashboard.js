@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.2',
+    _version: '12.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -529,11 +529,6 @@ const plugin = {
     _applyDashShellTheme() {
         const modal = this._modal;
         if (!modal) return;
-        if (Context.uiLib && typeof Context.uiLib.syncThemeDataset === 'function') {
-            try {
-                Context.uiLib.syncThemeDataset();
-            } catch (_e) { /* ignore */ }
-        }
         const c = this._dashThemeColors();
         const dark = Context.uiLib && typeof Context.uiLib.isFleetDark === 'function'
             ? Context.uiLib.isFleetDark()
@@ -614,7 +609,7 @@ const plugin = {
         if (!this._built || !this._modal) return;
         this._applyDashShellTheme();
         try {
-            this._setActiveTab(this._state.activeTab || this._resolveActiveTabId());
+            this._syncHeaderTabChrome(this._state.activeTab || this._resolveActiveTabId());
         } catch (e) {
             Logger.warn('header tab theme refresh failed', e);
         }
@@ -3502,7 +3497,8 @@ const plugin = {
         this._updateMsCount(scopeKey);
     },
 
-    _setActiveTab(tabId) {
+    _syncHeaderTabChrome(tabId) {
+        if (!this._modal) return;
         tabId = this._resolveActiveTabId(tabId);
         this._state.activeTab = tabId;
         this._modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
@@ -3519,6 +3515,11 @@ const plugin = {
                 panel.style.display = active ? '' : 'none';
             }
         });
+    },
+
+    _setActiveTab(tabId) {
+        tabId = this._resolveActiveTabId(tabId);
+        this._syncHeaderTabChrome(tabId);
         const tabDef = this._tabsById[tabId];
         if (tabDef && typeof tabDef.onActivate === 'function') {
             tabDef.onActivate(this._modal, this);

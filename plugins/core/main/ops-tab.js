@@ -249,7 +249,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch, task links',
-    _version: '12.0',
+    _version: '12.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -280,7 +280,9 @@ const plugin = {
         loading: false,
         missingLogged: false,
         loadPromise: null,
-        decryptMismatchLogged: false
+        decryptMismatchLogged: false,
+        decryptSuccessLogged: false,
+        ratingBaselinesLogged: false
     },
     _opsBundleNotLoadedLogged: false,
     _opsTabState: {
@@ -559,6 +561,8 @@ const plugin = {
         this._opsSecretsCache.missingLogged = false;
         this._opsSecretsCache.loadPromise = null;
         this._opsSecretsCache.decryptMismatchLogged = false;
+        this._opsSecretsCache.decryptSuccessLogged = false;
+        this._opsSecretsCache.ratingBaselinesLogged = false;
     },
 
     _getOpsSecretsJson() {
@@ -757,12 +761,22 @@ const plugin = {
                 self._opsSecretsCache.json = parsed;
                 self._opsBundleNotLoadedLogged = false;
                 const keyCount = parsed && typeof parsed === 'object' ? Object.keys(parsed).length : 0;
-                Logger.log('secrets decrypted (' + keyCount + ' top-level keys)');
+                if (!self._opsSecretsCache.decryptSuccessLogged) {
+                    Logger.log('secrets decrypted (' + keyCount + ' top-level keys)');
+                    self._opsSecretsCache.decryptSuccessLogged = true;
+                } else {
+                    Logger.debug('secrets re-decrypted (' + keyCount + ' top-level keys)');
+                }
                 try {
                     const baselines = self._getOpsRatingBaselines();
                     if (baselines && Context.ratingEngine && typeof Context.ratingEngine.setCohortBaselines === 'function') {
                         Context.ratingEngine.setCohortBaselines(baselines);
-                        Logger.log('ratingBaselines applied to Context.ratingEngine');
+                        if (!self._opsSecretsCache.ratingBaselinesLogged) {
+                            Logger.log('ratingBaselines applied to Context.ratingEngine');
+                            self._opsSecretsCache.ratingBaselinesLogged = true;
+                        } else {
+                            Logger.debug('ratingBaselines re-applied to Context.ratingEngine');
+                        }
                     } else if (!baselines) {
                         Logger.debug('ratingBaselines missing or incomplete in secrets');
                     }
