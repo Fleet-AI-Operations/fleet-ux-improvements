@@ -729,7 +729,7 @@ const searchOutputStatsPaneMethods = {
             border: this._statsResolvedColor('--border', '#e2e8f0'),
             brand: this._statsResolvedColor('--brand', '#2563eb'),
             brandAlt: this._statsResolvedColor('--primary', '#16a34a'),
-            card: this._statsResolvedColor('--card', '#ffffff')
+            card: this._statsResolvedColor('--dash-task-card', this._statsResolvedColor('--card', '#ffffff'))
         };
     },
 
@@ -1169,7 +1169,9 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsChartCardHtml(chart, validation, inStackRow, stackMinWidth, moveState, visualHeightPx) {
-        const box = this._panelBoxStyle();
+        const box = typeof this._taskCardBoxStyle === 'function'
+            ? this._taskCardBoxStyle()
+            : this._panelBoxStyle();
         const height = visualHeightPx != null && Number.isFinite(visualHeightPx)
             ? this._statsNormalizeChartHeight(visualHeightPx)
             : this._statsResolvedChartHeight(chart);
@@ -1180,7 +1182,7 @@ const searchOutputStatsPaneMethods = {
             ? dashEscHtml(missingLabel)
             : ('Missing parameter: ' + dashEscHtml(missingLabel));
         const overlay = disabled
-            ? ('<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--card, #fff) 72%, transparent); z-index: 2; padding: 12px; text-align: center;">'
+            ? ('<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--dash-task-card, var(--card, #fff)) 72%, transparent); z-index: 2; padding: 12px; text-align: center;">'
                 + '<span style="font-size: 11px; color: var(--muted-foreground, #64748b);">' + overlayMessage + '</span></div>')
             : '';
         const canvasOpacity = disabled ? ' opacity: 0.35; pointer-events: none;' : '';
@@ -2997,7 +2999,7 @@ const searchOutputStatsPaneMethods = {
             + ' -webkit-overflow-scrolling: touch; }'
             + '.wf-dash-stats-chart-header-actions { flex: 0 1 auto; margin-left: auto; }'
             + '.wf-dash-stats-chart-footer { margin-top: auto; width: 100%;'
-            + ' position: sticky; bottom: 0; z-index: 3; padding: 8px 0 2px; background: var(--card, #fff); }'
+            + ' position: sticky; bottom: 0; z-index: 3; padding: 8px 0 2px; background: var(--dash-task-card, var(--card, #fff)); }'
             + '.wf-dash-stats-hscroll-track { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px;'
             + ' width: max-content; min-width: 100%; justify-content: flex-end; box-sizing: border-box; }'
             + '.wf-dash-stats-hscroll-track > * { flex-shrink: 0; }'
@@ -3199,7 +3201,7 @@ const searchOutputStatsPaneMethods = {
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
         ctx.scale(scale, scale);
-        ctx.fillStyle = this._statsResolvedColor('--card', '#ffffff');
+        ctx.fillStyle = this._statsResolvedColor('--dash-task-card', this._statsResolvedColor('--card', '#ffffff'));
         ctx.fillRect(0, 0, width, height);
         const valueDiv = el.children[0];
         const subtitleDiv = el.children[1];
@@ -3259,7 +3261,7 @@ const searchOutputStatsPaneMethods = {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         if (!ctx) return null;
-        ctx.fillStyle = this._statsResolvedColor('--card', '#ffffff');
+        ctx.fillStyle = this._statsResolvedColor('--dash-task-card', this._statsResolvedColor('--card', '#ffffff'));
         ctx.fillRect(0, 0, width, height);
         ctx.strokeStyle = theme.border;
         ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
@@ -6157,7 +6159,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.23',
+    _version: '12.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
