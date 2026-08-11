@@ -1,7 +1,7 @@
 {
   "version": "13.7",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.320",
+  "archetypesVersion": "14.321",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -577,9 +577,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "2.2",
+          "version": "3.0",
           "log": false,
-          "hash": "sha256-ec9e78fbf5a83e181f17abf1cb6ca9527008910b856f21e60d50dd441b1adac6"
+          "hash": "sha256-8599187730b91e79e06c647d0bbc6f4d5ea4d42eb6a76ed7806bf031a28895a9"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -589,8 +589,8 @@
         },
         {
           "name": "fos-vm-clipboard.js",
-          "version": "1.3",
-          "hash": "sha256-1723f4044a98189862fb946550b03f14df1a447ec0d66514138f3d059596d1ed",
+          "version": "2.0",
+          "hash": "sha256-7c15434c8773235ff010e6e292279abd498594a4ded07ebe51f011e59b21df8e",
           "log": false
         },
         {
