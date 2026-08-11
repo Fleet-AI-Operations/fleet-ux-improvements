@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '11.5',
+    _version: '11.6',
     phase: 'core',
     enabledByDefault: true,
 
@@ -4271,7 +4271,7 @@ const plugin = {
 
     _formatOpsTaskVerifierVersionLabel(entry) {
         const n = entry && entry.displayVersionNo != null ? entry.displayVersionNo : null;
-        if (n == null) return 'Current';
+        if (n == null) return entry && entry.isCurrent ? 'Current' : 'Unknown';
         return entry.isCurrent ? ('v' + n + ' — current') : ('v' + n);
     },
 
@@ -4280,7 +4280,7 @@ const plugin = {
             taskId: '',
             taskKey: '',
             currentVersionId: '',
-            options: [{ value: '', label: 'Current', displayVersionNo: null, isCurrent: true }]
+            options: []
         };
         if (!parsed || (!parsed.taskKey && !parsed.taskId)) return out;
 
@@ -4319,23 +4319,68 @@ const plugin = {
             ? lib.computeDisplayVersions(rawVersions)
             : [];
         const currentId = String(out.currentVersionId || '');
+        const mapped = [];
         display.forEach((entry) => {
             const pin = entry && entry.verifierVersionId ? String(entry.verifierVersionId).trim() : '';
             if (!pin || !OPS_UUID_RE.test(pin)) return;
             const isCurrent = currentId && String(entry.id || '') === currentId;
-            out.options.push({
+            mapped.push({
                 value: pin,
-                label: this._formatOpsTaskVerifierVersionLabel({
-                    displayVersionNo: entry.displayVersionNo,
-                    isCurrent
-                }),
                 displayVersionNo: entry.displayVersionNo,
                 isCurrent,
                 taskVersionId: entry.id || '',
                 verifierId: entry.verifierId || ''
             });
         });
+
+        let current = mapped.find((o) => o.isCurrent) || null;
+        if (!current && mapped.length) {
+            current = mapped.reduce((best, entry) => {
+                const n = entry.displayVersionNo != null ? Number(entry.displayVersionNo) : -1;
+                const bestN = best && best.displayVersionNo != null ? Number(best.displayVersionNo) : -1;
+                return n >= bestN ? entry : best;
+            }, null);
+            if (current) current.isCurrent = true;
+        }
+        const currentPin = current ? String(current.value || '') : '';
+        const others = mapped
+            .filter((o) => o && String(o.value || '') !== currentPin)
+            .sort((a, b) => {
+                const aN = a.displayVersionNo != null ? Number(a.displayVersionNo) : 0;
+                const bN = b.displayVersionNo != null ? Number(b.displayVersionNo) : 0;
+                return bN - aN;
+            });
+        const ordered = current ? [current, ...others] : others;
+        out.options = ordered.map((entry) => ({
+            ...entry,
+            label: this._formatOpsTaskVerifierVersionLabel({
+                displayVersionNo: entry.displayVersionNo,
+                isCurrent: Boolean(entry.isCurrent)
+            })
+        }));
         return out;
+    },
+
+    _opsVerifierOptionCurrentPin(options) {
+        const list = Array.isArray(options) ? options : [];
+        const current = list.find((o) => o && o.isCurrent && o.value);
+        if (current && OPS_UUID_RE.test(String(current.value))) return String(current.value);
+        const first = list.find((o) => o && o.value && OPS_UUID_RE.test(String(o.value)));
+        return first ? String(first.value) : '';
+    },
+
+    _resolveOpsVerifierPreferPin(requested, result) {
+        const candidates = [
+            requested,
+            result && result.verifierVersionId,
+            result && result.selectedVersion,
+            result && result.versionId
+        ];
+        for (let i = 0; i < candidates.length; i++) {
+            const pin = candidates[i] != null ? String(candidates[i]).trim() : '';
+            if (pin && OPS_UUID_RE.test(pin)) return pin;
+        }
+        return '';
     },
 
     _renderOpsTaskVerifierVersionSelect(modal, optionPayload, selectedValue) {
@@ -4343,22 +4388,26 @@ const plugin = {
         if (!select) return;
         const options = optionPayload && Array.isArray(optionPayload.options)
             ? optionPayload.options
-            : [{ value: '', label: 'Current', displayVersionNo: null, isCurrent: true }];
-        const prefer = selectedValue != null ? String(selectedValue) : '';
+            : [];
+        const prefer = selectedValue != null ? String(selectedValue).trim() : '';
         select.innerHTML = '';
         options.forEach((entry) => {
             const option = document.createElement('option');
             option.value = String(entry.value || '');
-            option.textContent = entry.label || 'Current';
+            option.textContent = entry.label
+                || this._formatOpsTaskVerifierVersionLabel(entry);
             select.appendChild(option);
         });
         const values = [...select.options].map((o) => o.value);
         if (prefer && values.indexOf(prefer) >= 0) {
             select.value = prefer;
         } else {
-            select.value = '';
+            const currentPin = this._opsVerifierOptionCurrentPin(options);
+            select.value = (currentPin && values.indexOf(currentPin) >= 0)
+                ? currentPin
+                : (values[0] || '');
         }
-        select.style.display = options.length > 1 ? 'block' : 'none';
+        select.style.display = options.length > 0 ? 'block' : 'none';
         select.disabled = false;
     },
 
@@ -4463,7 +4512,7 @@ const plugin = {
                 const pinned = (optionPayload.options || []).filter((o) => o && o.value);
                 const currentPinned = pinned.find((o) => o.isCurrent);
                 versionId = (currentPinned && currentPinned.value)
-                    || (pinned.length ? pinned[pinned.length - 1].value : '');
+                    || (pinned.length ? pinned[0].value : '');
             }
         }
         if (!versionId || !OPS_UUID_RE.test(versionId)) {
@@ -4478,7 +4527,7 @@ const plugin = {
 
         return {
             ...result,
-            selectedVersion: result.versionId || versionId,
+            selectedVersion: result.verifierVersionId || result.versionId || versionId,
             displayVersionNo: parsed.displayVersionNo != null ? parsed.displayVersionNo : null
         };
     },
@@ -4862,11 +4911,17 @@ const plugin = {
         const select = this._opsQuery(modal, '#wf-ops-verifier-version', 'verifierFetchStateSync');
         const pin = selectedVersion != null
             ? String(selectedVersion)
-            : String((result && (result.selectedVersion || result.versionId || result.verifierVersionId)) || '');
-        if (select && pin && [...select.options].some((opt) => opt.value === pin)) {
-            select.value = pin;
-        } else if (select && !pin) {
-            select.value = '';
+            : String((result && (result.verifierVersionId || result.selectedVersion || result.versionId)) || '');
+        if (select) {
+            const values = [...select.options].map((opt) => opt.value);
+            if (pin && values.indexOf(pin) >= 0) {
+                select.value = pin;
+            } else if (values.length) {
+                const currentOpt = [...select.options].find((opt) =>
+                    /—\s*current$/i.test(String(opt.textContent || ''))
+                );
+                select.value = (currentOpt && currentOpt.value) || values[0];
+            }
         }
         if (result && (result.verifierId || result.source || result.taskId || result.taskKey)) {
             this._opsVerifierFetchState = {
@@ -5341,16 +5396,14 @@ const plugin = {
                     if (selectPin) parsed.verifierVersionId = selectPin;
                 }
             }
+            const requestedPin = String(parsed.verifierVersionId || '').trim();
             const result = await this._fetchOpsVerifierCode(parsed);
+            const preferSelected = this._resolveOpsVerifierPreferPin(requestedPin, result);
             if (parsed.taskKey || parsed.taskId || result.taskKey || result.taskId) {
                 await this._hydrateOpsVerifierTaskVersionOptions(modal, {
-                    preferVerifierVersionId: result.versionId || result.verifierVersionId || parsed.verifierVersionId || ''
+                    preferVerifierVersionId: preferSelected
                 });
             }
-            // Pin selection: card/select pin stays selected; Current stays empty.
-            const preferSelected = parsed.verifierVersionId
-                ? (result.versionId || result.verifierVersionId || parsed.verifierVersionId)
-                : '';
             this._syncOpsVerifierFetchState(modal, result, preferSelected);
             await this._setOpsVerifierOutput(modal, result.source);
             this._setOpsVerifierStatus(modal, '');
@@ -5378,22 +5431,21 @@ const plugin = {
         const parsed = this._parseOpsVerifierInput(input.value);
         if (!parsed.taskKey && !parsed.taskId && !parsed.verifierKey && !parsed.verifierId) return;
 
-        if (versionId && OPS_UUID_RE.test(versionId)) {
-            parsed.verifierVersionId = versionId;
-            this._opsVerifierPendingSelectPin = versionId;
-        } else {
-            parsed.verifierVersionId = '';
-            this._opsVerifierPendingSelectPin = '';
+        if (!versionId || !OPS_UUID_RE.test(versionId)) {
+            this._setOpsVerifierStatus(modal, 'Select a verifier version.', true);
+            return;
         }
+        parsed.verifierVersionId = versionId;
+        this._opsVerifierPendingSelectPin = versionId;
 
         select.disabled = true;
         const label = (select.selectedOptions && select.selectedOptions[0]
             ? String(select.selectedOptions[0].textContent || '').trim()
-            : '') || (versionId ? versionId.slice(0, 8) + '…' : 'Current');
+            : '') || (versionId.slice(0, 8) + '…');
         this._setOpsVerifierStatus(modal, 'Loading verifier ' + label + '...');
         try {
             const result = await this._fetchOpsVerifierCode(parsed);
-            this._syncOpsVerifierFetchState(modal, result, versionId && OPS_UUID_RE.test(versionId) ? versionId : '');
+            this._syncOpsVerifierFetchState(modal, result, versionId);
             await this._setOpsVerifierOutput(modal, result.source);
             this._setOpsVerifierStatus(modal, '');
             Logger.log(
