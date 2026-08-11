@@ -1,19 +1,18 @@
 // ============= fos-vm-clipboard.js =============
-// Creation placement: Task/Notes tab bar beside Action Counter via Context.fosVmClipboardBar.
+// Creation placement: page header beside Action Counter via Context.fosVmClipboardBar.
 
 const plugin = {
     id: 'fosVmClipboardBar',
     name: 'VM Clipboard',
     description:
-        'Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)',
-    _version: '1.2',
+        'Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)',
+    _version: '2.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
-        anchorMissingLogged: false,
-        tabBarMissingLogged: false,
+        headerMissingLogged: false,
         activationLogged: false,
-        hadAnchor: false,
+        hadHeader: false,
         uiHostClaimed: false,
         unsubscribe: null,
         groupEl: null,
@@ -32,38 +31,70 @@ const plugin = {
         }
     },
 
-    findContentAnchor() {
-        return (
+    isPageHeaderRow(el) {
+        if (!el || el.tagName !== 'DIV') return false;
+        const text = (el.textContent || '').toLowerCase();
+        return text.includes('create problem') && text.includes('create demonstration');
+    },
+
+    findPageHeaderRow() {
+        const panel =
             document.getElementById('prompt-editor') ||
             document.getElementById('problem-form') ||
-            document.querySelector('[data-ui="qa-task-detail-panel"]')
-        );
-    },
-
-    isTaskNotesTabBar(el) {
-        if (!el || el.tagName !== 'DIV') return false;
-        const buttons = el.querySelectorAll(':scope > button');
-        if (buttons.length < 2) return false;
-        const labels = [...buttons].map((btn) => (btn.textContent || '').trim().toLowerCase());
-        return labels.some((label) => label.includes('task')) && labels.some((label) => label.includes('notes'));
-    },
-
-    findTaskNotesTabBar(anchor) {
-        if (!anchor) return null;
-        let node = anchor;
-        while (node && node !== document.body) {
-            const parent = node.parentElement;
-            if (!parent) break;
-            for (const child of parent.children) {
-                if (!this.isTaskNotesTabBar(child)) continue;
-                const contentSibling = [...parent.children].some(
-                    (sibling) => sibling !== child && sibling.contains(anchor)
-                );
-                if (contentSibling) return child;
+            document.getElementById('instance-preview');
+        let root = panel;
+        while (root && root !== document.body) {
+            if (root.tagName === 'MAIN' || (root.classList && root.classList.contains('flex-col'))) {
+                break;
             }
-            node = parent;
+            root = root.parentElement;
+        }
+        if (!root) {
+            root = document.querySelector('main') || document.body;
+        }
+
+        const candidates = root.querySelectorAll('div');
+        for (const el of candidates) {
+            if (!this.isPageHeaderRow(el)) continue;
+            let best = el;
+            for (const child of el.querySelectorAll('div')) {
+                if (this.isPageHeaderRow(child) && el.contains(child)) {
+                    best = child;
+                }
+            }
+            let node = best;
+            while (node && node !== el.parentElement) {
+                const style = node.className || '';
+                if (
+                    typeof style === 'string' &&
+                    style.includes('justify-between') &&
+                    this.isPageHeaderRow(node)
+                ) {
+                    return node;
+                }
+                node = node.parentElement;
+            }
+            return best;
         }
         return null;
+    },
+
+    findRightHost(headerRow) {
+        if (!headerRow) return null;
+        for (const child of headerRow.children) {
+            if (child.tagName !== 'DIV') continue;
+            const cls = child.className || '';
+            if (typeof cls === 'string' && cls.includes('ml-auto')) {
+                return child;
+            }
+        }
+        for (const child of headerRow.children) {
+            if (child.tagName !== 'DIV') continue;
+            const text = (child.textContent || '').toLowerCase();
+            if (text.includes('create problem')) continue;
+            if (child.querySelector('button')) return child;
+        }
+        return headerRow;
     },
 
     onMutation(state) {
@@ -78,44 +109,29 @@ const plugin = {
 
         const marker = api.BAR_MARKER || 'data-fleet-fos-vm-clipboard-bar';
         const counterMarker = 'data-fleet-action-counter';
-        const anchor = this.findContentAnchor();
-        if (!anchor) {
-            if (state.hadAnchor) {
-                Logger.debug(`Task/Notes tab bar left DOM — clipboard bar inactive`);
-                state.hadAnchor = false;
+        const headerRow = this.findPageHeaderRow();
+        if (!headerRow) {
+            if (state.hadHeader) {
+                Logger.debug(`page header left DOM — clipboard bar inactive`);
+                state.hadHeader = false;
                 state.activationLogged = false;
                 state.readyShownLogged = false;
                 state.readyHiddenLogged = false;
             }
-            if (!state.anchorMissingLogged) {
-                Logger.debug(`content anchor not found yet`);
-                state.anchorMissingLogged = true;
-            }
-            state.tabBarMissingLogged = false;
-            return;
-        }
-
-        state.anchorMissingLogged = false;
-        const tabBar = this.findTaskNotesTabBar(anchor);
-        if (!tabBar) {
-            if (state.hadAnchor) {
-                Logger.debug(`Task/Notes tab bar left DOM — clipboard bar inactive`);
-                state.hadAnchor = false;
-                state.activationLogged = false;
-                state.readyShownLogged = false;
-                state.readyHiddenLogged = false;
-            }
-            if (!state.tabBarMissingLogged) {
-                Logger.debug(`Task/Notes tab bar not found yet (anchor present)`);
-                state.tabBarMissingLogged = true;
+            if (!state.headerMissingLogged) {
+                Logger.debug(`page header not found yet`);
+                state.headerMissingLogged = true;
             }
             return;
         }
 
-        state.tabBarMissingLogged = false;
-        state.hadAnchor = true;
+        state.headerMissingLogged = false;
+        state.hadHeader = true;
 
-        const counter = tabBar.querySelector(`[${counterMarker}="true"]`);
+        const host = this.findRightHost(headerRow);
+        if (!host) return;
+
+        const counter = host.querySelector(`[${counterMarker}="true"]`);
         if (!counter) {
             return;
         }
@@ -123,8 +139,8 @@ const plugin = {
         api.run(state, {
             pluginId: this.id,
             logTag: this.id,
-            activationDetail: 'VM Clipboard injected in Task/Notes tab bar',
-            alreadyMounted: () => Boolean(tabBar.querySelector(`[${marker}="true"]`)),
+            activationDetail: 'VM Clipboard injected in page header',
+            alreadyMounted: () => Boolean(host.querySelector(`[${marker}="true"]`)),
             mountGroup: (group) => {
                 counter.insertAdjacentElement('afterend', group);
             }

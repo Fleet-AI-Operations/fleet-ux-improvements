@@ -113,7 +113,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
-- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the Task/Notes tab bar (shown when FOS env is ready)
+- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 
 ### Computer Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
