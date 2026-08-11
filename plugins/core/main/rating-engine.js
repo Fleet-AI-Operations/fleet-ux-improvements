@@ -551,7 +551,14 @@ function reBlendCohortBlocks(mainBlock, slices, confidenceFn, kind, weighting) {
             axes: reVolumeWeightedAxes(usable),
             slices: usable
                 .slice()
-                .sort((a, b) => (b.volume || 0) - (a.volume || 0) || String(a.key).localeCompare(String(b.key)))
+                .sort((a, b) => {
+                    // Months are YYYY-MM keys — always chronological for the breakdown UI.
+                    if (dimension === 'month') {
+                        return String(a.key).localeCompare(String(b.key));
+                    }
+                    return (b.volume || 0) - (a.volume || 0)
+                        || String(a.key).localeCompare(String(b.key));
+                })
                 .map((row) => {
                     const sliceTier = rePopulationTier(row.block.score, kind, weighting);
                     return {
@@ -1828,7 +1835,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '11.2',
+    _version: '11.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
