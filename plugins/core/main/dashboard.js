@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.6',
+    _version: '12.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2156,9 +2156,9 @@ const plugin = {
             '  /* Reach above tabs through #wf-dash-results 16px padding to the toolbar. */',
             '  top: -20px;',
             '  bottom: 10px;',
-            // Pane fill — not task-card — so square seal corners do not poke past the
-            // chrome shell’s 10px top radius (shell keeps the darker recessed fill).
-            '  background: var(--background, #ffffff);',
+            // Match Results panel --card so square seal corners do not poke past the
+            // chrome shell’s 10px top radius (shell keeps --dash-task-card fill).
+            '  background: var(--card, #ffffff);',
             '  z-index: 0;',
             '  pointer-events: none;',
             '}',
