@@ -109,30 +109,35 @@ const DASH_OUTPUT_KIND_CONFIG = {
         label: 'Task Creation',
         tabBg: '#16a34a',
         toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #4ade80; color: #86efac; background: transparent;',
         textHighlight: 'font-weight: 600; color: #15803d;'
     },
     qa: {
         label: 'QA',
         tabBg: '#2563eb',
         toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #60a5fa; color: #93c5fd; background: transparent;',
         textHighlight: 'font-weight: 600; color: #1d4ed8;'
     },
     dispute: {
         label: 'Disputes',
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #c4b5fd; color: #ddd6fe; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
     },
     senior_review: {
         label: 'Sr Review',
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #facc15; color: #fde68a; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
     },
     sessions: {
         label: 'Sessions',
         tabBg: '#0891b2',
         toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #22d3ee; color: #a5f3fc; background: transparent;',
         textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
@@ -802,10 +807,19 @@ const searchOutputLeftPaneMethods = {
         Logger.log('search-output: @everyone author token added — bulk ratings mode');
     },
 
+    _dashKindToggleActiveCss(colorKind) {
+        const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
+        if (!cfg) return '';
+        const dark = Context.uiLib && typeof Context.uiLib.isFleetDark === 'function'
+            ? Context.uiLib.isFleetDark()
+            : (document.documentElement.dataset.fleetUxTheme === 'dark');
+        if (dark && cfg.toggleActiveDark) return cfg.toggleActiveDark;
+        return cfg.toggleActive || '';
+    },
+
     _filterToggleHtml(id, label, pressed, colorKind) {
         const ui = Context.uiLib;
-        const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
-        const activeCss = cfg ? cfg.toggleActive : '';
+        const activeCss = this._dashKindToggleActiveCss(colorKind);
         if (ui && typeof ui.filterToggleHtml === 'function') {
             return ui.filterToggleHtml({ id, label, pressed, activeCss });
         }
@@ -818,8 +832,7 @@ const searchOutputLeftPaneMethods = {
 
     _applyFilterToggleBtn(btn, pressed, colorKind) {
         if (!btn) return;
-        const cfg = DASH_OUTPUT_KIND_CONFIG[colorKind];
-        const activeCss = cfg ? cfg.toggleActive : '';
+        const activeCss = this._dashKindToggleActiveCss(colorKind);
         const ui = Context.uiLib;
         if (ui && typeof ui.applyFilterToggle === 'function') {
             ui.applyFilterToggle(btn, pressed, activeCss);
@@ -2550,7 +2563,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.10',
+    _version: '5.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

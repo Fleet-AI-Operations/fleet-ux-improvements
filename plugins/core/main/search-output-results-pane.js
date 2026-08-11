@@ -111,30 +111,35 @@ const DASH_OUTPUT_KIND_CONFIG = {
         label: 'Task Creation',
         tabBg: '#16a34a',
         toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #4ade80; color: #86efac; background: transparent;',
         textHighlight: 'font-weight: 600; color: #15803d;'
     },
     qa: {
         label: 'QA',
         tabBg: '#2563eb',
         toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #60a5fa; color: #93c5fd; background: transparent;',
         textHighlight: 'font-weight: 600; color: #1d4ed8;'
     },
     dispute: {
         label: 'Disputes',
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #c4b5fd; color: #ddd6fe; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
     },
     senior_review: {
         label: 'Sr Review',
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #facc15; color: #fde68a; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
     },
     sessions: {
         label: 'Sessions',
         tabBg: '#0891b2',
         toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #22d3ee; color: #a5f3fc; background: transparent;',
         textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
@@ -3839,12 +3844,19 @@ const searchOutputResultsPaneMethods = {
             return base + ' border: 2px solid var(--border, #e2e8f0); color: var(--muted-foreground, #64748b); background: transparent; opacity: 0.35; cursor: not-allowed;';
         }
         const interactive = base + ' cursor: pointer;';
+        const dark = Context.uiLib && typeof Context.uiLib.isFleetDark === 'function'
+            ? Context.uiLib.isFleetDark()
+            : (document.documentElement.dataset.fleetUxTheme === 'dark');
         if (active) {
             if (tabId === 'all') {
-                return interactive + ' border: 2px solid #ca8a04; color: #a16207; background: transparent;';
+                return interactive + (dark
+                    ? ' border: 2px solid #facc15; color: #fde68a; background: transparent;'
+                    : ' border: 2px solid #ca8a04; color: #a16207; background: transparent;');
             }
             const cfg = DASH_OUTPUT_KIND_CONFIG[tabId];
-            return interactive + ' ' + (cfg ? cfg.toggleActive : DASH_TOGGLE_INACTIVE);
+            if (!cfg) return interactive + ' ' + DASH_TOGGLE_INACTIVE;
+            const activeCss = dark && cfg.toggleActiveDark ? cfg.toggleActiveDark : cfg.toggleActive;
+            return interactive + ' ' + activeCss;
         }
         return interactive + ' ' + DASH_TOGGLE_INACTIVE;
     },
@@ -6736,7 +6748,13 @@ const searchOutputResultsPaneMethods = {
     },
 
     _qaAlertBadgeStyle() {
-        return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
+        const dark = Context.uiLib && typeof Context.uiLib.isFleetDark === 'function'
+            ? Context.uiLib.isFleetDark()
+            : (document.documentElement.dataset.fleetUxTheme === 'dark');
+        if (dark) {
+            return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #fff7ed; background: #9a3412; border: 1px solid #7c2d12;';
+        }
+        return 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; color: #9a3412; background: color-mix(in srgb, #ea580c 16%, var(--card, #fafafa)); border: 1px solid #c2410c;';
     },
 
     _qaEditedBadgeHtml(compact) {
@@ -6801,7 +6819,13 @@ const searchOutputResultsPaneMethods = {
     _disputeCategoryBadgeHtml(category) {
         const label = String(category || '').trim();
         if (!label) return '';
-        return `<span style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;">${dashEscHtml(label)}</span>`;
+        const dark = Context.uiLib && typeof Context.uiLib.isFleetDark === 'function'
+            ? Context.uiLib.isFleetDark()
+            : (document.documentElement.dataset.fleetUxTheme === 'dark');
+        const style = dark
+            ? 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #ede9fe; background: color-mix(in srgb, #7c3aed 28%, var(--card, #1a1a1c)); border: 1px solid #a78bfa;'
+            : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: #3b0764; background: color-mix(in srgb, #ffffff 78%, #ede9fe); border: 1px solid #6d28d9;';
+        return `<span style="${style}">${dashEscHtml(label)}</span>`;
     },
 
     _qaCollapseSwapHtml(mode, collapsed, innerHtml, display) {
@@ -7651,7 +7675,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.19',
+    _version: '9.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

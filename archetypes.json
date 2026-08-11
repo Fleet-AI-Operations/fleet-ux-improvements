@@ -1,7 +1,7 @@
 {
   "version": "13.7",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.321",
+  "archetypesVersion": "14.322",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.11",
-      "hash": "sha256-cbc0d8f5fd463ee8fd7bb073b906247eff34b2263380a23398fa8759197ba88b",
+      "version": "3.12",
+      "hash": "sha256-1b761586ab58a8b31e772d4e8f870178b166be0ac856c60967b80bd9729d3477",
       "log": false
     },
     {
@@ -200,8 +200,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "11.35",
-      "hash": "sha256-e5f787de68d16a7645d3a6ba082642ed19f865543b40faf62b0b23d192f1af8b",
+      "version": "12.0",
+      "hash": "sha256-8b37252da6daad024a8dd8392a625e07fe6da08b43f2a36fb66bb772b8e6fbcd",
       "log": false
     },
     {
@@ -218,14 +218,14 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "5.10",
-      "hash": "sha256-3842d26fe022ed76b194ec0f6b1a7df0d24bbf27da234849f692c5a3a8133b50",
+      "version": "5.11",
+      "hash": "sha256-44a4c08ad524932ec7bd0f128cc8b48ea8b265e403e494af04bc449edf84f8ed",
       "log": false
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "9.19",
-      "hash": "sha256-23aac426d1c5b176806dd6ed6c4f9d1c9daf37e7313ac47e21a5da8df7d44d79",
+      "version": "9.20",
+      "hash": "sha256-e07faaa106ed8386c0988e1ad7d7efc26260997dff4462514f1586d8e437f9ab",
       "log": false
     },
     {
@@ -242,14 +242,14 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "12.21",
-      "hash": "sha256-8ddfd9e4c6525003b035e93db28ceeae5b7bc267220bfb37534b78338e825a30",
+      "version": "12.22",
+      "hash": "sha256-983f9f5d40348faed46265a8909dd60f6ca14e8fe5d9e80ee57c652f6b2597ae",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "9.42",
-      "hash": "sha256-f4bccfeaf1f8e76623d1ea45270da0188c0d1f35d7d413dcebe202f9d21a7c2c",
+      "version": "9.43",
+      "hash": "sha256-85b4640c13b8b3db0db295f9940c7e0e04e9f6072cf560c9fec42543d444864b",
       "log": false
     },
     {

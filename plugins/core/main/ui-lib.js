@@ -209,14 +209,15 @@ function fleetUiThemeOverrideCssText() {
         .flatMap((sel) => [sel, sel + ' *'])
         .join(', ');
     return [
+        // Preferred light tokens match Settings chromeColors() light palette.
         'html[data-fleet-ux-theme="light"] ' + rootsAndDescendants + ' {',
         '  --background: #ffffff !important;',
-        '  --card: #ffffff !important;',
-        '  --foreground: #111111 !important;',
-        '  --border: #e7e7e7 !important;',
-        '  --muted: #f7f7f7 !important;',
-        '  --muted-foreground: #6d6d6d !important;',
-        '  --input: #e7e7e7 !important;',
+        '  --card: #fafafa !important;',
+        '  --foreground: #333333 !important;',
+        '  --border: #e5e5e5 !important;',
+        '  --muted: #f0f0f0 !important;',
+        '  --muted-foreground: #666666 !important;',
+        '  --input: #e5e5e5 !important;',
         // Keep filled controls on the extension accent (not host indigo/--primary-foreground).
         '  --brand: ' + FLEET_UI_ACCENT + ' !important;',
         '  --primary: ' + FLEET_UI_ACCENT + ' !important;',
@@ -1382,7 +1383,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.11',
+    _version: '3.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

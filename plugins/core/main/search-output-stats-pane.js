@@ -775,6 +775,24 @@ const searchOutputStatsPaneMethods = {
         this._state.statsCharts = null;
     },
 
+    _refreshStatsForTheme() {
+        if (!this._built || !this._modal) return;
+        const statsBody = this._q('[data-wf-dash-stats-body]');
+        if (!statsBody || statsBody.offsetParent === null) {
+            // Pane may be hidden; still drop cached chart instances so next show uses new theme.
+            this._destroyStatsCharts();
+            this._destroyStatsBuilderPreview();
+            return;
+        }
+        this._destroyStatsCharts();
+        this._destroyStatsBuilderPreview();
+        void this._renderStatsPanel();
+        if (this._q('#wf-dash-stats-builder') && this._q('#wf-dash-stats-builder').style.display !== 'none') {
+            void this._renderStatsBuilderPreview();
+        }
+        Logger.debug('stats charts refreshed for Preferred theme');
+    },
+
     _destroyStatsBuilderPreview() {
         const ch = this._state.statsBuilderPreviewChart;
         if (ch) {
@@ -6133,7 +6151,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.21',
+    _version: '12.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
