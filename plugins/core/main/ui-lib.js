@@ -168,8 +168,8 @@ function fleetUiChromeColors() {
         return {
             bg: '#18181b',
             card: '#27272a',
-            // Darker than bg so Search Output task cards read as recessed wells.
-            taskCard: '#0f0f12',
+            // Match Ops modal/gutter bg so task cards align with the shell T-shape.
+            taskCard: '#18181b',
             hover: '#3f3f46',
             border: '#3f3f46',
             borderHover: '#52525b',
@@ -180,8 +180,8 @@ function fleetUiChromeColors() {
     return {
         bg: '#ffffff',
         card: '#fafafa',
-        // Darker than bg so Search Output task cards read as recessed wells.
-        taskCard: '#e4e4e4',
+        // Match Ops modal/gutter bg so task cards align with the shell T-shape.
+        taskCard: '#ffffff',
         hover: '#f0f0f0',
         border: '#e5e5e5',
         borderHover: '#d1d5db',
@@ -1387,7 +1387,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.14',
+    _version: '3.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

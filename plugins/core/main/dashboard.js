@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.5',
+    _version: '12.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -508,7 +508,7 @@ const plugin = {
             return {
                 bg: '#18181b',
                 card: '#27272a',
-                taskCard: '#0f0f12',
+                taskCard: '#18181b',
                 hover: '#3f3f46',
                 border: '#3f3f46',
                 borderHover: '#52525b',
@@ -519,7 +519,7 @@ const plugin = {
         return {
             bg: '#ffffff',
             card: '#fafafa',
-            taskCard: '#e4e4e4',
+            taskCard: '#ffffff',
             hover: '#f0f0f0',
             border: '#e5e5e5',
             borderHover: '#d1d5db',
