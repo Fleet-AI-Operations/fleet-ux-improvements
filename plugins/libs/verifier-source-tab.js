@@ -92,7 +92,7 @@ const VerifierSourceTabApi = {
      * @param {Element|null} options.primaryContent
      * @param {Element|null} options.contentParent — append verifier panel here
      * @param {Element[]} [options.chromeToHide] — hidden while Verifier tab active
-     * @param {{ taskId?: string, taskKey?: string, verifierId?: string, teamId?: string }} [options.hints]
+     * @param {{ taskId?: string, taskKey?: string, verifierId?: string, versionId?: string, teamId?: string }} [options.hints]
      */
     run(state, options) {
         const opts = options || {};
@@ -166,6 +166,13 @@ const VerifierSourceTabApi = {
         if (hints.verifierId && UUID_RE.test(hints.verifierId) && !c.verifierId) {
             c.verifierId = hints.verifierId;
         }
+        if (hints.versionId && UUID_RE.test(hints.versionId) && c.versionId !== hints.versionId) {
+            c.versionId = hints.versionId;
+            // Allow orchestrator prefetch after a prior taskId-only attempt.
+            state.prefetchAttemptedFor = '';
+            state.prefetchLogged = false;
+            Logger.debug('hint versionId=' + hints.versionId.slice(0, 8) + '…');
+        }
         if (hints.teamId && UUID_RE.test(hints.teamId) && !c.teamId) {
             c.teamId = hints.teamId;
         }
@@ -199,8 +206,9 @@ const VerifierSourceTabApi = {
 
         const hasSource = !!(cached.source || capture.source);
         const verifierId = cached.verifierId || capture.verifierId || '';
+        const versionId = cached.versionId || capture.versionId || '';
         const taskId = capture.taskId || '';
-        if (!hasSource && !verifierId && !taskId) return;
+        if (!hasSource && !verifierId && !taskId && !versionId) return;
 
         if (!state.prefetchLogged) {
             Logger.debug(
@@ -830,15 +838,20 @@ const VerifierSourceTabApi = {
             this.setReadyStatus(state, cacheKey, cached);
             return;
         }
-        const verifierId = (state.capture && state.capture.verifierId) || (cached && cached.verifierId) || '';
+        const capture = state.capture || {};
+        const versionId = capture.versionId || (cached && cached.versionId) || '';
+        // versionId present → orchestrator fetch owns status; do not overwrite with waiting copy.
+        if (versionId) return;
+        const verifierId = capture.verifierId || (cached && cached.verifierId) || '';
         if (!cacheKey && !verifierId) {
             this.setStatus(state, 'Waiting for verifier id…');
             return;
         }
         if (!verifierId) {
-            const taskId = state.capture && state.capture.taskId;
+            const taskId = capture.taskId;
             if (taskId) {
-                this.setStatus(state, 'Resolving verifier for View Task…');
+                // Task id alone is not enough without Ops; wait for page pin (e.g. dispute RSC).
+                this.setStatus(state, 'Waiting for verifier pin…');
                 return;
             }
             this.setStatus(state, 'Waiting for verifier id from page traffic…');
@@ -976,9 +989,9 @@ const VerifierSourceTabApi = {
                     });
             }
             if (!args.quiet) {
-                this.setStatus(state, 'Unlock Ops to load verifier from View Task…');
+                this.setStatus(state, 'Waiting for verifier pin…');
             }
-            Logger.debug('ops bundle not ready — deferred task→verifier lookup');
+            Logger.debug('ops bundle not ready — deferred task→verifier lookup (need versionId or Ops)');
             return true;
         }
 
@@ -1039,7 +1052,7 @@ const VerifierSourceTabApi = {
             return true;
         } catch (err) {
             if (ops.isOpsBundleNotLoadedError && ops.isOpsBundleNotLoadedError(err)) {
-                if (!args.quiet) this.setStatus(state, 'Unlock Ops to load verifier from View Task…');
+                if (!args.quiet) this.setStatus(state, 'Waiting for verifier pin…');
                 Logger.debug('ops bundle not loaded during task→verifier fetch');
                 return true;
             }
@@ -1387,7 +1400,7 @@ const plugin = {
     name: 'Verifier Source Tab (library)',
     description:
         'Shared primary | Verifier tab shell and searchable verifier source (archetype modules supply placement)',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
