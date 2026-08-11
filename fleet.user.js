@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.7
+// @version      13.8
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.7';
+    const VERSION = '13.8';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -937,6 +937,10 @@
                 cachedAt: Date.now()
             };
             this.set(`plugin-cache-${pluginKey}`, JSON.stringify(cacheData));
+        },
+        clearCachedPlugin(pluginKey) {
+            if (!pluginKey) return;
+            this.delete(`plugin-cache-${pluginKey}`);
         },
         getPluginKey(filename, sourcePath) {
             // Create a unique key for the plugin based on its path
@@ -3961,6 +3965,47 @@
     }
 
     Context.ensureOpsDashboardPluginsLoaded = ensureOpsDashboardPluginsLoaded;
+
+    /**
+     * Delete GM-cached source for ops dashboard plugins and opsDashboardLibraries,
+     * and mark ops plugins as not loaded. Does not unload already-evaluated JS.
+     * @returns {{ plugins: number, libraries: number }}
+     */
+    function clearOpsDashboardCaches() {
+        let pluginsCleared = 0;
+        let librariesCleared = 0;
+        const am = Context.archetypeManager || ArchetypeManager;
+        const pluginEntries = (am && typeof am.getOpsDashboardPlugins === 'function')
+            ? am.getOpsDashboardPlugins()
+            : [];
+        const libNames = (am && typeof am.getOpsDashboardLibraries === 'function')
+            ? am.getOpsDashboardLibraries()
+            : [];
+
+        for (const entry of pluginEntries) {
+            const name = entry && entry.name;
+            if (typeof name !== 'string' || !name) continue;
+            const pluginKey = Storage.getPluginKey(name, `core/main/${name}`);
+            Storage.clearCachedPlugin(pluginKey);
+            pluginsCleared++;
+        }
+        for (const name of libNames) {
+            if (typeof name !== 'string' || !name) continue;
+            const pluginKey = Storage.getPluginKey(name, `libs/${name}`);
+            Storage.clearCachedPlugin(pluginKey);
+            librariesCleared++;
+        }
+
+        Context.opsDashboardPluginsLoaded = false;
+        Logger.log(
+            'ops dashboard caches cleared (' +
+            pluginsCleared + ' plugin(s), ' +
+            librariesCleared + ' librar' + (librariesCleared === 1 ? 'y' : 'ies') + ')'
+        );
+        return { plugins: pluginsCleared, libraries: librariesCleared };
+    }
+
+    Context.clearOpsDashboardCaches = clearOpsDashboardCaches;
     
     async function initializeCorePlugins() {
         if (corePluginsLoaded) {
