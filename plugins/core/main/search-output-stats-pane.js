@@ -4485,10 +4485,16 @@ const searchOutputStatsPaneMethods = {
     },
 
     _statsTabStyle(active) {
-        const base = 'padding: 8px 12px; font-size: 12px; font-weight: 600; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; background: transparent;';
-        return active
-            ? base + ' color: var(--foreground, #0f172a); border-bottom-color: var(--brand, var(--primary, #2563eb));'
-            : base + ' color: var(--muted-foreground, #64748b);';
+        if (typeof this._dashTextTabStyle === 'function') {
+            return this._dashTextTabStyle(active, { padding: '8px 12px', fontSize: '12px' });
+        }
+        const c = typeof this._dashThemeColors === 'function' ? this._dashThemeColors() : null;
+        const base = 'position: relative; padding: 8px 12px; font-size: 12px; background: transparent; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;';
+        if (active) {
+            return base + ' font-weight: 600; color: ' + (c ? c.fg : 'var(--foreground, #0f172a)')
+                + '; border-bottom-color: var(--brand, var(--primary, #2563eb));';
+        }
+        return base + ' font-weight: 500; color: ' + (c ? c.muted : 'var(--muted-foreground, #64748b)') + ';';
     },
 
     _setStatsTab(tab) {
@@ -6151,7 +6157,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.22',
+    _version: '12.23',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
