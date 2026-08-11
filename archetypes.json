@@ -1,7 +1,7 @@
 {
   "version": "13.7",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.315",
+  "archetypesVersion": "14.316",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.10",
-      "hash": "sha256-c43d9d70062ee679be2e8189d3c66bc697ab14e6e492c757ef45abba2f97d4ad",
+      "version": "3.11",
+      "hash": "sha256-cbc0d8f5fd463ee8fd7bb073b906247eff34b2263380a23398fa8759197ba88b",
       "log": false
     },
     {
@@ -28,8 +28,8 @@
     },
     {
       "name": "ops-tab.js",
-      "version": "11.4",
-      "hash": "sha256-73cb5769a878806b2e49498dd9fffb977ae7be207988301f133d490d6a08072d",
+      "version": "11.5",
+      "hash": "sha256-b1a83bf2dd84a9f0d6ffa9bd225dd9567cc15bc630e32186ece4ef0a733b5b5d",
       "log": false
     },
     {
@@ -60,8 +60,8 @@
     },
     {
       "name": "ai-chat.js",
-      "version": "8.1",
-      "hash": "sha256-581c999c879ba5977baf3ddf119163da1eb5d67db9b220341c272adc44bf84fb",
+      "version": "8.2",
+      "hash": "sha256-6b6b5af97c188bae67629131410ee24fd0609ae4a569174af1797e6b009ca580",
       "log": false
     },
     {
@@ -176,8 +176,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "8.5",
-      "hash": "sha256-35b5e66405305fd414b047ebbb348e8af7255c76246251650c36cba9e17001c3",
+      "version": "8.6",
+      "hash": "sha256-f4b0e0059312a010e3a0115c95965c63cb63c33b50cb34687232ef4adb514813",
       "log": false
     },
     {
@@ -224,8 +224,8 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "9.17",
-      "hash": "sha256-793fbfc8810d385c4fedde9c101a6300df043ab10295ff9cc2505c8499fe5db8",
+      "version": "9.18",
+      "hash": "sha256-f1a7c8a680d3f726e18cc08140cefd1197292c8cc97fb6c18fd7a676e835032f",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "diff-viewer.js",
-      "version": "5.7",
-      "hash": "sha256-c72a8f4f4727cc110ad56b97c9e93ab8d3f4cdf688bef140b3fe68e76a74a881",
+      "version": "5.8",
+      "hash": "sha256-be32f16443f5e6137fac74aa3e1b187fde88266a5da0dda2484e3decd2dd03a3",
       "log": false
     },
     {
@@ -995,8 +995,8 @@
       "plugins": [
         {
           "name": "activity-identity-reveal.js",
-          "version": "1.6",
-          "hash": "sha256-6a8e1e1774b58e40d920801e834a1a8e36bf80eea2c3abcbe5ecfbbe9f8ede97",
+          "version": "1.7",
+          "hash": "sha256-5ddba31f661bf7598a8bb52a89a3381aaf27637bd608915e8cc90939a251b870",
           "log": false
         }
       ]

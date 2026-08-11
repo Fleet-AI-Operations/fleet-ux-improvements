@@ -43,10 +43,9 @@ const AI_CHAT_CALLBACK_KEYS = [
 ];
 
 function aiChatCopyIconSvg() {
-    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"'
-        + ' stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
-        + ' aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>'
-        + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    return (Context.uiLib && typeof Context.uiLib.copyIconSvg === 'function')
+        ? Context.uiLib.copyIconSvg({ size: 14 })
+        : '';
 }
 
 function aiChatEnsureUiLibStyles() {
@@ -2449,7 +2448,7 @@ const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
     description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '8.1',
+    _version: '8.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

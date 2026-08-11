@@ -272,7 +272,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops dashboard backend: password gate, PostgREST, team search, verifier fetch, task links',
-    _version: '11.4',
+    _version: '11.5',
     phase: 'core',
     enabledByDefault: true,
 
@@ -1962,10 +1962,13 @@ const plugin = {
         if (!id) return '';
         const attrId = this._opsEscapeAttr(id);
         const title = 'Open expert profile to refresh stats';
+        const icon = (Context.uiLib && Context.uiLib.externalLinkIconSvg)
+            ? Context.uiLib.externalLinkIconSvg()
+            : '';
         return '<button type="button" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
             'data-ops-action="expert-stats-cred-refresh" data-ops-member-id="' + attrId + '" ' +
             'title="' + this._opsEscapeHtml(title) + '" aria-label="' + this._opsEscapeHtml(title) + '">' +
-            this._opsProfileLinkIconSvg() + '</button>';
+            icon + '</button>';
     },
 
     _opsExpertStatsUnavailableHtml(memberId) {
@@ -3747,30 +3750,25 @@ const plugin = {
             '</span>';
     },
 
-    _opsProfileLinkIconSvg() {
-        return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>';
-    },
-
-    _opsEyeIconSvg() {
-        return '<svg width="15.4" height="15.4" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
-            + '<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>'
-            + '<circle cx="13" cy="13.2" r="3.2"></circle>'
-            + '</svg>';
-    },
-
     _opsProfileLinkHtml(profileUrl, title) {
         const url = String(profileUrl || '').trim();
         if (!url) return '';
         const label = title || 'Open profile in Fleet';
+        const icon = (Context.uiLib && Context.uiLib.externalLinkIconSvg)
+            ? Context.uiLib.externalLinkIconSvg()
+            : '';
         return '<a href="' + this._opsEscapeHtml(url) + '" target="_blank" rel="noopener noreferrer" class="wf-ops-profile-link-btn ' + this._opsDashBtnClass('basic', 'icon') + '" ' +
             'title="' + this._opsEscapeHtml(label) + '" aria-label="' + this._opsEscapeHtml(label) + '">' +
-            this._opsProfileLinkIconSvg() + '</a>';
+            icon + '</a>';
     },
 
     _opsSearchWorkerOutputBtnHtml(memberId) {
         const attrId = this._opsEscapeAttr(memberId);
+        const icon = (Context.uiLib && Context.uiLib.eyeIconSvg)
+            ? Context.uiLib.eyeIconSvg()
+            : '';
         return '<button type="button" class="' + this._opsDashBtnClass('secondary', 'nav') + ' wf-ops-search-output-btn" data-ops-action="search-worker-output" data-ops-member-id="' + attrId + '" ' +
-            'style="flex-shrink:0;white-space:nowrap;gap:6px;">Search Worker Output' + this._opsEyeIconSvg() + '</button>';
+            'style="flex-shrink:0;white-space:nowrap;gap:6px;">Search Worker Output' + icon + '</button>';
     },
 
     _opsMemberToAuthorPerson(member) {

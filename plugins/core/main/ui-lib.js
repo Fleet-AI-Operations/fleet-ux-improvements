@@ -1278,6 +1278,49 @@ function fleetUiLoadingDotsAttr() {
     return 'data-fleet-ui-dots';
 }
 
+/** Shared button-icon SVGs (basic+icon chrome). */
+function fleetUiEyeIconSvg() {
+    return '<svg width="15.4" height="15.4" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
+        + '<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>'
+        + '<circle cx="13" cy="13.2" r="3.2"></circle>'
+        + '</svg>';
+}
+
+function fleetUiFlagIconSvg() {
+    return '<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
+        + '<line x1="7.5" y1="2" x2="7.5" y2="24"></line>'
+        + '<path d="M7.5 3.5 L22.5 10 L7.5 16.5 Z" fill="#dc2626" stroke="none"></path>'
+        + '</svg>';
+}
+
+function fleetUiFunnelIconSvg() {
+    return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true" style="flex-shrink:0;">'
+        + '<line x1="4" y1="7" x2="20" y2="7"></line>'
+        + '<line x1="7" y1="12" x2="17" y2="12"></line>'
+        + '<line x1="10" y1="17" x2="14" y2="17"></line>'
+        + '</svg>';
+}
+
+function fleetUiExternalLinkIconSvg(opts) {
+    const active = !(opts && opts.active === false);
+    const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
+    const opacity = active ? '1' : '0.45';
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="' + stroke + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity: ' + opacity + '; flex-shrink:0;">'
+        + '<path d="M15 3h6v6"></path>'
+        + '<path d="M10 14 21 3"></path>'
+        + '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'
+        + '</svg>';
+}
+
+function fleetUiCopyIconSvg(opts) {
+    const raw = opts && opts.size != null ? Number(opts.size) : 13;
+    const size = Number.isFinite(raw) && raw > 0 ? raw : 13;
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>'
+        + '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>'
+        + '</svg>';
+}
+
 function fleetUiFlashTabSuccess(tabEl) {
     if (!tabEl) return;
     tabEl.classList.remove('fleet-ui-tab--pulse', 'wf-dash-tab--add-pulse');
@@ -1338,8 +1381,8 @@ function fleetUiUserStoryProseCssText() {
 const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
-    description: 'Shared UI tokens, buttons, segments, filter toggles, panels, and copy feedback',
-    _version: '3.10',
+    description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
+    _version: '3.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1474,6 +1517,11 @@ const plugin = {
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,
+            eyeIconSvg: fleetUiEyeIconSvg,
+            flagIconSvg: fleetUiFlagIconSvg,
+            funnelIconSvg: fleetUiFunnelIconSvg,
+            externalLinkIconSvg: fleetUiExternalLinkIconSvg,
+            copyIconSvg: fleetUiCopyIconSvg,
 
             segmentBtnClass: fleetUiSegmentBtnClass,
             segmentBtnHtml: fleetUiSegmentBtnHtml,

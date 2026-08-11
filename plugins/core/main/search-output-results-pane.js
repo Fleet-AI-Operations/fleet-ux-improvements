@@ -568,7 +568,7 @@ const searchOutputResultsPaneMethods = {
         return `<span data-wf-dash-helpfulness-actions="${escId}" style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;">`
             + `<button type="button" data-wf-dash-thumb="up" data-wf-dash-feedback-id="${escId}" title="Helpful" aria-label="Helpful" class="${iconClass}" style="${this._helpfulnessThumbActiveStyle('up', upActive)}"${disabled}>${this._helpfulnessThumbSvg('up')}</button>`
             + `<button type="button" data-wf-dash-thumb="down" data-wf-dash-feedback-id="${escId}" title="Not Helpful" aria-label="Not Helpful" class="${iconClass}" style="${this._helpfulnessThumbActiveStyle('down', downActive)}"${disabled}>${this._helpfulnessThumbSvg('down')}</button>`
-            + `<button type="button" data-wf-dash-qa-review-toggle="1" data-wf-dash-feedback-id="${escId}" title="Write a review" aria-label="Write a review" aria-pressed="${flagActive ? 'true' : 'false'}" class="${iconClass}" style="${flagStyle}"${disabled}>${this._flagIconSvg()}</button>`
+            + `<button type="button" data-wf-dash-qa-review-toggle="1" data-wf-dash-feedback-id="${escId}" title="Write a review" aria-label="Write a review" aria-pressed="${flagActive ? 'true' : 'false'}" class="${iconClass}" style="${flagStyle}"${disabled}>${(Context.uiLib && Context.uiLib.flagIconSvg) ? Context.uiLib.flagIconSvg() : ''}</button>`
             + `</span>`;
     },
 
@@ -4941,7 +4941,7 @@ const searchOutputResultsPaneMethods = {
 
         const envBtnStyle = 'flex-shrink: 0; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;';
         const envBtn = url
-            ? `<button type="button" data-wf-dash-dispute-open-env="1" data-dispute-id="${escDisputeId}" class="${basicClass}" style="${envBtnStyle}"${disabled}>Resolve with Environment${this._extLinkIconSvg(true)}</button>`
+            ? `<button type="button" data-wf-dash-dispute-open-env="1" data-dispute-id="${escDisputeId}" class="${basicClass}" style="${envBtnStyle}"${disabled}>Resolve with Environment${(Context.uiLib && Context.uiLib.externalLinkIconSvg) ? Context.uiLib.externalLinkIconSvg() : ''}</button>`
             : '';
 
         const bugCategorySelect = flagAsBug
@@ -5934,13 +5934,16 @@ const searchOutputResultsPaneMethods = {
         const cls = (Context.uiLib && typeof Context.uiLib.btnClass === 'function')
             ? Context.uiLib.btnClass('basic', 'icon')
             : 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--icon';
+        const icon = (Context.uiLib && typeof Context.uiLib.copyIconSvg === 'function')
+            ? Context.uiLib.copyIconSvg()
+            : '';
         const itemAttr = itemId ? ` data-item-id="${dashEscHtml(String(itemId))}"` : '';
         return '<button type="button" class="' + cls + '"'
             + ' data-wf-dash-copy-section="' + dashEscHtml(String(section || '')) + '"'
             + ' data-wf-dash-copy-entity="' + dashEscHtml(String(entityId || '')) + '"'
             + itemAttr
             + ' title="Copy" aria-label="Copy">'
-            + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+            + icon
             + '</button>';
     },
 
@@ -6462,48 +6465,22 @@ const searchOutputResultsPaneMethods = {
         return this._copyWithFeedback(buttonEl, text);
     },
 
-    _extLinkIconSvg(active) {
-        const stroke = active ? 'currentColor' : 'var(--muted-foreground, #94a3b8)';
-        const opacity = active ? '1' : '0.45';
-        return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: ${opacity}; flex-shrink: 0;"><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>`;
-    },
-
-    _filterFunnelIconSvg() {
-        return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0;">`
-            + `<line x1="4" y1="7" x2="20" y2="7"></line>`
-            + `<line x1="7" y1="12" x2="17" y2="12"></line>`
-            + `<line x1="10" y1="17" x2="14" y2="17"></line>`
-            + `</svg>`;
-    },
-
-    _eyeIconSvg() {
-        return `<svg width="15.4" height="15.4" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
-            + `<path d="M13 6.9C6.9 6.9 2.1 13.2 2.1 13.2S6.9 19.5 13 19.5c4.7 0 10.9-6.3 10.9-6.3S17.6 6.9 13 6.9z"></path>`
-            + `<circle cx="13" cy="13.2" r="3.2"></circle>`
-            + `</svg>`;
-    },
-
-    _flagIconSvg() {
-        return `<svg width="14" height="14" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;">`
-            + `<line x1="7.5" y1="2" x2="7.5" y2="24"></line>`
-            + `<path d="M7.5 3.5 L22.5 10 L7.5 16.5 Z" fill="#dc2626" stroke="none"></path>`
-            + `</svg>`;
-    },
-
     _cardMetaFilterBtnHtml(scopeKey, valueId, title) {
         const id = String(valueId || '').trim();
         if (!id || !scopeKey) return '';
         const label = String(title || 'Filter results').trim() || 'Filter results';
+        const icon = (Context.uiLib && Context.uiLib.funnelIconSvg) ? Context.uiLib.funnelIconSvg() : '';
         return `<button type="button" data-wf-dash-meta-filter="1" data-filter-scope="${dashEscHtml(scopeKey)}" data-filter-id="${dashEscHtml(id)}" title="${dashEscHtml(label)}" aria-label="${dashEscHtml(label)}" class="${this._dashBtnClass('basic', 'icon')}">`
-            + `${this._filterFunnelIconSvg()}`
+            + `${icon}`
             + `</button>`;
     },
 
     _extLinkHtml(href, title) {
         const url = String(href || '').trim();
         if (!url) return '';
+        const icon = (Context.uiLib && Context.uiLib.externalLinkIconSvg) ? Context.uiLib.externalLinkIconSvg() : '';
         return `<a href="${dashEscHtml(url)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">
-            ${this._extLinkIconSvg(true)}
+            ${icon}
         </a>`;
     },
 
@@ -6535,7 +6512,7 @@ const searchOutputResultsPaneMethods = {
                 + `</button>`;
         }
         return `<button type="button" data-wf-dash-open-task="1" data-task-id="${dashEscHtml(taskId)}" data-team-id="${dashEscHtml(teamId)}" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}" style="${flushStyle}">`
-            + `${this._extLinkIconSvg(true)}`
+            + `${(Context.uiLib && Context.uiLib.externalLinkIconSvg) ? Context.uiLib.externalLinkIconSvg() : ''}`
             + `</button>`;
     },
 
@@ -6547,7 +6524,7 @@ const searchOutputResultsPaneMethods = {
         const title = 'Open public view task link';
         const flushStyle = this._keyTabLinkFlushStyle(opts);
         return `<a href="${dashEscHtml(href)}" target="_blank" rel="noopener noreferrer" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}" style="${flushStyle}">`
-            + `${this._extLinkIconSvg(true)}`
+            + `${(Context.uiLib && Context.uiLib.externalLinkIconSvg) ? Context.uiLib.externalLinkIconSvg() : ''}`
             + `</a>`;
     },
 
@@ -6723,7 +6700,7 @@ const searchOutputResultsPaneMethods = {
         const personId = String(id || '').trim();
         if (!personId || !historyKind || !dashKindLabels()[historyKind]) return '';
         const title = this._contributorDeepDiveTitle(historyKind);
-        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">${this._eyeIconSvg()}</button>`;
+        return `<button type="button" data-wf-dash-contributor-deep-dive="1" data-wf-dash-history-kind="${dashEscHtml(historyKind)}" data-wf-dash-person-id="${dashEscHtml(personId)}" data-wf-dash-person-name="${dashEscHtml(String(name || ''))}" data-wf-dash-person-email="${dashEscHtml(String(email || ''))}" title="${dashEscHtml(title)}" aria-label="${dashEscHtml(title)}" class="${this._dashBtnClass('basic', 'icon')}">${(Context.uiLib && Context.uiLib.eyeIconSvg) ? Context.uiLib.eyeIconSvg() : ''}</button>`;
     },
 
     _flagForSeniorReviewBtnHtml(task, itemId) {
@@ -6733,7 +6710,7 @@ const searchOutputResultsPaneMethods = {
         const ui = this._getFlagCreateUi(iid);
         const pressed = Boolean(ui.open);
         const flagStyle = pressed ? ' color: var(--foreground, #0f172a);' : '';
-        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" aria-pressed="${pressed ? 'true' : 'false'}" class="${this._dashBtnClass('basic', 'icon')}" style="${flagStyle}">${this._flagIconSvg()}</button>`;
+        return `<button type="button" data-wf-dash-flag-create-toggle="1" data-item-id="${escItemId}" title="Flag for Senior Review" aria-label="Flag for Senior Review" aria-pressed="${pressed ? 'true' : 'false'}" class="${this._dashBtnClass('basic', 'icon')}" style="${flagStyle}">${(Context.uiLib && Context.uiLib.flagIconSvg) ? Context.uiLib.flagIconSvg() : ''}</button>`;
     },
 
     _personChipsHtml(name, email, id, linkTitle, historyKind, extraAfterDeepDive, opts) {
@@ -7674,7 +7651,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.17',
+    _version: '9.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
