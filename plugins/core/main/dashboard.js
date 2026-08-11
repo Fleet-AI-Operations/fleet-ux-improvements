@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.1',
+    _version: '12.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -562,6 +562,13 @@ const plugin = {
             '  --muted-foreground: ' + c.muted + ' !important;',
             '  --border: ' + c.border + ' !important;',
             '  --input: ' + c.border + ' !important;',
+            // Host --accent is dark under html.dark; reviewer/active chips use it.
+            '  --accent: ' + c.hover + ' !important;',
+            '  --accent-foreground: ' + c.fg + ' !important;',
+            '  --secondary: ' + c.card + ' !important;',
+            '  --secondary-foreground: ' + c.fg + ' !important;',
+            '  --popover: ' + c.card + ' !important;',
+            '  --popover-foreground: ' + c.fg + ' !important;',
             '}'
         ].join('\n');
     },

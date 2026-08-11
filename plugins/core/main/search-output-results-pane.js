@@ -6979,14 +6979,19 @@ const searchOutputResultsPaneMethods = {
             || isVerifierFailure;
         const name = isSystem ? 'System' : (entry.reviewer.name || entry.reviewer.email || 'Reviewer');
         const actionBadge = this._feedbackActionBadgeHtml(entry, true);
-        const border = active ? 'border: 1px solid color-mix(in srgb, var(--foreground, #0f172a) 25%, transparent); background: var(--accent, #f1f5f9);' : 'border: 1px solid var(--border, #e2e8f0); background: transparent;';
+        const c = typeof this._dashThemeColors === 'function' ? this._dashThemeColors() : null;
+        const border = active
+            ? ('border: 1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)')
+                + '; background: ' + (c ? c.hover : 'var(--muted, var(--accent, #f1f5f9))') + ';')
+            : ('border: 1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)') + '; background: transparent;');
+        const nameColor = c ? c.fg : 'var(--foreground, #0f172a)';
         if (isSystem) {
             return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
                 ${actionBadge}
             </button>`;
         }
         return `<button type="button" data-wf-dash-reviewer-badge="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${entry.linkedDisplayVersionNo}" title="Show version ${entry.linkedDisplayVersionNo}" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 6px; font-size: 10px; cursor: pointer; ${border}">
-            <span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(name)}</span>
+            <span style="font-weight: 600; color: ${nameColor};">${dashEscHtml(name)}</span>
             ${actionBadge}
         </button>`;
     },
@@ -7675,7 +7680,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.20',
+    _version: '9.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
