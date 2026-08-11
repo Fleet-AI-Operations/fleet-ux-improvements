@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.12',
+    _version: '11.13',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -538,9 +538,9 @@ const plugin = {
         modal.setAttribute('aria-label', 'Fleet Enhancer Extension settings');
         modal.style.cssText = `
             position: fixed;
-            top: 50%;
+            top: 10%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translateX(-50%);
             padding: 0;
             background: transparent;
             border: none;
