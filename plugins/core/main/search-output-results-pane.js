@@ -20,7 +20,7 @@ const DASH_RESULTS_PAGE_SIZE_KEY = 'fleet-ux:dashboard-results-page-size';
 const DASH_CARD_TAB_HEIGHT = '24px';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_CARD_TAB_BORDER = '1px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
-const DASH_TASK_CARD_BG = 'var(--card, #ffffff)';
+const DASH_TASK_CARD_BG = 'var(--dash-task-card, var(--card, #ffffff))';
 const DASH_HYDRATE_BATCH_MAX = 100;
 const DASH_HYDRATE_BATCH_CONCURRENCY = 5;
 const DASH_SEARCH_FETCH_CONCURRENCY = 8;
@@ -6981,8 +6981,7 @@ const searchOutputResultsPaneMethods = {
         const actionBadge = this._feedbackActionBadgeHtml(entry, true);
         const c = typeof this._dashThemeColors === 'function' ? this._dashThemeColors() : null;
         const border = active
-            ? ('border: 1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)')
-                + '; background: ' + (c ? c.hover : 'var(--muted, var(--accent, #f1f5f9))') + ';')
+            ? 'border: 1px solid var(--brand, var(--primary, #2563eb)); background: transparent;'
             : ('border: 1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)') + '; background: transparent;');
         const nameColor = c ? c.fg : 'var(--foreground, #0f172a)';
         if (isSystem) {
@@ -7680,7 +7679,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.21',
+    _version: '9.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

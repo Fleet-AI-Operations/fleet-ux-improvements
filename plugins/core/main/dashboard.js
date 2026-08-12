@@ -42,7 +42,7 @@ const DASH_TEAM_MEMBERS_DUAL_CONSTRAINT_MS_KEYS = ['team-members-teams', 'team-m
 const DASH_SEARCH_MS_KEYS = ['search-envs', 'search-projects', 'search-teams'];
 const DASH_RESULTS_PAGE_SIZE_DEFAULT = 100;
 const DASH_MS_HOVER_OPEN_MS = 300;
-const DASH_TASK_CARD_BG = 'var(--card, #ffffff)';
+const DASH_TASK_CARD_BG = 'var(--dash-task-card, var(--card, #ffffff))';
 const DASH_CARD_BORDER = '2px solid color-mix(in srgb, var(--foreground, #0f172a) 28%, var(--border, #cbd5e1))';
 const DASH_MS_HOVER_CLOSE_MS = 300;
 const DASH_MS_FLYOUT_ANIM_MS = 140;
@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.3',
+    _version: '12.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -508,6 +508,7 @@ const plugin = {
             return {
                 bg: '#18181b',
                 card: '#27272a',
+                taskCard: '#18181b',
                 hover: '#3f3f46',
                 border: '#3f3f46',
                 borderHover: '#52525b',
@@ -518,6 +519,7 @@ const plugin = {
         return {
             bg: '#ffffff',
             card: '#fafafa',
+            taskCard: '#ffffff',
             hover: '#f0f0f0',
             border: '#e5e5e5',
             borderHover: '#d1d5db',
@@ -552,6 +554,7 @@ const plugin = {
             '#wf-dash-modal, #wf-dash-modal * {',
             '  --background: ' + c.bg + ' !important;',
             '  --card: ' + c.card + ' !important;',
+            '  --dash-task-card: ' + (c.taskCard || c.card) + ' !important;',
             '  --foreground: ' + c.fg + ' !important;',
             '  --muted: ' + c.hover + ' !important;',
             '  --muted-foreground: ' + c.muted + ' !important;',
@@ -2153,6 +2156,8 @@ const plugin = {
             '  /* Reach above tabs through #wf-dash-results 16px padding to the toolbar. */',
             '  top: -20px;',
             '  bottom: 10px;',
+            // Match Results panel --card so square seal corners do not poke past the
+            // chrome shell’s 10px top radius (shell keeps --dash-task-card fill).
             '  background: var(--card, #ffffff);',
             '  z-index: 0;',
             '  pointer-events: none;',

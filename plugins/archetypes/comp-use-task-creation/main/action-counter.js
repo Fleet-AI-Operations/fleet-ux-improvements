@@ -6,7 +6,7 @@ const plugin = {
     name: 'Action Counter',
     description:
         'Persistent +/- counter in the page header (right-aligned); click the number to type a value',
-    _version: '3.0',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -22,22 +22,25 @@ const plugin = {
         return text.includes('create problem') && text.includes('create demonstration');
     },
 
-    findPageHeaderRow() {
-        const panel =
-            document.getElementById('prompt-editor') ||
-            document.getElementById('problem-form') ||
-            document.getElementById('instance-preview');
-        let root = panel;
-        while (root && root !== document.body) {
-            if (root.tagName === 'MAIN' || (root.classList && root.classList.contains('flex-col'))) {
-                break;
+    resolveJustifyBetweenHeader(fromEl) {
+        let node = fromEl;
+        while (node && node !== document.body) {
+            if (node.tagName === 'DIV') {
+                const style = node.className || '';
+                if (
+                    typeof style === 'string' &&
+                    style.includes('justify-between') &&
+                    this.isPageHeaderRow(node)
+                ) {
+                    return node;
+                }
             }
-            root = root.parentElement;
+            node = node.parentElement;
         }
-        if (!root) {
-            root = document.querySelector('main') || document.body;
-        }
+        return null;
+    },
 
+    findPageHeaderRowFromLabels(root) {
         const candidates = root.querySelectorAll('div');
         for (const el of candidates) {
             if (!this.isPageHeaderRow(el)) continue;
@@ -48,22 +51,29 @@ const plugin = {
                     best = child;
                 }
             }
-            // Walk up to the justify-between row when nested.
-            let node = best;
-            while (node && node !== el.parentElement) {
-                const style = node.className || '';
-                if (
-                    typeof style === 'string' &&
-                    style.includes('justify-between') &&
-                    this.isPageHeaderRow(node)
-                ) {
-                    return node;
-                }
-                node = node.parentElement;
-            }
+            const justified = this.resolveJustifyBetweenHeader(best);
+            if (justified) return justified;
             return best;
         }
         return null;
+    },
+
+    findPageHeaderRowFromToolbarButton() {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const toolbarBtn = buttons.find((btn) => {
+            const text = (btn.textContent || '').trim();
+            return text.includes('Start Recording') || text.includes('Reset Instance');
+        });
+        if (!toolbarBtn) return null;
+        return this.resolveJustifyBetweenHeader(toolbarBtn);
+    },
+
+    findPageHeaderRow() {
+        // Creation: #prompt-editor is a textarea inside the left form, not a panel.
+        // Scoping from that (or #problem-form) and stopping at the first flex-col
+        // never reaches the page header above the panel group — search from main.
+        const root = document.querySelector('main') || document.body;
+        return this.findPageHeaderRowFromLabels(root) || this.findPageHeaderRowFromToolbarButton();
     },
 
     findRightHost(headerRow) {
