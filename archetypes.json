@@ -8,7 +8,7 @@
     "submodule": false
   },
   "opsAccess": {
-    "passwordHash": "sha256-babd21e64530af97a1ca600c8355b0083b9fcb9668d609886ff73d1a26bb251e"
+    "passwordHash": "sha256-849af5b2f63f95b8d633e5c998a14f803d5a8b65a6dc7ac98bd53cc6ab59c382"
   },
   "opsSecrets": {
     "encryptedFile": "ops-secrets.enc.json"
