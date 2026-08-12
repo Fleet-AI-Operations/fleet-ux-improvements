@@ -1,26 +1,21 @@
 // ============= dispute-list-collapse.js =============
-// Full-collapse toggle for dispute list cards. Replaces the native expand
-// control; persists closed dispute IDs so collapsed cards stay compact on reload.
+// Full-collapse for dispute list cards. Hijacks the native expand chevron;
+// persists closed dispute IDs so collapsed cards stay compact on reload.
 
 const STYLE_ID = 'fleet-dispute-list-collapse-style';
 const COLLAPSED_ATTR = 'data-fleet-dispute-collapsed';
-const TOGGLE_ATTR = 'data-fleet-dispute-collapse-toggle';
-const SCOPE_SEL = '[data-ui="dispute-card"]';
 const STORAGE_KEY = 'dispute-list-collapsed-ids';
 const WATCHER_ID = 'dispute-list-collapse-api-watcher';
 const TASK_HREF_RE = /\/work\/problems\/view-task\/([0-9a-f-]{36})/i;
-
-const CHEVRON_OPEN =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>';
-const CHEVRON_CLOSED =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>';
+const EXPAND_SEL = '[data-ui="dispute-expand"]';
+const CARD_SEL = '[data-ui="dispute-card"]';
 
 const plugin = {
     id: 'disputeListCollapse',
     name: 'Dispute List Collapse',
     description:
-        'Replace native dispute expand with a full collapse toggle; remember closed dispute numbers across reloads',
-    _version: '1.1',
+        'Hijack native dispute expand for a full collapse toggle; remember closed dispute numbers across reloads',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -34,7 +29,6 @@ const plugin = {
 
     onMutation(state) {
         this.ensureStyles();
-        this.ensureButtonChrome();
         this.ensureDocListener(state);
         this.ensureSubscription(state);
         this.ensureClosedIds(state);
@@ -60,51 +54,69 @@ const plugin = {
     },
 
     ensureStyles() {
-        if (document.getElementById(STYLE_ID)) return;
-        const style = document.createElement('style');
-        style.id = STYLE_ID;
+        let style = document.getElementById(STYLE_ID);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = STYLE_ID;
+            (document.head || document.documentElement).appendChild(style);
+        }
+        // Always refresh so prior versions that hid native expand are replaced.
         style.textContent = [
-            '[data-ui="dispute-card"] [data-ui="dispute-expand"] { display: none !important; }',
             '[' + COLLAPSED_ATTR + '="1"] .flex-1 > p.mt-2 { display: none !important; }',
             '[' + COLLAPSED_ATTR + '="1"] .ml-3.flex.shrink-0 > div[data-state] { display: none !important; }',
             '[' + COLLAPSED_ATTR + '="1"] .mt-2.flex.items-center.gap-4 { display: none !important; }',
-            '[' + COLLAPSED_ATTR + '="1"] > .p-4.pt-0 { display: none !important; }'
+            '[' + COLLAPSED_ATTR + '="1"] > .p-4.pt-0 { display: none !important; }',
+            // Clear leftover replacement toggles from older plugin versions
+            '[data-fleet-dispute-collapse-toggle] { display: none !important; }'
         ].join('\n');
-        (document.head || document.documentElement).appendChild(style);
-    },
-
-    ensureButtonChrome() {
-        if (!Context.uiLib || typeof Context.uiLib.ensureButtonStyles !== 'function') return;
-        Context.uiLib.ensureButtonStyles(SCOPE_SEL);
     },
 
     ensureDocListener(state) {
         if (state.docListenerBound) return;
         const self = this;
         document.addEventListener('click', (ev) => {
-            const toggle = ev.target && ev.target.closest
-                ? ev.target.closest('[' + TOGGLE_ATTR + '="1"]')
-                : null;
-            if (!toggle) return;
+            const start = self.eventElement(ev);
+            if (!start || typeof start.closest !== 'function') return;
 
-            const card = toggle.closest('[data-ui="dispute-card"]');
-            if (!card || card.querySelector('[data-ui="dispute-card"]')) return;
+            const expandBtn = start.closest(EXPAND_SEL);
+            if (!expandBtn) return;
+
+            const card = expandBtn.closest(CARD_SEL);
+            if (!card) {
+                Logger.debug('expand click outside dispute-card');
+                return;
+            }
 
             ev.preventDefault();
             ev.stopPropagation();
             if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
 
+            Logger.log('collapse click');
             self.ensureClosedIds(state);
-            const id = toggle.getAttribute('data-fleet-dispute-id')
-                || self.resolveDisputeId(card, state);
+            const id = self.resolveDisputeId(card, state);
             if (!id) {
-                Logger.warn('collapse toggle clicked with no dispute id');
+                Logger.warn('collapse click with no dispute id');
                 return;
             }
             self.toggleCard(state, card, id);
         }, true);
         state.docListenerBound = true;
         Logger.debug('document capture click listener bound');
+    },
+
+    eventElement(ev) {
+        if (!ev) return null;
+        if (typeof ev.composedPath === 'function') {
+            const path = ev.composedPath();
+            for (let i = 0; i < path.length; i++) {
+                const node = path[i];
+                if (node && node.nodeType === 1) return node;
+            }
+        }
+        const t = ev.target;
+        if (t && t.nodeType === 1) return t;
+        if (t && t.parentElement) return t.parentElement;
+        return null;
     },
 
     ensureClosedIds(state) {
@@ -165,10 +177,10 @@ const plugin = {
     },
 
     getLeafDisputeCards() {
-        const all = document.querySelectorAll('[data-ui="dispute-card"]');
+        const all = document.querySelectorAll(CARD_SEL);
         const leaves = [];
         for (const card of all) {
-            if (card.querySelector('[data-ui="dispute-card"]')) continue;
+            if (card.querySelector(CARD_SEL)) continue;
             leaves.push(card);
         }
         return leaves;
@@ -206,58 +218,15 @@ const plugin = {
     },
 
     processCard(state, card) {
+        const leftover = card.querySelectorAll('[data-fleet-dispute-collapse-toggle]');
+        for (const el of leftover) el.remove();
+
         const disputeId = this.resolveDisputeId(card, state);
         if (!disputeId) return false;
-
-        this.hideNativeExpand(card);
-        this.ensureToggle(state, card, disputeId);
 
         const collapsed = state.closedIds.has(disputeId);
         this.applyCollapsed(card, disputeId, collapsed);
         return true;
-    },
-
-    hideNativeExpand(card) {
-        const buttons = card.querySelectorAll('[data-ui="dispute-expand"]');
-        for (const btn of buttons) {
-            if (btn.style.display === 'none') continue;
-            btn.style.display = 'none';
-        }
-    },
-
-    findActionCluster(card) {
-        return card.querySelector('.ml-3.flex.shrink-0.items-center.gap-1')
-            || card.querySelector('.ml-3.flex.shrink-0');
-    },
-
-    ensureToggle(state, card, disputeId) {
-        let toggle = card.querySelector('[' + TOGGLE_ATTR + '="1"]');
-        if (toggle) {
-            if (toggle.getAttribute('data-fleet-dispute-id') !== disputeId) {
-                toggle.setAttribute('data-fleet-dispute-id', disputeId);
-            }
-            return toggle;
-        }
-
-        const cluster = this.findActionCluster(card);
-        if (!cluster) {
-            Logger.debug('action cluster not found for dispute #' + disputeId);
-            return null;
-        }
-
-        toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.setAttribute(TOGGLE_ATTR, '1');
-        toggle.setAttribute('data-fleet-plugin', this.id);
-        toggle.setAttribute('data-fleet-dispute-id', disputeId);
-        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            toggle.className = Context.uiLib.btnClass('basic', 'icon');
-        } else {
-            toggle.className = 'inline-flex items-center justify-center';
-        }
-
-        cluster.appendChild(toggle);
-        return toggle;
     },
 
     applyCollapsed(card, disputeId, collapsed) {
@@ -268,19 +237,18 @@ const plugin = {
             card.removeAttribute(COLLAPSED_ATTR);
         }
 
-        const toggle = card.querySelector('[' + TOGGLE_ATTR + '="1"]');
-        if (!toggle) return;
+        const expandBtn = card.querySelector(EXPAND_SEL);
+        if (!expandBtn) return;
 
         const wantExpanded = collapsed ? 'false' : 'true';
-        if (toggle.getAttribute('aria-expanded') === wantExpanded) return;
+        if (expandBtn.getAttribute('aria-expanded') === wantExpanded) return;
 
-        toggle.innerHTML = collapsed ? CHEVRON_CLOSED : CHEVRON_OPEN;
-        toggle.title = collapsed ? 'Expand dispute' : 'Collapse dispute';
-        toggle.setAttribute(
+        expandBtn.title = collapsed ? 'Expand dispute' : 'Collapse dispute';
+        expandBtn.setAttribute(
             'aria-label',
             collapsed ? 'Expand dispute #' + disputeId : 'Collapse dispute #' + disputeId
         );
-        toggle.setAttribute('aria-expanded', wantExpanded);
+        expandBtn.setAttribute('aria-expanded', wantExpanded);
     },
 
     toggleCard(state, card, disputeId) {
