@@ -8,109 +8,133 @@
 //
 // Chat UI/streaming comes from Context.aiChat (plugins/libs/ai-chat.js → Deep Chat).
 // Keep RATING_EXPLAIN_ABOUT in sync with _ratingsAboutSectionHtml /
-// local/tw-qa-ratings/about-section.md when the About copy changes.
+// local/ratings/about-section.md when the About copy changes.
 
 const PLUGIN_ID = 'rating-explain';
 const RATING_EXPLAIN_SCOPE = '[data-wf-dash-rating-explain-panel]';
 
-// Full Markdown mirror of the user-visible "About these ratings" section.
-// Model-only payload guidance is appended; user-visible methodology is never removed.
-const RATING_EXPLAIN_ABOUT = [
-    '# About these ratings',
-    '',
-    'Up to two scores per contributor, each on a **0–100** scale:',
-    '',
-    '- **Task Writer Quality Score (TWQS)** — quality of the work they **authored**. Based on the WPS v1.2 model.',
-    '- **QA Quality Score (QAQS)** — quality of the reviews they **performed**. Based on the QPS v2.1 model.',
-    '',
-    '## Dual weighting — Recency vs Flat',
-    '',
-    'Each card computes **two variants** of every score simultaneously. The card can toggle between them:',
-    '',
-    '- **Recency (default)** — applies half-life decay `exp(−ln(2)·age/30)` to activity inside the window, so recent events weigh more.',
-    '- **Flat** — all in-scope events count equally.',
-    '',
-    'JSON export always includes **both** weighting variants. The card toggle only changes what is displayed. The payload\'s `weighting` field identifies the displayed variant.',
-    '',
-    '## Population tier',
-    '',
-    'The **primary display** is a population tier label (Poor, Below average, Typical, Above average, Top tier), with an **estimated percentile** shown beside it (for example, ~62nd). Team, environment, and month subset rows use the same tier + percentile pattern.',
-    '',
-    'Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier.',
-    '',
-    '| TWQS tier | Flat score | Recency score |',
-    '| --- | ---: | ---: |',
-    '| Poor | < 55.725 | < 60 |',
-    '| Below average | 55.725–61.41 | 60–64.23 |',
-    '| Typical | 61.41–68.44 | 64.23–67.48 |',
-    '| Above average | 68.44–80 | 67.48–80 |',
-    '| Top tier | ≥ 80 | ≥ 80 |',
-    '',
-    '| QAQS tier | Flat score | Recency score |',
-    '| --- | ---: | ---: |',
-    '| Poor | < 49.14 | < 49.146 |',
-    '| Below average | 49.14–54.526 | 49.146–54.602 |',
-    '| Typical | 54.526–60.76 | 54.602–60.206 |',
-    '| Above average | 60.76–70 | 60.206–70 |',
-    '| Top tier | ≥ 70 | ≥ 70 |',
-    '',
-    'Top score pegs are absolute: **TWQS ≥ 80** and **QAQS ≥ 70**.',
-    '',
-    'Panel color follows the tier on a four-stop red→yellow→green ramp; Above average and Top tier share the top green. The raw 0–100 composite remains the internal score and export field; axis bars use raw axis sub-scores.',
-    '',
-    '## How to read a score',
-    '',
-    '- **Tier first, estimated percentile second.** The tier places the composite in the scored population; the percentile is a margin-clamped normal-model estimate of standing. The underlying 0–100 score uses empirical Bayes shrinkage toward the cohort prior and remains available in exports. Low-volume scores are valid estimates, but less certain.',
-    '- Each score rolls up several **weighted axes**, shown highest-weight first. Where encrypted cohort baselines are available, the final score is 50% main score plus team, environment, and month channels. Provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand its team, environment, and month breakdown.',
-    '- Team, environment, and month slice scores shrink toward a **subset prior** only when that baseline was shipped (TWQS: ≥ 500 tasks and ≥ 20 writers; QAQS: ≥ 500 feedback rows and ≥ 20 reviewers at generation time). Unshipped slices fall back to the global prior.',
-    '- Every score carries a **confidence** badge — TWQS based on terminal task count, QAQS based on feedback row count.',
-    '',
-    '| Confidence | TWQS: terminal tasks in scope | QAQS: feedback rows in scope |',
-    '| --- | ---: | ---: |',
-    '| Provisional | < 10 | < 25 |',
-    '| Standard | 10–49 | 25–99 |',
-    '| High confidence | ≥ 50 | ≥ 100 |',
-    '',
-    '## What counts toward a score',
-    '',
-    '- Scores cover the **committed search window** and **hydrated result cards only**, regardless of which search toggles (tasks, QA, sessions, disputes, and so on) produced those results.',
-    '- The **Filtered / All** scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.',
-    '- With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.',
-    '- Outcome Quality blends the current terminal calculation with a flat closure sub-score over production, discarded, and dismissed. The closure sub-score ignores bugged/flagged paths and has no recency decay. Disputes move a score only once **resolved**.',
-    '- Self-reviews are excluded from all feedback axes.',
-    '',
-    '## The axes',
-    '',
-    '### Task Writer Quality Score (TWQS)',
-    '',
-    '| Axis | Weight | What it measures |',
-    '| --- | ---: | --- |',
-    '| Outcome Quality | 40% | Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths. |',
-    '| Positive Feedback Rate | 20% | Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). |',
-    '| Task Rating Quality | 15% | Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded. |',
-    '| First-Pass Acceptance | 15% | Share of tasks accepted by the first human reviewer without a prior return. |',
-    '| Dispute Loss Avoidance | 10% | Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score. |',
-    '',
-    '### QA Quality Score (QAQS)',
-    '',
-    '| Axis | Weight | What it measures |',
-    '| --- | ---: | --- |',
-    '| Return Effectiveness | 40% | When they return a task, it reaches production on the next attempt rather than being returned again. |',
-    '| Return Actionability | 25% | The task author responds positively to their return (the next human feedback is positive). |',
-    '| Dispute Loss Avoidance | 20% | For sole-negative reviews, only disputes approved for the writer reduce the score. QA wins are neutral. |',
-    '| Label Discrimination | 15% | How well explicit score labels (for example, Excellent / Unsatisfactory) differentiate task quality. Omitted when fewer than 10 feedback rows are in scope. |',
-    '',
-    '## Additional model-only payload guidance',
-    '',
-    '- Headline `tier`, `estimatedPercentile`, and `score` match the card.',
-    '- `axisScorePct` is recency-weighted (when weighting is recency) and prior-shrunk; it is not a raw observed ratio.',
-    '- Cite integer `observedCounts` for event totals. Never treat weighted decimals as counts.',
-    '- `neutralNoEvidence: true` on a dispute-loss axis means zero resolved disputes; a prior-derived high score is **not** a strength.',
-    '- `slices` are compact team/environment/month summaries. Prefer meaningful volume; for thin slices say “limited data suggests…”.',
-].join('\n');
+function ratingExplainFmtCutoff(n) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return '—';
+    return (Math.round(v * 1000) / 1000).toString();
+}
+
+function ratingExplainTierTableMarkdown(kind, title) {
+    const engine = Context.ratingEngine;
+    const thresholds = engine && engine.TIER_THRESHOLDS && engine.TIER_THRESHOLDS[kind];
+    const flat = (thresholds && thresholds.flat) || {};
+    const recency = (thresholds && thresholds.recency) || {};
+    const topPeg = (engine && engine.TIER_TOP_PEG && engine.TIER_TOP_PEG[kind])
+        || (kind === 'qaqs' ? 70 : 80);
+    const flatTop = Number.isFinite(Number(flat.topMin)) ? Number(flat.topMin) : topPeg;
+    const recTop = Number.isFinite(Number(recency.topMin)) ? Number(recency.topMin) : topPeg;
+    return [
+        '| ' + title + ' | Flat score | Recency score |',
+        '| --- | ---: | ---: |',
+        '| Poor | < ' + ratingExplainFmtCutoff(flat.p10) + ' | < ' + ratingExplainFmtCutoff(recency.p10) + ' |',
+        '| Below average | ' + ratingExplainFmtCutoff(flat.p10) + '–' + ratingExplainFmtCutoff(flat.p30)
+            + ' | ' + ratingExplainFmtCutoff(recency.p10) + '–' + ratingExplainFmtCutoff(recency.p30) + ' |',
+        '| Typical | ' + ratingExplainFmtCutoff(flat.p30) + '–' + ratingExplainFmtCutoff(flat.p70)
+            + ' | ' + ratingExplainFmtCutoff(recency.p30) + '–' + ratingExplainFmtCutoff(recency.p70) + ' |',
+        '| Above average | ' + ratingExplainFmtCutoff(flat.p70) + '–' + ratingExplainFmtCutoff(flatTop)
+            + ' | ' + ratingExplainFmtCutoff(recency.p70) + '–' + ratingExplainFmtCutoff(recTop) + ' |',
+        '| Top tier | ≥ ' + ratingExplainFmtCutoff(flatTop) + ' | ≥ ' + ratingExplainFmtCutoff(recTop) + ' |',
+        '',
+    ].join('\n');
+}
+
+/** Methodology summary for the model. Tier tables come from live engine thresholds. */
+function buildRatingExplainAbout() {
+    const topTw = (Context.ratingEngine && Context.ratingEngine.TIER_TOP_PEG
+        && Context.ratingEngine.TIER_TOP_PEG.twqs) || 80;
+    const topQa = (Context.ratingEngine && Context.ratingEngine.TIER_TOP_PEG
+        && Context.ratingEngine.TIER_TOP_PEG.qaqs) || 70;
+    return [
+        '# About these ratings',
+        '',
+        'Up to two scores per contributor, each on a **0–100** scale:',
+        '',
+        '- **Task Writer Quality Score (TWQS)** — quality of the work they **authored**.',
+        '- **QA Quality Score (QAQS)** — quality of the reviews they **performed**.',
+        '',
+        '## Dual weighting — Recency vs Flat',
+        '',
+        'Each card computes **two variants** of every score simultaneously. The card can toggle between them:',
+        '',
+        '- **Recency (default)** — applies half-life decay `exp(−ln(2)·age/30)` to activity inside the window, so recent events weigh more.',
+        '- **Flat** — all in-scope events count equally.',
+        '',
+        'JSON export always includes **both** weighting variants. The card toggle only changes what is displayed. The payload\'s `weighting` field identifies the displayed variant.',
+        '',
+        '## Population tier',
+        '',
+        'The **primary display** is a population tier label (Poor, Below average, Typical, Above average, Top tier), with an **estimated percentile** shown beside it (for example, ~62nd). Team, environment, and month subset rows use the same tier + percentile pattern.',
+        '',
+        'Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier.',
+        '',
+        ratingExplainTierTableMarkdown('twqs', 'TWQS tier').trimEnd(),
+        '',
+        ratingExplainTierTableMarkdown('qaqs', 'QAQS tier').trimEnd(),
+        '',
+        'Top score pegs are absolute: **TWQS ≥ ' + topTw + '** and **QAQS ≥ ' + topQa + '**.',
+        '',
+        'Panel color follows the tier on a four-stop red→yellow→green ramp; Above average and Top tier share the top green. The raw 0–100 composite remains the internal score and export field; axis bars use raw axis sub-scores.',
+        '',
+        '## How to read a score',
+        '',
+        '- **Tier first, estimated percentile second.** The tier places the composite in the scored population; the percentile is a margin-clamped normal-model estimate of standing. The underlying 0–100 score uses empirical Bayes shrinkage toward population priors and remains available in exports. Low-volume scores are valid estimates, but less certain.',
+        '- Each score rolls up several **weighted axes**, shown highest-weight first. The card headline is the main composite. Click a score panel to expand team, environment, and month breakdowns for context; those slices do not change the headline.',
+        '- Team, environment, and month slice scores shrink toward a **subset prior** only when that baseline was shipped (TWQS: ≥ 500 tasks and ≥ 20 writers; QAQS: ≥ 500 feedback rows and ≥ 20 reviewers at generation time). Unshipped slices fall back to the global prior.',
+        '- Every score carries a **confidence** badge — TWQS based on terminal task count, QAQS based on feedback row count.',
+        '',
+        '| Confidence | TWQS: terminal tasks in scope | QAQS: feedback rows in scope |',
+        '| --- | ---: | ---: |',
+        '| Provisional | < 10 | < 25 |',
+        '| Standard | 10–49 | 25–99 |',
+        '| High confidence | ≥ 50 | ≥ 100 |',
+        '',
+        '## What counts toward a score',
+        '',
+        '- Scores cover the **committed search window** and **hydrated result cards only**, regardless of which search toggles (tasks, QA, sessions, disputes, and so on) produced those results.',
+        '- The **Filtered / All** scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.',
+        '- With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.',
+        '- Outcome Quality blends the current terminal calculation with a flat closure sub-score over production, discarded, and dismissed. The closure sub-score ignores bugged/flagged paths and has no recency decay. Disputes move a score only once **resolved**.',
+        '- Self-reviews are excluded from all feedback axes.',
+        '',
+        '## The axes',
+        '',
+        '### Task Writer Quality Score (TWQS)',
+        '',
+        '| Axis | Weight | What it measures |',
+        '| --- | ---: | --- |',
+        '| Outcome Quality | 45% | Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths. |',
+        '| Positive Feedback Rate | 20% | Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded. |',
+        '| Task Rating Quality | 15% | Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded. |',
+        '| First-Pass Acceptance | 10% | Share of tasks accepted by the first human reviewer without a prior return. |',
+        '| Dispute Loss Avoidance | 10% | Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score. |',
+        '',
+        '### QA Quality Score (QAQS)',
+        '',
+        '| Axis | Weight | What it measures |',
+        '| --- | ---: | --- |',
+        '| Return Effectiveness | 40% | Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded. |',
+        '| Return Actionability | 25% | The task author responds positively to their return (the next human feedback is positive). |',
+        '| Label Discrimination | 15% | How often they commit to an explicit Top 10% or Bottom 10% judgment (labeled rows ÷ all feedback). Omitted when fewer than 10 feedback rows are in scope. |',
+        '| Acceptance Scrutiny | 10% | One-sided check against unusually high accept rates. At or below the population threshold the axis is full credit; above it the score falls toward zero as accepts approach 100%. |',
+        '| Dispute Loss Avoidance | 10% | Disputes linked to this reviewer\'s feedback. Only disputes approved for the writer reduce the score. QA wins are neutral. |',
+        '',
+        '## Additional model-only payload guidance',
+        '',
+        '- Headline `tier`, `estimatedPercentile`, and `score` match the card (main composite; not a cohort blend).',
+        '- `axisScorePct` is recency-weighted (when weighting is recency) and prior-shrunk; it is not a raw observed ratio.',
+        '- Cite integer `observedCounts` for event totals. Never treat weighted decimals as counts.',
+        '- `neutralNoEvidence: true` on a dispute-loss axis means zero resolved disputes; a prior-derived high score is **not** a strength.',
+        '- `slices` are compact team/environment/month summaries for context only. Prefer meaningful volume; for thin slices say “limited data suggests…”.',
+    ].join('\n');
+}
 
 const RATING_EXPLAIN_SYSTEM_PROMPT = [
-    'You are explaining contributor quality ratings from Fleet\'s Worker Output Search to an operations reviewer. You receive a compact methodology summary and a JSON payload for one contributor. Headline score fields already match the UI card (cohort-blended tier, estimated percentile, and composite). Axis rows are the main-score drivers; slices are compact team/environment/month contrasts.',
+    'You are explaining contributor quality ratings from Fleet\'s Worker Output Search to an operations reviewer. You receive a compact methodology summary and a JSON payload for one contributor. Headline score fields already match the UI card (main tier, estimated percentile, and composite). Axis rows are the main-score drivers; slices are compact team/environment/month contrasts for context only.',
     '',
     'First reply structure:',
     '1. Holistic overview — one short paragraph per available score (TWQS = task writing, QAQS = QA reviewing) using the exact displayed tier and approximate percentile. Say what mainly drives the standing.',
@@ -297,6 +321,10 @@ function ratingExplainRecordTurn(workerId, state, turn) {
     });
 }
 
+function ratingExplainSystemContent() {
+    return RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + buildRatingExplainAbout();
+}
+
 async function startRatingExplainOverview(panel, workerId, state) {
     const chat = ratingExplainChat();
     if (!chat || typeof chat.sendTurn !== 'function') {
@@ -327,7 +355,7 @@ async function startRatingExplainOverview(panel, workerId, state) {
             userContent,
             hideInUi: true,
             displayContent: 'Generate overview from this card\'s ratings data.',
-            systemContent: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT,
+            systemContent: ratingExplainSystemContent(),
             onTurnDone: (turn) => ratingExplainRecordTurn(workerId, state, turn),
         }));
         Logger.log('overview done — ' + workerId);
@@ -349,7 +377,7 @@ async function sendRatingExplainFollowUp(panel, workerId, state, userText) {
     try {
         await chat.sendTurn(panel, state, Object.assign({}, ratingExplainChatOpts(), {
             userText: text,
-            systemContent: RATING_EXPLAIN_SYSTEM_PROMPT + '\n\n' + RATING_EXPLAIN_ABOUT,
+            systemContent: ratingExplainSystemContent(),
             onTurnDone: (turn) => ratingExplainRecordTurn(workerId, state, turn),
         }));
     } catch (err) {
@@ -498,7 +526,7 @@ const RatingExplain = {
     toggle: toggleRatingExplain,
     remountOpen: remountOpenRatingExplainPanels,
     clearTranscripts: clearRatingExplainTranscripts,
-    ABOUT: RATING_EXPLAIN_ABOUT,
+    get ABOUT() { return buildRatingExplainAbout(); },
     SYSTEM_PROMPT: RATING_EXPLAIN_SYSTEM_PROMPT,
 };
 
@@ -506,7 +534,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
     description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '3.2',
+    _version: '4.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -518,6 +546,6 @@ const plugin = {
         }
         Context.ratingExplain = RatingExplain;
         if (state) state.registered = true;
-        Logger.log('module registered (Context.ratingExplain) v3.0');
+        Logger.log('module registered (Context.ratingExplain) v4.0');
     }
 };

@@ -4742,20 +4742,15 @@ const searchOutputStatsPaneMethods = {
             : (typeof entry === 'object' && ('flat' in entry || 'recency' in entry)
                 ? (entry[weighting] || null)
                 : entry);
+        if (!main) return null;
+        // Headline is always the main (pre-blend) score. Cohort channels remain
+        // available as expandable breakdown only via cohortBlend.
         const cohortEntry = worker.cohort
             && worker.cohort[weighting]
             && worker.cohort[weighting][scoreKey];
-        if (!main) return null;
-        if (!cohortEntry || cohortEntry.score == null) return Object.assign({}, main);
-        return Object.assign({}, main, {
-            score: cohortEntry.score,
-            band: cohortEntry.band || main.band,
-            tierId: cohortEntry.tierId || main.tierId,
-            estimatedPercentile: cohortEntry.estimatedPercentile != null
-                ? cohortEntry.estimatedPercentile
-                : main.estimatedPercentile,
-            cohortBlend: cohortEntry,
-        });
+        const out = Object.assign({}, main);
+        if (cohortEntry) out.cohortBlend = cohortEntry;
+        return out;
     },
 
     /** Format estimated percentile for card/slice display (e.g. "~62nd"). */
@@ -5207,17 +5202,18 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Outcome Quality',        weight: '40%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
-            { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory).' },
+            { label: 'Outcome Quality',        weight: '45%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
+            { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
             { label: 'Task Rating Quality',    weight: '15%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
-            { label: 'First-Pass Acceptance',  weight: '15%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
+            { label: 'First-Pass Acceptance',  weight: '10%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score.' },
         ];
         const qaqsRows = [
-            { label: 'Return Effectiveness',  weight: '40%', measures: 'When they return a task it reaches production on the next attempt rather than being returned again.' },
+            { label: 'Return Effectiveness',  weight: '40%', measures: 'Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
             { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
-            { label: 'Dispute Loss Avoidance',weight: '20%', measures: 'For sole-negative reviews, only disputes approved for the writer reduce the score. QA wins are neutral.' },
-            { label: 'Label Discrimination',  weight: '15%', measures: 'How well their explicit score labels (e.g. Excellent / Unsatisfactory) differentiate task quality. Omitted when fewer than 10 feedback rows are in scope.' },
+            { label: 'Label Discrimination',  weight: '15%', measures: 'How often they commit to an explicit Top 10% or Bottom 10% judgment (labeled rows ÷ all feedback). Omitted when fewer than 10 feedback rows are in scope.' },
+            { label: 'Acceptance Scrutiny',   weight: '10%', measures: 'One-sided check against unusually high accept rates. At or below the population threshold the axis is full credit; above it the score falls toward zero as accepts approach 100%.' },
+            { label: 'Dispute Loss Avoidance',weight: '10%', measures: 'Disputes linked to this reviewer\'s feedback. Only disputes approved for the writer reduce the score. QA wins are neutral.' },
         ];
         const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
         return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
@@ -5228,8 +5224,8 @@ const searchOutputStatsPaneMethods = {
             + '<div style="margin-top: 10px; font-size: 11px; line-height: 1.45; color: var(--foreground, #0f172a);">'
             + '<p style="margin: 0 0 8px;">Up to two scores per contributor, each on a <strong>0–100</strong> scale:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Task Writer Quality Score (TWQS)</strong> — quality of the work they <strong>authored</strong>. Based on the WPS v1.2 model.</li>'
-            + '<li><strong>QA Quality Score (QAQS)</strong> — quality of the reviews they <strong>performed</strong>. Based on the QPS v2.1 model.</li>'
+            + '<li><strong>Task Writer Quality Score (TWQS)</strong> — quality of the work they <strong>authored</strong>.</li>'
+            + '<li><strong>QA Quality Score (QAQS)</strong> — quality of the reviews they <strong>performed</strong>.</li>'
             + '</ul>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
@@ -5247,8 +5243,8 @@ const searchOutputStatsPaneMethods = {
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">How to read a score</div>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
-            + '<li><strong>Tier first, estimated percentile second.</strong> The tier places the composite in the scored population; the muted percentile is a normal-model estimate of standing (margin-clamped). The underlying 0–100 score uses empirical Bayes shrinkage toward the cohort prior and stays available in exports. Low-volume scores are valid estimates, but less certain.</li>'
-            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. Where encrypted cohort baselines are available (Ops unlock), the final score is 50% main score plus team, environment, and month channels; provisional channels contribute half weight and transfer the remainder to main. Click a score panel to expand that score&rsquo;s team / environment / month breakdown.</li>'
+            + '<li><strong>Tier first, estimated percentile second.</strong> The tier places the composite in the scored population; the muted percentile is a normal-model estimate of standing (margin-clamped). The underlying 0–100 score uses empirical Bayes shrinkage toward population priors and stays available in exports. Low-volume scores are valid estimates, but less certain.</li>'
+            + '<li>Each score rolls up several <strong>weighted axes</strong>, shown highest-weight first. The card headline is the main composite. Click a score panel to expand team / environment / month breakdowns for context; those slices do not change the headline.</li>'
             + '<li>Team / environment / month slice scores shrink toward a <strong>subset prior</strong> only when that baseline was shipped (TWQS: ≥ 500 tasks and ≥ 20 writers; QAQS: ≥ 500 feedback rows and ≥ 20 reviewers at generation time). Unshipped slices fall back to the global prior while still showing the breakdown.</li>'
             + '<li>Every score carries a <strong>confidence</strong> badge — TWQS based on terminal task count, QAQS based on feedback row count.</li>'
             + '</ul>'
@@ -5370,13 +5366,15 @@ const searchOutputStatsPaneMethods = {
                 return 'No resolved disputes in scope';
             // QAQS (QPS) axes
             case 'returnEffectiveness':
-                return 'No terminal tasks returned by this reviewer in scope';
+                return 'No shippable-path tasks returned by this reviewer in scope';
             case 'returnActionability':
                 return 'No return feedback episodes in scope';
             case 'labelDiscrimination':
                 return 'Fewer than 10 feedback rows in scope';
+            case 'acceptanceScrutiny':
+                return 'No human feedback rows in scope';
             case 'disputeDefense':
-                return 'No resolved sole-negative-reviewer disputes in scope';
+                return 'No resolved disputes linked to this reviewer in scope';
             // Legacy / fallback
             case 'feedbackResolution':
                 return 'No return episodes by this QA in scope';
@@ -6159,7 +6157,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '12.24',
+    _version: '13.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

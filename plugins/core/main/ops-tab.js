@@ -249,7 +249,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch, task links',
-    _version: '12.2',
+    _version: '12.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -670,7 +670,7 @@ const plugin = {
             'firstPassAcceptance', 'disputeLossAvoidance'
         ];
         const qaRequired = [
-            'returnEffectiveness', 'returnActionability',
+            'returnEffectiveness', 'returnActionability', 'acceptanceScrutiny',
             'disputeDefense', 'labelDiscrimination'
         ];
         for (const id of twRequired) {
