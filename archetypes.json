@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.345",
+  "archetypesVersion": "14.346",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -874,6 +874,12 @@
           "name": "dispute-id-display.js",
           "version": "1.1",
           "hash": "sha256-ca0bad2ff49898a8b6e8d9207bb11a13c8434fb9574b9d6fc8277088c5de8908",
+          "log": false
+        },
+        {
+          "name": "dispute-list-collapse.js",
+          "version": "1.0",
+          "hash": "sha256-fa53fe61ef83f1b8a7907f273de5789c28d714bc8cdd3a706f6735b612b25d10",
           "log": false
         },
         {
