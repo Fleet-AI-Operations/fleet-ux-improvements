@@ -15,7 +15,7 @@ const plugin = {
     name: 'Dispute List Collapse',
     description:
         'Hijack native dispute expand for a full collapse toggle; remember closed dispute numbers across reloads',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -64,8 +64,11 @@ const plugin = {
         style.textContent = [
             '[' + COLLAPSED_ATTR + '="1"] .flex-1 > p.mt-2 { display: none !important; }',
             '[' + COLLAPSED_ATTR + '="1"] .ml-3.flex.shrink-0 > div[data-state] { display: none !important; }',
-            '[' + COLLAPSED_ATTR + '="1"] .mt-2.flex.items-center.gap-4 { display: none !important; }',
+            // Keep View Task; hide the rest of the meta row
+            '[' + COLLAPSED_ATTR + '="1"] .mt-2.flex.items-center.gap-4 > *:not(a[href*="/work/problems/view-task/"]) { display: none !important; }',
             '[' + COLLAPSED_ATTR + '="1"] > .p-4.pt-0 { display: none !important; }',
+            EXPAND_SEL + ' { transition: transform 0.15s ease; }',
+            '[' + COLLAPSED_ATTR + '="1"] ' + EXPAND_SEL + ' { transform: rotate(-90deg); }',
             // Clear leftover replacement toggles from older plugin versions
             '[data-fleet-dispute-collapse-toggle] { display: none !important; }'
         ].join('\n');

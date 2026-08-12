@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.348",
+  "archetypesVersion": "14.349",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -878,8 +878,8 @@
         },
         {
           "name": "dispute-list-collapse.js",
-          "version": "1.2",
-          "hash": "sha256-da3dd97ad9d785851fafbdba54aedcc8d57af566e5994fbc6b94ec250aaede74",
+          "version": "1.3",
+          "hash": "sha256-8db4052a0743941d3e3001a7fd8bf2c6cdce48c1d1f2f6cec6b1dbe704dfa866",
           "log": false
         },
         {
