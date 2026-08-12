@@ -5211,7 +5211,7 @@ const searchOutputStatsPaneMethods = {
         const qaqsRows = [
             { label: 'Return Effectiveness',  weight: '40%', measures: 'Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
             { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
-            { label: 'Label Discrimination',  weight: '15%', measures: 'How often they commit to an explicit Top 10% or Bottom 10% judgment (labeled rows ÷ all feedback). Omitted when fewer than 10 feedback rows are in scope.' },
+            { label: 'Label Discrimination',  weight: '15%', measures: 'Top/Bottom label usage vs an ideal ~20% rate (full credit at 20%; falls toward 0 at 0% and at 40%+). Omitted when fewer than 10 feedback rows are in scope.' },
             { label: 'Acceptance Scrutiny',   weight: '10%', measures: 'One-sided check against unusually high accept rates. At or below the population threshold the axis is full credit; above it the score falls toward zero as accepts approach 100%.' },
             { label: 'Dispute Loss Avoidance',weight: '10%', measures: 'Disputes linked to this reviewer\'s feedback. Only disputes approved for the writer reduce the score. QA wins are neutral.' },
         ];
@@ -6157,7 +6157,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '13.0',
+    _version: '13.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
