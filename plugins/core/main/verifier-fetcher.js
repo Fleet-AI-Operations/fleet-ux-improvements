@@ -513,6 +513,25 @@ function stopVerifierChatStream(modal) {
     chat.renderMessages(modal, state, verifierChatOpts());
 }
 
+/** Clear transcript and start a fresh conversation (pending attach queue kept). */
+function resetVerifierChat(modal) {
+    if (!modal) return;
+    const chat = verifierChatApi();
+    const prev = modal._wfVerifierChatState;
+    if (chat && prev && (prev.streaming || prev.streamAbort)) {
+        chat.stopStream(prev, verifierChatOpts());
+    }
+    modal._wfVerifierChatSessionId = null;
+    modal._wfVerifierChatState = chat && typeof chat.createState === 'function'
+        ? chat.createState()
+        : { messages: [], streaming: false, streamAbort: null, streamGen: 0 };
+    ensureVerifierChatPaneOpen(modal);
+    wireVerifierChatComposer(modal);
+    renderVerifierChatMessages(modal);
+    setVerifierChatStreamingUi(modal, false);
+    Logger.log('new chat');
+}
+
 async function sendVerifierChatMessage(modal, userText) {
     const chat = verifierChatApi();
     const state = getVerifierChatState(modal);
@@ -1048,7 +1067,10 @@ function verifierFetcherPanelHtml() {
                     ">
                         <div style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                             <div style="${labelStyle}">Chat</div>
-                            <button type="button" id="wf-ops-verifier-chat-export" class="${btnClass('basic', 'compact')}">Export</button>
+                            <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                                <button type="button" id="wf-ops-verifier-chat-new" class="${btnClass('basic', 'compact')}">New chat</button>
+                                <button type="button" id="wf-ops-verifier-chat-export" class="${btnClass('basic', 'compact')}">Export</button>
+                            </div>
                         </div>
                         <div id="wf-ops-verifier-pending-tray" data-wf-has-items="0" aria-label="Queued verifiers"></div>
                         <div id="wf-ops-verifier-chat-mount" style="
@@ -1772,6 +1794,7 @@ function attachVerifierFetcherListeners(modal) {
     const scratchpadToggle = modal.querySelector('#wf-ops-verifier-scratchpad-toggle');
     const scratchpadTextarea = modal.querySelector('#wf-ops-verifier-scratchpad');
     const chatToggle = modal.querySelector('#wf-ops-verifier-chat-toggle');
+    const chatNewBtn = modal.querySelector('#wf-ops-verifier-chat-new');
     const decodeBtn = modal.querySelector('#wf-ops-verifier-decode-btn');
 
     attachVerifierScratchpadResize(modal);
@@ -1796,6 +1819,10 @@ function attachVerifierFetcherListeners(modal) {
             Logger.log('chat ' + (nextOpen ? 'shown' : 'hidden'));
             if (typeof vf.captureVerifierTabState === 'function') vf.captureVerifierTabState(modal);
         });
+    }
+
+    if (chatNewBtn) {
+        chatNewBtn.addEventListener('click', () => { resetVerifierChat(modal); });
     }
 
     if (decodeBtn) {
@@ -1904,7 +1931,7 @@ const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
     description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
