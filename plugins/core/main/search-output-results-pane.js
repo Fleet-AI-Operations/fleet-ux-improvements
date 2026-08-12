@@ -111,35 +111,35 @@ const DASH_OUTPUT_KIND_CONFIG = {
         label: 'Task Creation',
         tabBg: '#16a34a',
         toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #4ade80; color: #86efac; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #22c55e; color: #4ade80; background: transparent;',
         textHighlight: 'font-weight: 600; color: #15803d;'
     },
     qa: {
         label: 'QA',
         tabBg: '#2563eb',
         toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #60a5fa; color: #93c5fd; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #3b82f6; color: #60a5fa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #1d4ed8;'
     },
     dispute: {
         label: 'Disputes',
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #c4b5fd; color: #ddd6fe; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #8b5cf6; color: #a78bfa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
     },
     senior_review: {
         label: 'Sr Review',
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #facc15; color: #fde68a; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #eab308; color: #facc15; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
     },
     sessions: {
         label: 'Sessions',
         tabBg: '#0891b2',
         toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #22d3ee; color: #a5f3fc; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #0891b2; color: #22d3ee; background: transparent;',
         textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
@@ -3850,7 +3850,7 @@ const searchOutputResultsPaneMethods = {
         if (active) {
             if (tabId === 'all') {
                 return interactive + (dark
-                    ? ' border: 2px solid #facc15; color: #fde68a; background: transparent;'
+                    ? ' border: 2px solid #eab308; color: #facc15; background: transparent;'
                     : ' border: 2px solid #ca8a04; color: #a16207; background: transparent;');
             }
             const cfg = DASH_OUTPUT_KIND_CONFIG[tabId];
@@ -7679,7 +7679,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.24',
+    _version: '9.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

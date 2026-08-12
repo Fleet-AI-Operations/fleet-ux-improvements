@@ -1163,6 +1163,8 @@ function fleetUiFilterToggleCssLines(prefix) {
     const p = prefix || '';
     return [
         p + '.fleet-ui-filter-toggle {',
+        '  appearance: none;',
+        '  -webkit-appearance: none;',
         '  padding: 7px 14px;',
         '  font-size: 12px;',
         '  font-weight: 600;',
@@ -1177,6 +1179,23 @@ function fleetUiFilterToggleCssLines(prefix) {
         '  opacity: 1;',
         '}'
     ];
+}
+
+/** Ensure each declaration in an inline CSS string is marked !important (host theme overrides). */
+function fleetUiImportantInlineCss(css) {
+    return String(css || '')
+        .split(';')
+        .map((part) => {
+            const idx = part.indexOf(':');
+            if (idx < 0) return '';
+            const prop = part.slice(0, idx).trim();
+            let val = part.slice(idx + 1).trim();
+            if (!prop || !val) return '';
+            if (!/!important\s*$/i.test(val)) val += ' !important';
+            return prop + ': ' + val;
+        })
+        .filter(Boolean)
+        .join('; ');
 }
 
 function fleetUiSegmentBtnClass(divider) {
@@ -1259,7 +1278,7 @@ function fleetUiFilterToggleHtml(opts) {
     const idAttr = o.id ? ' id="' + fleetUiEscapeAttr(o.id) + '"' : '';
     const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
     const css = pressed && o.activeCss
-        ? String(o.activeCss).replace(/"/g, '&quot;')
+        ? fleetUiImportantInlineCss(o.activeCss).replace(/"/g, '&quot;')
         : '';
     const styleAttr = css ? ' style="' + css + '"' : '';
     return '<button type="button" class="' + fleetUiFilterToggleClass() + '" aria-pressed="'
@@ -1271,7 +1290,16 @@ function fleetUiApplyFilterToggle(btn, pressed, activeCss) {
     if (!btn) return;
     btn.classList.add(FILTER_TOGGLE_CLASSES.btn);
     btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
-    btn.style.cssText = pressed && activeCss ? activeCss : '';
+    btn.style.cssText = '';
+    if (!(pressed && activeCss)) return;
+    String(activeCss).split(';').forEach((part) => {
+        const idx = part.indexOf(':');
+        if (idx < 0) return;
+        const prop = part.slice(0, idx).trim();
+        const val = part.slice(idx + 1).trim().replace(/\s*!important\s*$/i, '');
+        if (!prop || !val) return;
+        btn.style.setProperty(prop, val, 'important');
+    });
 }
 
 function fleetUiSpinnerHtml(sizePx) {
@@ -1387,7 +1415,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.15',
+    _version: '3.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
