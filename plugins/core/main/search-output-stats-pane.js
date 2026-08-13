@@ -5341,11 +5341,10 @@ const searchOutputStatsPaneMethods = {
     },
 
     _ratingSortedAxes(block) {
-        return [...((block && block.axes) || [])].sort((a, b) => {
-            const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
-            if (wDiff !== 0) return wDiff;
-            return String(a.label || '').localeCompare(String(b.label || ''));
-        });
+        // Highest baseWeight first; equal weights keep engine definition order (stable sort).
+        return [...((block && block.axes) || [])].sort((a, b) =>
+            (b.baseWeight || 0) - (a.baseWeight || 0)
+        );
     },
 
     _ratingAxisOmitReason(axis) {
@@ -5563,7 +5562,7 @@ const searchOutputStatsPaneMethods = {
             ? !!o.provisional
             : this._ratingVolumeIsProvisional(o.volume, scoreKind);
         const canExpand = !!(workerId && scoreKind && dimension && sliceKey && axes.length);
-        const axesList = [...axes].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
+        const axesList = this._ratingSortedAxes({ axes });
         const axesHtml = (expanded && axesList.length)
             ? ('<div style="margin-top: 6px; padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, transparent);">'
                 + axesList.map((axis) => this._ratingAxisBarHtml(axis)).join('')
@@ -6157,7 +6156,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '13.1',
+    _version: '13.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

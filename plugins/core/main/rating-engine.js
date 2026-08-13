@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
 // Engine v12.1: Label Discrimination tent map (ideal 20% usage, taper both sides).
 
-const RE_VERSION = '12.1';
+const RE_VERSION = '12.2';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -689,11 +689,10 @@ function reAxisExportRow(axis) {
 }
 
 function reSortedAxesForExport(axes) {
-    return [...(axes || [])].sort((a, b) => {
-        const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
-        if (wDiff !== 0) return wDiff;
-        return String(a.label || '').localeCompare(String(b.label || ''));
-    });
+    // Highest baseWeight first; equal weights keep engine definition order (stable sort).
+    return [...(axes || [])].sort((a, b) =>
+        (b.baseWeight || 0) - (a.baseWeight || 0)
+    );
 }
 
 function reScoreBlockExport(block) {
@@ -1897,7 +1896,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '12.1',
+    _version: '12.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
