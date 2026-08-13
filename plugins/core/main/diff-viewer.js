@@ -56,7 +56,6 @@ const _dvState = {
     highlightModality: 'differences', // 'differences' | 'similarities'
     linkSplits: false, // similarities: bridge one-sided equal-run gaps as one both-or-none unit
     highlightMinLength: DV_HIGHLIGHT_DEFAULT_MIN_WORDS, // user preference; fixed UI range 1–50
-    highlightLengthRange: { min: 0, max: 0 }, // diff metadata for subset % label only
     rollingLeft: 0,      // left index of rolling comparison pair
     slots: [],           // Array<DvSlot>
     stash: [],           // Array<DvStashEntry> — persisted
@@ -397,67 +396,6 @@ function _dvComparePairs(modal, opts) {
         pairs.push({ baseText, compareText: _dvSlotPromptText(_dvState.slots[i]) });
     }
     return pairs;
-}
-
-function _dvRefreshHighlightLengthRange(modal) {
-    const eng = _dvEngine();
-    if (!eng || !_dvState.showHighlights) {
-        _dvState.highlightLengthRange = { min: 0, max: 0 };
-        _dvSyncHighlightLengthUi(modal);
-        return;
-    }
-    let globalMin = Infinity;
-    let globalMax = 0;
-    const allLengths = [];
-    const opts = {
-        granularity: _dvEffectiveGranularity(),
-        highlightModality: _dvState.highlightModality,
-        linkSplits: _dvState.linkSplits,
-        punctuationMode: _dvState.punctuationMode
-    };
-
-    if (_dvState.mode === 'tasks' && _dvState.slots.length >= 2) {
-        const slotPairs = [];
-        if (_dvState.compMode === 'rolling') {
-            _dvClampRollingLeft();
-            const left = _dvState.slots[_dvState.rollingLeft];
-            const right = _dvState.slots[_dvState.rollingLeft + 1];
-            if (left && right) slotPairs.push([left, right]);
-        } else {
-            const base = _dvState.slots[0];
-            for (let i = 1; i < _dvState.slots.length; i++) {
-                slotPairs.push([base, _dvState.slots[i]]);
-            }
-        }
-        for (let p = 0; p < slotPairs.length; p++) {
-            const left = slotPairs[p][0];
-            const right = slotPairs[p][1];
-            if (!left || !right || left.loading || right.loading) continue;
-            const bundle = _dvGetOrComputeBundle(left, right, false);
-            const range = eng.highlightSectionLengthRange('', '', Object.assign({}, opts, { bundle: bundle }));
-            if (range.lengths.length) {
-                globalMin = Math.min(globalMin, range.min);
-                globalMax = Math.max(globalMax, range.max);
-                allLengths.push(...range.lengths);
-            }
-        }
-    } else {
-        const pairs = _dvComparePairs(modal, { mode: 'all' });
-        for (const pair of pairs) {
-            const range = eng.highlightSectionLengthRange(pair.baseText, pair.compareText, opts);
-            if (range.lengths.length) {
-                globalMin = Math.min(globalMin, range.min);
-                globalMax = Math.max(globalMax, range.max);
-                allLengths.push(...range.lengths);
-            }
-        }
-    }
-    if (!allLengths.length) {
-        _dvState.highlightLengthRange = { min: 0, max: 0 };
-    } else {
-        _dvState.highlightLengthRange = { min: globalMin, max: globalMax };
-    }
-    _dvSyncHighlightLengthUi(modal);
 }
 
 function _dvDiffPair(baseText, compareText, granularity) {
@@ -1981,10 +1919,7 @@ function _dvAboveLabelInnerHtml() {
         granularity: _dvEffectiveGranularity(),
         highlightModality: _dvState.highlightModality,
         showHighlights: _dvState.showHighlights,
-        minHighlightLength: _dvEffectiveHighlightMinLength(),
-        linkSplits: _dvState.linkSplits,
         punctuationMode: _dvState.punctuationMode,
-        lengthRange: _dvState.highlightLengthRange,
         bundle: bundle
     });
 }
@@ -2384,7 +2319,7 @@ function _dvApplyDiffToLensPres(modal, lensPres) {
 function _dvRenderDiffs(modal) {
     if (_dvState.mode !== 'tasks') return;
     _dvSyncVerifierGranularityLock(modal);
-    _dvRefreshHighlightLengthRange(modal);
+    _dvSyncHighlightLengthUi(modal);
     if (_dvState.slots.length < 2) {
         _dvRemoveRollingOverlay(modal);
         const basePre = _dvGetLensPreRef(modal, 0);
@@ -2644,7 +2579,7 @@ function _dvRenderFreeTextDiff(modal) {
     const baseDiff = _dvQ(modal, 'dv-free-base-diff');
     const compareDiff = _dvQ(modal, 'dv-free-compare-diff');
     if (!baseInput || !compareInput || !baseDiff || !compareDiff) return;
-    _dvRefreshHighlightLengthRange(modal);
+    _dvSyncHighlightLengthUi(modal);
     const baseText = baseInput.value || '';
     const compareText = compareInput.value || '';
     if (!baseText && !compareText) {
@@ -3724,7 +3659,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.10',
+    _version: '5.11',
     phase: 'core',
     enabledByDefault: true,
 
