@@ -32,6 +32,7 @@ const DV_REEL_COPY_RAIL_PAD = DV_REEL_COPY_TOP + 26 + 10; // copy top + icon hei
 const DV_REEL_NAV_LABEL_H = 14;
 const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
 const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
+const DV_REEL_NAV_BTN_H = 26; // wf-dash-btn--icon height; arrow-band spacer clears buttons
 const DV_DRAG_THRESHOLD_PX = 4;
 const DV_HOVER_DEBOUNCE_MS = 50;
 
@@ -1183,21 +1184,21 @@ function _dvMeasureNavRowH(_track) {
     return DV_REEL_NAV_ROW_H;
 }
 
-/** Track slot index of the current label, counting arrow-band spacers before it. */
-function _dvVersionCurrentSlotIndex(lensIndex) {
-    return lensIndex + (lensIndex > 0 ? 1 : 0);
+/** Y of the current label's center within the version track (spacer-aware). */
+function _dvVersionLabelCenterY(lensIndex) {
+    const rowH = DV_REEL_NAV_ROW_H;
+    const spacerBefore = lensIndex > 0 ? DV_REEL_NAV_BTN_H : 0;
+    return lensIndex * rowH + spacerBefore + rowH / 2;
 }
 
 function _dvVersionTrackOffsetY(viewport, lensIndex, versionCount) {
-    const rowH = DV_REEL_NAV_ROW_H;
+    const labelCenterY = _dvVersionLabelCenterY(lensIndex);
     const nav = viewport && viewport.closest('.dv-reel-arrows-nav');
     const slot = nav && nav.querySelector('.dv-reel-nav-current-slot');
-    const currentSlot = _dvVersionCurrentSlotIndex(lensIndex);
-    if (!slot || !viewport) return -currentSlot * rowH;
+    if (!slot || !viewport) return -labelCenterY + DV_REEL_NAV_ROW_H / 2;
     const viewportRect = viewport.getBoundingClientRect();
     const slotRect = slot.getBoundingClientRect();
     const slotCenterY = slotRect.top + slotRect.height / 2 - viewportRect.top;
-    const labelCenterY = currentSlot * rowH + rowH / 2;
     return slotCenterY - labelCenterY;
 }
 
@@ -3579,7 +3580,7 @@ function _dvInjectStyles() {
         '}',
         '#wf-dash-modal .dv-reel-version-spacer {',
         '  display: block;',
-        '  height: ' + DV_REEL_NAV_ROW_H + 'px;',
+        '  height: ' + DV_REEL_NAV_BTN_H + 'px;',
         '  width: 100%;',
         '  flex-shrink: 0;',
         '  pointer-events: none;',
@@ -3723,7 +3724,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.8',
+    _version: '5.9',
     phase: 'core',
     enabledByDefault: true,
 
