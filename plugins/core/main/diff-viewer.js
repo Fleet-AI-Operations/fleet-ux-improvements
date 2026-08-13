@@ -30,7 +30,7 @@ const DV_REEL_COPY_TOP = DV_REEL_LENS_TOP + DV_VERSION_SUBMITTED_CHROME;
 const DV_REEL_VIEWPORT_H_EXPR = 'calc(' + (DV_REEL_PEEK_H * 2 + DV_REEL_ROW_GAP * 2) + 'px + var(--dv-reel-lens-h, ' + DV_REEL_LENS_H + 'px))';
 const DV_REEL_COPY_RAIL_PAD = DV_REEL_COPY_TOP + 26 + 10; // copy top + icon height + nav gap
 const DV_REEL_NAV_LABEL_H = 14;
-const DV_REEL_NAV_ROW_GAP = 20; // peek band between up/down buttons and current label
+const DV_REEL_NAV_ROW_GAP = 26; // peek band between up/down buttons and current label
 const DV_REEL_NAV_ROW_H = DV_REEL_NAV_LABEL_H / 2 + DV_REEL_NAV_ROW_GAP / 2; // track step; centers peeks in gap
 const DV_REEL_NAV_BTN_H = 26; // wf-dash-btn--icon height; arrow-band spacer clears buttons
 const DV_DRAG_THRESHOLD_PX = 4;
@@ -3724,7 +3724,7 @@ const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
     description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.9',
+    _version: '5.10',
     phase: 'core',
     enabledByDefault: true,
 
