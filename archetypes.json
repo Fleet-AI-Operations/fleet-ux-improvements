@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.358",
+  "archetypesVersion": "14.359",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -167,6 +167,12 @@
       "log": false
     },
     {
+      "name": "work-history.js",
+      "version": "1.0",
+      "hash": "sha256-564cb150e7c8711f3766a122bf242551a656e4b1d8508c3777633808aed59390",
+      "log": false
+    },
+    {
       "name": "env-helper.js",
       "version": "2.4",
       "hash": "sha256-38a274d22761d1a2bdae657d40cb0559b744452c22bf5bc7bcb134f1de508d6e",
@@ -309,23 +315,26 @@
       "description": "Main dashboard page",
       "urlPattern": "work/create",
       "disambiguationSelectors": [],
+      "libraries": [
+        "work-history.js"
+      ],
       "plugins": [
         {
           "name": "feedback-given-stats.js",
-          "version": "4.0",
-          "hash": "sha256-d4f21862030d16cd2c91991e94c506ddcd83618851cc95a15284be79dc9e984c",
+          "version": "5.0",
+          "hash": "sha256-0777ed9118a5fc663d3f8e71186a584d38c73d6fdb858e69d525d81705a22bbc",
           "log": false
         },
         {
           "name": "task-creation-today-env.js",
-          "version": "4.1",
-          "hash": "sha256-591a2c32a25c5f2f4a596e4c466230369ba95c683f3d6792bcffce813853da9c",
+          "version": "5.0",
+          "hash": "sha256-7bb4f9e45cac3fcb76b092f7aabed2666cb2f239bc30fea9c3b3fc0944ca2cd2",
           "log": false
         },
         {
           "name": "disputes-reviewed-today.js",
-          "version": "4.0",
-          "hash": "sha256-5b0dc7b7027e87dc6ea02617f9c423070f12bed073a93e9fb5f553e3f2232ad3",
+          "version": "5.0",
+          "hash": "sha256-3d264134139a06e259534e1749001b5ed6f1f637aec0ecf970ce5e95f0acbf1e",
           "log": false
         }
       ]

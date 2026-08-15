@@ -96,7 +96,7 @@
     {
       "file": "disputes-reviewed-today.js",
       "name": "Disputes Reviewed Today Breakdown",
-      "description": "Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning"
+      "description": "Show disputes reviewed count and approved/rejected breakdown for a selected day"
     }
   ],
   "archetypes/dashboard/dev": [
