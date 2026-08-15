@@ -3,7 +3,7 @@ const plugin = {
     id: 'disputesReviewedToday',
     name: 'Disputes Reviewed Today Breakdown',
     description: 'Show disputes reviewed count and approved/rejected breakdown for a selected day',
-    _version: '5.0',
+    _version: '5.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, activationLogged: false },
@@ -132,6 +132,7 @@ const plugin = {
                 '<button type="button" class="' + arrowBtnActive + '" data-wf-day-prev aria-label="Previous day">‹</button>',
                 '<span class="text-xs text-white font-medium text-center w-[8.75rem]" data-wf-day-label>Today</span>',
                 '<button type="button" class="' + arrowBtnDisabled + '" data-wf-day-next aria-label="Next day" disabled>›</button>',
+                '<button type="button" class="' + arrowBtnActive + '" data-wf-day-refresh aria-label="Refresh day">↻</button>',
                 '</div>',
                 '</div>',
                 '<div class="mt-3 flex justify-between gap-4">',
@@ -147,6 +148,7 @@ const plugin = {
             const self = this;
             const prevBtn = block.querySelector('[data-wf-day-prev]');
             const nextBtn = block.querySelector('[data-wf-day-next]');
+            const refreshBtn = block.querySelector('[data-wf-day-refresh]');
             const copyBtn = block.querySelector('[data-wf-copy-btn]');
 
             if (prevBtn) {
@@ -161,6 +163,12 @@ const plugin = {
                     block._wfDaysAgo = Math.max(0, (block._wfDaysAgo || 0) - 1);
                     Logger.log('day navigation — next day', { daysAgo: block._wfDaysAgo });
                     self.loadDay(block);
+                });
+            }
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    Logger.log('day refresh', { daysAgo: block._wfDaysAgo || 0 });
+                    self.loadDay(block, { force: true });
                 });
             }
             if (copyBtn) {
@@ -261,15 +269,20 @@ const plugin = {
         }
     },
 
-    loadDay(block) {
+    loadDay(block, opts) {
         const wh = this.workHistory();
         if (!wh || typeof wh.fetchDisputesReviewedDay !== 'function') return;
+        const force = !!(opts && opts.force);
         const daysAgo = block._wfDaysAgo || 0;
         const gen = ++block._wfFetchGen;
-        const cached = block._wfDayCache[daysAgo];
+        if (force) {
+            delete block._wfDayCache[daysAgo];
+            if (typeof wh.invalidateDay === 'function') wh.invalidateDay('disputesReviewed', daysAgo);
+        }
+        const cached = force ? null : block._wfDayCache[daysAgo];
         this.renderDay(block, cached || null, daysAgo, !cached);
 
-        wh.fetchDisputesReviewedDay(daysAgo).then((stats) => {
+        wh.fetchDisputesReviewedDay(daysAgo, force ? { force: true } : undefined).then((stats) => {
             if (gen !== block._wfFetchGen || (block._wfDaysAgo || 0) !== daysAgo) return;
             block._wfDayCache[daysAgo] = stats;
             this.renderDay(block, stats, daysAgo, false);

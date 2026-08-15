@@ -156,11 +156,27 @@ const WorkHistoryApi = {
         return kind + ':' + dateKey;
     },
 
-    async _coalesce(key, fn) {
-        if (Object.prototype.hasOwnProperty.call(this._cache, key)) {
+    /** Drop cached aggregates for one kind+day so the next fetch hits the network. */
+    invalidateDay(kind, daysAgo) {
+        const bounds = this.localDayBounds(daysAgo);
+        const key = this._cacheKey(kind, bounds.dateKey);
+        delete this._cache[key];
+    },
+
+    async _coalesce(key, fn, opts) {
+        const force = !!(opts && opts.force);
+        if (force) delete this._cache[key];
+        if (!force && Object.prototype.hasOwnProperty.call(this._cache, key)) {
             return this._cache[key];
         }
-        if (this._inflight[key]) return this._inflight[key];
+        if (this._inflight[key]) {
+            if (!force) return this._inflight[key];
+            // Wait out the in-flight call, then refetch so force always gets a new result.
+            try {
+                await this._inflight[key];
+            } catch (_e) { /* ignore prior failure */ }
+            delete this._cache[key];
+        }
         const p = Promise.resolve()
             .then(fn)
             .then((result) => {
@@ -256,7 +272,7 @@ const WorkHistoryApi = {
         return res.json();
     },
 
-    async fetchTaskCreationDay(daysAgo) {
+    async fetchTaskCreationDay(daysAgo, opts) {
         this.ensureTeamIdIntercept();
         const bounds = this.localDayBounds(daysAgo);
         const key = this._cacheKey('taskCreation', bounds.dateKey);
@@ -274,7 +290,8 @@ const WorkHistoryApi = {
 
             while (page < maxPages) {
                 const params = new URLSearchParams();
-                params.set('select', 'id,created_at,env_key');
+                // Only fields used for day counts — no prompts / embeds / ids
+                params.set('select', 'created_at,env_key');
                 params.set('created_by', 'eq.' + userId);
                 params.set('and', `(created_at.gte.${bounds.startIso},created_at.lte.${bounds.endIso})`);
                 params.set('order', 'created_at.desc.nullslast');
@@ -287,22 +304,28 @@ const WorkHistoryApi = {
                 Logger.debug('Task Creation page fetch', { dateKey: bounds.dateKey, offset, page });
                 const rows = await this._postgrestGet(url);
                 if (!Array.isArray(rows) || rows.length === 0) break;
-                for (const row of rows) {
+                const pageLen = rows.length;
+                for (let i = 0; i < pageLen; i++) {
+                    const row = rows[i];
                     count++;
                     const env = (row && row.env_key) ? String(row.env_key).trim() : '';
                     if (env) envCount[env] = (envCount[env] || 0) + 1;
+                    // Drop row reference so the fat response can GC
+                    rows[i] = null;
                 }
-                if (rows.length < PAGE_SIZE) break;
+                rows.length = 0;
+                if (pageLen < PAGE_SIZE) break;
                 offset += PAGE_SIZE;
                 page++;
             }
 
             Logger.log('Task Creation day loaded', { dateKey: bounds.dateKey, count });
+            // Aggregates only — never retain row payloads
             return { count, envCount, dateKey: bounds.dateKey };
-        });
+        }, opts);
     },
 
-    async fetchFeedbackGivenDay(daysAgo) {
+    async fetchFeedbackGivenDay(daysAgo, opts) {
         const bounds = this.localDayBounds(daysAgo);
         const key = this._cacheKey('feedbackGiven', bounds.dateKey);
         return this._coalesce(key, async () => {
@@ -323,12 +346,21 @@ const WorkHistoryApi = {
                 const payload = await this._fleetWebGet(path);
                 const feedbacks = (payload && payload.feedbacks) || [];
                 const hasMore = !!(payload && payload.has_more);
+                const pageLen = Array.isArray(feedbacks) ? feedbacks.length : 0;
 
-                if (!Array.isArray(feedbacks) || feedbacks.length === 0) break;
+                if (pageLen === 0) break;
 
-                for (const row of feedbacks) {
-                    if (!row || row.is_system_feedback === true) continue;
-                    const created = row.created_at;
+                for (let i = 0; i < pageLen; i++) {
+                    const row = feedbacks[i];
+                    // Pull only scalars used for stats, then drop the row (prompts / nested task data stay unused)
+                    const isSystem = !!(row && row.is_system_feedback === true);
+                    const created = row ? row.created_at : null;
+                    const env = (row && row.eval_task_version && row.eval_task_version.env_key)
+                        ? String(row.eval_task_version.env_key).trim()
+                        : '';
+                    const positive = !!(row && row.is_positive_feedback === true);
+                    feedbacks[i] = null;
+                    if (!row || isSystem) continue;
                     if (this._beforeDay(created, bounds)) {
                         done = true;
                         break;
@@ -336,10 +368,6 @@ const WorkHistoryApi = {
                     if (!this._inDay(created, bounds)) continue;
 
                     count++;
-                    const env = (row.eval_task_version && row.eval_task_version.env_key)
-                        ? String(row.eval_task_version.env_key).trim()
-                        : '';
-                    const positive = row.is_positive_feedback === true;
                     if (positive) {
                         approved++;
                         if (env) {
@@ -354,8 +382,9 @@ const WorkHistoryApi = {
                         }
                     }
                 }
+                feedbacks.length = 0;
 
-                if (done || !hasMore || feedbacks.length < PAGE_SIZE) break;
+                if (done || !hasMore || pageLen < PAGE_SIZE) break;
                 offset += PAGE_SIZE;
                 page++;
             }
@@ -374,10 +403,10 @@ const WorkHistoryApi = {
                 feedbackRequested,
                 dateKey: bounds.dateKey
             };
-        });
+        }, opts);
     },
 
-    async fetchDisputesReviewedDay(daysAgo) {
+    async fetchDisputesReviewedDay(daysAgo, opts) {
         const bounds = this.localDayBounds(daysAgo);
         const key = this._cacheKey('disputesReviewed', bounds.dateKey);
         return this._coalesce(key, async () => {
@@ -400,30 +429,34 @@ const WorkHistoryApi = {
                     offset: String(offset)
                 });
                 const disputes = (payload && payload.disputes) || [];
-                if (!Array.isArray(disputes) || disputes.length === 0) break;
+                const pageLen = Array.isArray(disputes) ? disputes.length : 0;
+                if (pageLen === 0) break;
 
-                for (const row of disputes) {
+                for (let i = 0; i < pageLen; i++) {
+                    const row = disputes[i];
+                    const resolved = row ? row.resolved_at : null;
+                    const status = row ? String(row.dispute_status || '').toLowerCase() : '';
+                    disputes[i] = null;
                     if (!row) continue;
-                    const resolved = row.resolved_at;
                     if (this._beforeDay(resolved, bounds)) {
                         done = true;
                         break;
                     }
                     if (!this._inDay(resolved, bounds)) continue;
                     count++;
-                    const status = String(row.dispute_status || '').toLowerCase();
                     if (status === 'approved') approved++;
                     else if (status === 'rejected') rejected++;
                 }
+                disputes.length = 0;
 
-                if (done || disputes.length < PAGE_SIZE) break;
+                if (done || pageLen < PAGE_SIZE) break;
                 offset += PAGE_SIZE;
                 page++;
             }
 
             Logger.log('Disputes Reviewed day loaded', { dateKey: bounds.dateKey, count, approved, rejected });
             return { count, approved, rejected, dateKey: bounds.dateKey };
-        });
+        }, opts);
     },
 
     /** Clear caches (e.g. after midnight / manual refresh). */
@@ -437,7 +470,7 @@ const plugin = {
     id: 'workHistory',
     name: 'Work History',
     description: 'Session APIs for Task Creation, Feedback Given, and Disputes Reviewed daily breakdowns',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -445,10 +478,11 @@ const plugin = {
     init(state) {
         WorkHistoryApi.ensureTeamIdIntercept();
         Context.workHistory = {
-            fetchTaskCreationDay: (daysAgo) => WorkHistoryApi.fetchTaskCreationDay(daysAgo),
-            fetchFeedbackGivenDay: (daysAgo) => WorkHistoryApi.fetchFeedbackGivenDay(daysAgo),
-            fetchDisputesReviewedDay: (daysAgo) => WorkHistoryApi.fetchDisputesReviewedDay(daysAgo),
+            fetchTaskCreationDay: (daysAgo, opts) => WorkHistoryApi.fetchTaskCreationDay(daysAgo, opts),
+            fetchFeedbackGivenDay: (daysAgo, opts) => WorkHistoryApi.fetchFeedbackGivenDay(daysAgo, opts),
+            fetchDisputesReviewedDay: (daysAgo, opts) => WorkHistoryApi.fetchDisputesReviewedDay(daysAgo, opts),
             localDayBounds: (daysAgo) => WorkHistoryApi.localDayBounds(daysAgo),
+            invalidateDay: (kind, daysAgo) => WorkHistoryApi.invalidateDay(kind, daysAgo),
             clearCache: () => WorkHistoryApi.clearCache(),
             ensureTeamIdIntercept: () => WorkHistoryApi.ensureTeamIdIntercept()
         };

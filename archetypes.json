@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.359",
+  "archetypesVersion": "14.360",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -168,8 +168,8 @@
     },
     {
       "name": "work-history.js",
-      "version": "1.0",
-      "hash": "sha256-564cb150e7c8711f3766a122bf242551a656e4b1d8508c3777633808aed59390",
+      "version": "1.1",
+      "hash": "sha256-7539ab2fe2ff2362e6605c92857dcc232ca1e3ef5bc79ceb222790886372a3d8",
       "log": false
     },
     {
@@ -321,20 +321,20 @@
       "plugins": [
         {
           "name": "feedback-given-stats.js",
-          "version": "5.0",
-          "hash": "sha256-0777ed9118a5fc663d3f8e71186a584d38c73d6fdb858e69d525d81705a22bbc",
+          "version": "5.1",
+          "hash": "sha256-cc2a6450d64cf9b79580226a6746b0b39a7a271de9dfda096e709a6e0414fa40",
           "log": false
         },
         {
           "name": "task-creation-today-env.js",
-          "version": "5.0",
-          "hash": "sha256-7bb4f9e45cac3fcb76b092f7aabed2666cb2f239bc30fea9c3b3fc0944ca2cd2",
+          "version": "5.1",
+          "hash": "sha256-b92930fb8c87c2aa4a45649ab2f208052a830a274f0b10cbb17d347f524a3da4",
           "log": false
         },
         {
           "name": "disputes-reviewed-today.js",
-          "version": "5.0",
-          "hash": "sha256-3d264134139a06e259534e1749001b5ed6f1f637aec0ecf970ce5e95f0acbf1e",
+          "version": "5.1",
+          "hash": "sha256-ae950c9b50e6229a783a788f72e1a5dd69ad3e500e2ddb26033f9321fb850656",
           "log": false
         }
       ]
