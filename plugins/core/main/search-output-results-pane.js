@@ -4190,20 +4190,27 @@ const searchOutputResultsPaneMethods = {
         const k = String(kind || '').toLowerCase();
         if (k === 'approved' || k === 'confirmed') {
             return {
-                border: 'color-mix(in srgb, #16a34a 35%, transparent)',
-                background: 'color-mix(in srgb, #16a34a 8%, transparent)'
+                border: 'color-mix(in srgb, #16a34a 35%, ' + DASH_TASK_CARD_BG + ')',
+                background: 'color-mix(in srgb, #16a34a 8%, ' + DASH_TASK_CARD_BG + ')'
             };
         }
         if (k === 'rejected' || k === 'dismissed') {
             return {
-                border: 'color-mix(in srgb, #dc2626 40%, transparent)',
-                background: 'color-mix(in srgb, #dc2626 8%, transparent)'
+                border: 'color-mix(in srgb, #dc2626 40%, ' + DASH_TASK_CARD_BG + ')',
+                background: 'color-mix(in srgb, #dc2626 8%, ' + DASH_TASK_CARD_BG + ')'
             };
         }
         return {
-            border: 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, transparent)',
-            background: 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, transparent)'
+            border: 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, ' + DASH_TASK_CARD_BG + ')',
+            background: 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, ' + DASH_TASK_CARD_BG + ')'
         };
+    },
+
+    /** Opaque task-card fill under nested tinted insets so parent red/green does not bleed through. */
+    _actionInsetBackdropWrapHtml(innerHtml) {
+        return '<div style="margin-top: 8px; border-radius: 6px; overflow: hidden; background: ' + DASH_TASK_CARD_BG + ';">'
+            + (innerHtml || '')
+            + '</div>';
     },
 
     _resolvedActionSubBlockHtml(opts) {
@@ -4224,15 +4231,15 @@ const searchOutputResultsPaneMethods = {
             + leftHeaderExtra;
         const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge);
         const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
-        return '<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">'
-            + this._actionBlockShellHtml(
+        return this._actionInsetBackdropWrapHtml(
+            this._actionBlockShellHtml(
                 blockId,
                 itemId,
                 'padding: 8px 10px; border: 1px solid ' + colors.border + '; border-radius: 6px; background: ' + colors.background + '; display: flex; flex-direction: column; gap: 6px;',
                 resHeaderRow,
                 resBodyHtml
             )
-            + '</div>';
+        );
     },
 
     _resultsHeaderBarStyle() {
@@ -6790,15 +6797,15 @@ const searchOutputResultsPaneMethods = {
 
     _qaAcceptedBlockStyle() {
         return {
-            border: '1px solid color-mix(in srgb, #16a34a 35%, transparent)',
-            background: 'color-mix(in srgb, #16a34a 8%, transparent)'
+            border: '1px solid color-mix(in srgb, #16a34a 35%, ' + DASH_TASK_CARD_BG + ')',
+            background: 'color-mix(in srgb, #16a34a 8%, ' + DASH_TASK_CARD_BG + ')'
         };
     },
 
     _qaReturnedBlockStyle() {
         return {
-            border: '1px solid color-mix(in srgb, #dc2626 40%, transparent)',
-            background: 'color-mix(in srgb, #dc2626 8%, transparent)'
+            border: '1px solid color-mix(in srgb, #dc2626 40%, ' + DASH_TASK_CARD_BG + ')',
+            background: 'color-mix(in srgb, #dc2626 8%, ' + DASH_TASK_CARD_BG + ')'
         };
     },
 
@@ -7140,11 +7147,11 @@ const searchOutputResultsPaneMethods = {
             });
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
-            ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                <div style="padding: 8px 10px; background: var(--card, #ffffff); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-flag-resolution="${dashEscHtml(String(display.id || ''))}" data-wf-dash-item-id="${dashEscHtml(String(itemId))}">
+            ? this._actionInsetBackdropWrapHtml(
+                `<div style="padding: 8px 10px; background: ${DASH_TASK_CARD_BG}; border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-flag-resolution="${dashEscHtml(String(display.id || ''))}" data-wf-dash-item-id="${dashEscHtml(String(itemId))}">
                     ${this._flagResolutionBlockHtml(display.id, itemId)}
-                </div>
-            </div>`
+                </div>`
+            )
             : '';
         const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
@@ -7679,7 +7686,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.25',
+    _version: '9.26',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
