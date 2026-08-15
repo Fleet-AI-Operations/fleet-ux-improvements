@@ -113,7 +113,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.9',
+    _version: '12.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -821,9 +821,6 @@ const plugin = {
             if (Context.dashboard && typeof Context.dashboard.captureTabState === 'function') {
                 Context.dashboard.captureTabState(this._modal);
             }
-            if (Context.opsTab && typeof Context.opsTab.captureTaskLinkState === 'function') {
-                Context.opsTab.captureTaskLinkState(this._modal);
-            }
         }
         this._overlay.style.display = 'none';
         if (Context.opsTab && typeof Context.opsTab.onModalClosed === 'function') {
@@ -1338,7 +1335,6 @@ const plugin = {
             ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="${this._dashTextTabStyle(false)}">${t.label}</button>`).join('');
-        const taskLinkBar = ops && typeof ops.renderTaskLinkBar === 'function' ? ops.renderTaskLinkBar() : '';
         const gradeAssessmentsLink = ops && typeof ops.renderGradeAssessmentsHeaderLink === 'function'
             ? ops.renderGradeAssessmentsHeaderLink()
             : '';
@@ -1367,9 +1363,6 @@ const plugin = {
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
                         ${tabBtns}
                     </nav>
-                </div>
-                <div id="wf-dash-header-task-link" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; box-sizing: border-box; overflow: hidden;">
-                    <div style="display: flex; justify-content: center; align-items: center; width: 100%; min-width: 0;">${taskLinkBar}</div>
                 </div>
                 <div id="wf-dash-header-ops" style="flex-shrink: 0; margin-left: auto;">
                     ${gradeAssessmentsLink}
@@ -2656,8 +2649,8 @@ const plugin = {
             if (typeof tab.attachListeners === 'function') tab.attachListeners(modal, this);
         }
 
-        if (Context.opsTab && typeof Context.opsTab.attachTaskLinkListeners === 'function') {
-            Context.opsTab.attachTaskLinkListeners(modal);
+        if (Context.opsTab && typeof Context.opsTab.attachDashboardHeaderListeners === 'function') {
+            Context.opsTab.attachDashboardHeaderListeners(modal);
         }
 
         modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
