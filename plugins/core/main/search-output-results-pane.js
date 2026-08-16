@@ -4084,14 +4084,11 @@ const searchOutputResultsPaneMethods = {
             return;
         }
         this._logDashApiClick('card-rehydrate', iid);
-        try {
-            await this._refreshHydrationAssociatedCaches();
-        } catch (e) {
-            Logger.debug('search-output: card hydrate associated prefetch refresh failed — ' + iid, e);
-        }
         const item = this._findCachedItem(iid);
         // First hydrate uses the same enrich/overlay path as Search Output;
         // already-hydrated cards throw away and fully rehydrate.
+        // Disputes/flags come from session prefetch + per-task task-disputes —
+        // do not re-fetch team-wide bulk lists here.
         if (item && item.hydrated === false) {
             await this._hydrateCardInitial(iid);
             return;
@@ -7748,7 +7745,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.29',
+    _version: '9.30',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

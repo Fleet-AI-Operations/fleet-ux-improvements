@@ -1202,23 +1202,6 @@ const searchOutputCoreMethods = {
         ]);
     },
 
-    async _refreshDisputePrefetchCaches() {
-        this._resetPrefetchForRetry('openDisputes');
-        this._resetPrefetchForRetry('resolvedDisputes');
-        await Promise.all([
-            this._ensurePrefetch('openDisputes'),
-            this._ensurePrefetch('resolvedDisputes')
-        ]);
-    },
-
-    /** Fresh dispute + flag prefetch before card hydrate / rehydrate. */
-    async _refreshHydrationAssociatedCaches() {
-        await Promise.all([
-            this._refreshDisputePrefetchCaches(),
-            this._refreshFlagPrefetchCaches()
-        ]);
-    },
-
     _syncHydratedItemAssociatedKinds(item) {
         if (!item || !item.task) return;
         this._ensureItemKindsArray(item);
@@ -6595,7 +6578,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.49',
+    _version: '9.50',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
