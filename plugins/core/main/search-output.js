@@ -4453,6 +4453,7 @@ const searchOutputCoreMethods = {
     _beginResultsLoad() {
         const additive = this._isAdditiveResultsMode();
         this._state.resultsKindTab = 'all';
+        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
         this._state.hasSearched = true;
         this._state.loading = true;
@@ -4508,6 +4509,7 @@ const searchOutputCoreMethods = {
         this._resetFilterDraftsFromResults(mergedItems || this._state.cachedItems || []);
         this._applyResultsPageSizeForNewSearch();
         this._state.resultsKindTab = 'all';
+        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
     },
 
@@ -5311,8 +5313,8 @@ const searchOutputCoreMethods = {
         this._state.screenshotUi = {};
         this._state.taskOpenUi = {};
         this._state.resultsKindTab = 'all';
+        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
-        this._state.hydrateBulkActive = false;
         this._state.hydrateFetchActive = false;
         this._state.autoHydrateActive = false;
         this._state.pageHydrateScheduled = false;
@@ -6578,7 +6580,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.51',
+    _version: '9.52',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
