@@ -352,6 +352,9 @@ const searchOutputResultsPaneMethods = {
         const sortDefault = dashSortDefault();
         const emptyStatus = options.emptyStatus
             || 'Set search parameters on the left, then press Search.';
+        const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
+            ? Context.uiLib.devBtnAttr()
+            : 'data-fleet-dev="1"';
         return `
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}" data-wf-dash-output-ws="${dashEscHtml(wsId)}">
                     <div style="${this._resultsHeaderBarStyle()}">
@@ -368,8 +371,8 @@ const searchOutputResultsPaneMethods = {
                                 <button type="button" ${el('diff-included')} title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
                                 <button type="button" ${el('drop-included')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
                                 <button type="button" ${el('drop-excluded')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
-                                <button type="button" ${el('export-tasks-json')} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
-                                <button type="button" ${el('export-user-stories')} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
+                                <button type="button" ${el('export-tasks-json')} ${devBtnAttr} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
+                                <button type="button" ${el('export-user-stories')} ${devBtnAttr} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
                                 <button type="button" ${el('results-retrieve-clipboard')} title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;${options.hideRetrieveClipboard ? ' display: none;' : ''}">Retrieve Clipboard</button>
                                 <button type="button" ${el('clear-results')} class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
@@ -7745,7 +7748,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.30',
+    _version: '9.31',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

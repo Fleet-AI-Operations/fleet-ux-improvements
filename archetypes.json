@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.367",
+  "archetypesVersion": "14.368",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.16",
-      "hash": "sha256-6fc79ae88b70a8e831ef9adce9e3bd604f494b6502d91093ad0a738a0308305a",
+      "version": "3.17",
+      "hash": "sha256-fa707ea173b7cc0245f3333011e08bc61d14673799c47c82ef8facd60729e4ce",
       "log": false
     },
     {
@@ -230,8 +230,8 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "9.30",
-      "hash": "sha256-a34dd88ae3950c702101fcb005408afbfb7d1273c3e7c32944532814dc1e28fd",
+      "version": "9.31",
+      "hash": "sha256-3ff14698bf77df67f012a2b401513b66d5758ff32c4d0a0704c73d2e10e52dea",
       "log": false
     },
     {
@@ -248,8 +248,8 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "13.3",
-      "hash": "sha256-765add22ce9966b81a70a36da06d7f1a26634f30d9cf5d80379078cf02939522",
+      "version": "13.4",
+      "hash": "sha256-d8562e736330ca13d3931fc33bf10236942c8e60a37419b32de18ed101f29c69",
       "log": false
     },
     {

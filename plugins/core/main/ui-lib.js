@@ -17,6 +17,8 @@ const FLEET_UI_THEME_MODES = ['match', 'light', 'dark'];
 /** Shared accent for Preferred chrome (segments, primary buttons, brand-tinted controls). */
 const FLEET_UI_ACCENT = '#2563eb';
 const FLEET_UI_ACCENT_FG = '#ffffff';
+/** Border color for buttons that only ship on dev-branch builds (`data-fleet-dev`). */
+const FLEET_UI_DEV_BTN_BORDER = '#ea580c';
 
 const FLASH_PULSE_MS = 600;
 const FLASH_PULSE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -873,7 +875,23 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  color: #71717a;',
         '}',
         dark(headerBasic) + ' { color: #a1a1aa; }',
-        dark(headerBasic) + ':hover:not(:disabled) { color: #e4e4e7; border-color: #e4e4e7; }'
+        dark(headerBasic) + ':hover:not(:disabled) { color: #e4e4e7; border-color: #e4e4e7; }',
+        // Dev-branch-only marker: border-color only (keep existing 1px thickness)
+        btn + '[data-fleet-dev],'
+            + btn + '[data-fleet-dev]:hover:not(:disabled),'
+            + btn + '[data-fleet-dev]:disabled {',
+        '  border-color: ' + FLEET_UI_DEV_BTN_BORDER + ';',
+        '}',
+        light(btn + '[data-fleet-dev]') + ','
+            + light(btn + '[data-fleet-dev]:hover:not(:disabled)') + ','
+            + light(btn + '[data-fleet-dev]:disabled') + ' {',
+        '  border-color: ' + FLEET_UI_DEV_BTN_BORDER + ';',
+        '}',
+        dark(btn + '[data-fleet-dev]') + ','
+            + dark(btn + '[data-fleet-dev]:hover:not(:disabled)') + ','
+            + dark(btn + '[data-fleet-dev]:disabled') + ' {',
+        '  border-color: ' + FLEET_UI_DEV_BTN_BORDER + ';',
+        '}'
     ];
 }
 
@@ -1311,6 +1329,11 @@ function fleetUiLoadingDotsAttr() {
     return 'data-fleet-ui-dots';
 }
 
+/** Attribute for buttons that only exist on dev-branch builds (orange border). */
+function fleetUiDevBtnAttr() {
+    return 'data-fleet-dev="1"';
+}
+
 /** Shared button-icon SVGs (basic+icon chrome). */
 function fleetUiEyeIconSvg() {
     return '<svg width="15.4" height="15.4" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
@@ -1415,7 +1438,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.16',
+    _version: '3.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1550,6 +1573,7 @@ const plugin = {
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,
+            devBtnAttr: fleetUiDevBtnAttr,
             eyeIconSvg: fleetUiEyeIconSvg,
             flagIconSvg: fleetUiFlagIconSvg,
             funnelIconSvg: fleetUiFunnelIconSvg,

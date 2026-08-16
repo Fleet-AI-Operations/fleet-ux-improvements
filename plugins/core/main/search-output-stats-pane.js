@@ -5046,8 +5046,11 @@ const searchOutputStatsPaneMethods = {
 
     _ratingsToolbarHtml() {
         const inputStyle = this._inputStyle() + ' font-size: 11px; padding: 4px 8px; min-width: 0;';
+        const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
+            ? Context.uiLib.devBtnAttr()
+            : 'data-fleet-dev="1"';
         const devExportBtn = Context.isDevBranch
-            ? ('<button type="button" data-wf-dash-ratings-export-bulk="json" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export JSON</button>')
+            ? ('<button type="button" data-wf-dash-ratings-export-bulk="json" ' + devBtnAttr + ' class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export JSON</button>')
             : '';
         return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; min-width: 0; width: 100%;">'
             + '<div style="display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; width: 100%;">'
@@ -5867,11 +5870,14 @@ const searchOutputStatsPaneMethods = {
 
         const btnCls = this._dashBtnClass('basic', 'nav');
         const explainBtnCls = this._dashBtnClass('secondary', 'nav');
+        const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
+            ? Context.uiLib.devBtnAttr()
+            : 'data-fleet-dev="1"';
         const diagnosticsBtnHtml = Context.isDevBranch
-            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
+            ? ('<button type="button" class="' + btnCls + '" ' + devBtnAttr + ' data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
         const llmDataBtnHtml = Context.isDevBranch
-            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
+            ? ('<button type="button" class="' + btnCls + '" ' + devBtnAttr + ' data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
             : '';
         const explainOpen = !!(Context.ratingExplain
             && typeof Context.ratingExplain.isOpen === 'function'
@@ -6214,7 +6220,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '13.3',
+    _version: '13.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
