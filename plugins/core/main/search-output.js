@@ -1202,6 +1202,98 @@ const searchOutputCoreMethods = {
         ]);
     },
 
+    async _refreshDisputePrefetchCaches() {
+        this._resetPrefetchForRetry('openDisputes');
+        this._resetPrefetchForRetry('resolvedDisputes');
+        await Promise.all([
+            this._ensurePrefetch('openDisputes'),
+            this._ensurePrefetch('resolvedDisputes')
+        ]);
+    },
+
+    /** Fresh dispute + flag prefetch before card hydrate / rehydrate. */
+    async _refreshHydrationAssociatedCaches() {
+        await Promise.all([
+            this._refreshDisputePrefetchCaches(),
+            this._refreshFlagPrefetchCaches()
+        ]);
+    },
+
+    _syncHydratedItemAssociatedKinds(item) {
+        if (!item || !item.task) return;
+        this._ensureItemKindsArray(item);
+        if ((item.task.promptVersions || []).length > 0 || item.task.prompt) {
+            this._addItemOutputKind(item, 'task_creation');
+        }
+        if ((item.task.allFeedback || []).length > 0 || item.qaFeedback) {
+            this._addItemOutputKind(item, 'qa');
+        }
+        if ((item.disputes || []).length > 0) this._addItemOutputKind(item, 'dispute');
+        if ((item.flags || []).length > 0) this._addItemOutputKind(item, 'senior_review');
+    },
+
+    /**
+     * Prefer live task-disputes for one card (covers resolve + external Fleet changes).
+     * Merges with cached open rows when the live payload has history.
+     */
+    async _applyLiveTaskDisputesOntoItem(item, profilesMap) {
+        if (!item || !item.task || !item.task.id) return;
+        const taskId = item.task.id;
+        try {
+            const fetched = await this._fetchTaskDisputesBatch([taskId]);
+            const rows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
+            if (rows.length === 0) return;
+            const openRows = this._getAllCachedOpenDisputeRows(taskId);
+            const combined = [...openRows, ...rows];
+            const resolverProfileIds = [];
+            for (const row of rows) {
+                if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+            }
+            if (resolverProfileIds.length > 0) {
+                await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+            }
+            item.disputes = [];
+            this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
+            this._addItemOutputKind(item, 'dispute');
+        } catch (disputeErr) {
+            Logger.debug('card task-disputes refresh failed — ' + (item.id || taskId), disputeErr);
+        }
+    },
+
+    /** First-time hydrate: same enrich + overlay path as Search Output bulk hydrate. */
+    async _hydrateCardInitial(itemId) {
+        const item = this._findCachedItem(itemId);
+        if (!item || !item.task || !item.task.id) return;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('card hydrate skipped — dashboardData not loaded');
+            return;
+        }
+        if (!this._state.cardRehydrating) this._state.cardRehydrating = {};
+        if (this._state.cardRehydrating[itemId]) {
+            Logger.debug('card hydrate already in progress — ' + itemId);
+            return;
+        }
+        this._state.cardRehydrating[itemId] = true;
+        Logger.debug('card hydrate started — ' + itemId);
+        this._patchTaskCard(itemId);
+        try {
+            await this._hydrateItems([item], {});
+            const profilesMap = this._profilesMapFromHydrateItems([item]);
+            await this._applyLiveTaskDisputesOntoItem(item, profilesMap);
+            this._syncHydratedItemAssociatedKinds(item);
+            this._patchTaskCard(itemId);
+            this._onScopeDataEnriched();
+            Logger.log('card hydrated — ' + itemId);
+        } catch (e) {
+            if (!this._handleDashSessionRefreshError(e)) {
+                Logger.warn('card hydrate failed — ' + itemId, e);
+            }
+        } finally {
+            delete this._state.cardRehydrating[itemId];
+            this._patchTaskCard(itemId);
+        }
+    },
+
     async _rehydrateCard(itemId) {
         const item = this._findCachedItem(itemId);
         if (!item || !item.task || !item.task.id) return;
@@ -1255,27 +1347,8 @@ const searchOutputCoreMethods = {
             item.disputes = [];
             item.flags = [];
             await this._overlayDisputesAndFlags([item], profilesMap);
-            // Prefer live task-disputes for this card (covers resolve + external Fleet changes).
-            try {
-                const fetched = await this._fetchTaskDisputesBatch([taskId]);
-                const rows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
-                if (rows.length > 0) {
-                    const openRows = this._getAllCachedOpenDisputeRows(taskId);
-                    const combined = [...openRows, ...rows];
-                    const resolverProfileIds = [];
-                    for (const row of rows) {
-                        if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
-                    }
-                    if (resolverProfileIds.length > 0) {
-                        await this._supplementProfilesMap(profilesMap, resolverProfileIds);
-                    }
-                    item.disputes = [];
-                    this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
-                    this._addItemOutputKind(item, 'dispute');
-                }
-            } catch (disputeErr) {
-                Logger.debug('card rehydrate task-disputes refresh failed — ' + itemId, disputeErr);
-            }
+            await this._applyLiveTaskDisputesOntoItem(item, profilesMap);
+            this._syncHydratedItemAssociatedKinds(item);
             item.hydrated = true;
             this._patchTaskCard(itemId);
             this._onScopeDataEnriched();
@@ -4970,6 +5043,15 @@ const searchOutputCoreMethods = {
         if (!task || !hist) return;
         if (hist.key) task.key = hist.key;
         if (hist.status) task.status = hist.status;
+        const versions = hist.promptVersions || task.promptVersions || [];
+        if (versions.length > 0) {
+            const latest = versions[versions.length - 1];
+            if (latest && latest.prompt) task.prompt = latest.prompt;
+            if (latest && latest.envKey) {
+                task.envKey = latest.envKey;
+                task.environment = this._envName(latest.envKey) || task.environment;
+            }
+        }
     },
 
     _profilesMapFromHydrateItems(items) {
@@ -5032,6 +5114,9 @@ const searchOutputCoreMethods = {
             }
             try {
                 const overlaid = await this._overlayDisputesAndFlags(hydratedItems, profilesMap);
+                for (const item of hydratedItems) {
+                    this._syncHydratedItemAssociatedKinds(item);
+                }
                 if (overlaid > 0) {
                     for (const item of hydratedItems) {
                         if ((item.disputes && item.disputes.length > 0)
@@ -6510,7 +6595,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.48',
+    _version: '9.49',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
