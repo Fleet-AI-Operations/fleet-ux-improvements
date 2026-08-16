@@ -2112,25 +2112,15 @@ const searchOutputCoreMethods = {
     },
 
     _stripFlagRow(row) {
-        if (!row) return null;
-        const task = row.task && typeof row.task === 'object' ? row.task : {};
-        return {
-            id: row.id,
-            task_id: row.task_id,
-            team_id: task.team_id || row.team_id || null,
-            flagger_id: row.flagger_id,
-            reason: row.reason,
-            note: row.note,
-            resolution: row.resolution,
-            resolved_at: row.resolved_at,
-            resolved_by: row.resolved_by,
-            resolution_note: row.resolution_note,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            flagger: row.flagger || null,
-            resolver: row.resolver || null,
-            task: row.task || null
-        };
+        if (!row || typeof row !== 'object') return null;
+        // Keep the full list-row payload (embedded task versions, flagger/resolver,
+        // lifecycle status, project target, notes) so Sr Review cards stay useful
+        // before hydrate. Derive team_id from the task embed when the API omits it.
+        const out = Object.assign({}, row);
+        const task = out.task && typeof out.task === 'object' ? out.task : null;
+        if (!out.task_id && task && task.id) out.task_id = task.id;
+        if (!out.team_id && task && task.team_id) out.team_id = task.team_id;
+        return out;
     },
 
     _indexFlagRows(rows) {
@@ -2497,7 +2487,20 @@ const searchOutputCoreMethods = {
         const projectTarget = embed.task_project_target;
         const projectId = projectTarget && projectTarget.project ? String(projectTarget.project.id || '') : '';
         const projectName = projectTarget && projectTarget.project ? String(projectTarget.project.name || '') : '';
-        const version = dashFirstEmbed(embed.eval_task_versions);
+        // Disputes embed a single version object; task-flags embeds the full
+        // revision array. Prefer the latest entry for the card prompt.
+        const rawVersions = Array.isArray(embed.eval_task_versions)
+            ? embed.eval_task_versions
+            : (embed.eval_task_versions ? [embed.eval_task_versions] : []);
+        const promptVersions = rawVersions.map((v, i) => ({
+            id: v && v.id != null ? String(v.id) : '',
+            displayVersionNo: i + 1,
+            versionNo: i + 1,
+            prompt: v && v.prompt ? String(v.prompt) : '',
+            envKey: (v && v.env_key) || '',
+            createdAt: (v && v.created_at) || ''
+        })).filter((v) => v.prompt || v.id);
+        const latest = promptVersions.length ? promptVersions[promptVersions.length - 1] : null;
         const creator = embed.creator || opt.creator || null;
         const authorId = embed.created_by || (creator && creator.id) || '';
         const profile = authorId ? profilesMap.get(authorId) : null;
@@ -2507,16 +2510,8 @@ const searchOutputCoreMethods = {
         const authorEmail = creator && creator.email
             ? String(creator.email)
             : ((profile && profile.email) || '');
-        const prompt = version && version.prompt ? String(version.prompt) : '';
-        const createdAt = embed.created_at || (version && version.created_at) || '';
-        const promptVersions = version ? [{
-            id: version.id != null ? String(version.id) : '',
-            displayVersionNo: 1,
-            versionNo: 1,
-            prompt,
-            envKey: version.env_key || '',
-            createdAt: version.created_at || createdAt
-        }] : [];
+        const prompt = latest ? String(latest.prompt || '') : '';
+        const createdAt = embed.created_at || (latest && latest.createdAt) || '';
         return {
             id: String(embed.id),
             key: embed.key || '',
@@ -2526,12 +2521,12 @@ const searchOutputCoreMethods = {
                 email: authorEmail
             },
             prompt,
-            environment: this._envName((version && version.env_key) || ''),
+            environment: this._envName((latest && latest.envKey) || ''),
             project: projectName || this._projectName(projectId),
             team: this._teamName(teamId),
             teamId: teamId || '',
             projectId: projectId || '',
-            envKey: (version && version.env_key) || '',
+            envKey: (latest && latest.envKey) || '',
             createdAt: createdAt || '',
             status: embed.task_lifecycle_status || '',
             promptVersions,
@@ -6515,7 +6510,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.47',
+    _version: '9.48',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
