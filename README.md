@@ -150,6 +150,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
 
 ### Dispute Review Page
+- **Dispute List Collapse**: Hijacks the native expand control for a full collapse that hides everything except the status/time/#id header row; remembers closed dispute numbers across reloads
 - **Dispute List Filters**: Environment checkbox dropdown (with per-environment counts; nothing selected = all) and a Sort by Date (Descending/Ascending) toggle on the same toolbar row as native search; Clear resets environment filters; non-matching cards are hidden in place
 
 ### Dispute Detail Page

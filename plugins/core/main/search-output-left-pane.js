@@ -109,35 +109,35 @@ const DASH_OUTPUT_KIND_CONFIG = {
         label: 'Task Creation',
         tabBg: '#16a34a',
         toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #4ade80; color: #86efac; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #22c55e; color: #4ade80; background: transparent;',
         textHighlight: 'font-weight: 600; color: #15803d;'
     },
     qa: {
         label: 'QA',
         tabBg: '#2563eb',
         toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #60a5fa; color: #93c5fd; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #3b82f6; color: #60a5fa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #1d4ed8;'
     },
     dispute: {
         label: 'Disputes',
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #c4b5fd; color: #ddd6fe; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #8b5cf6; color: #a78bfa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
     },
     senior_review: {
         label: 'Sr Review',
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #facc15; color: #fde68a; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #eab308; color: #facc15; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
     },
     sessions: {
         label: 'Sessions',
         tabBg: '#0891b2',
         toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #22d3ee; color: #a5f3fc; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #0891b2; color: #22d3ee; background: transparent;',
         textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
@@ -332,7 +332,10 @@ function dashFirstEmbed(embed) {
 
 
 const searchOutputLeftPaneMethods = {
-    _leftPanelHtml() {
+    _leftPanelHtml(opts) {
+        const options = opts || {};
+        const wsId = options.wsId || 'search-output';
+        const hideSearch = Boolean(options.hideSearch);
         const ui = Context.uiLib;
         if (ui && typeof ui.ensureSegmentStyles === 'function') {
             ui.ensureSegmentStyles('#wf-dash-modal');
@@ -345,29 +348,17 @@ const searchOutputLeftPaneMethods = {
         const hint = this._hintStyle();
         const input = this._inputStyle();
         const section = this._searchSectionStyle();
-        const retrieveInputVal = dashEscHtml((this._state && this._state.retrieveInput) || '');
-        const leftTab = this._state ? this._state.leftTab : 'search';
-        const filterScopes = dashFilterScopes();
-        const sortDefault = dashSortDefault();
-        return `
-                    <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
-                        <nav style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="Search and filters">
-                            <div style="display: flex; gap: 0; min-width: 0;">
-                                <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
-                                <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
-                            </div>
-                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
-                                <div id="wf-dash-actions-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
-                                    <button type="button" id="wf-dash-reset-filters" class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
-                                    <button type="button" id="wf-dash-apply-filters" class="${this._dashBtnClass('primary', 'nav')}">Apply</button>
-                                </div>
-                            </div>
-                        </nav>
-
-                        <div id="wf-dash-left-panel-search" style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; gap: 12px;">
-                            <div id="wf-dash-section-contributor" style="${section}">
+        const ws = this._ws(wsId);
+        const retrieveInputVal = dashEscHtml((ws && ws.retrieveInput) || '');
+        let leftTab = ws ? ws.leftTab : (hideSearch ? 'filters' : 'search');
+        if (hideSearch) leftTab = 'filters';
+        const el = (rest) => this._outputDomAttrs(rest, wsId);
+        const msOpts = { wsId };
+        const searchPanelHtml = hideSearch ? '' : `
+                        <div ${el('left-panel-search')} style="display: ${leftTab === 'search' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; gap: 12px;">
+                            <div ${el('section-contributor')} style="${section}">
                                 <div style="${label} font-weight: 600;">Contributor Search</div>
-                                <div id="wf-dash-search-fields" style="display: flex; flex-direction: column; gap: 14px;">
+                                <div ${el('search-fields')} style="display: flex; flex-direction: column; gap: 14px;">
                                     <div>
                                         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                             ${this._filterToggleHtml('wf-dash-toggle-tasks', 'Task Creation', true, 'task_creation')}
@@ -379,16 +370,16 @@ const searchOutputLeftPaneMethods = {
                                     </div>
                                     <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Contributors</label>
-                                        <div id="wf-dash-author-box" style="${input} display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; cursor: text;">
-                                            <input type="text" id="wf-dash-author-input" autocomplete="off" placeholder="Name, email, or UUID — Enter to resolve" style="flex: 1; min-width: 120px; border: none; outline: none; background: transparent; font-size: 12px; color: var(--foreground, #0f172a); padding: 2px 0;">
+                                        <div ${el('author-box')} style="${input} display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 36px; cursor: text;">
+                                            <input type="text" ${el('author-input')} autocomplete="off" placeholder="Name, email, or UUID — Enter to resolve" style="flex: 1; min-width: 120px; border: none; outline: none; background: transparent; font-size: 12px; color: var(--foreground, #0f172a); padding: 2px 0;">
                                         </div>
-                                        <div id="wf-dash-author-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
-                                        <div id="wf-dash-author-candidates" style="display: none; margin-top: 6px; ${box}"></div>
+                                        <div ${el('author-error')} style="display: none; font-size: 11px; color: var(--destructive, #dc2626); margin-top: 4px;"></div>
+                                        <div ${el('author-candidates')} style="display: none; margin-top: 6px; ${box}"></div>
                                         <div style="${hint} margin-top: 4px;">Empty = all workers. ${dashEscHtml(DASH_EVERYONE_AUTHOR_LABEL)} — bulk ratings for everyone in results.</div>
                                     </div>
                                     <div>
                                         <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Quick range</label>
-                                        <select id="wf-dash-quick-range" style="${input} width: 100%; cursor: pointer;">
+                                        <select ${el('quick-range')} style="${input} width: 100%; cursor: pointer;">
                                             <option value="">Custom</option>
                                             <option value="all-time">All Time</option>
                                             <option value="today">Today</option>
@@ -406,105 +397,124 @@ const searchOutputLeftPaneMethods = {
                                     <div style="display: flex; align-items: flex-end; gap: 8px; min-width: 0;">
                                         <div style="flex: 1; min-width: 0;">
                                             <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">After</label>
-                                            <input type="date" id="wf-dash-after" style="${input} min-width: 0;">
+                                            <input type="date" ${el('after')} style="${input} min-width: 0;">
                                         </div>
                                         <div style="flex: 1; min-width: 0;">
                                             <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Before</label>
-                                            <input type="date" id="wf-dash-before" style="${input} min-width: 0;">
+                                            <input type="date" ${el('before')} style="${input} min-width: 0;">
                                         </div>
-                                        <button type="button" id="wf-dash-clear-dates" aria-label="Clear dates" title="Clear dates" style="${this._inputClearBtnStyle()} display: none;">&times;</button>
+                                        <button type="button" ${el('clear-dates')} aria-label="Clear dates" title="Clear dates" style="${this._inputClearBtnStyle()} display: none;">&times;</button>
                                     </div>
                                     <div>
-                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;" for="wf-dash-search-limit">Limit</label>
-                                        <input type="number" id="wf-dash-search-limit" min="1" step="1" inputmode="numeric" placeholder="No limit" style="${input} width: 100%;">
+                                        <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;" for="${dashEscHtml(this._outputDomId('search-limit', wsId))}">Limit</label>
+                                        <input type="number" ${el('search-limit')} min="1" step="1" inputmode="numeric" placeholder="No limit" style="${input} width: 100%;">
                                     </div>
                                     <div>
                                         <div style="${label} margin-bottom: 6px; font-weight: 600;">Team, projects, environments</div>
                                         <div style="${hint} margin-bottom: 8px;">${dashEscHtml(dashNoneSelectedHint())}</div>
                                         <div style="display: flex; flex-direction: column; gap: 12px;">
-                                            ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', true)}
-                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true)}
-                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', true)}
+                                            ${this._multiSelectHtml('search-envs', 'Environment', 'All environments', true, msOpts)}
+                                            ${this._multiSelectHtml('search-projects', 'Project', 'All projects', true, msOpts)}
+                                            ${this._multiSelectHtml('search-teams', 'Team', 'All teams', true, msOpts)}
                                         </div>
                                     </div>
                                 </div>
                                 ${this._resultsModeToggleHtml('contributor')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
-                                    <button type="button" id="wf-dash-clear-params" class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
-                                    <button type="button" id="wf-dash-search" class="${this._dashBtnClass('primary', 'nav')}">Search</button>
+                                    <button type="button" ${el('clear-params')} class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
+                                    <button type="button" ${el('search')} class="${this._dashBtnClass('primary', 'nav')}">Search</button>
                                 </div>
                             </div>
-                            <div id="wf-dash-section-retrieve" style="${section}">
+                            <div ${el('section-retrieve')} style="${section}">
                                 <div style="${label} font-weight: 600;">Retrieve Task</div>
                                 <p style="${hint} margin: 0; line-height: 1.45;">Enter a task ID, version ID, task key, or list of such items. URLs also accepted</p>
-                                <textarea id="wf-dash-retrieve-input" rows="1" autocomplete="off" placeholder="Task ID(s), key(s), URL(s), or list" style="${input} resize: vertical; min-height: 36px; line-height: 1.4;">${retrieveInputVal}</textarea>
-                                <div id="wf-dash-retrieve-error" style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
+                                <textarea ${el('retrieve-input')} rows="1" autocomplete="off" placeholder="Task ID(s), key(s), URL(s), or list" style="${input} resize: vertical; min-height: 36px; line-height: 1.4;">${retrieveInputVal}</textarea>
+                                <div ${el('retrieve-error')} style="display: none; font-size: 11px; color: var(--destructive, #dc2626);"></div>
                                 ${this._resultsModeToggleHtml('retrieve')}
                                 <div style="display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px;">
-                                    <button type="button" id="wf-dash-retrieve-clear" class="${this._dashBtnClass('basic', 'nav')}">Clear</button>
-                                    <button type="button" id="wf-dash-retrieve-clipboard" class="${this._dashBtnClass('basic', 'nav')}">Clipboard</button>
-                                    <button type="button" id="wf-dash-retrieve-btn" class="${this._dashBtnClass('primary', 'nav')}">Retrieve</button>
+                                    <button type="button" ${el('retrieve-clear')} class="${this._dashBtnClass('basic', 'nav')}">Clear</button>
+                                    <button type="button" ${el('retrieve-clipboard')} class="${this._dashBtnClass('basic', 'nav')}">Clipboard</button>
+                                    <button type="button" ${el('retrieve-btn')} class="${this._dashBtnClass('primary', 'nav')}">Retrieve</button>
                                 </div>
                             </div>
-                        </div>
-
-                        <div id="wf-dash-left-panel-filters" style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                        </div>`;
+        const navTabs = hideSearch
+            ? `<div style="display: flex; gap: 0; min-width: 0;">
+                                <span style="${this._leftTabStyle(true)}">Filters</span>
+                            </div>`
+            : `<div style="display: flex; gap: 0; min-width: 0;">
+                                <button type="button" data-wf-dash-left-tab="search" style="${this._leftTabStyle(leftTab === 'search')}">Search</button>
+                                <button type="button" data-wf-dash-left-tab="filters" style="${this._leftTabStyle(leftTab === 'filters')}">Filters</button>
+                            </div>`;
+        return `
+                    <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;" data-wf-dash-output-ws="${dashEscHtml(wsId)}"${hideSearch ? ' data-wf-dash-hide-search="1"' : ''}>
+                        <nav style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); flex-shrink: 0;" aria-label="${hideSearch ? 'Filters' : 'Search and filters'}">
+                            ${navTabs}
+                            <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                                <div ${el('actions-filters')} style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; align-items: center; gap: 8px;">
+                                    <button type="button" ${el('reset-filters')} class="${this._dashBtnClass('basic', 'nav')}">Reset</button>
+                                    <button type="button" ${el('apply-filters')} class="${this._dashBtnClass('primary', 'nav')}">Apply</button>
+                                </div>
+                            </div>
+                        </nav>
+                        ${searchPanelHtml}
+                        <div ${el('left-panel-filters')} style="display: ${leftTab === 'filters' ? 'flex' : 'none'}; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                             <div style="flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px;">
-                                <div id="wf-dash-filter-kind-tab-wrap" style="display: none;">
-                                    <div id="wf-dash-filter-kind-tab-buttons" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                                <div ${el('filter-kind-tab-wrap')} style="display: none;">
+                                    <div ${el('filter-kind-tab-buttons')} style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
                                 </div>
                                 <div>
                                     <label style="${label} display: block; margin-bottom: 4px; font-weight: 600;">Substring</label>
                                     <p style="${hint} margin: 0 0 8px 0; line-height: 1.45;">${dashEscHtml(dashSubstringFilterHelp())}</p>
                                     <div style="position: relative; min-width: 0;">
-                                        <textarea id="wf-dash-prompt" rows="1" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px; resize: none; overflow: hidden; line-height: 1.4; min-height: 36px;"></textarea>
-                                        <button type="button" id="wf-dash-clear-prompt" aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnStyle()} position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; font-size: 15px; display: none;">&times;</button>
+                                        <textarea ${el('prompt')} rows="1" placeholder="Filter by substring/RegEx" style="${input} padding-right: 34px; resize: none; overflow: hidden; line-height: 1.4; min-height: 36px;"></textarea>
+                                        <button type="button" ${el('clear-prompt')} aria-label="Clear substring" title="Clear substring" style="${this._inputClearBtnStyle()} position: absolute; right: 4px; top: 4px; width: 26px; height: 26px; font-size: 15px; display: none;">&times;</button>
                                     </div>
                                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px;">
                                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
-                                            <input type="checkbox" id="wf-dash-case"> Case sensitive
+                                            <input type="checkbox" ${el('case')}> Case sensitive
                                         </label>
                                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
-                                            <input type="checkbox" id="wf-dash-fuzzy"> Fuzzy
+                                            <input type="checkbox" ${el('fuzzy')}> Fuzzy
                                         </label>
                                         <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
-                                            <input type="checkbox" id="wf-dash-regex"> RegEx (ECMAScript)
+                                            <input type="checkbox" ${el('regex')}> RegEx (ECMAScript)
                                         </label>
                                     </div>
                                 </div>
-                                <div id="wf-dash-filter-lists-wrap">
+                                <div ${el('filter-lists-wrap')}>
                                     <div style="${label} margin-bottom: 6px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
                                         <span>Narrow results</span>
-                                        <button type="button" id="wf-dash-filter-expand-all" aria-label="Expand all filter menus" style="flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">Expand All</button>
+                                        <button type="button" ${el('filter-expand-all')} aria-label="Expand all filter menus" style="flex-shrink: 0; font-size: 10px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: transparent; color: var(--muted-foreground, #64748b); cursor: pointer;">Expand All</button>
                                     </div>
                                     <div style="${hint} margin-bottom: 8px;">${dashEscHtml(dashNoneSelectedHint())}</div>
-                                    <div id="wf-dash-filter-lists" style="display: flex; flex-direction: column; gap: 12px;">
-                                        ${dashFilterScopes().map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true)).join('')}
+                                    <div ${el('filter-lists')} style="display: flex; flex-direction: column; gap: 12px;">
+                                        ${dashFilterScopes().map((s) => this._multiSelectHtml(s.scopeKey, this._filterScopeLabel(s.scopeKey), 'Run a search to enable', true, msOpts)).join('')}
                                     </div>
                                 </div>
-                                <div id="wf-dash-manual-filter-wrap">
+                                <div ${el('manual-filter-wrap')}>
                                     <div style="${label} margin-bottom: 8px; font-weight: 600; color: var(--foreground, #0f172a);">Manual filters</div>
                                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
                                         <span style="${hint} margin: 0;">Click Apply to update changes</span>
                                         <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--muted-foreground, #64748b); cursor: pointer; flex-shrink: 0;">
-                                            <input type="checkbox" id="wf-dash-manual-andor" style="margin: 0;">
+                                            <input type="checkbox" ${el('manual-andor')} style="margin: 0;">
                                             <span>Match any (OR)</span>
                                         </label>
                                     </div>
-                                    <div id="wf-dash-manual-rows" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
-                                    <button type="button" id="wf-dash-manual-add" class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
+                                    <div ${el('manual-rows')} style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+                                    <button type="button" ${el('manual-add')} class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
                                 </div>
                             </div>
                         </div>
 
-                        <div id="wf-dash-left-messages" style="display: none; flex-shrink: 0; padding: 8px 14px; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
-                            <div id="wf-dash-session-refresh-banner" style="display: none;"></div>
-                            <div id="wf-dash-bootstrap-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-universal-hint" style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
-                            <div id="wf-dash-range-error" style="display: none; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-search-error" style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-substring-error" style="display: none; color: var(--destructive, #dc2626);"></div>
-                            <div id="wf-dash-apply-hint" style="display: none; color: var(--muted-foreground, #64748b);"></div>
+                        <div ${el('left-messages')} style="display: none; flex-shrink: 0; padding: 8px 14px; border-top: 1px solid var(--border, #e2e8f0); background: var(--card, #ffffff); font-size: 11px; line-height: 1.4; flex-direction: column; gap: 6px;">
+                            <div ${el('session-refresh-banner')} style="display: none;"></div>
+                            <div ${el('bootstrap-error')} style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div ${el('universal-hint')} style="display: none; font-weight: 400; color: var(--muted-foreground, #64748b);"></div>
+                            <div ${el('range-error')} style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div ${el('search-error')} style="display: none; font-size: 12px; color: var(--destructive, #dc2626);"></div>
+                            <div ${el('substring-error')} style="display: none; color: var(--destructive, #dc2626);"></div>
+                            <div ${el('apply-hint')} style="display: none; color: var(--muted-foreground, #64748b);"></div>
                         </div>
                     </div>`;
     },
@@ -1103,6 +1113,18 @@ const searchOutputLeftPaneMethods = {
         Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
     },
 
+    _ensureSearchOutputTabForUserSearch() {
+        const wsId = typeof this._resolveActiveOutputWsId === 'function'
+            ? this._resolveActiveOutputWsId()
+            : null;
+        if (wsId !== 'disputes' && wsId !== 'sr-review') return false;
+        if (typeof this._setActiveTab === 'function') {
+            this._setActiveTab('search-output');
+        }
+        Logger.debug('dashboard: routed user search to Search Output');
+        return true;
+    },
+
     async _runContributorHistoryDeepDive(person, historyKind) {
         if (!this._modal) {
             Logger.warn('dashboard: contributor deep dive skipped — modal not open');
@@ -1117,6 +1139,7 @@ const searchOutputLeftPaneMethods = {
             Logger.warn('dashboard: contributor deep dive skipped — unknown history kind ' + historyKind);
             return;
         }
+        this._ensureSearchOutputTabForUserSearch();
         if (this._state.loading) {
             Logger.warn('dashboard: contributor deep dive skipped — search in progress');
             return;
@@ -1144,12 +1167,16 @@ const searchOutputLeftPaneMethods = {
             Logger.warn('dashboard: worker output deep dive skipped — missing person id');
             return;
         }
+        const opts = options || {};
+        if (opts.activeTab) {
+            this._setActiveTab(opts.activeTab);
+        } else {
+            this._ensureSearchOutputTabForUserSearch();
+        }
         if (this._state.loading) {
             Logger.warn('dashboard: worker output deep dive skipped — search in progress');
             return;
         }
-        const opts = options || {};
-        if (opts.activeTab) this._setActiveTab(opts.activeTab);
         this._setLeftTab('search');
         this._setAuthorTokens([normalized], { replace: true });
         this._setOutputTypesTaskAndQa();
@@ -1374,6 +1401,8 @@ const searchOutputLeftPaneMethods = {
         this._state.filterListOptions = empty;
         this._resetManualFilters();
         for (const { scopeKey } of dashFilterScopes()) {
+            const wrap = this._filterScopeWrapEl(scopeKey);
+            if (wrap) wrap.style.display = 'none';
             const panel = this._msPanelEl(scopeKey);
             const itemsEl = this._msItemsEl(scopeKey);
             if (!panel || !itemsEl) continue;
@@ -1478,14 +1507,20 @@ const searchOutputLeftPaneMethods = {
     },
 
     _setLeftTab(tab) {
-        if (tab !== 'search' && tab !== 'filters') tab = 'search';
+        const panel = this._outputPanel();
+        const hideSearch = panel && panel.querySelector('[data-wf-dash-hide-search="1"]');
+        if (hideSearch) tab = 'filters';
+        else if (tab !== 'search' && tab !== 'filters') tab = 'search';
         this._state.leftTab = tab;
         this._closeAllMsDropdowns();
         this._syncLeftTabUi();
     },
 
     _syncLeftTabUi() {
-        const tab = this._state.leftTab === 'filters' ? 'filters' : 'search';
+        const outPanel = this._outputPanel();
+        const hideSearch = outPanel && outPanel.querySelector('[data-wf-dash-hide-search="1"]');
+        let tab = this._state.leftTab === 'filters' ? 'filters' : 'search';
+        if (hideSearch) tab = 'filters';
         this._state.leftTab = tab;
         const searchPanel = this._q('#wf-dash-left-panel-search');
         const filtersPanel = this._q('#wf-dash-left-panel-filters');
@@ -1493,10 +1528,13 @@ const searchOutputLeftPaneMethods = {
         if (filtersPanel) filtersPanel.style.display = tab === 'filters' ? 'flex' : 'none';
         const filterActions = this._q('#wf-dash-actions-filters');
         if (filterActions) filterActions.style.display = tab === 'filters' ? 'flex' : 'none';
-        this._modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
-            const active = btn.getAttribute('data-wf-dash-left-tab') === tab;
-            btn.style.cssText = this._leftTabStyle(active);
-        });
+        const tabRoot = outPanel || this._modal;
+        if (tabRoot) {
+            tabRoot.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
+                const active = btn.getAttribute('data-wf-dash-left-tab') === tab;
+                btn.style.cssText = this._leftTabStyle(active);
+            });
+        }
         this._syncLeftMessagesBar();
     },
 
@@ -2046,6 +2084,7 @@ const searchOutputLeftPaneMethods = {
     },
 
     async _submitRetrieveTask() {
+        this._ensureSearchOutputTabForUserSearch();
         const inputEl = this._q('#wf-dash-retrieve-input');
         const raw = inputEl ? inputEl.value : (this._state.retrieveInput || '');
         this._state.retrieveInput = String(raw || '').trim();
@@ -2206,6 +2245,7 @@ const searchOutputLeftPaneMethods = {
 
     async _submitSearch() {
         try {
+            this._ensureSearchOutputTabForUserSearch();
             const authorFlushError = await this._flushPendingAuthorInput();
             if (authorFlushError) {
                 this._logDashApiSkip('search', 'author input error');
@@ -2569,7 +2609,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.13',
+    _version: '5.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

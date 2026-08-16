@@ -26,46 +26,87 @@ function dashEscHtml(value) {
 }
 
 const searchOutputStatsPaneMethods = {
-    _statsPanelHtml() {
+    _statsPanelHtml(opts) {
+        const options = opts || {};
+        const wsId = options.wsId || 'search-output';
+        const allowedTabs = Array.isArray(options.tabs) && options.tabs.length
+            ? options.tabs.slice()
+            : ['stats', 'ratings', 'chat'];
         const box = this._panelBoxStyle();
-        const statsTab = this._state ? (this._state.statsTab || 'stats') : 'stats';
+        const ws = this._ws(wsId);
+        let statsTab = ws ? (ws.statsTab || 'stats') : 'stats';
+        if (!allowedTabs.includes(statsTab)) statsTab = allowedTabs[0];
         const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
         const statsPanel = 'flex: 1; min-height: 0; overflow: hidden; padding: 14px; flex-direction: column; gap: 12px;';
-        const chatTabBtn = '<button type="button" data-wf-dash-stats-tab="chat" style="'
-            + this._statsTabStyle(statsTab === 'chat') + '">Chat</button>';
-        const chatPanel = '<div id="wf-dash-stats-panel-chat" style="flex: 1; min-height: 0; overflow: hidden; padding: 14px;'
-            + ' flex-direction: column; gap: 12px; display: '
-            + (statsTab === 'chat' ? 'flex' : 'none') + ';">'
-            + (Context.searchOutputChat && typeof Context.searchOutputChat.panelHtml === 'function'
-                ? Context.searchOutputChat.panelHtml()
-                : '<div style="font-size: 12px; color: var(--muted-foreground, #64748b);">'
-                    + 'Search Chat module is not loaded.</div>')
-            + '</div>';
+        const showStats = allowedTabs.includes('stats');
+        const showRatings = allowedTabs.includes('ratings');
+        const showChat = allowedTabs.includes('chat');
+        const navBits = [];
+        if (showStats) {
+            navBits.push('<button type="button" data-wf-dash-stats-tab="stats" style="'
+                + this._statsTabStyle(statsTab === 'stats') + '">Stats</button>');
+        }
+        if (showRatings) {
+            navBits.push('<button type="button" data-wf-dash-stats-tab="ratings" style="'
+                + this._statsTabStyle(statsTab === 'ratings') + '">Ratings</button>');
+        }
+        if (showChat) {
+            navBits.push('<button type="button" data-wf-dash-stats-tab="chat" style="'
+                + this._statsTabStyle(statsTab === 'chat') + '">Chat</button>');
+        }
+        const chatPanel = showChat
+            ? ('<div id="' + dashEscHtml(this._outputDomId('stats-panel-chat', wsId))
+                + '" data-wf-dash-output-el="stats-panel-chat" style="flex: 1; min-height: 0; overflow: hidden; padding: 14px;'
+                + ' flex-direction: column; gap: 12px; display: '
+                + (statsTab === 'chat' ? 'flex' : 'none') + ';">'
+                + (Context.searchOutputChat && typeof Context.searchOutputChat.panelHtml === 'function'
+                    ? Context.searchOutputChat.panelHtml({ wsId })
+                    : '<div style="font-size: 12px; color: var(--muted-foreground, #64748b);">'
+                        + 'Search Chat module is not loaded.</div>')
+                + '</div>')
+            : '';
+        const statsPanelBody = showStats
+            ? ('<div id="' + dashEscHtml(this._outputDomId('stats-panel-stats', wsId))
+                + '" data-wf-dash-output-el="stats-panel-stats" style="' + statsPanel + '; display: '
+                + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
+                + this._statsChartsPanelContentHtml()
+                + '</div>')
+            : '';
+        const ratingsPanelBody = showRatings
+            ? ('<div id="' + dashEscHtml(this._outputDomId('stats-panel-ratings', wsId))
+                + '" data-wf-dash-output-el="stats-panel-ratings" style="' + panelScroll + '; display: '
+                + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
+                + '<div id="' + dashEscHtml(this._outputDomId('ratings-content', wsId))
+                + '" data-wf-dash-output-el="ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: '
+                + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
+                + '<div style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: '
+                + RATINGS_COLUMN_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
+                + this._ratingsAboutSectionHtml()
+                + '<div id="' + dashEscHtml(this._outputDomId('ratings-warnings', wsId))
+                + '" data-wf-dash-output-el="ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
+                + this._ratingsToolbarHtml()
+                + '</div>'
+                + '<div id="' + dashEscHtml(this._outputDomId('ratings-cards', wsId))
+                + '" data-wf-dash-output-el="ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
+                + '</div>'
+                + '</div>')
+            : '';
+        const ariaLabel = showStats || showRatings
+            ? 'Stats and ratings'
+            : 'Chat';
         return ''
             + '<div data-wf-dash-stats-sliver aria-hidden="true"></div>'
-            + '<div data-wf-dash-stats-body style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
+            + '<div data-wf-dash-stats-body data-wf-dash-output-ws="' + dashEscHtml(wsId)
+            + '" data-wf-dash-stats-tabs="' + dashEscHtml(allowedTabs.join(','))
+            + '" style="display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; ' + box + '">'
             + '<div data-wf-dash-stats-header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 0 8px; border-bottom: 1px solid var(--border, #e2e8f0); min-height: 36px;">'
-            + '<nav style="display: flex; align-items: center; gap: 0; min-width: 0;" aria-label="Stats and ratings">'
-            + '<button type="button" data-wf-dash-stats-tab="stats" style="' + this._statsTabStyle(statsTab === 'stats') + '">Stats</button>'
-            + '<button type="button" data-wf-dash-stats-tab="ratings" style="' + this._statsTabStyle(statsTab === 'ratings') + '">Ratings</button>'
-            + chatTabBtn
+            + '<nav style="display: flex; align-items: center; gap: 0; min-width: 0;" aria-label="' + ariaLabel + '">'
+            + navBits.join('')
             + '</nav>'
             + '<div data-wf-dash-stats-header-actions style="display: flex; align-items: center; justify-content: flex-end; flex: 1; min-width: 0;"></div>'
             + '</div>'
-            + '<div id="wf-dash-stats-panel-stats" style="' + statsPanel + '; display: ' + (statsTab === 'stats' ? 'flex' : 'none') + ';">'
-            + this._statsChartsPanelContentHtml()
-            + '</div>'
-            + '<div id="wf-dash-stats-panel-ratings" style="' + panelScroll + '; display: ' + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
-            + '<div id="wf-dash-ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: ' + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
-            + '<div style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: '
-            + RATINGS_COLUMN_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
-            + this._ratingsAboutSectionHtml()
-            + '<div id="wf-dash-ratings-warnings" style="display: none; flex-direction: column; gap: 6px;"></div>'
-            + this._ratingsToolbarHtml()
-            + '</div>'
-            + '<div id="wf-dash-ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
-            + '</div>'
-            + '</div>'
+            + statsPanelBody
+            + ratingsPanelBody
             + chatPanel
             + '</div>';
     },
@@ -4500,6 +4541,11 @@ const searchOutputStatsPaneMethods = {
     },
 
     _setStatsTab(tab) {
+        const body = this._q('[data-wf-dash-stats-body]');
+        const allowed = body && body.getAttribute('data-wf-dash-stats-tabs')
+            ? body.getAttribute('data-wf-dash-stats-tabs').split(',').map((s) => s.trim()).filter(Boolean)
+            : ['stats', 'ratings', 'chat'];
+        if (!allowed.includes(tab)) tab = allowed[0] || 'chat';
         this._state.statsTab = tab;
         this._syncStatsTabUi();
         Logger.log('stats tab ' + tab);
@@ -4514,25 +4560,34 @@ const searchOutputStatsPaneMethods = {
 
     _activateSearchChatPanel() {
         const api = Context.searchOutputChat;
-        const panel = this._q('[data-wf-dash-search-chat-panel]');
+        const wsId = this._resolveActiveOutputWsId();
+        const panel = this._q('[data-wf-dash-search-chat-panel="' + wsId + '"]')
+            || this._q('[data-wf-dash-search-chat-panel]');
         if (!api || typeof api.wirePanel !== 'function' || !panel) {
             Logger.warn('Search Chat unavailable');
             return;
         }
-        api.wirePanel(panel, this);
+        api.wirePanel(panel, this, { wsId });
         Logger.log('Search Chat activated');
     },
 
     _syncStatsTabUi() {
-        const tab = this._state.statsTab || 'stats';
+        const body = this._q('[data-wf-dash-stats-body]');
+        const allowed = body && body.getAttribute('data-wf-dash-stats-tabs')
+            ? body.getAttribute('data-wf-dash-stats-tabs').split(',').map((s) => s.trim()).filter(Boolean)
+            : ['stats', 'ratings', 'chat'];
+        let tab = this._state.statsTab || 'stats';
+        if (!allowed.includes(tab)) tab = allowed[0] || 'chat';
+        this._state.statsTab = tab;
         const ratingsPanel = this._q('#wf-dash-stats-panel-ratings');
         const statsPanel = this._q('#wf-dash-stats-panel-stats');
         const chatPanel = this._q('#wf-dash-stats-panel-chat');
         if (ratingsPanel) ratingsPanel.style.display = tab === 'ratings' ? 'flex' : 'none';
         if (statsPanel) statsPanel.style.display = tab === 'stats' ? 'flex' : 'none';
         if (chatPanel) chatPanel.style.display = tab === 'chat' ? 'flex' : 'none';
-        if (this._modal) {
-            this._modal.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
+        const tabRoot = this._outputPanel() || this._modal;
+        if (tabRoot) {
+            tabRoot.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
                 const active = btn.getAttribute('data-wf-dash-stats-tab') === tab;
                 btn.style.cssText = this._statsTabStyle(active);
             });
@@ -4592,7 +4647,9 @@ const searchOutputStatsPaneMethods = {
         const next = !dashApi.readStatsPanelHiddenPref();
         dashApi.writeStatsPanelHiddenPref(next);
         Logger.log('ratings panel ' + (next ? 'hidden' : 'shown'));
-        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot
+            ? this._activeOutputSplitRoot()
+            : this._q('[data-wf-dash-split-root]');
         if (root && typeof dashApi.applyStatsPanelLayout === 'function') {
             dashApi.applyStatsPanelLayout(root);
         } else {
@@ -4610,7 +4667,8 @@ const searchOutputStatsPaneMethods = {
     },
 
     _applyStatsPanelLayoutOnOpen(modal) {
-        const root = modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = (this._activeOutputSplitRoot && this._activeOutputSplitRoot())
+            || (modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]'));
         const dashApi = Context.dashboard;
         if (root && dashApi && typeof dashApi.applyStatsPanelLayout === 'function') {
             dashApi.applyStatsPanelLayout(root);
@@ -4988,8 +5046,11 @@ const searchOutputStatsPaneMethods = {
 
     _ratingsToolbarHtml() {
         const inputStyle = this._inputStyle() + ' font-size: 11px; padding: 4px 8px; min-width: 0;';
+        const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
+            ? Context.uiLib.devBtnAttr()
+            : 'data-fleet-dev="1"';
         const devExportBtn = Context.isDevBranch
-            ? ('<button type="button" data-wf-dash-ratings-export-bulk="json" class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export JSON</button>')
+            ? ('<button type="button" data-wf-dash-ratings-export-bulk="json" ' + devBtnAttr + ' class="' + this._dashBtnClass('basic', 'nav') + '" style="flex-shrink: 0;">Export JSON</button>')
             : '';
         return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; min-width: 0; width: 100%;">'
             + '<div style="display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; width: 100%;">'
@@ -5341,11 +5402,10 @@ const searchOutputStatsPaneMethods = {
     },
 
     _ratingSortedAxes(block) {
-        return [...((block && block.axes) || [])].sort((a, b) => {
-            const wDiff = (b.baseWeight || 0) - (a.baseWeight || 0);
-            if (wDiff !== 0) return wDiff;
-            return String(a.label || '').localeCompare(String(b.label || ''));
-        });
+        // Highest baseWeight first; equal weights keep engine definition order (stable sort).
+        return [...((block && block.axes) || [])].sort((a, b) =>
+            (b.baseWeight || 0) - (a.baseWeight || 0)
+        );
     },
 
     _ratingAxisOmitReason(axis) {
@@ -5563,7 +5623,7 @@ const searchOutputStatsPaneMethods = {
             ? !!o.provisional
             : this._ratingVolumeIsProvisional(o.volume, scoreKind);
         const canExpand = !!(workerId && scoreKind && dimension && sliceKey && axes.length);
-        const axesList = [...axes].sort((a, b) => (b.baseWeight || 0) - (a.baseWeight || 0));
+        const axesList = this._ratingSortedAxes({ axes });
         const axesHtml = (expanded && axesList.length)
             ? ('<div style="margin-top: 6px; padding-left: 12px; border-left: 2px solid color-mix(in srgb, var(--border, #e2e8f0) 70%, transparent);">'
                 + axesList.map((axis) => this._ratingAxisBarHtml(axis)).join('')
@@ -5810,11 +5870,14 @@ const searchOutputStatsPaneMethods = {
 
         const btnCls = this._dashBtnClass('basic', 'nav');
         const explainBtnCls = this._dashBtnClass('secondary', 'nav');
+        const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
+            ? Context.uiLib.devBtnAttr()
+            : 'data-fleet-dev="1"';
         const diagnosticsBtnHtml = Context.isDevBranch
-            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
+            ? ('<button type="button" class="' + btnCls + '" ' + devBtnAttr + ' data-wf-dash-rating-export="diagnostics" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">Export Diagnostics</button>')
             : '';
         const llmDataBtnHtml = Context.isDevBranch
-            ? ('<button type="button" class="' + btnCls + '" data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
+            ? ('<button type="button" class="' + btnCls + '" ' + devBtnAttr + ' data-wf-dash-rating-export="llm" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '">LLM Data</button>')
             : '';
         const explainOpen = !!(Context.ratingExplain
             && typeof Context.ratingExplain.isOpen === 'function'
@@ -6157,7 +6220,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '13.1',
+    _version: '13.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

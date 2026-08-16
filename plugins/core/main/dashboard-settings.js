@@ -687,6 +687,9 @@ function renderAiSection(modal, options) {
     }
 
     const showEntry = forceEntry || !record;
+    const revealedKey = options && typeof options.revealedKey === 'string'
+        ? options.revealedKey
+        : '';
     let body = '';
     if (showEntry) {
         body += ''
@@ -702,16 +705,22 @@ function renderAiSection(modal, options) {
                 ? '<button type="button" id="wf-dash-settings-ai-key-cancel" class="'
                     + dashSettingsBtnClass('basic', 'regular') + '" style="flex-shrink: 0;">Cancel</button>'
                 : '')
-            + '</div>'
-            + '<p style="' + hintStyle + ' margin: 8px 0 0 0; line-height: 1.45;">'
-            + 'Once the key is saved, it cannot be viewed again.'
-            + '</p>';
+            + '</div>';
     } else {
+        const keyDisplay = revealedKey
+            ? dashSettingsEscHtml(revealedKey)
+            : dashSettingsEscHtml(maskKeyLast4(record.last4));
         body += ''
             + '<div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">'
-            + '<div style="font-size: 12px; color: var(--foreground, #0f172a); font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);">'
-            + 'Key: ' + dashSettingsEscHtml(maskKeyLast4(record.last4))
+            + '<div id="wf-dash-settings-ai-key-display" style="font-size: 12px; color: var(--foreground, #0f172a); '
+            + 'font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace); '
+            + 'word-break: break-all; max-width: 100%;">'
+            + 'Key: ' + keyDisplay
             + '</div>'
+            + '<button type="button" id="wf-dash-settings-ai-key-reveal" class="'
+            + dashSettingsBtnClass('basic', 'compact') + '">'
+            + (revealedKey ? 'Hide' : 'Show')
+            + '</button>'
             + '<button type="button" id="wf-dash-settings-ai-key-replace" class="'
             + dashSettingsBtnClass('basic', 'compact') + '">Replace</button>'
             + '<button type="button" id="wf-dash-settings-ai-key-remove" class="'
@@ -795,6 +804,52 @@ function removeOpenRouterKey(modal) {
     setAiStatus(modal, 'API key removed.', false);
     Logger.log('OpenRouter API key removed');
     notifyAiKeyConsumers();
+}
+
+async function revealOpenRouterKey(modal) {
+    const revealBtn = modal.querySelector('#wf-dash-settings-ai-key-reveal');
+    const record = readOpenRouterKeyRecord();
+    if (!record) {
+        setAiStatus(modal, 'No stored OpenRouter API key.', true);
+        if (Context.buttonFeedback && revealBtn) Context.buttonFeedback.flashFailure(revealBtn);
+        return;
+    }
+    if (!Context.opsTab || typeof Context.opsTab.decryptWithOpsPassword !== 'function') {
+        setAiStatus(modal, 'Ops crypto is not available.', true);
+        if (Context.buttonFeedback && revealBtn) Context.buttonFeedback.flashFailure(revealBtn);
+        return;
+    }
+    if (!hasOpsPassword()) {
+        setAiStatus(modal, 'Unlock Ops to view the OpenRouter API key.', true);
+        if (Context.buttonFeedback && revealBtn) Context.buttonFeedback.flashFailure(revealBtn);
+        return;
+    }
+
+    let apiKey = '';
+    try {
+        apiKey = await Context.opsTab.decryptWithOpsPassword(record.enc);
+    } catch (err) {
+        Logger.warn('OpenRouter key reveal decrypt failed — clearing stored record');
+        clearOpenRouterKeyRecord();
+        renderAiSection(modal, { forceEntry: true });
+        setAiStatus(modal, 'Stored key could not be decrypted. Enter the key again.', true);
+        if (Context.buttonFeedback && revealBtn) Context.buttonFeedback.flashFailure(revealBtn);
+        return;
+    }
+
+    if (!apiKey) {
+        clearOpenRouterKeyRecord();
+        renderAiSection(modal, { forceEntry: true });
+        setAiStatus(modal, 'Decrypted key was empty. Enter the key again.', true);
+        if (Context.buttonFeedback && revealBtn) Context.buttonFeedback.flashFailure(revealBtn);
+        return;
+    }
+
+    renderAiSection(modal, { revealedKey: apiKey });
+    setAiStatus(modal, '', false);
+    Logger.log('OpenRouter API key revealed');
+    const nextBtn = modal.querySelector('#wf-dash-settings-ai-key-reveal');
+    if (Context.buttonFeedback && nextBtn) Context.buttonFeedback.flashSuccess(nextBtn);
 }
 
 async function runOpenRouterTest(modal) {
@@ -1094,6 +1149,19 @@ function attachDashboardSettingsListeners(modal) {
             setAiStatus(modal, '', false);
             return;
         }
+        const revealBtn = e.target.closest('#wf-dash-settings-ai-key-reveal');
+        if (revealBtn) {
+            e.preventDefault();
+            const showing = String(revealBtn.textContent || '').trim() === 'Hide';
+            if (showing) {
+                renderAiSection(modal);
+                setAiStatus(modal, '', false);
+                Logger.log('OpenRouter API key hidden');
+            } else {
+                void revealOpenRouterKey(modal);
+            }
+            return;
+        }
         const replaceBtn = e.target.closest('#wf-dash-settings-ai-key-replace');
         if (replaceBtn) {
             e.preventDefault();
@@ -1176,7 +1244,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
     description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.20',
+    _version: '1.21',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

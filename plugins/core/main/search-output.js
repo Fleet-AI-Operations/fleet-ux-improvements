@@ -111,35 +111,35 @@ const DASH_OUTPUT_KIND_CONFIG = {
         label: 'Task Creation',
         tabBg: '#16a34a',
         toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #4ade80; color: #86efac; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #22c55e; color: #4ade80; background: transparent;',
         textHighlight: 'font-weight: 600; color: #15803d;'
     },
     qa: {
         label: 'QA',
         tabBg: '#2563eb',
         toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #60a5fa; color: #93c5fd; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #3b82f6; color: #60a5fa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #1d4ed8;'
     },
     dispute: {
         label: 'Disputes',
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #c4b5fd; color: #ddd6fe; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #8b5cf6; color: #a78bfa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
     },
     senior_review: {
         label: 'Sr Review',
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #facc15; color: #fde68a; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #eab308; color: #facc15; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
     },
     sessions: {
         label: 'Sessions',
         tabBg: '#0891b2',
         toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #22d3ee; color: #a5f3fc; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #0891b2; color: #22d3ee; background: transparent;',
         textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
@@ -665,7 +665,7 @@ const searchOutputCoreMethods = {
             feedbackId = hist.dispute_data.feedbackId;
         }
 
-        const merged = {
+        const merged = Object.assign({}, open || {}, hist || {}, {
             id: hist.id != null ? hist.id : open.id,
             eval_task_id: hist.eval_task_id || open.eval_task_id || tid,
             team_id: open.team_id || hist.team_id || null,
@@ -677,11 +677,21 @@ const searchOutputCoreMethods = {
             resolved_by: resolverId,
             resolution_reason: body.resolutionReason,
             feedback_id: feedbackId,
-            original_feedback_created_at: open.original_feedback_created_at || null,
-            eval_task: open.eval_task || null,
-            creator: open.creator || null,
-            resolver: open.resolver || null
-        };
+            original_feedback_created_at: open.original_feedback_created_at
+                || hist.original_feedback_created_at
+                || null,
+            original_feedback_content: open.original_feedback_content
+                || hist.original_feedback_content
+                || null,
+            original_feedback_data: open.original_feedback_data
+                || hist.original_feedback_data
+                || null,
+            feedback_created_by: open.feedback_created_by || hist.feedback_created_by || null,
+            user_id: open.user_id || hist.user_id || null,
+            eval_task: open.eval_task || hist.eval_task || null,
+            creator: open.creator || hist.creator || null,
+            resolver: open.resolver || hist.resolver || null
+        });
         return this._stripResolvedDisputeRow(merged);
     },
 
@@ -1192,6 +1202,81 @@ const searchOutputCoreMethods = {
         ]);
     },
 
+    _syncHydratedItemAssociatedKinds(item) {
+        if (!item || !item.task) return;
+        this._ensureItemKindsArray(item);
+        if ((item.task.promptVersions || []).length > 0 || item.task.prompt) {
+            this._addItemOutputKind(item, 'task_creation');
+        }
+        if ((item.task.allFeedback || []).length > 0 || item.qaFeedback) {
+            this._addItemOutputKind(item, 'qa');
+        }
+        if ((item.disputes || []).length > 0) this._addItemOutputKind(item, 'dispute');
+        if ((item.flags || []).length > 0) this._addItemOutputKind(item, 'senior_review');
+    },
+
+    /**
+     * Prefer live task-disputes for one card (covers resolve + external Fleet changes).
+     * Merges with cached open rows when the live payload has history.
+     */
+    async _applyLiveTaskDisputesOntoItem(item, profilesMap) {
+        if (!item || !item.task || !item.task.id) return;
+        const taskId = item.task.id;
+        try {
+            const fetched = await this._fetchTaskDisputesBatch([taskId]);
+            const rows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
+            if (rows.length === 0) return;
+            const openRows = this._getAllCachedOpenDisputeRows(taskId);
+            const combined = [...openRows, ...rows];
+            const resolverProfileIds = [];
+            for (const row of rows) {
+                if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+            }
+            if (resolverProfileIds.length > 0) {
+                await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+            }
+            item.disputes = [];
+            this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
+            this._addItemOutputKind(item, 'dispute');
+        } catch (disputeErr) {
+            Logger.debug('card task-disputes refresh failed — ' + (item.id || taskId), disputeErr);
+        }
+    },
+
+    /** First-time hydrate: same enrich + overlay path as Search Output bulk hydrate. */
+    async _hydrateCardInitial(itemId) {
+        const item = this._findCachedItem(itemId);
+        if (!item || !item.task || !item.task.id) return;
+        if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
+            Logger.warn('card hydrate skipped — dashboardData not loaded');
+            return;
+        }
+        if (!this._state.cardRehydrating) this._state.cardRehydrating = {};
+        if (this._state.cardRehydrating[itemId]) {
+            Logger.debug('card hydrate already in progress — ' + itemId);
+            return;
+        }
+        this._state.cardRehydrating[itemId] = true;
+        Logger.debug('card hydrate started — ' + itemId);
+        this._patchTaskCard(itemId);
+        try {
+            await this._hydrateItems([item], {});
+            const profilesMap = this._profilesMapFromHydrateItems([item]);
+            await this._applyLiveTaskDisputesOntoItem(item, profilesMap);
+            this._syncHydratedItemAssociatedKinds(item);
+            this._patchTaskCard(itemId);
+            this._onScopeDataEnriched();
+            Logger.log('card hydrated — ' + itemId);
+        } catch (e) {
+            if (!this._handleDashSessionRefreshError(e)) {
+                Logger.warn('card hydrate failed — ' + itemId, e);
+            }
+        } finally {
+            delete this._state.cardRehydrating[itemId];
+            this._patchTaskCard(itemId);
+        }
+    },
+
     async _rehydrateCard(itemId) {
         const item = this._findCachedItem(itemId);
         if (!item || !item.task || !item.task.id) return;
@@ -1209,6 +1294,7 @@ const searchOutputCoreMethods = {
         Logger.debug('card rehydrate started — ' + itemId);
 
         // Throw away hydrated payload so the in-place rebuild is a full refresh.
+        // Do not remount mid-flight: hydrated=false would swap to a quick stub and clamp scroll.
         item.hydrated = false;
         item.disputes = [];
         item.flags = [];
@@ -1216,7 +1302,6 @@ const searchOutputCoreMethods = {
         item.task.allFeedback = [];
         item.task.systemFeedbackIdRemap = {};
         delete item.task.initialCreationTimeSeconds;
-        this._patchTaskCard(itemId);
 
         const profilesMap = this._profilesMapFromHydrateItems([item]);
         this._state.hydrateFetchActive = true;
@@ -1245,27 +1330,8 @@ const searchOutputCoreMethods = {
             item.disputes = [];
             item.flags = [];
             await this._overlayDisputesAndFlags([item], profilesMap);
-            // Prefer live task-disputes for this card (covers resolve + external Fleet changes).
-            try {
-                const fetched = await this._fetchTaskDisputesBatch([taskId]);
-                const rows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
-                if (rows.length > 0) {
-                    const openRows = this._getAllCachedOpenDisputeRows(taskId);
-                    const combined = [...openRows, ...rows];
-                    const resolverProfileIds = [];
-                    for (const row of rows) {
-                        if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
-                    }
-                    if (resolverProfileIds.length > 0) {
-                        await this._supplementProfilesMap(profilesMap, resolverProfileIds);
-                    }
-                    item.disputes = [];
-                    this._mergeBulkDisputesOntoItem(item, combined, profilesMap);
-                    this._addItemOutputKind(item, 'dispute');
-                }
-            } catch (disputeErr) {
-                Logger.debug('card rehydrate task-disputes refresh failed — ' + itemId, disputeErr);
-            }
+            await this._applyLiveTaskDisputesOntoItem(item, profilesMap);
+            this._syncHydratedItemAssociatedKinds(item);
             item.hydrated = true;
             this._patchTaskCard(itemId);
             this._onScopeDataEnriched();
@@ -1578,23 +1644,13 @@ const searchOutputCoreMethods = {
 
     _stripResolvedDisputeRow(row) {
         if (!row) return null;
-        return {
-            id: row.id,
-            eval_task_id: row.eval_task_id,
-            team_id: row.team_id,
-            created_at: row.created_at,
-            dispute_status: row.dispute_status,
-            dispute_data: row.dispute_data,
-            dispute_reason: row.dispute_reason,
-            resolved_at: row.resolved_at,
-            resolved_by: row.resolved_by,
-            resolution_reason: row.resolution_reason,
-            feedback_id: row.feedback_id,
-            original_feedback_created_at: row.original_feedback_created_at,
-            eval_task: row.eval_task || null,
-            creator: row.creator || null,
-            resolver: row.resolver || null
-        };
+        // Keep the full list payload (original_feedback_*, eval_task embed, creator, lease, …)
+        // so Disputes / prefetch cards stay useful before hydrate.
+        const out = Object.assign({}, row);
+        if (!out.eval_task_id && out.eval_task && out.eval_task.id) {
+            out.eval_task_id = out.eval_task.id;
+        }
+        return out;
     },
 
     _indexResolvedDisputeRows(rows) {
@@ -1721,17 +1777,281 @@ const searchOutputCoreMethods = {
         if (typeof this._updateResultsStatus === 'function') {
             this._updateResultsStatus();
         }
-        if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
-            Logger.debug('dashboard: ' + this._prefetchLabel(kind)
-                + ' prefetch complete — no cached cards to re-overlay');
-            return;
+        if (typeof this._refreshPrefetchInventoryTabs === 'function') {
+            void this._refreshPrefetchInventoryTabs(kind);
         }
-        void this._reoverlayAllCachedItems().then((changedIds) => {
-            if (!changedIds || changedIds.length === 0) return;
-            this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
-        }).catch((e) => {
-            Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
+        void this._withOutputWsAsync('search-output', async () => {
+            if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
+                Logger.debug('dashboard: ' + this._prefetchLabel(kind)
+                    + ' prefetch complete — no cached cards to re-overlay');
+                return;
+            }
+            try {
+                const changedIds = await this._reoverlayAllCachedItems();
+                if (!changedIds || changedIds.length === 0) return;
+                this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
+            } catch (e) {
+                Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
+            }
         });
+    },
+
+    _prefetchInventoryProfilesMap() {
+        return new Map();
+    },
+
+    _prefetchInventoryScope() {
+        const teamIds = this._getSearchableTeamCatalog
+            ? this._getSearchableTeamCatalog().map(([id]) => id)
+            : [];
+        return { teamIds, projectIds: null };
+    },
+
+    async _buildPrefetchInventoryDisputeItems() {
+        const openSlot = this._getPrefetchSlot('openDisputes');
+        const resolvedSlot = this._getPrefetchSlot('resolvedDisputes');
+        const grouped = new Map();
+        const mergeSlot = (slot) => {
+            if (!slot || !slot.byTaskId || slot.status !== 'done') return;
+            for (const [taskId, rows] of slot.byTaskId) {
+                if (!grouped.has(taskId)) grouped.set(taskId, []);
+                const dest = grouped.get(taskId);
+                for (const row of rows || []) dest.push(row);
+            }
+        };
+        mergeSlot(openSlot);
+        mergeSlot(resolvedSlot);
+        const profileIds = this._collectPrefetchDisputeProfileIds
+            ? this._collectPrefetchDisputeProfileIds(grouped)
+            : [];
+        let profilesMap = new Map();
+        if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
+            try {
+                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                profilesMap = this._buildProfilesMap(rows);
+            } catch (e) {
+                Logger.warn('dispute inventory profiles failed', e);
+            }
+        }
+        return this._buildPrefetchHydratedDisputeItems(
+            grouped,
+            profilesMap,
+            this._prefetchInventoryScope()
+        );
+    },
+
+    async _buildPrefetchInventoryFlagItems() {
+        const pendingSlot = this._getPrefetchSlot('pendingFlags');
+        const resolvedSlot = this._getPrefetchSlot('resolvedFlags');
+        const grouped = new Map();
+        const mergeSlot = (slot) => {
+            if (!slot || !slot.byTaskId || slot.status !== 'done') return;
+            for (const [taskId, rows] of slot.byTaskId) {
+                if (!grouped.has(taskId)) grouped.set(taskId, []);
+                const dest = grouped.get(taskId);
+                for (const row of rows || []) dest.push(row);
+            }
+        };
+        mergeSlot(pendingSlot);
+        mergeSlot(resolvedSlot);
+        const profileIds = this._collectPrefetchFlagProfileIds
+            ? this._collectPrefetchFlagProfileIds(grouped)
+            : [];
+        let profilesMap = new Map();
+        if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
+            try {
+                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                profilesMap = this._buildProfilesMap(rows);
+            } catch (e) {
+                Logger.warn('flag inventory profiles failed', e);
+            }
+        }
+        return this._buildPrefetchHydratedFlagItems(
+            grouped,
+            profilesMap,
+            this._prefetchInventoryScope()
+        );
+    },
+
+    _prefetchInventoryKindsReady(wsId) {
+        if (wsId === 'disputes') {
+            return ['openDisputes', 'resolvedDisputes'].some((kind) => {
+                const slot = this._getPrefetchSlot(kind);
+                return slot && slot.status === 'done';
+            });
+        }
+        if (wsId === 'sr-review') {
+            return ['pendingFlags', 'resolvedFlags'].some((kind) => {
+                const slot = this._getPrefetchSlot(kind);
+                return slot && slot.status === 'done';
+            });
+        }
+        return false;
+    },
+
+    _mergePrefetchInventoryItems(previous, incoming) {
+        const prev = previous || [];
+        const inc = incoming || [];
+        if (!prev.length) return inc.slice();
+        if (!inc.length) return prev.slice();
+        const byTaskId = new Map();
+        for (const item of prev) {
+            const taskId = item && item.task && item.task.id;
+            if (taskId) byTaskId.set(taskId, item);
+        }
+        const merged = [];
+        const seen = new Set();
+        for (const item of inc) {
+            const taskId = item && item.task && item.task.id;
+            if (!taskId) continue;
+            seen.add(taskId);
+            const existing = byTaskId.get(taskId);
+            if (existing && existing.hydrated === true) {
+                existing.disputes = item.disputes || existing.disputes || [];
+                existing.flags = item.flags || existing.flags || [];
+                if (item.sortAt && (!existing.sortAt || item.sortAt > existing.sortAt)) {
+                    existing.sortAt = item.sortAt;
+                }
+                merged.push(existing);
+            } else {
+                merged.push(item);
+            }
+        }
+        for (const item of prev) {
+            const taskId = item && item.task && item.task.id;
+            if (taskId && !seen.has(taskId) && item.hydrated === true) {
+                merged.push(item);
+            }
+        }
+        merged.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
+        return merged;
+    },
+
+    async _loadPrefetchInventoryWorkspace(wsId, { merge } = {}) {
+        if (wsId !== 'disputes' && wsId !== 'sr-review') return;
+        return this._withOutputWsAsync(wsId, async () => {
+            const ready = this._prefetchInventoryKindsReady(wsId);
+            if (!ready) {
+                this._state.hasSearched = true;
+                this._state.loading = false;
+                this._state.leftTab = 'filters';
+                this._state.statsTab = 'chat';
+                if (!this._state.cachedItems) {
+                    this._state.cachedItems = [];
+                    this._state.filteredItems = [];
+                }
+                this._state.committed = {
+                    retrieveMode: false,
+                    autoHydrate: false,
+                    includeTaskCreation: false,
+                    includeQa: false,
+                    includeDisputes: wsId === 'disputes',
+                    includeSeniorReview: wsId === 'sr-review',
+                    includeSessions: false,
+                    authorCount: 0,
+                    authorLabels: [],
+                    searchKinds: wsId === 'disputes' ? ['dispute'] : ['senior_review']
+                };
+                this._updateResultsStatus();
+                this._syncResultsPrefetchBannerUi();
+                this._renderResults();
+                return;
+            }
+            const incoming = wsId === 'disputes'
+                ? await this._buildPrefetchInventoryDisputeItems()
+                : await this._buildPrefetchInventoryFlagItems();
+            const previous = merge && Array.isArray(this._state.cachedItems)
+                ? this._state.cachedItems
+                : null;
+            const items = previous
+                ? this._mergePrefetchInventoryItems(previous, incoming)
+                : incoming;
+            this._state.leftTab = 'filters';
+            this._state.statsTab = 'chat';
+            if (!merge || !previous) {
+                this._beginResultsLoad();
+            } else {
+                this._state.hasSearched = true;
+                this._state.loading = false;
+            }
+            this._finalizeResultsLoad(items, {
+                skipFiltersTab: true,
+                committed: {
+                    retrieveMode: false,
+                    autoHydrate: false,
+                    includeTaskCreation: false,
+                    includeQa: false,
+                    includeDisputes: wsId === 'disputes',
+                    includeSeniorReview: wsId === 'sr-review',
+                    includeSessions: false,
+                    authorCount: 0,
+                    authorLabels: [],
+                    searchKinds: wsId === 'disputes' ? ['dispute'] : ['senior_review']
+                }
+            });
+            this._state.loading = false;
+            this._refreshResultsView({
+                filterSource: merge && previous ? 'results-mutate' : 'search-defaults',
+                prehydrateInitialBatch: false,
+                reindexFilters: true
+            });
+            Logger.log((wsId === 'disputes' ? 'Disputes' : 'Sr Review')
+                + ' inventory — ' + items.length + ' card(s)');
+        });
+    },
+
+    async _refreshPrefetchInventoryTabs(kind) {
+        const disputeKinds = kind === 'openDisputes' || kind === 'resolvedDisputes';
+        const flagKinds = kind === 'pendingFlags' || kind === 'resolvedFlags';
+        if (disputeKinds) {
+            await this._loadPrefetchInventoryWorkspace('disputes', { merge: true });
+        }
+        if (flagKinds) {
+            await this._loadPrefetchInventoryWorkspace('sr-review', { merge: true });
+        }
+    },
+
+    async _activatePrefetchInventoryTab(wsId) {
+        await this._doBootstrap();
+        this._startPrefetchesOnce();
+        await this._loadPrefetchInventoryWorkspace(wsId, { merge: true });
+        requestAnimationFrame(() => {
+            this._applyAllSidePanelWidths();
+            if (typeof this._applyStatsPanelLayoutOnOpen === 'function') {
+                this._applyStatsPanelLayoutOnOpen(this._modal);
+            }
+            if (typeof this._applyResultsPanelLayoutOnOpen === 'function') {
+                this._applyResultsPanelLayoutOnOpen(this._modal);
+            }
+            if (this._state.statsTab === 'chat' && typeof this._activateSearchChatPanel === 'function') {
+                this._activateSearchChatPanel();
+            }
+        });
+    },
+
+    _searchPanelHtml(opts) {
+        const options = opts || {};
+        const wsId = options.wsId || 'search-output';
+        const hideSearch = Boolean(options.hideSearch);
+        const statsTabs = options.statsTabs || null;
+        const splitScope = options.splitScope
+            || (wsId === 'search-output' ? 'dashboard' : wsId);
+        const leftOpts = { wsId, hideSearch };
+        const resultsOpts = {
+            wsId,
+            hideRetrieveClipboard: hideSearch,
+            emptyStatus: options.emptyStatus
+                || (hideSearch
+                    ? 'Waiting for prefetch…'
+                    : 'Set search parameters on the left, then press Search.')
+        };
+        const statsOpts = { wsId, tabs: statsTabs || undefined };
+        return this._splitPanelSectionHtml(
+            this._leftPanelHtml(leftOpts),
+            this._resultsPanelHtml(resultsOpts),
+            splitScope,
+            this._statsPanelHtml(statsOpts)
+        );
     },
 
     async _runPrefetch(kind, loadTracker) {
@@ -1848,25 +2168,15 @@ const searchOutputCoreMethods = {
     },
 
     _stripFlagRow(row) {
-        if (!row) return null;
-        const task = row.task && typeof row.task === 'object' ? row.task : {};
-        return {
-            id: row.id,
-            task_id: row.task_id,
-            team_id: task.team_id || row.team_id || null,
-            flagger_id: row.flagger_id,
-            reason: row.reason,
-            note: row.note,
-            resolution: row.resolution,
-            resolved_at: row.resolved_at,
-            resolved_by: row.resolved_by,
-            resolution_note: row.resolution_note,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            flagger: row.flagger || null,
-            resolver: row.resolver || null,
-            task: row.task || null
-        };
+        if (!row || typeof row !== 'object') return null;
+        // Keep the full list-row payload (embedded task versions, flagger/resolver,
+        // lifecycle status, project target, notes) so Sr Review cards stay useful
+        // before hydrate. Derive team_id from the task embed when the API omits it.
+        const out = Object.assign({}, row);
+        const task = out.task && typeof out.task === 'object' ? out.task : null;
+        if (!out.task_id && task && task.id) out.task_id = task.id;
+        if (!out.team_id && task && task.team_id) out.team_id = task.team_id;
+        return out;
     },
 
     _indexFlagRows(rows) {
@@ -2150,10 +2460,68 @@ const searchOutputCoreMethods = {
         for (const rows of groupedRows.values()) {
             for (const row of rows) {
                 if (row.resolved_by) ids.add(row.resolved_by);
+                if (row.user_id) ids.add(row.user_id);
+                if (row.feedback_created_by) ids.add(row.feedback_created_by);
+                if (row.leased_by) ids.add(row.leased_by);
                 if (row.eval_task && row.eval_task.created_by) ids.add(row.eval_task.created_by);
             }
         }
         return [...ids];
+    },
+
+    _authorCreatorFromDisputeRows(rows, authorId) {
+        const aid = String(authorId || '').trim();
+        if (!aid) return null;
+        for (const row of rows || []) {
+            if (row && String(row.user_id || '').trim() === aid && row.creator) return row.creator;
+        }
+        return null;
+    },
+
+    _feedbackEntryFromDisputeOriginal(row, task, profilesMap) {
+        if (!row || row.feedback_id == null) return null;
+        if (!row.original_feedback_data && !row.original_feedback_content) return null;
+        const lib = dashLib();
+        if (!lib || typeof lib.buildQaFeedbackDisplay !== 'function') return null;
+        const reviewerId = String(row.feedback_created_by || '').trim();
+        const profile = reviewerId && profilesMap ? profilesMap.get(reviewerId) : null;
+        const reviewer = {
+            id: reviewerId,
+            name: profile ? this._personChipName(profile, reviewerId) : '',
+            email: (profile && profile.email) || ''
+        };
+        const feedbackAt = String(row.original_feedback_created_at || row.created_at || '');
+        const rawLike = (task.promptVersions || []).map((v) => ({
+            id: v.id,
+            version_no: v.versionNo,
+            created_at: v.createdAt,
+            prompt: v.prompt,
+            env_key: v.envKey
+        }));
+        const versionInfo = lib.resolveVersionAtFeedback(rawLike, feedbackAt);
+        const pseudoRow = {
+            id: row.feedback_id,
+            created_at: feedbackAt,
+            created_by: reviewerId,
+            feedback_content: row.original_feedback_content || '',
+            feedback_data: row.original_feedback_data || {},
+            is_positive_feedback: false,
+            is_system_feedback: false
+        };
+        const display = lib.buildQaFeedbackDisplay(pseudoRow, versionInfo, reviewer);
+        return {
+            id: String(row.feedback_id),
+            feedbackAt,
+            isPositive: Boolean(display && display.isPositive),
+            isEscalated: Boolean(display && display.isEscalated),
+            isFlaggedAsBugged: Boolean(display && display.isFlaggedAsBugged),
+            isSystemFeedback: Boolean(display && display.isSystemFeedback),
+            isVerifierFailure: Boolean(display && display.isVerifierFailure),
+            reviewer,
+            linkedVersionNo: versionInfo.rawVersionNo,
+            linkedDisplayVersionNo: versionInfo.displayVersionNo,
+            display
+        };
     },
 
     _collectPrefetchFlagProfileIds(groupedRows) {
@@ -2175,7 +2543,20 @@ const searchOutputCoreMethods = {
         const projectTarget = embed.task_project_target;
         const projectId = projectTarget && projectTarget.project ? String(projectTarget.project.id || '') : '';
         const projectName = projectTarget && projectTarget.project ? String(projectTarget.project.name || '') : '';
-        const version = dashFirstEmbed(embed.eval_task_versions);
+        // Disputes embed a single version object; task-flags embeds the full
+        // revision array. Prefer the latest entry for the card prompt.
+        const rawVersions = Array.isArray(embed.eval_task_versions)
+            ? embed.eval_task_versions
+            : (embed.eval_task_versions ? [embed.eval_task_versions] : []);
+        const promptVersions = rawVersions.map((v, i) => ({
+            id: v && v.id != null ? String(v.id) : '',
+            displayVersionNo: i + 1,
+            versionNo: i + 1,
+            prompt: v && v.prompt ? String(v.prompt) : '',
+            envKey: (v && v.env_key) || '',
+            createdAt: (v && v.created_at) || ''
+        })).filter((v) => v.prompt || v.id);
+        const latest = promptVersions.length ? promptVersions[promptVersions.length - 1] : null;
         const creator = embed.creator || opt.creator || null;
         const authorId = embed.created_by || (creator && creator.id) || '';
         const profile = authorId ? profilesMap.get(authorId) : null;
@@ -2185,16 +2566,8 @@ const searchOutputCoreMethods = {
         const authorEmail = creator && creator.email
             ? String(creator.email)
             : ((profile && profile.email) || '');
-        const prompt = version && version.prompt ? String(version.prompt) : '';
-        const createdAt = embed.created_at || (version && version.created_at) || '';
-        const promptVersions = version ? [{
-            id: version.id != null ? String(version.id) : '',
-            displayVersionNo: 1,
-            versionNo: 1,
-            prompt,
-            envKey: version.env_key || '',
-            createdAt: version.created_at || createdAt
-        }] : [];
+        const prompt = latest ? String(latest.prompt || '') : '';
+        const createdAt = embed.created_at || (latest && latest.createdAt) || '';
         return {
             id: String(embed.id),
             key: embed.key || '',
@@ -2204,12 +2577,12 @@ const searchOutputCoreMethods = {
                 email: authorEmail
             },
             prompt,
-            environment: this._envName((version && version.env_key) || ''),
+            environment: this._envName((latest && latest.envKey) || ''),
             project: projectName || this._projectName(projectId),
             team: this._teamName(teamId),
             teamId: teamId || '',
             projectId: projectId || '',
-            envKey: (version && version.env_key) || '',
+            envKey: (latest && latest.envKey) || '',
             createdAt: createdAt || '',
             status: embed.task_lifecycle_status || '',
             promptVersions,
@@ -2234,7 +2607,11 @@ const searchOutputCoreMethods = {
             }
             if (!this._prefetchEmbedMatchesProjectScope(embed, scope)) continue;
             const teamId = rows[0].team_id || embed.team_id || '';
-            const task = this._taskFromFleetTaskEmbed(embed, profilesMap, { teamId });
+            const authorCreator = this._authorCreatorFromDisputeRows(rows, embed.created_by);
+            const task = this._taskFromFleetTaskEmbed(embed, profilesMap, {
+                teamId,
+                creator: authorCreator
+            });
             if (!task) continue;
             const disputes = this._disputeRowsToDisplays(rows, profilesMap);
             let sortAt = task.createdAt || '';
@@ -2242,15 +2619,24 @@ const searchOutputCoreMethods = {
                 const ts = String(row.resolved_at || row.created_at || '');
                 if (ts && ts > sortAt) sortAt = ts;
             }
-            const linked = rows.find((r) => r.feedback_id != null);
+            const linked = rows.find((r) => r.feedback_id != null)
+                || rows.find((r) => r.original_feedback_data || r.original_feedback_content);
+            const feedbackEntry = linked
+                ? this._feedbackEntryFromDisputeOriginal(linked, task, profilesMap)
+                : null;
+            if (feedbackEntry) {
+                task.allFeedback = [feedbackEntry];
+            }
             items.push({
                 id: 'dispute-' + taskId,
                 kind: 'dispute',
                 kinds: ['dispute'],
                 sortAt,
                 task,
-                selectedFeedbackId: linked ? String(linked.feedback_id) : null,
-                qaFeedback: null,
+                selectedFeedbackId: linked && linked.feedback_id != null
+                    ? String(linked.feedback_id)
+                    : null,
+                qaFeedback: feedbackEntry ? feedbackEntry.display : null,
                 disputes,
                 flags: [],
                 hydrated: false
@@ -4067,6 +4453,7 @@ const searchOutputCoreMethods = {
     _beginResultsLoad() {
         const additive = this._isAdditiveResultsMode();
         this._state.resultsKindTab = 'all';
+        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
         this._state.hasSearched = true;
         this._state.loading = true;
@@ -4122,6 +4509,7 @@ const searchOutputCoreMethods = {
         this._resetFilterDraftsFromResults(mergedItems || this._state.cachedItems || []);
         this._applyResultsPageSizeForNewSearch();
         this._state.resultsKindTab = 'all';
+        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
     },
 
@@ -4231,6 +4619,15 @@ const searchOutputCoreMethods = {
     },
 
     _filterScopeWrapEl(scopeKey) {
+        if (!scopeKey) return null;
+        if (typeof this._msWrapEl === 'function') {
+            const wrap = this._msWrapEl(scopeKey);
+            if (wrap) return wrap;
+        }
+        if (typeof this._q === 'function') {
+            const scoped = this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
+            if (scoped) return scoped;
+        }
         return this._modal ? this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]') : null;
     },
 
@@ -4631,6 +5028,15 @@ const searchOutputCoreMethods = {
         if (!task || !hist) return;
         if (hist.key) task.key = hist.key;
         if (hist.status) task.status = hist.status;
+        const versions = hist.promptVersions || task.promptVersions || [];
+        if (versions.length > 0) {
+            const latest = versions[versions.length - 1];
+            if (latest && latest.prompt) task.prompt = latest.prompt;
+            if (latest && latest.envKey) {
+                task.envKey = latest.envKey;
+                task.environment = this._envName(latest.envKey) || task.environment;
+            }
+        }
     },
 
     _profilesMapFromHydrateItems(items) {
@@ -4693,6 +5099,9 @@ const searchOutputCoreMethods = {
             }
             try {
                 const overlaid = await this._overlayDisputesAndFlags(hydratedItems, profilesMap);
+                for (const item of hydratedItems) {
+                    this._syncHydratedItemAssociatedKinds(item);
+                }
                 if (overlaid > 0) {
                     for (const item of hydratedItems) {
                         if ((item.disputes && item.disputes.length > 0)
@@ -4793,6 +5202,7 @@ const searchOutputCoreMethods = {
 
     async _prehydrateInitialBatchBeforeDisplay() {
         if (this._state.committed && this._state.committed.retrieveMode) return 0;
+        if (this._state.committed && this._state.committed.autoHydrate === false) return 0;
         const batch = this._getInitialHydrateBatch();
         if (batch.length === 0) return 0;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
@@ -4844,6 +5254,7 @@ const searchOutputCoreMethods = {
         const onPage = this._getUnhydratedOnPage();
         if (onPage.length === 0) return;
         if (this._state.committed && this._state.committed.retrieveMode) return;
+        if (this._state.committed && this._state.committed.autoHydrate === false) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             return;
         }
@@ -4902,8 +5313,8 @@ const searchOutputCoreMethods = {
         this._state.screenshotUi = {};
         this._state.taskOpenUi = {};
         this._state.resultsKindTab = 'all';
+        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
-        this._state.hydrateBulkActive = false;
         this._state.hydrateFetchActive = false;
         this._state.autoHydrateActive = false;
         this._state.pageHydrateScheduled = false;
@@ -4960,15 +5371,6 @@ const searchOutputCoreMethods = {
         entry.resolved = true;
         if (message) entry.message = String(message).trim();
         this._syncSearchLoadPhaseUi();
-    },
-
-    _searchPanelHtml() {
-        return this._splitPanelSectionHtml(
-            this._leftPanelHtml(),
-            this._resultsPanelHtml(),
-            'dashboard',
-            this._statsPanelHtml()
-        );
     },
 };
 
@@ -5131,6 +5533,188 @@ function attachSearchOutputListeners(modal, dash) {
         const resetFilters = dash._q('#wf-dash-reset-filters');
         if (resetFilters) resetFilters.addEventListener('click', () => { void dash._resetFiltersToDefaults(); });
 
+        modal.querySelectorAll('[data-wf-dash-output-el="apply-filters"]').forEach((btn) => {
+            if (btn === applyFilters) return;
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (panel && panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._applyFiltersAndRender());
+                else dash._applyFiltersAndRender();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="reset-filters"]').forEach((btn) => {
+            if (btn === resetFilters) return;
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (panel && panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._resetFiltersToDefaults();
+                if (wsId && dash._withOutputWsAsync) void dash._withOutputWsAsync(wsId, run);
+                else void run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="prompt"]').forEach((promptEl) => {
+            const panel = promptEl.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (promptEl.getAttribute('data-wf-dash-output-bound') === '1') return;
+            promptEl.setAttribute('data-wf-dash-output-bound', '1');
+            promptEl.addEventListener('input', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(promptEl);
+                const run = () => {
+                    dash._syncPromptFilterHeight(promptEl);
+                    dash._updateSubstringErrorUi();
+                    dash._syncFieldClearButtons();
+                    dash._maybeLiveApplyPromptFilter();
+                };
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+            promptEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' || e.shiftKey) return;
+                e.preventDefault();
+                const wsId = dash._resolveOutputWsIdFromEl(promptEl);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._applyFiltersAndRender());
+                else dash._applyFiltersAndRender();
+            });
+        });
+        ['case', 'fuzzy', 'regex'].forEach((elKey) => {
+            modal.querySelectorAll('[data-wf-dash-output-el="' + elKey + '"]').forEach((el) => {
+                const panel = el.closest('[data-wf-dash-panel]');
+                if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+                if (el.getAttribute('data-wf-dash-output-bound') === '1') return;
+                el.setAttribute('data-wf-dash-output-bound', '1');
+                el.addEventListener('change', () => {
+                    const wsId = dash._resolveOutputWsIdFromEl(el);
+                    const run = () => {
+                        if (elKey === 'fuzzy' && el.checked) {
+                            const regexEl2 = dash._q('#wf-dash-regex');
+                            if (regexEl2) regexEl2.checked = false;
+                        }
+                        if (elKey === 'regex' && el.checked) {
+                            const fuzzyEl2 = dash._q('#wf-dash-fuzzy');
+                            if (fuzzyEl2) fuzzyEl2.checked = false;
+                        }
+                        dash._updateSubstringErrorUi();
+                        if (elKey !== 'regex' || !el.checked) dash._maybeLiveApplyPromptFilter();
+                    };
+                    if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                    else run();
+                });
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="sort"]').forEach((sortEl) => {
+            const panel = sortEl.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (sortEl.getAttribute('data-wf-dash-output-bound') === '1') return;
+            sortEl.setAttribute('data-wf-dash-output-bound', '1');
+            sortEl.addEventListener('change', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(sortEl);
+                const run = () => dash._applySortAndRender
+                    ? dash._applySortAndRender()
+                    : dash._applyFiltersAndRender();
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="clear-results"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._clearResults());
+                else dash._clearResults();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="results-page-size"]').forEach((sel) => {
+            const panel = sel.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (sel.getAttribute('data-wf-dash-output-bound') === '1') return;
+            sel.setAttribute('data-wf-dash-output-bound', '1');
+            sel.addEventListener('change', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(sel);
+                const run = () => {
+                    const val = sel.value;
+                    dash._state.resultsPageSize = val === 'all' ? 'all' : (Number(val) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
+                    if (typeof dash._persistResultsPageSizePref === 'function') {
+                        dash._persistResultsPageSizePref(val);
+                    }
+                    dash._state.resultsPage = 0;
+                    Logger.log('dashboard: results page size — ' + val);
+                    dash._renderResults();
+                    dash._syncResultsPagerUi();
+                };
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="results-prev"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._goResultsPage(-1);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="results-next"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._goResultsPage(1);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="clear-prompt"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => {
+                    const promptEl = dash._q('#wf-dash-prompt');
+                    if (promptEl) promptEl.value = '';
+                    dash._updateSubstringErrorUi();
+                    dash._syncFieldClearButtons();
+                    dash._maybeLiveApplyPromptFilter();
+                };
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="manual-add"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._buildManualFilterRow());
+                else dash._buildManualFilterRow();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="filter-expand-all"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._toggleFilterExpandAll());
+                else dash._toggleFilterExpandAll();
+            });
+        });
+
         const manualAdd = dash._q('#wf-dash-manual-add');
         if (manualAdd) manualAdd.addEventListener('click', () => dash._buildManualFilterRow());
         const manualAndOr = dash._q('#wf-dash-manual-andor');
@@ -5219,10 +5803,20 @@ function attachSearchOutputListeners(modal, dash) {
         if (clearResults) clearResults.addEventListener('click', () => dash._clearResults());
 
         modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab'));
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
         });
         modal.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => dash._setStatsTab(btn.getAttribute('data-wf-dash-stats-tab')));
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._setStatsTab(btn.getAttribute('data-wf-dash-stats-tab'));
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
         });
         const filterExpandAll = dash._q('#wf-dash-filter-expand-all');
         if (filterExpandAll) {
@@ -5237,7 +5831,23 @@ function attachSearchOutputListeners(modal, dash) {
         }
         dash._applyStatsPanelLayoutOnOpen(modal);
         dash._applyResultsPanelLayoutOnOpen(modal);
-    modal.addEventListener('click', (e) => {
+        const runOutputClick = (target, fn) => {
+            const wsId = typeof dash._resolveOutputWsIdFromEl === 'function'
+                ? dash._resolveOutputWsIdFromEl(target)
+                : null;
+            if (!wsId || typeof dash._withOutputWs !== 'function') return fn();
+            return dash._withOutputWs(wsId, fn);
+        };
+        const runOutputClickAsync = (target, fn) => {
+            const wsId = (typeof dash._resolveOutputWsIdFromEl === 'function'
+                && dash._resolveOutputWsIdFromEl(target))
+                || (typeof dash._resolveActiveOutputWsId === 'function'
+                    ? dash._resolveActiveOutputWsId()
+                    : 'search-output');
+            if (typeof dash._withOutputWsAsync !== 'function') return fn();
+            return dash._withOutputWsAsync(wsId, fn);
+        };
+    modal.addEventListener('click', (e) => runOutputClick(e.target, () => {
             const statsScopeBtn = e.target.closest('[data-wf-dash-stats-scope]');
             if (statsScopeBtn && modal.contains(statsScopeBtn)) {
                 const scope = statsScopeBtn.getAttribute('data-wf-dash-stats-scope');
@@ -5568,7 +6178,7 @@ function attachSearchOutputListeners(modal, dash) {
             if (disputeClaimBtn && modal.contains(disputeClaimBtn)) {
                 const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
                 const itemId = disputeClaimBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
+                if (disputeId && itemId) void runOutputClickAsync(disputeClaimBtn, () => dash._claimDispute(disputeId, itemId));
                 return;
             }
             const disputeOpenEnvBtn = e.target.closest('[data-wf-dash-dispute-open-env]');
@@ -5584,7 +6194,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const disputeId = disputeReleaseBtn.getAttribute('data-dispute-id');
                 const itemId = disputeReleaseBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void dash._handleDisputeRelease(disputeId, itemId);
+                if (disputeId && itemId) void runOutputClickAsync(disputeReleaseBtn, () => dash._handleDisputeRelease(disputeId, itemId));
                 return;
             }
             const disputeResolveBtn = e.target.closest('[data-wf-dash-dispute-resolve]');
@@ -5593,7 +6203,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const disputeId = disputeResolveBtn.getAttribute('data-dispute-id');
                 const itemId = disputeResolveBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void dash._handleDisputeResolve(disputeId, itemId);
+                if (disputeId && itemId) void runOutputClickAsync(disputeResolveBtn, () => dash._handleDisputeResolve(disputeId, itemId));
                 return;
             }
             const disputeMsgInsertBtn = e.target.closest('[data-wf-dash-dispute-msg-insert]');
@@ -5678,7 +6288,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const flagId = flagConfirmBtn.getAttribute('data-wf-dash-flag-id');
                 const itemId = flagConfirmBtn.getAttribute('data-item-id');
-                if (flagId && itemId) void dash._handleFlagResolution(flagId, itemId, 'confirmed');
+                if (flagId && itemId) void runOutputClickAsync(flagConfirmBtn, () => dash._handleFlagResolution(flagId, itemId, 'confirmed'));
                 return;
             }
             const flagDismissBtn = e.target.closest('[data-wf-dash-flag-dismiss]');
@@ -5687,7 +6297,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const flagId = flagDismissBtn.getAttribute('data-wf-dash-flag-id');
                 const itemId = flagDismissBtn.getAttribute('data-item-id');
-                if (flagId && itemId) void dash._handleFlagResolution(flagId, itemId, 'dismissed');
+                if (flagId && itemId) void runOutputClickAsync(flagDismissBtn, () => dash._handleFlagResolution(flagId, itemId, 'dismissed'));
                 return;
             }
             const flagCreateToggleBtn = e.target.closest('[data-wf-dash-flag-create-toggle]');
@@ -5755,7 +6365,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 if (rehydrateBtn.disabled) return;
                 const itemId = rehydrateBtn.getAttribute('data-item-id');
-                if (itemId) void dash._rehydrateCardFromButton(itemId);
+                if (itemId) void runOutputClickAsync(rehydrateBtn, () => dash._rehydrateCardFromButton(itemId));
                 return;
             }
             const rescueBtn = e.target.closest('[data-wf-dash-rescue]');
@@ -5764,7 +6374,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 if (rescueBtn.disabled) return;
                 const itemId = rescueBtn.getAttribute('data-item-id');
-                if (itemId) void dash._attemptRescueFromCard(itemId);
+                if (itemId) void runOutputClickAsync(rescueBtn, () => dash._attemptRescueFromCard(itemId));
                 return;
             }
             const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
@@ -5828,7 +6438,7 @@ function attachSearchOutputListeners(modal, dash) {
                 if (url) dash._openScreenshotLightbox(url, alt, screenshotThumb);
                 return;
             }
-    });
+    }));
         modal.addEventListener('change', (e) => {
             const ratingsHideProv = e.target.closest('[data-wf-dash-ratings-hide-provisional]');
             if (ratingsHideProv && modal.contains(ratingsHideProv)) {
@@ -5970,7 +6580,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.43',
+    _version: '9.52',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

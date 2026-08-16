@@ -17,6 +17,8 @@ const FLEET_UI_THEME_MODES = ['match', 'light', 'dark'];
 /** Shared accent for Preferred chrome (segments, primary buttons, brand-tinted controls). */
 const FLEET_UI_ACCENT = '#2563eb';
 const FLEET_UI_ACCENT_FG = '#ffffff';
+/** Border color for buttons that only ship on dev-branch builds (`data-fleet-dev`). */
+const FLEET_UI_DEV_BTN_BORDER = '#ea580c';
 
 const FLASH_PULSE_MS = 600;
 const FLASH_PULSE_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -67,6 +69,7 @@ const ALERT_BANNER_CLASSES = {
 const SEGMENT_CLASSES = {
     group: 'fleet-ui-seg-group',
     groupFill: 'fleet-ui-seg-group--fill',
+    groupCompact: 'fleet-ui-seg-group--compact',
     btn: 'fleet-ui-seg-btn',
     btnDivider: 'fleet-ui-seg-btn--divider'
 };
@@ -873,7 +876,23 @@ function fleetUiBtnBaseCssLines(scopePrefix) {
         '  color: #71717a;',
         '}',
         dark(headerBasic) + ' { color: #a1a1aa; }',
-        dark(headerBasic) + ':hover:not(:disabled) { color: #e4e4e7; border-color: #e4e4e7; }'
+        dark(headerBasic) + ':hover:not(:disabled) { color: #e4e4e7; border-color: #e4e4e7; }',
+        // Dev-branch-only marker: border-color only (keep existing 1px thickness)
+        btn + '[data-fleet-dev],'
+            + btn + '[data-fleet-dev]:hover:not(:disabled),'
+            + btn + '[data-fleet-dev]:disabled {',
+        '  border-color: ' + FLEET_UI_DEV_BTN_BORDER + ';',
+        '}',
+        light(btn + '[data-fleet-dev]') + ','
+            + light(btn + '[data-fleet-dev]:hover:not(:disabled)') + ','
+            + light(btn + '[data-fleet-dev]:disabled') + ' {',
+        '  border-color: ' + FLEET_UI_DEV_BTN_BORDER + ';',
+        '}',
+        dark(btn + '[data-fleet-dev]') + ','
+            + dark(btn + '[data-fleet-dev]:hover:not(:disabled)') + ','
+            + dark(btn + '[data-fleet-dev]:disabled') + ' {',
+        '  border-color: ' + FLEET_UI_DEV_BTN_BORDER + ';',
+        '}'
     ];
 }
 
@@ -1111,6 +1130,15 @@ function fleetUiSegmentCssLines(prefix) {
         '  flex: 1;',
         '  padding: 8px 10px;',
         '}',
+        // Match toolbar nav buttons / Sort selects (4px 10px, 11px)
+        p + '.fleet-ui-seg-group--compact .fleet-ui-seg-btn {',
+        '  padding: 4px 10px;',
+        '  font-size: 11px;',
+        '}',
+        p + '.fleet-ui-seg-group--fill.fleet-ui-seg-group--compact .fleet-ui-seg-btn {',
+        '  padding: 4px 10px;',
+        '  font-size: 11px;',
+        '}',
         p + '.fleet-ui-seg-btn--divider {',
         '  border-right: 1px solid var(--border, #e2e8f0);',
         '}',
@@ -1163,6 +1191,8 @@ function fleetUiFilterToggleCssLines(prefix) {
     const p = prefix || '';
     return [
         p + '.fleet-ui-filter-toggle {',
+        '  appearance: none;',
+        '  -webkit-appearance: none;',
         '  padding: 7px 14px;',
         '  font-size: 12px;',
         '  font-weight: 600;',
@@ -1177,6 +1207,23 @@ function fleetUiFilterToggleCssLines(prefix) {
         '  opacity: 1;',
         '}'
     ];
+}
+
+/** Ensure each declaration in an inline CSS string is marked !important (host theme overrides). */
+function fleetUiImportantInlineCss(css) {
+    return String(css || '')
+        .split(';')
+        .map((part) => {
+            const idx = part.indexOf(':');
+            if (idx < 0) return '';
+            const prop = part.slice(0, idx).trim();
+            let val = part.slice(idx + 1).trim();
+            if (!prop || !val) return '';
+            if (!/!important\s*$/i.test(val)) val += ' !important';
+            return prop + ': ' + val;
+        })
+        .filter(Boolean)
+        .join('; ');
 }
 
 function fleetUiSegmentBtnClass(divider) {
@@ -1202,7 +1249,10 @@ function fleetUiSegmentGroupHtml(opts) {
     const valueAttr = o.valueAttr || 'data-value';
     const value = o.value;
     const fill = o.fill === true;
-    const groupClass = SEGMENT_CLASSES.group + (fill ? ' ' + SEGMENT_CLASSES.groupFill : '');
+    const compact = o.compact === true;
+    let groupClass = SEGMENT_CLASSES.group;
+    if (fill) groupClass += ' ' + SEGMENT_CLASSES.groupFill;
+    if (compact) groupClass += ' ' + SEGMENT_CLASSES.groupCompact;
     const buttons = options.map((opt, i) => fleetUiSegmentBtnHtml({
         value: opt.value,
         label: opt.label,
@@ -1259,7 +1309,7 @@ function fleetUiFilterToggleHtml(opts) {
     const idAttr = o.id ? ' id="' + fleetUiEscapeAttr(o.id) + '"' : '';
     const extra = o.extraAttrs ? ' ' + o.extraAttrs : '';
     const css = pressed && o.activeCss
-        ? String(o.activeCss).replace(/"/g, '&quot;')
+        ? fleetUiImportantInlineCss(o.activeCss).replace(/"/g, '&quot;')
         : '';
     const styleAttr = css ? ' style="' + css + '"' : '';
     return '<button type="button" class="' + fleetUiFilterToggleClass() + '" aria-pressed="'
@@ -1271,7 +1321,16 @@ function fleetUiApplyFilterToggle(btn, pressed, activeCss) {
     if (!btn) return;
     btn.classList.add(FILTER_TOGGLE_CLASSES.btn);
     btn.setAttribute('aria-pressed', pressed ? 'true' : 'false');
-    btn.style.cssText = pressed && activeCss ? activeCss : '';
+    btn.style.cssText = '';
+    if (!(pressed && activeCss)) return;
+    String(activeCss).split(';').forEach((part) => {
+        const idx = part.indexOf(':');
+        if (idx < 0) return;
+        const prop = part.slice(0, idx).trim();
+        const val = part.slice(idx + 1).trim().replace(/\s*!important\s*$/i, '');
+        if (!prop || !val) return;
+        btn.style.setProperty(prop, val, 'important');
+    });
 }
 
 function fleetUiSpinnerHtml(sizePx) {
@@ -1281,6 +1340,11 @@ function fleetUiSpinnerHtml(sizePx) {
 
 function fleetUiLoadingDotsAttr() {
     return 'data-fleet-ui-dots';
+}
+
+/** Attribute for buttons that only exist on dev-branch builds (orange border). */
+function fleetUiDevBtnAttr() {
+    return 'data-fleet-dev="1"';
 }
 
 /** Shared button-icon SVGs (basic+icon chrome). */
@@ -1387,7 +1451,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.15',
+    _version: '3.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1522,6 +1586,7 @@ const plugin = {
             btnClass: fleetUiBtnClass,
             spinnerHtml: fleetUiSpinnerHtml,
             loadingDotsAttr: fleetUiLoadingDotsAttr,
+            devBtnAttr: fleetUiDevBtnAttr,
             eyeIconSvg: fleetUiEyeIconSvg,
             flagIconSvg: fleetUiFlagIconSvg,
             funnelIconSvg: fleetUiFunnelIconSvg,

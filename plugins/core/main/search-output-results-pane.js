@@ -111,35 +111,35 @@ const DASH_OUTPUT_KIND_CONFIG = {
         label: 'Task Creation',
         tabBg: '#16a34a',
         toggleActive: 'border: 2px solid #16a34a; color: #15803d; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #4ade80; color: #86efac; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #22c55e; color: #4ade80; background: transparent;',
         textHighlight: 'font-weight: 600; color: #15803d;'
     },
     qa: {
         label: 'QA',
         tabBg: '#2563eb',
         toggleActive: 'border: 2px solid #2563eb; color: #1d4ed8; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #60a5fa; color: #93c5fd; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #3b82f6; color: #60a5fa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #1d4ed8;'
     },
     dispute: {
         label: 'Disputes',
         tabBg: '#7c3aed',
         toggleActive: 'border: 2px solid #7c3aed; color: #6d28d9; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #c4b5fd; color: #ddd6fe; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #8b5cf6; color: #a78bfa; background: transparent;',
         textHighlight: 'font-weight: 600; color: #6d28d9;'
     },
     senior_review: {
         label: 'Sr Review',
         tabBg: '#ca8a04',
         toggleActive: 'border: 2px solid #ca8a04; color: #a16207; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #facc15; color: #fde68a; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #eab308; color: #facc15; background: transparent;',
         textHighlight: 'font-weight: 600; color: #a16207;'
     },
     sessions: {
         label: 'Sessions',
         tabBg: '#0891b2',
         toggleActive: 'border: 2px solid #0891b2; color: #0e7490; background: transparent;',
-        toggleActiveDark: 'border: 2px solid #22d3ee; color: #a5f3fc; background: transparent;',
+        toggleActiveDark: 'border: 2px solid #0891b2; color: #22d3ee; background: transparent;',
         textHighlight: 'font-weight: 600; color: #0e7490;'
     }
 };
@@ -342,55 +342,64 @@ function dashFirstEmbed(embed) {
 
 
 const searchOutputResultsPaneMethods = {
-    _resultsPanelHtml() {
+    _resultsPanelHtml(opts) {
+        const options = opts || {};
+        const wsId = options.wsId || 'search-output';
+        const el = (rest) => this._outputDomAttrs(rest, wsId);
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
         const input = this._inputStyle();
         const sortDefault = dashSortDefault();
+        const emptyStatus = options.emptyStatus
+            || 'Set search parameters on the left, then press Search.';
+        const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
+            ? Context.uiLib.devBtnAttr()
+            : 'data-fleet-dev="1"';
         return `
-                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
+                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}" data-wf-dash-output-ws="${dashEscHtml(wsId)}">
                     <div style="${this._resultsHeaderBarStyle()}">
                         <div style="${this._resultsHeaderRowStyle()}">
                             <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 40%; max-width: 40%; overflow: hidden;">
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
-                                <span id="wf-dash-results-status" style="${label} margin: 0; min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Set search parameters on the left, then press Search.</span>
+                                <span ${el('results-status')} style="${label} margin: 0; min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${dashEscHtml(emptyStatus)}</span>
                             </div>
                             <div style="${this._resultsHScrollOuterStyle('flex: 1 1 0;')}">
                                 <div style="${this._resultsHScrollTrackStyle(8)}">
-                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex-shrink: 0;"></div>
-                                <div id="wf-dash-results-prefetch-banner" style="display: none; flex-shrink: 0;"></div>
-                                <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
-                                <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
-                                <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
-                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
-                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
-                                <button type="button" id="wf-dash-export-user-stories" title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
-                                <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Retrieve Clipboard</button>
-                                <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
+                                <div ${el('results-hydrate-banner')} style="display: none; flex-shrink: 0;"></div>
+                                <div ${el('results-prefetch-banner')} style="display: none; flex-shrink: 0;"></div>
+                                <button type="button" ${el('bulk-hydrate')} class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
+                                <button type="button" ${el('diff-included')} title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
+                                <button type="button" ${el('drop-included')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
+                                <button type="button" ${el('drop-excluded')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
+                                <button type="button" ${el('export-tasks-json')} ${devBtnAttr} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
+                                <button type="button" ${el('export-user-stories')} ${devBtnAttr} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
+                                <button type="button" ${el('results-retrieve-clipboard')} title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;${options.hideRetrieveClipboard ? ' display: none;' : ''}">Retrieve Clipboard</button>
+                                <button type="button" ${el('clear-results')} class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                                 </div>
                             </div>
                         </div>
-                        <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
-                            <div id="wf-dash-results-pager-slot-kind" style="${this._resultsHScrollOuterStyle()}">
-                                <div id="wf-dash-results-pager" style="${this._resultsPagerStyle()}">
-                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
+                        <div ${el('results-toolbar-row2')} style="${this._resultsToolbarRow2Style()}">
+                            <div ${el('results-pager-slot-kind')} style="${this._resultsHScrollOuterStyle()}">
+                                <div ${el('results-pager')} style="${this._resultsPagerStyle()}">
+                                    <label ${el('version-mode-wrap')} style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Version</span>
-                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 8.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('version-mode')} style="${input} width: auto; min-width: 8.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="contributor_match">Contributor match</option>
                                             <option value="all_v1">All v1s</option>
                                             <option value="all_final">All final versions</option>
                                         </select>
                                     </label>
+                                    <div ${el('review-status-wrap')} style="display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;"></div>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Sort</span>
-                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('sort')} style="${input} width: auto; min-width: 13rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             ${this._dashSortSelectOptionsHtml(dashSortDefault())}
                                         </select>
                                     </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Show</span>
-                                        <select id="wf-dash-results-page-size" style="${input} width: auto; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('results-page-size')} style="${input} width: auto; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="10">10</option>
                                             <option value="25">25</option>
                                             <option value="50">50</option>
@@ -398,19 +407,31 @@ const searchOutputResultsPaneMethods = {
                                             <option value="all">All</option>
                                         </select>
                                     </label>
-                                    <span id="wf-dash-results-range-count" style="${label} white-space: nowrap; flex-shrink: 0;"></span>
-                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('prev')}</button>
-                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('next')}</button>
+                                    <span ${el('results-range-count')} style="${label} white-space: nowrap; flex-shrink: 0;"></span>
+                                    <button type="button" ${el('results-prev')} aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('prev')}</button>
+                                    <button type="button" ${el('results-next')} aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('next')}</button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
+                    <div ${el('results')} style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
     },
 
+    _activeOutputSplitRoot() {
+        const wsId = this._resolveActiveOutputWsId();
+        const panel = this._outputPanel(wsId);
+        if (panel) {
+            const root = panel.querySelector('[data-wf-dash-split-root]');
+            if (root) return root;
+        }
+        return this._modal
+            ? this._modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]')
+            : null;
+    },
+
     _ensureResultsToggleButton() {
-        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot();
         let btn = root ? root.querySelector('[data-wf-dash-results-toggle]') : null;
         if (!btn) {
             btn = document.createElement('button');
@@ -426,7 +447,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _syncResultsPanelCollapseUi() {
-        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot();
         if (!root) return;
         const dashApi = Context.dashboard;
         const hidden = dashApi && typeof dashApi.readResultsPanelHiddenPref === 'function'
@@ -450,7 +471,7 @@ const searchOutputResultsPaneMethods = {
         const next = !dashApi.readResultsPanelHiddenPref();
         dashApi.writeResultsPanelHiddenPref(next);
         Logger.log('results panel ' + (next ? 'hidden' : 'shown'));
-        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot();
         if (root && typeof dashApi.applyResultsPanelLayout === 'function') {
             dashApi.applyResultsPanelLayout(root);
         } else {
@@ -462,7 +483,8 @@ const searchOutputResultsPaneMethods = {
     },
 
     _applyResultsPanelLayoutOnOpen(modal) {
-        const root = modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot()
+            || (modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]'));
         const dashApi = Context.dashboard;
         if (root && dashApi && typeof dashApi.applyResultsPanelLayout === 'function') {
             dashApi.applyResultsPanelLayout(root);
@@ -1341,7 +1363,58 @@ const searchOutputResultsPaneMethods = {
 
     _getViewItems() {
         // filteredItems is always tab-scoped + sidebar-filtered (see _refreshResultsView).
-        return this._state.filteredItems;
+        const items = this._state.filteredItems;
+        const reviewKind = this._activeReviewStatusKind();
+        if (!reviewKind) return items;
+        const status = this._state.resultsReviewStatus === 'resolved' ? 'resolved' : 'pending';
+        return (items || []).filter((item) => this._itemMatchesReviewStatus(item, reviewKind, status));
+    },
+
+    _activeReviewStatusKind() {
+        const wsId = typeof this._resolveActiveOutputWsId === 'function'
+            ? this._resolveActiveOutputWsId()
+            : (this._state && this._state.wsId);
+        if (wsId === 'disputes') return 'dispute';
+        if (wsId === 'sr-review') return 'senior_review';
+        const tab = (this._state && this._state.resultsKindTab) || 'all';
+        if (tab === 'dispute' || tab === 'senior_review') return tab;
+        return null;
+    },
+
+    _isDisputePending(dispute) {
+        if (!dispute) return false;
+        const status = String(dispute.status || '').trim().toLowerCase();
+        if (status === 'approved' || status === 'rejected') return false;
+        return !dispute.resolutionAt || status === 'pending' || !status;
+    },
+
+    _isFlagPending(flag) {
+        if (!flag) return false;
+        const status = String(flag.status || '').trim().toLowerCase();
+        if (flag.isConfirmed || flag.isDismissed || status === 'confirmed' || status === 'dismissed') {
+            return false;
+        }
+        if (Boolean(flag.isPending) || status === 'pending' || !status) return true;
+        return !flag.resolutionAt;
+    },
+
+    _itemMatchesReviewStatus(item, kind, status) {
+        const wantPending = status !== 'resolved';
+        // Task-level: Pending = still has open work; Resolved = only finished entities.
+        // Using `.some(pending)` / `.some(!pending)` would keep mixed cards in both views.
+        if (kind === 'dispute') {
+            const disputes = item.disputes || [];
+            if (disputes.length === 0) return false;
+            const hasPending = disputes.some((d) => this._isDisputePending(d));
+            return wantPending ? hasPending : !hasPending;
+        }
+        if (kind === 'senior_review') {
+            const flags = item.flags || [];
+            if (flags.length === 0) return false;
+            const hasPending = flags.some((f) => this._isFlagPending(f));
+            return wantPending ? hasPending : !hasPending;
+        }
+        return true;
     },
 
     _syncResultsToolbarDerivedUi() {
@@ -1353,6 +1426,7 @@ const searchOutputResultsPaneMethods = {
         this._syncDropExcludedUi();
         this._syncTaskExportUi();
         this._syncVersionModeDropdownUi();
+        this._syncReviewStatusToggleUi();
     },
 
     _dashExportTimestampSlug(iso) {
@@ -1755,10 +1829,11 @@ const searchOutputResultsPaneMethods = {
         const wrap = this._q('#wf-dash-version-mode-wrap');
         const sel = this._q('#wf-dash-version-mode');
         if (!wrap || !sel) return;
+        const reviewKind = this._activeReviewStatusKind();
         const authorIds = this._state.activeSearchAuthorIds || [];
         const hasContributors = authorIds.length > 0;
         const hasResults = this._state.cachedItems !== null && this._state.hasSearched;
-        const show = hasResults && !this._isTasksHydratingActive();
+        const show = !reviewKind && hasResults && !this._isTasksHydratingActive();
         wrap.style.display = show ? 'inline-flex' : 'none';
         if (!show) return;
         let mode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
@@ -1767,6 +1842,67 @@ const searchOutputResultsPaneMethods = {
             this._state.versionMode = mode;
         }
         sel.innerHTML = this._dashVersionModeSelectOptionsHtml(hasContributors, mode);
+    },
+
+    _reviewStatusToggleHtml(status) {
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        const value = status === 'resolved' ? 'resolved' : 'pending';
+        if (ui && typeof ui.segmentGroupHtml === 'function') {
+            return ui.segmentGroupHtml({
+                value,
+                valueAttr: 'data-wf-dash-review-status',
+                compact: true,
+                ariaLabel: 'Review status',
+                options: [
+                    { value: 'pending', label: 'Pending' },
+                    { value: 'resolved', label: 'Resolved' }
+                ]
+            });
+        }
+        return '';
+    },
+
+    _applyReviewStatusFilter(status) {
+        const next = status === 'resolved' ? 'resolved' : 'pending';
+        if (this._state.resultsReviewStatus === next) return;
+        this._state.resultsReviewStatus = next;
+        this._state.resultsPage = 0;
+        Logger.log('search-output: review status → ' + next);
+        this._syncReviewStatusToggleUi();
+        this._renderResults();
+        this._syncResultsPagerUi();
+        this._updateResultsStatus();
+    },
+
+    _syncReviewStatusToggleUi() {
+        const wrap = this._q('#wf-dash-review-status-wrap');
+        if (!wrap) return;
+        const reviewKind = this._activeReviewStatusKind();
+        const hasResults = this._state.cachedItems !== null && this._state.hasSearched;
+        const show = Boolean(reviewKind) && hasResults && !this._isTasksHydratingActive();
+        wrap.style.display = show ? 'inline-flex' : 'none';
+        if (!show) return;
+        const status = this._state.resultsReviewStatus === 'resolved' ? 'resolved' : 'pending';
+        this._state.resultsReviewStatus = status;
+        if (!wrap.querySelector('.fleet-ui-seg-group[aria-label="Review status"]')) {
+            wrap.innerHTML = this._reviewStatusToggleHtml(status);
+            const group = wrap.querySelector('.fleet-ui-seg-group');
+            if (group && Context.uiLib && typeof Context.uiLib.bindSegmentGroup === 'function') {
+                Context.uiLib.bindSegmentGroup(group, {
+                    valueAttr: 'data-wf-dash-review-status',
+                    onChange: (next) => this._applyReviewStatusFilter(next)
+                });
+            }
+        } else if (Context.uiLib && typeof Context.uiLib.syncSegmentGroup === 'function') {
+            Context.uiLib.syncSegmentGroup(
+                wrap.querySelector('.fleet-ui-seg-group'),
+                status,
+                'data-wf-dash-review-status'
+            );
+        }
     },
 
     _dashVersionModeSelectOptionsHtml(includeContributorMatch, selectedValue) {
@@ -2139,6 +2275,32 @@ const searchOutputResultsPaneMethods = {
             }
         }
         return versions[versions.length - 1].displayVersionNo;
+    },
+
+    _resolveCardSelectedDisplayNo(item, versions) {
+        const vers = versions || [];
+        const reviewKind = this._activeReviewStatusKind();
+        const status = this._state.resultsReviewStatus === 'resolved' ? 'resolved' : 'pending';
+        let defaultDisplayNo;
+        if (reviewKind) {
+            defaultDisplayNo = this._reviewTargetDisplayNo(item, reviewKind, status);
+        } else {
+            const versionMode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
+            const hasContributors = (this._state.activeSearchAuthorIds || []).length > 0;
+            if (versionMode === DASH_VERSION_MODE_V1) {
+                const sorted = [...vers].sort((a, b) => a.displayVersionNo - b.displayVersionNo);
+                defaultDisplayNo = sorted[0] ? sorted[0].displayVersionNo : 1;
+            } else if (versionMode === DASH_VERSION_MODE_CONTRIBUTOR && hasContributors) {
+                defaultDisplayNo = this._contributorMatchDisplayNo(item, vers);
+            } else {
+                defaultDisplayNo = vers.length ? vers[vers.length - 1].displayVersionNo : 1;
+            }
+        }
+        const ui = this._getCardUi(item.task && item.task.id);
+        const selectedDisplayNo = reviewKind
+            ? defaultDisplayNo
+            : (ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo);
+        return { defaultDisplayNo, selectedDisplayNo, ui, reviewKind };
     },
 
     _getUserStoryUi(itemId) {
@@ -3630,6 +3792,10 @@ const searchOutputResultsPaneMethods = {
     _schedulePageHydrate() {
         if (this._state.pageHydrateScheduled || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
         if (this._state.loading) return;
+        if (this._state.committed && this._state.committed.autoHydrate === false) {
+            this._state.pageHydratePending = false;
+            return;
+        }
         if (!this._bulkHydrateShowable()) {
             this._state.pageHydratePending = false;
             return;
@@ -3657,6 +3823,7 @@ const searchOutputResultsPaneMethods = {
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         return Boolean(
             committed
+            && committed.autoHydrate !== false
             && !committed.retrieveMode
             && this._state.hasSearched
             && !this._state.loading
@@ -3850,7 +4017,7 @@ const searchOutputResultsPaneMethods = {
         if (active) {
             if (tabId === 'all') {
                 return interactive + (dark
-                    ? ' border: 2px solid #facc15; color: #fde68a; background: transparent;'
+                    ? ' border: 2px solid #eab308; color: #facc15; background: transparent;'
                     : ' border: 2px solid #ca8a04; color: #a16207; background: transparent;');
             }
             const cfg = DASH_OUTPUT_KIND_CONFIG[tabId];
@@ -3922,12 +4089,15 @@ const searchOutputResultsPaneMethods = {
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
+        const taskId = String(task && task.id || '').trim();
+        const displayId = key || taskId;
+        const label = key ? ('Task key: ' + key) : (taskId ? ('Task ID: ' + taskId) : 'Task key');
         const inner = '<span class="wf-dash-card-key-tab-inner">'
-            + this._cardKeyCopyHtml(key, highlightOpts || {})
+            + this._cardKeyCopyHtml(displayId, highlightOpts || {})
             + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + this._taskPublicViewLinkHtml(task, { flushHorizontal: true, flushEnd: true })
             + '</span>';
-        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
+        return this._cardSurfaceTabHtml(inner, label, {
             noHorizontalPadding: true,
             shellClass: 'wf-dash-card-key-tab'
         });
@@ -3946,7 +4116,12 @@ const searchOutputResultsPaneMethods = {
         const rescuing = Boolean(this._state.cardRescuing && this._state.cardRescuing[itemId]);
         const rehydrateDisabled = (rehydrating || rescuing) ? ' disabled aria-busy="true"' : '';
         const rescueDisabled = rescuing ? ' disabled aria-busy="true"' : '';
-        const rehydrateTitle = rehydrating ? 'Rehydrating…' : 'Throw away and fully rehydrate this card';
+        const rehydrateTitle = rehydrating
+            ? ((item && item.hydrated === false) ? 'Hydrating…' : 'Rehydrating…')
+            : ((item && item.hydrated === false) ? 'Fully hydrate this card' : 'Throw away and fully rehydrate this card');
+        const rehydrateLabel = rehydrating
+            ? ((item && item.hydrated === false) ? 'Hydrating…' : 'Rehydrating…')
+            : ((item && item.hydrated === false) ? 'Hydrate' : 'Rehydrate');
         const rescueTitle = rescuing
             ? 'Rescuing…'
             : 'Lease and discard this escalated task back to the writer (Other)';
@@ -3975,7 +4150,7 @@ const searchOutputResultsPaneMethods = {
             </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--rehydrate" data-wf-dash-rehydrate="1" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(rehydrateTitle)}" aria-label="${dashEscHtml(rehydrateTitle)}"${rehydrateDisabled}>
                 <span class="wf-dash-card-action-inner">
-                    <span class="wf-dash-card-action-label">${rehydrating ? 'Rehydrating…' : 'Rehydrate'}</span>
+                    <span class="wf-dash-card-action-label">${rehydrateLabel}</span>
                 </span>
             </button>
             ${rescueBtn}
@@ -4053,10 +4228,14 @@ const searchOutputResultsPaneMethods = {
             return;
         }
         this._logDashApiClick('card-rehydrate', iid);
-        try {
-            await this._refreshFlagPrefetchCaches();
-        } catch (e) {
-            Logger.debug('search-output: card rehydrate flag prefetch refresh failed — ' + iid, e);
+        const item = this._findCachedItem(iid);
+        // First hydrate uses the same enrich/overlay path as Search Output;
+        // already-hydrated cards throw away and fully rehydrate.
+        // Disputes/flags come from session prefetch + per-task task-disputes —
+        // do not re-fetch team-wide bulk lists here.
+        if (item && item.hydrated === false) {
+            await this._hydrateCardInitial(iid);
+            return;
         }
         await this._rehydrateCard(iid);
     },
@@ -4190,20 +4369,27 @@ const searchOutputResultsPaneMethods = {
         const k = String(kind || '').toLowerCase();
         if (k === 'approved' || k === 'confirmed') {
             return {
-                border: 'color-mix(in srgb, #16a34a 35%, transparent)',
-                background: 'color-mix(in srgb, #16a34a 8%, transparent)'
+                border: 'color-mix(in srgb, #16a34a 35%, ' + DASH_TASK_CARD_BG + ')',
+                background: 'color-mix(in srgb, #16a34a 8%, ' + DASH_TASK_CARD_BG + ')'
             };
         }
         if (k === 'rejected' || k === 'dismissed') {
             return {
-                border: 'color-mix(in srgb, #dc2626 40%, transparent)',
-                background: 'color-mix(in srgb, #dc2626 8%, transparent)'
+                border: 'color-mix(in srgb, #dc2626 40%, ' + DASH_TASK_CARD_BG + ')',
+                background: 'color-mix(in srgb, #dc2626 8%, ' + DASH_TASK_CARD_BG + ')'
             };
         }
         return {
-            border: 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, transparent)',
-            background: 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, transparent)'
+            border: 'color-mix(in srgb, var(--muted-foreground, #64748b) 35%, ' + DASH_TASK_CARD_BG + ')',
+            background: 'color-mix(in srgb, var(--muted-foreground, #64748b) 8%, ' + DASH_TASK_CARD_BG + ')'
         };
+    },
+
+    /** Opaque task-card fill under nested tinted insets so parent red/green does not bleed through. */
+    _actionInsetBackdropWrapHtml(innerHtml) {
+        return '<div style="margin-top: 8px; border-radius: 6px; overflow: hidden; background: ' + DASH_TASK_CARD_BG + ';">'
+            + (innerHtml || '')
+            + '</div>';
     },
 
     _resolvedActionSubBlockHtml(opts) {
@@ -4224,15 +4410,15 @@ const searchOutputResultsPaneMethods = {
             + leftHeaderExtra;
         const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge);
         const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
-        return '<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">'
-            + this._actionBlockShellHtml(
+        return this._actionInsetBackdropWrapHtml(
+            this._actionBlockShellHtml(
                 blockId,
                 itemId,
                 'padding: 8px 10px; border: 1px solid ' + colors.border + '; border-radius: 6px; background: ' + colors.background + '; display: flex; flex-direction: column; gap: 6px;',
                 resHeaderRow,
                 resBodyHtml
             )
-            + '</div>';
+        );
     },
 
     _resultsHeaderBarStyle() {
@@ -5412,44 +5598,69 @@ const searchOutputResultsPaneMethods = {
         }
     },
 
+    _withResultsScrollPreserved(fn) {
+        const wrap = this._q('#wf-dash-results');
+        const saved = wrap ? wrap.scrollTop : 0;
+        try {
+            return fn();
+        } finally {
+            if (!wrap || !wrap.isConnected) return;
+            const restore = () => {
+                const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+                wrap.scrollTop = Math.min(Math.max(0, saved), max);
+            };
+            restore();
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(restore);
+            }
+        }
+    },
+
     _patchTaskCard(itemId) {
         if (this._state.loading) return;
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !itemId) return;
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
         if (!item) return;
-        const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
-        let existing = null;
-        for (const el of cards) {
-            if (el.getAttribute('data-item-id') === itemId) {
-                existing = el;
-                break;
+        this._withResultsScrollPreserved(() => {
+            const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
+            let existing = null;
+            for (const el of cards) {
+                if (el.getAttribute('data-item-id') === itemId) {
+                    existing = el;
+                    break;
+                }
             }
-        }
-        const html = this._resultCardHtml(item);
-        const doc = this._pageWindow().document;
-        const temp = doc.createElement('div');
-        temp.innerHTML = html;
-        const newCard = temp.firstElementChild;
-        if (!newCard) return;
-        if (existing) {
-            this._detachCardRollingListeners(existing);
-            existing.replaceWith(newCard);
-        } else {
-            wrap.appendChild(newCard);
-        }
-        const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
-        if (item2) {
-            const ui = this._getCardUi(item2.task.id);
-            const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
-            if (ui.expanded && versionCount >= 2) {
-                this._attachCardRollingListeners(newCard, itemId, item2.task.id);
+            const html = this._resultCardHtml(item);
+            const doc = this._pageWindow().document;
+            const temp = doc.createElement('div');
+            temp.innerHTML = html;
+            const newCard = temp.firstElementChild;
+            if (!newCard) return;
+            if (existing) {
+                const active = doc.activeElement;
+                if (active && typeof existing.contains === 'function' && existing.contains(active)
+                    && typeof active.blur === 'function') {
+                    active.blur();
+                }
+                this._detachCardRollingListeners(existing);
+                existing.replaceWith(newCard);
             } else {
-                this._detachCardRollingListeners(newCard);
+                wrap.appendChild(newCard);
             }
-        }
-        this._syncAutoGrowTextareasIn(newCard);
-        this._syncResultsHydrateBannerUi();
+            const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
+            if (item2) {
+                const ui = this._getCardUi(item2.task.id);
+                const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
+                if (ui.expanded && versionCount >= 2) {
+                    this._attachCardRollingListeners(newCard, itemId, item2.task.id);
+                } else {
+                    this._detachCardRollingListeners(newCard);
+                }
+            }
+            this._syncAutoGrowTextareasIn(newCard);
+            this._syncResultsHydrateBannerUi();
+        });
     },
 
     _syncAutoGrowTextarea(ta, minHeightPx) {
@@ -5763,11 +5974,25 @@ const searchOutputResultsPaneMethods = {
             return;
         }
         if (!s.hasSearched) {
+            const wsId = typeof this._resolveActiveOutputWsId === 'function'
+                ? this._resolveActiveOutputWsId()
+                : 'search-output';
+            if (wsId === 'disputes') {
+                el.textContent = 'Waiting for dispute prefetch…';
+                return;
+            }
+            if (wsId === 'sr-review') {
+                el.textContent = 'Waiting for Sr Review flag prefetch…';
+                return;
+            }
             el.textContent = 'Set search parameters on the left, then press Search.';
             return;
         }
         if (s.filteredItems !== null && s.cachedItems !== null && s.committed) {
             const committed = s.committed;
+            const viewCount = (this._getViewItems() || []).length;
+            const filteredCount = (s.filteredItems || []).length;
+            const displayCount = this._activeReviewStatusKind() ? viewCount : filteredCount;
             if (committed.accumulatedResults) {
                 const scopeTotal = this._getFilterScopeItems().length;
                 const tabs = this._resultsKindTabsMeta(committed);
@@ -5777,21 +6002,21 @@ const searchOutputResultsPaneMethods = {
                     const activeMeta = tabs.find((t) => t.id === activeTab);
                     if (activeMeta) tabNote = ' in ' + activeMeta.label;
                 }
-                const countLabel = s.filteredItems.length === scopeTotal
-                    ? s.filteredItems.length + ' result(s)' + tabNote
-                    : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)' + tabNote;
+                const countLabel = displayCount === scopeTotal
+                    ? displayCount + ' result(s)' + tabNote
+                    : displayCount + ' of ' + scopeTotal + ' result(s)' + tabNote;
                 el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — accumulated results</span>`;
                 return;
             }
             if (committed.retrieveMode) {
                 const scopeTotal = this._getFilterScopeItems().length;
-                const countLabel = s.filteredItems.length === scopeTotal
-                    ? s.filteredItems.length + ' result(s)'
-                    : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)';
+                const countLabel = displayCount === scopeTotal
+                    ? displayCount + ' result(s)'
+                    : displayCount + ' of ' + scopeTotal + ' result(s)';
                 const retrieveCount = Number(committed.retrieveCount) || 0;
                 const retrievedNote = retrieveCount === 1
                     ? 'retrieved 1 task'
-                    : ('retrieved ' + (retrieveCount || s.filteredItems.length) + ' tasks');
+                    : ('retrieved ' + (retrieveCount || filteredCount) + ' tasks');
                 el.innerHTML = `<span style="${label}">${dashEscHtml(countLabel)} — ${dashEscHtml(retrievedNote)} · fully hydrated</span>`;
                 return;
             }
@@ -5808,9 +6033,9 @@ const searchOutputResultsPaneMethods = {
                 const activeMeta = tabs.find((t) => t.id === activeTab);
                 if (activeMeta) tabNote = ' in ' + activeMeta.label;
             }
-            const countLabel = s.filteredItems.length === scopeTotal
-                ? s.filteredItems.length + ' result(s)' + tabNote
-                : s.filteredItems.length + ' of ' + scopeTotal + ' result(s)' + tabNote;
+            const countLabel = displayCount === scopeTotal
+                ? displayCount + ' result(s)' + tabNote
+                : displayCount + ' of ' + scopeTotal + ' result(s)' + tabNote;
             const modes = [];
             if (committed.includeTaskCreation) modes.push({ kind: 'task_creation', label: 'tasks' });
             if (committed.includeQa) modes.push({ kind: 'qa', label: 'QA' });
@@ -5844,40 +6069,58 @@ const searchOutputResultsPaneMethods = {
             this._syncSearchLoadPhaseUi();
             return;
         }
-        if (s.searchError && !s.cachedItems) {
+
+        this._withResultsScrollPreserved(() => {
+            if (s.searchError && !s.cachedItems) {
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = '';
+                return;
+            }
+            if (!s.hasSearched) {
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = `<p style="${muted}">Results will appear here after you run a search.</p>`;
+                return;
+            }
+            if (s.filteredItems === null) {
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = '';
+                return;
+            }
+            const viewItems = this._getViewItems();
+            if (!viewItems || viewItems.length === 0) {
+                const scopeTotal = this._getFilterScopeItems().length;
+                const reviewKind = this._activeReviewStatusKind();
+                const status = this._state.resultsReviewStatus === 'resolved' ? 'resolved' : 'pending';
+                let msg;
+                if (s.cachedItems && s.cachedItems.length === 0) {
+                    msg = 'No results matched this search.';
+                } else if (reviewKind && scopeTotal > 0) {
+                    if (reviewKind === 'dispute') {
+                        msg = status === 'pending'
+                            ? 'No pending disputes to review'
+                            : 'No resolved disputes to review';
+                    } else {
+                        msg = status === 'pending'
+                            ? 'No pending flags to review'
+                            : 'No resolved flags to review';
+                    }
+                } else if (scopeTotal === 0) {
+                    msg = 'No results in this tab.';
+                } else {
+                    msg = 'No results match the current filters.';
+                }
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
+                this._syncResultsToolbarDerivedUi();
+                return;
+            }
+            const pageItems = this._getPaginatedViewItems();
             this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = '';
-            return;
-        }
-        if (!s.hasSearched) {
-            this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = `<p style="${muted}">Results will appear here after you run a search.</p>`;
-            return;
-        }
-        if (s.filteredItems === null) {
-            this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = '';
-            return;
-        }
-        const viewItems = this._getViewItems();
-        if (!viewItems || viewItems.length === 0) {
-            const scopeTotal = this._getFilterScopeItems().length;
-            const msg = (s.cachedItems && s.cachedItems.length === 0)
-                ? 'No results matched this search.'
-                : scopeTotal === 0
-                    ? 'No results in this tab.'
-                    : 'No results match the current filters.';
-            this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
+            wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
             this._syncResultsToolbarDerivedUi();
-            return;
-        }
-        const pageItems = this._getPaginatedViewItems();
-        this._clearAllRollingOverlayListeners();
-        wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
-        this._syncResultsToolbarDerivedUi();
-        this._animateSeededSessionQaPanels(pageItems);
-        this._schedulePageHydrate();
+            this._animateSeededSessionQaPanels(pageItems);
+            this._schedulePageHydrate();
+        });
     },
 
     _applySessionQaSearchSeed(seedMap) {
@@ -6324,20 +6567,8 @@ const searchOutputResultsPaneMethods = {
             : [{ id: '', displayVersionNo: 1, prompt: task.prompt, envKey: task.envKey, createdAt: task.createdAt }];
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
-        const versionMode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
-        const hasContributors = (this._state.activeSearchAuthorIds || []).length > 0;
-        let defaultDisplayNo;
-        if (versionMode === DASH_VERSION_MODE_V1) {
-            const sorted = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo);
-            defaultDisplayNo = sorted[0].displayVersionNo;
-        } else if (versionMode === DASH_VERSION_MODE_CONTRIBUTOR && hasContributors) {
-            defaultDisplayNo = this._contributorMatchDisplayNo(item, versions);
-        } else {
-            defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
-        }
-        const ui = this._getCardUi(task.id);
+        const { selectedDisplayNo, ui } = this._resolveCardSelectedDisplayNo(item, versions);
         const expanded = ui.expanded;
-        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
         const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
         const disputes = item.disputes || [];
@@ -6373,6 +6604,8 @@ const searchOutputResultsPaneMethods = {
         }
 
         const headerLines = [];
+        // serialize path keeps reviewKind unused except selection — silence via void
+        void reviewKind;
         const key = String(task.key || '').trim();
         if (key) headerLines.push('`' + key + '`');
         const statusMeta = this._statusDisplayMeta(task.status);
@@ -6790,15 +7023,15 @@ const searchOutputResultsPaneMethods = {
 
     _qaAcceptedBlockStyle() {
         return {
-            border: '1px solid color-mix(in srgb, #16a34a 35%, transparent)',
-            background: 'color-mix(in srgb, #16a34a 8%, transparent)'
+            border: '1px solid color-mix(in srgb, #16a34a 35%, ' + DASH_TASK_CARD_BG + ')',
+            background: 'color-mix(in srgb, #16a34a 8%, ' + DASH_TASK_CARD_BG + ')'
         };
     },
 
     _qaReturnedBlockStyle() {
         return {
-            border: '1px solid color-mix(in srgb, #dc2626 40%, transparent)',
-            background: 'color-mix(in srgb, #dc2626 8%, transparent)'
+            border: '1px solid color-mix(in srgb, #dc2626 40%, ' + DASH_TASK_CARD_BG + ')',
+            background: 'color-mix(in srgb, #dc2626 8%, ' + DASH_TASK_CARD_BG + ')'
         };
     },
 
@@ -7057,13 +7290,25 @@ const searchOutputResultsPaneMethods = {
             });
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
-        const disputeRightHtml = (categoryHtml || claimControlHtml)
-            ? `${categoryHtml}${claimControlHtml}`
-            : '';
         const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
             + this._liveSectionCopyIconHtml('dispute', display.id, itemId)
             + submittedHtml;
+        const filerHtml = (display.filerId || display.filerName || display.filerEmail)
+            ? this._fieldGroupHtml(
+                'Filed by',
+                this._personChipsHtml(
+                    display.filerName,
+                    display.filerEmail,
+                    display.filerId,
+                    'Open filer in Fleet',
+                    'dispute'
+                )
+            )
+            : '';
+        const disputeRightHtml = (categoryHtml || claimControlHtml || filerHtml)
+            ? `${filerHtml}${categoryHtml}${claimControlHtml}`
+            : '';
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
         const resolutionPanelHtml = !display.resolutionAt
             ? this._disputeResolutionPanelHtml(display, itemId)
@@ -7140,11 +7385,11 @@ const searchOutputResultsPaneMethods = {
             });
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
-            ? `<div style="margin-top: 8px; border-radius: 6px; background: var(--card, #ffffff);">
-                <div style="padding: 8px 10px; background: var(--card, #ffffff); border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-flag-resolution="${dashEscHtml(String(display.id || ''))}" data-wf-dash-item-id="${dashEscHtml(String(itemId))}">
+            ? this._actionInsetBackdropWrapHtml(
+                `<div style="padding: 8px 10px; background: ${DASH_TASK_CARD_BG}; border-radius: 6px; display: flex; flex-direction: column; gap: 6px;" data-wf-dash-flag-resolution="${dashEscHtml(String(display.id || ''))}" data-wf-dash-item-id="${dashEscHtml(String(itemId))}">
                     ${this._flagResolutionBlockHtml(display.id, itemId)}
-                </div>
-            </div>`
+                </div>`
+            )
             : '';
         const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
@@ -7217,6 +7462,67 @@ const searchOutputResultsPaneMethods = {
             byDisplayNo.set(displayNo, list);
         }
         return byDisplayNo;
+    },
+
+    _disputeEntityDisplayNo(item, dispute) {
+        const allFeedback = (item && item.task && item.task.allFeedback) || [];
+        const versions = (item && item.task && item.task.promptVersions) || [];
+        if (dispute && dispute.feedbackId) {
+            const entry = allFeedback.find((f) => String(f.id) === String(dispute.feedbackId));
+            if (entry && entry.linkedDisplayVersionNo != null) return entry.linkedDisplayVersionNo;
+        }
+        const map = this._orphanDisputesByDisplayNo(
+            dispute ? [dispute] : [],
+            allFeedback,
+            versions
+        );
+        for (const [displayNo, list] of map.entries()) {
+            if (list && list.length) return displayNo;
+        }
+        return versions.length ? versions[versions.length - 1].displayVersionNo : 1;
+    },
+
+    _flagEntityDisplayNo(item, flag) {
+        const versions = (item && item.task && item.task.promptVersions) || [];
+        const map = this._orphanFlagsByDisplayNo(flag ? [flag] : [], versions);
+        for (const [displayNo, list] of map.entries()) {
+            if (list && list.length) return displayNo;
+        }
+        return versions.length ? versions[versions.length - 1].displayVersionNo : 1;
+    },
+
+    _reviewTargetDisplayNo(item, kind, status) {
+        const versions = (item && item.task && item.task.promptVersions) || [];
+        const fallback = versions.length ? versions[versions.length - 1].displayVersionNo : 1;
+        const wantPending = status !== 'resolved';
+        if (kind === 'dispute') {
+            const all = item.disputes || [];
+            let entities = all.filter((d) => (
+                wantPending ? this._isDisputePending(d) : !this._isDisputePending(d)
+            ));
+            if (entities.length === 0) entities = all.slice();
+            entities.sort((a, b) => String(a.submittedAt || '').localeCompare(String(b.submittedAt || '')));
+            if (!entities.length) return fallback;
+            return this._disputeEntityDisplayNo(item, entities[0]);
+        }
+        if (kind === 'senior_review') {
+            const all = item.flags || [];
+            let entities = all.filter((f) => (
+                wantPending ? this._isFlagPending(f) : !this._isFlagPending(f)
+            ));
+            if (entities.length === 0) entities = all.slice();
+            entities.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+            if (!entities.length) return fallback;
+            return this._flagEntityDisplayNo(item, entities[0]);
+        }
+        return fallback;
+    },
+
+    _collapsedReviewVersionControlsHtml(itemId, taskId, selectedDisplayNo, totalVersions) {
+        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            ${this._promptVersionCountHtml(selectedDisplayNo, totalVersions)}
+            <button type="button" data-wf-dash-card-show-all="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Show All</button>
+        </span>`;
     },
 
     _feedbackEntryAt(entry) {
@@ -7438,7 +7744,8 @@ const searchOutputResultsPaneMethods = {
             `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
         );
         let bodyInner;
-        if (item.qaFeedback) {
+        const preferQaOnly = item.kind === 'qa' && item.qaFeedback;
+        if (preferQaOnly) {
             bodyInner = taskActionsHtml;
         } else {
             bodyInner = promptSectionHtml + taskActionsHtml;
@@ -7506,22 +7813,8 @@ const searchOutputResultsPaneMethods = {
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
 
-        const versionMode = this._state.versionMode || DASH_VERSION_MODE_FINAL;
-        const hasContributors = (this._state.activeSearchAuthorIds || []).length > 0;
-
-        let defaultDisplayNo;
-        if (versionMode === DASH_VERSION_MODE_V1) {
-            const sorted = [...versions].sort((a, b) => a.displayVersionNo - b.displayVersionNo);
-            defaultDisplayNo = sorted[0].displayVersionNo;
-        } else if (versionMode === DASH_VERSION_MODE_CONTRIBUTOR && hasContributors) {
-            defaultDisplayNo = this._contributorMatchDisplayNo(item, versions);
-        } else {
-            defaultDisplayNo = versions[versions.length - 1].displayVersionNo;
-        }
-
-        const ui = this._getCardUi(task.id);
+        const { selectedDisplayNo, ui, reviewKind } = this._resolveCardSelectedDisplayNo(item, versions);
         const expanded = ui.expanded;
-        const selectedDisplayNo = ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo;
 
         const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
@@ -7595,7 +7888,9 @@ const searchOutputResultsPaneMethods = {
             const hasSubsequentVersions = hasTimeline && version.displayVersionNo < maxDisplayVersionNo;
             let versionHeaderControls = '';
             if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
-                versionHeaderControls = this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
+                versionHeaderControls = reviewKind
+                    ? this._collapsedReviewVersionControlsHtml(itemId, task.id, selectedDisplayNo, totalVersions)
+                    : this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
             } else if (hasTimeline && expanded) {
                 versionHeaderControls = this._expandedVersionHeaderHtml(itemId, task.id, version.displayVersionNo, totalVersions);
             }
@@ -7679,7 +7974,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.24',
+    _version: '10.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

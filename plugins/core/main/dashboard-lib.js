@@ -808,7 +808,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.6',
+    _version: '8.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1454,14 +1454,17 @@ const plugin = {
         const flags = new Set();
         for (const flag of (item && item.flags) || []) {
             if (!flag) continue;
-            if (flag.isPending || String(flag.status || '').toLowerCase() === 'pending' || !flag.resolutionAt) {
-                flags.add('pending');
+            const status = String(flag.status || '').toLowerCase();
+            if (flag.isConfirmed || status === 'confirmed') {
+                flags.add('confirmed');
                 continue;
             }
-            if (flag.isConfirmed || String(flag.status || '').toLowerCase() === 'confirmed') {
-                flags.add('confirmed');
-            } else if (flag.isDismissed || String(flag.status || '').toLowerCase() === 'dismissed') {
+            if (flag.isDismissed || status === 'dismissed') {
                 flags.add('dismissed');
+                continue;
+            }
+            if (flag.isPending || status === 'pending' || !status || !flag.resolutionAt) {
+                flags.add('pending');
             }
         }
         return [...flags];
@@ -2435,6 +2438,7 @@ const plugin = {
         const status = String((disputeRow && disputeRow.dispute_status) || 'pending').toLowerCase();
         const category = data && data.category ? String(data.category) : '';
         const resolvedAt = disputeRow && disputeRow.resolved_at ? String(disputeRow.resolved_at) : null;
+        const creator = this._embeddedPersonFields(disputeRow && disputeRow.creator);
         const resolver = this._embeddedPersonFields(disputeRow && disputeRow.resolver);
         const resolverId = resolver.id || String((disputeRow && disputeRow.resolved_by) || '');
         const resolverProfile = resolverId && profilesMap ? profilesMap.get(resolverId) : null;
@@ -2456,10 +2460,17 @@ const plugin = {
             resolverId,
             resolverName: resolver.name || String((resolverProfile && resolverProfile.full_name) || ''),
             resolverEmail: resolver.email || String((resolverProfile && resolverProfile.email) || ''),
+            filerId: String((disputeRow && disputeRow.user_id) || ''),
+            filerName: creator.name || '',
+            filerEmail: creator.email || '',
             isApproved: status === 'approved',
             isRejected: status === 'rejected',
             originalFeedbackCreatedAt: disputeRow && disputeRow.original_feedback_created_at
                 ? String(disputeRow.original_feedback_created_at)
+                : null,
+            leasedBy: disputeRow && disputeRow.leased_by ? String(disputeRow.leased_by) : null,
+            leaseExpiresAt: disputeRow && disputeRow.lease_expires_at
+                ? String(disputeRow.lease_expires_at)
                 : null
         };
         const screenshotKeys = dashLibNormalizeScreenshotKeys(

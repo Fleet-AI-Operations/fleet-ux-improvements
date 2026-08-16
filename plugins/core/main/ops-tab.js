@@ -1,6 +1,6 @@
 // ops-tab.js
 // Core plugin for the Ops platform: secrets/password gate, PostgREST, team
-// catalog and search/mutate APIs, verifier fetch backend, and task link helpers.
+// catalog and search/mutate APIs, and verifier fetch backend.
 // Tab panel controllers live in team-members.js (Context.teamMembers) and
 // verifier-fetcher.js (Context.verifierFetcher). Dashboard chrome/settings UI
 // live in search-output.js, dashboard-settings.js, and settings-ui.js.
@@ -83,10 +83,6 @@ function opsFleetOrigin() {
         if (origin && host && OPS_FLEET_HOSTS.has(host)) return origin;
     } catch (e) { /* ignore */ }
     return OPS_FLEET_ORIGIN_FALLBACK;
-}
-
-function opsTaskUrlPrefix() {
-    return opsFleetOrigin() + '/dashboard/data/tasks/';
 }
 
 function opsGradeAssessmentsUrl() {
@@ -248,8 +244,8 @@ async function opsDecryptWithPassword(blob, password) {
 const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
-    description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch, task links',
-    _version: '12.3',
+    description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch',
+    _version: '13.0',
     phase: 'core',
     enabledByDefault: true,
 
@@ -285,9 +281,7 @@ const plugin = {
         ratingBaselinesLogged: false
     },
     _opsBundleNotLoadedLogged: false,
-    _opsTabState: {
-        taskInput: ''
-    },
+    _opsTabState: {},
 
     init(state, context) {
         Context.opsTab = {
@@ -302,9 +296,8 @@ const plugin = {
             setOpsDashboardOpenOnSettings: (enabled) => this._setOpsDashboardOpenOnSettings(enabled),
             renderSettingsSection: () => this._renderOpsSettingsSection(),
             renderGradeAssessmentsHeaderLink: () => this._renderGradeAssessmentsHeaderLink(),
-            renderTaskLinkBar: () => this._renderTaskLinkBar(),
             attachSettingsListeners: (modal, settingsPlugin) => this._attachOpsSettingsListeners(modal, settingsPlugin),
-            attachTaskLinkListeners: (dashModal) => this._attachOpsTaskLinkListeners(dashModal),
+            attachDashboardHeaderListeners: (dashModal) => this._attachOpsDashboardHeaderListeners(dashModal),
             injectSpinnerStyle: () => this._injectOpsSpinnerStyle(),
             findVerifierContentMatchStarts: (text, query) => this._findVerifierContentMatchStarts(text, query),
             renderVerifierCodeElement: (codeEl, opts) => this._renderVerifierCodeElement(codeEl, opts),
@@ -313,7 +306,6 @@ const plugin = {
             stepVerifierContentMatchInElement: (codeEl, searchState, delta, rerender) =>
                 this._stepVerifierContentMatchInElement(codeEl, searchState, delta, rerender),
             listTaskVerifierVersionOptions: (parsed) => this._listOpsTaskVerifierVersionOptions(parsed),
-            captureTaskLinkState: (modal) => this._captureOpsTaskLinkState(modal),
             captureState: (root) => this._captureOpsTabState(root),
             revalidateOnDashboardTabActivated: (dashModal) => this._revalidateOnDashboardTabActivated(dashModal),
             ensureOpsSessionReady: (dashModal) => this._ensureOpsSessionReady(dashModal),
@@ -323,8 +315,6 @@ const plugin = {
             onModalClosed: () => this._onOpsModalClosed(),
             setTabWanted: (enabled) => this._setOpsTabWanted(enabled),
             clearStoredPassword: () => this._clearOpsStoredPassword(),
-            resolveTaskLinkTarget: (raw) => this.resolveTaskLinkTarget(raw),
-            openTaskLink: (raw, opts) => this.openTaskLink(raw, opts),
             fetchVerifierCode: (parsed) => this._fetchOpsVerifierCode(parsed || {}),
             fetchTaskUserStory: (parsed) => this._fetchOpsTaskUserStory(parsed || {}),
             parseVerifierInput: (raw) => this._parseOpsVerifierInput(raw),
@@ -891,95 +881,6 @@ const plugin = {
             if (uuidMatch) return uuidMatch[0];
         }
         return trimmed;
-    },
-
-    _buildOpsTaskUrl(raw) {
-        const id = this._extractOpsTaskIdentifier(raw);
-        if (!id) return null;
-        if (/^task_/i.test(id) || OPS_UUID_RE.test(id)) {
-            return opsTaskUrlPrefix() + id;
-        }
-        return null;
-    },
-
-    _opsTeamRef(teamId) {
-        const id = String(teamId || '').trim();
-        return id ? id.slice(0, 8) + '…' : '(none)';
-    },
-
-    async resolveTaskLinkTarget(raw) {
-        const url = this._buildOpsTaskUrl(raw);
-        if (!url) return null;
-        const parsed = this._parseOpsVerifierInput(raw);
-        let teamId = String(parsed.teamId || '').trim();
-        let teamSource = teamId ? 'input' : 'none';
-        if (!teamId && (parsed.taskKey || parsed.taskId)) {
-            try {
-                const resolved = await this._resolveOpsVerifierFromTask(parsed);
-                teamId = String(resolved.teamId || '').trim();
-                teamSource = teamId ? 'tasks-lookup' : 'tasks-lookup-empty';
-            } catch (e) {
-                Logger.debug('task link team_id lookup failed', e);
-                teamSource = 'tasks-lookup-failed';
-            }
-        }
-        const taskId = String(parsed.taskId || this._extractOpsTaskIdentifier(raw) || '').trim();
-        const taskRef = taskId
-            ? (taskId.length > 12 ? taskId.slice(0, 8) + '…' : taskId)
-            : '(none)';
-        Logger.debug('task link target resolved — task=' + taskRef +
-            ' team=' + this._opsTeamRef(teamId) +
-            ' source=' + teamSource +
-            ' url=' + url
-        );
-        if (teamSource === 'tasks-lookup-empty') {
-            Logger.warn('task link — no team_id from PostgREST; open may use wrong team context');
-        }
-        return { url, teamId, taskId, teamSource };
-    },
-
-    async openTaskLink(raw, opts) {
-        const options = opts || {};
-        const input = this._opsQuery(
-            options.root,
-            '#wf-ops-task-input',
-            'taskLinkOpen'
-        );
-        const value = raw != null ? raw : (input && input.value);
-        const target = await this.resolveTaskLinkTarget(value);
-        if (!target || !target.url) {
-            Logger.warn('openTaskLink skipped — no URL');
-            return;
-        }
-        const teamId = String(target.teamId || '').trim();
-        const tabMode = options.newTab ? 'new tab' : 'current tab';
-        let teamSwitch = 'none';
-        if (!teamId) {
-            teamSwitch = 'skipped-no-team';
-            Logger.debug('task link — no team_id; opening without team switch');
-        } else if (!Context.dashboard || typeof Context.dashboard.switchFleetTeam !== 'function') {
-            teamSwitch = 'skipped-no-dashboard';
-            Logger.warn('task link — dashboard.switchFleetTeam unavailable; opening without team switch');
-        } else {
-            try {
-                await Context.dashboard.switchFleetTeam(teamId);
-                teamSwitch = 'switched';
-                Logger.debug('task link — team switch completed (' + this._opsTeamRef(teamId) + ')');
-            } catch (e) {
-                teamSwitch = 'failed';
-                Logger.warn('team switch before task link failed', e);
-            }
-        }
-        if (options.newTab) {
-            window.open(target.url, '_blank', 'noopener,noreferrer');
-        } else {
-            this._getOpsPageWindow().location.href = target.url;
-        }
-        Logger.log('task link opened (' + tabMode + ') — switch=' + teamSwitch +
-            ' team=' + this._opsTeamRef(teamId) +
-            ' source=' + (target.teamSource || 'unknown') +
-            ' url=' + target.url
-        );
     },
 
     _matchOpsJsonString(raw, key) {
@@ -3061,48 +2962,6 @@ const plugin = {
         };
     },
 
-    _clearOpsCopyButtonFeedback(button) {
-        if (Context.buttonFeedback && typeof Context.buttonFeedback.clear === 'function') {
-            Context.buttonFeedback.clear(button);
-        }
-    },
-
-    _showOpsCopySuccessFlash(button) {
-        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
-            Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
-        }
-    },
-
-    _showOpsCopyFailurePulse(button) {
-        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
-            Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
-        }
-    },
-
-    async _copyOpsTextToClipboard(text) {
-        if (!text) return false;
-        try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(text);
-                return true;
-            }
-        } catch (_e) { /* fall through */ }
-        try {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.setAttribute('readonly', '');
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            const ok = document.execCommand('copy');
-            document.body.removeChild(ta);
-            return ok;
-        } catch (_e2) {
-            return false;
-        }
-    },
-
     _opsQuery(modal, selector, contextSuffix) {
         if (!modal) return null;
         if (Context.dom && typeof Context.dom.query === 'function') {
@@ -3112,29 +2971,6 @@ const plugin = {
             });
         }
         return modal.querySelector(selector);
-    },
-
-    _updateOpsTaskLinkUI(modal) {
-        const input = this._opsQuery(modal, '#wf-ops-task-input', 'taskInput');
-        const linkRow = this._opsQuery(modal, '#wf-ops-link-row', 'linkRow');
-        const openBtn = this._opsQuery(modal, '#wf-ops-open-link', 'openLink');
-        const openNewTabBtn = this._opsQuery(modal, '#wf-ops-open-link-new-tab', 'openLinkNewTab');
-        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-link', 'copyLink');
-        if (!input || !linkRow || !openBtn || !openNewTabBtn || !copyBtn) return;
-
-        const url = this._buildOpsTaskUrl(input.value);
-        if (!url) {
-            linkRow.style.display = 'none';
-            openBtn.removeAttribute('data-wf-ops-url');
-            openNewTabBtn.removeAttribute('data-wf-ops-url');
-            copyBtn.removeAttribute('data-wf-ops-url');
-            return;
-        }
-
-        linkRow.style.display = 'flex';
-        openBtn.setAttribute('data-wf-ops-url', url);
-        openNewTabBtn.setAttribute('data-wf-ops-url', url);
-        copyBtn.setAttribute('data-wf-ops-url', url);
     },
 
     _findVerifierContentMatchStarts(text, query) {
@@ -3291,7 +3127,6 @@ const plugin = {
     _captureOpsTabState(modal) {
         if (!modal) return;
         if (!this._opsTabState) this._opsTabState = {};
-        this._captureOpsTaskLinkState(modal);
         const tm = Context.teamMembers;
         if (tm && typeof tm.captureTeamTabState === 'function') {
             tm.captureTeamTabState(modal);
@@ -3307,11 +3142,6 @@ const plugin = {
         const state = this._opsTabState;
         if (!state) return;
 
-        const taskInput = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputRestore');
-        if (taskInput && state.taskInput) {
-            taskInput.value = state.taskInput;
-            this._updateOpsTaskLinkUI(modal);
-        }
         const tm = Context.teamMembers;
         if (tm && typeof tm.restoreTeamTabState === 'function') {
             tm.restoreTeamTabState(modal);
@@ -3570,33 +3400,6 @@ const plugin = {
         `;
     },
 
-
-    _renderTaskLinkBar() {
-        return `
-            <div id="wf-ops-task-link-bar" style="display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; width: auto; max-width: 100%; box-sizing: border-box;">
-                <label for="wf-ops-task-input" style="font-size: 11px; font-weight: 600; color: var(--muted-foreground, #64748b); white-space: nowrap; flex-shrink: 0;">Go to Task:</label>
-                <input type="text" id="wf-ops-task-input" placeholder="Task key or UUID" autocomplete="off" title="Task View Link Generator" style="
-                    flex: 0 0 auto;
-                    width: 220px;
-                    max-width: 100%;
-                    min-width: 120px;
-                    padding: 6px 10px;
-                    font-size: 12px;
-                    border: 1px solid var(--border, #e2e8f0);
-                    border-radius: 6px;
-                    background: var(--background, #fff);
-                    color: var(--foreground, #0f172a);
-                    box-sizing: border-box;
-                ">
-                <div id="wf-ops-link-row" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
-                    <button type="button" id="wf-ops-open-link" class="${this._opsDashBtnClass('secondary', 'nav')}">Open</button>
-                    <button type="button" id="wf-ops-open-link-new-tab" class="${this._opsDashBtnClass('secondary', 'nav')}">New Tab</button>
-                    <button type="button" id="wf-ops-copy-link" title="Copy link" aria-label="Copy link" class="${this._opsDashBtnClass('basic', 'nav')}">Copy</button>
-                </div>
-            </div>`;
-    },
-
-
     _renderGradeAssessmentsHeaderLink() {
         return '<a href="' + this._opsEscapeAttr(opsGradeAssessmentsUrl()) + '" target="_blank" rel="noopener noreferrer" '
             + 'id="wf-ops-grade-assessments" class="wf-dash-header-btn ' + this._opsDashBtnClass('basic', 'nav') + ' wf-ops-grade-header-link">Grade Assessments</a>';
@@ -3730,64 +3533,15 @@ const plugin = {
         void this._ensureOpsSessionReady(dashModal);
     },
 
-    _attachOpsTaskLinkListeners(dashModal) {
+    _attachOpsDashboardHeaderListeners(dashModal) {
         if (!dashModal) return;
         this._injectOpsSpinnerStyle();
         const modal = dashModal;
 
-        if (modal.dataset.wfOpsTaskLinkListenersAttached === '1') {
+        if (modal.dataset.wfOpsDashboardHeaderListenersAttached === '1') {
             return;
         }
-        modal.dataset.wfOpsTaskLinkListenersAttached = '1';
-
-        const input = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputAttach');
-        const openBtn = this._opsQuery(modal, '#wf-ops-open-link', 'openLinkAttach');
-        const openNewTabBtn = this._opsQuery(modal, '#wf-ops-open-link-new-tab', 'openLinkNewTabAttach');
-        const copyBtn = this._opsQuery(modal, '#wf-ops-copy-link', 'copyLinkAttach');
-
-        if (input) {
-            input.addEventListener('input', () => {
-                this._updateOpsTaskLinkUI(modal);
-                this._captureOpsTaskLinkState(modal);
-            });
-            input.addEventListener('paste', () => {
-                requestAnimationFrame(() => {
-                    this._updateOpsTaskLinkUI(modal);
-                    this._captureOpsTaskLinkState(modal);
-                });
-            });
-        }
-
-        if (openBtn) {
-            openBtn.addEventListener('click', () => {
-                void this.openTaskLink(null, { root: modal, newTab: false });
-            });
-        }
-
-        if (openNewTabBtn) {
-            openNewTabBtn.addEventListener('click', () => {
-                void this.openTaskLink(null, { root: modal, newTab: true });
-            });
-        }
-
-        if (copyBtn) {
-            copyBtn.addEventListener('click', async () => {
-                const url = copyBtn.getAttribute('data-wf-ops-url');
-                if (!url) {
-                    Logger.warn('copy skipped (no URL)');
-                    this._showOpsCopyFailurePulse(copyBtn);
-                    return;
-                }
-                const ok = await this._copyOpsTextToClipboard(url);
-                if (ok) {
-                    this._showOpsCopySuccessFlash(copyBtn);
-                    Logger.log('link copied (' + url.length + ' chars)');
-                } else {
-                    this._showOpsCopyFailurePulse(copyBtn);
-                    Logger.warn('link copy failed');
-                }
-            });
-        }
+        modal.dataset.wfOpsDashboardHeaderListenersAttached = '1';
 
         const gradeAssessmentsLink = this._opsQuery(modal, '#wf-ops-grade-assessments', 'opsGradeAssessmentsAttach');
         if (gradeAssessmentsLink) {
@@ -3795,12 +3549,5 @@ const plugin = {
                 Logger.log('grade assessments opened');
             });
         }
-    },
-
-    _captureOpsTaskLinkState(modal) {
-        if (!modal) return;
-        const taskInput = this._opsQuery(modal, '#wf-ops-task-input', 'taskInputCapture');
-        if (!this._opsTabState) this._opsTabState = {};
-        this._opsTabState.taskInput = taskInput ? taskInput.value : '';
     }
 };

@@ -21,12 +21,108 @@ const DASH_DEFAULT_STATS_TAB = 'stats';
 const DASH_STATS_TAB_IDS = ['stats', 'ratings', 'chat'];
 const DASH_DEFAULT_TAB_ORDER = [
     'search-output',
+    'disputes',
+    'sr-review',
     'diff-viewer',
     'team-members',
     'verifier-fetcher',
     'dash-chats',
     'dash-settings',
 ];
+/** Ops tabs that reuse Search Output panes (filters/results/chat). */
+const DASH_OUTPUT_TAB_IDS = ['search-output', 'disputes', 'sr-review'];
+/** Split scopes that get the three-column Search Output layout + shared width prefs. */
+const DASH_OUTPUT_SPLIT_SCOPES = new Set(['dashboard', 'disputes', 'sr-review']);
+/** `_state` keys that live in per-tab output workspaces (not shared shell state). */
+const DASH_OUTPUT_WS_STATE_KEYS = [
+    'draftTokens',
+    'resultsKindTab',
+    'resultsReviewStatus',
+    'hydrateUi',
+    'cardRehydrating',
+    'cardRescuing',
+    'hydrateBulkActive',
+    'hydrateFetchActive',
+    'autoHydrateActive',
+    'pageHydrateScheduled',
+    'pageHydratePending',
+    'autoHydratePassId',
+    'timeFilterUserPicked',
+    'resultsPageSize',
+    'resultsPage',
+    'leftTab',
+    'statsTab',
+    'statsUseFiltered',
+    'ratingsHideProvisional',
+    'ratingsSortKey',
+    'ratingsNameFilter',
+    'ratingsExpandedScores',
+    'ratingsFromResults',
+    'statsCharts',
+    'statsLayout',
+    'statsViewMode',
+    'statsBuilderDraft',
+    'statsBuilderEditId',
+    'statsBuilderDashboardId',
+    'cachedItems',
+    'filteredItems',
+    'hasSearched',
+    'loading',
+    'searchLoadPhase',
+    'searchLoadLog',
+    'searchError',
+    'disputesBulkIncomplete',
+    'flagsBulkIncomplete',
+    'openDisputesByTaskId',
+    'resolvedDisputeTaskIds',
+    'resolvedDisputeAtByTaskId',
+    'resolverDisputeTaskIds',
+    'activeSearchScope',
+    'activeSearchAfterIso',
+    'activeSearchBeforeIso',
+    'activeSearchAuthorIds',
+    'committed',
+    'appliedFilters',
+    'filterSelectionOrder',
+    'filterListOptions',
+    'filterListBoundsPrev',
+    'cardUi',
+    'taskOpenUi',
+    'disputeClaimUi',
+    'helpfulnessUi',
+    'flagResolutionUi',
+    'flagCreateUi',
+    'actionBlockUi',
+    'userStoryUi',
+    'sessionQaUi',
+    'verifierOutputUi',
+    'supplementalActionMsgUi',
+    'screenshotUi',
+    'includeTasks',
+    'includeQa',
+    'includeDisputes',
+    'includeSeniorReview',
+    'includeSessions',
+    'searchLimit',
+    'searchFetchActive',
+    'searchGeneration',
+    'targetIdsCacheKey',
+    'targetIdsCache',
+    'retrieveInput',
+    'resultsMode',
+    'versionMode',
+    'resultsLoadSnapshot',
+    'disputeLoadSnapshot',
+    'statsPanelDirty',
+];
+
+function dashIsOutputTabId(tabId) {
+    return DASH_OUTPUT_TAB_IDS.includes(String(tabId || '').trim());
+}
+
+function dashIsOutputSplitScope(scopeKey) {
+    return DASH_OUTPUT_SPLIT_SCOPES.has(String(scopeKey || 'dashboard'));
+}
 const DASH_RESULTS_PANEL_FULL_WIDTH_TOLERANCE_PX = 8;
 const DASH_DIFF_VIEWER_SIDE_PANEL_WIDTH_KEY = 'fleet-ux:diff-viewer-side-panel-width';
 const DASH_DIFF_VIEWER_SIDE_PANEL_DEFAULT_RATIO = 0.25;
@@ -113,7 +209,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.7',
+    _version: '12.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -122,6 +218,9 @@ const plugin = {
     _modal: null,
     _built: false,
     _state: null,
+    _workspaces: null,
+    _wsOverride: null,
+    _lastOutputWsId: 'search-output',
     _tabs: null,
     _tabsById: null,
     _onKeydown: null,
@@ -138,7 +237,11 @@ const plugin = {
             Logger.debug('loader already registered — skipping re-init');
             return;
         }
+        this._workspaces = {};
+        this._wsOverride = null;
+        this._lastOutputWsId = 'search-output';
         this._state = this._createInitialState();
+        this._initOutputWorkspaces();
         this._tabs = [];
         this._tabsById = {};
         const self = this;
@@ -393,14 +496,14 @@ const plugin = {
         }
     },
 
-    _createInitialState() {
+    _createWorkspaceState(wsId) {
+        const id = String(wsId || 'search-output');
+        const filtersOnly = id === 'disputes' || id === 'sr-review';
         return {
-            catalog: null,
-            bootstrapStatus: 'idle',
-            bootstrapError: null,
-            sessionRefreshRequired: false,
+            wsId: id,
             draftTokens: [],
             resultsKindTab: 'all',
+            resultsReviewStatus: 'pending',
             hydrateUi: {},
             cardRehydrating: {},
             cardRescuing: {},
@@ -413,9 +516,8 @@ const plugin = {
             timeFilterUserPicked: false,
             resultsPageSize: DASH_RESULTS_PAGE_SIZE_DEFAULT,
             resultsPage: 0,
-            activeTab: this._readDefaultTabId(),
-            leftTab: 'search',
-            statsTab: this._readDefaultStatsTabId(),
+            leftTab: filtersOnly ? 'filters' : 'search',
+            statsTab: filtersOnly ? 'chat' : this._readDefaultStatsTabId(),
             statsUseFiltered: true,
             ratingsHideProvisional: false,
             ratingsSortKey: null,
@@ -441,16 +543,15 @@ const plugin = {
             resolvedDisputeTaskIds: null,
             resolvedDisputeAtByTaskId: null,
             resolverDisputeTaskIds: null,
-            prefetch: null,
             activeSearchScope: null,
             activeSearchAfterIso: null,
             activeSearchBeforeIso: null,
             activeSearchAuthorIds: null,
-            bootstrapRunPromise: null,
             committed: null,
             appliedFilters: null,
             filterSelectionOrder: [],
             filterListOptions: null,
+            filterListBoundsPrev: null,
             cardUi: {},
             taskOpenUi: {},
             disputeClaimUi: {},
@@ -473,6 +574,142 @@ const plugin = {
             searchGeneration: 0,
             targetIdsCacheKey: '',
             targetIdsCache: null,
+            retrieveInput: '',
+            resultsMode: null,
+            versionMode: null,
+            resultsLoadSnapshot: null,
+            disputeLoadSnapshot: null,
+            statsPanelDirty: false
+        };
+    },
+
+    _initOutputWorkspaces() {
+        if (!this._workspaces) this._workspaces = {};
+        for (const id of DASH_OUTPUT_TAB_IDS) {
+            if (!this._workspaces[id]) {
+                this._workspaces[id] = this._createWorkspaceState(id);
+            }
+        }
+        this._installOutputWorkspaceBridge();
+    },
+
+    _resolveActiveOutputWsId() {
+        if (this._wsOverride) return this._wsOverride;
+        const tab = this._state && String(this._state.activeTab || '').trim();
+        if (dashIsOutputTabId(tab)) {
+            this._lastOutputWsId = tab;
+            return tab;
+        }
+        return this._lastOutputWsId || 'search-output';
+    },
+
+    _ws(id) {
+        const wsId = id || this._resolveActiveOutputWsId();
+        if (!this._workspaces) this._workspaces = {};
+        if (!this._workspaces[wsId]) {
+            this._workspaces[wsId] = this._createWorkspaceState(wsId);
+        }
+        return this._workspaces[wsId];
+    },
+
+    _withOutputWs(wsId, fn) {
+        const prev = this._wsOverride;
+        this._wsOverride = wsId || this._resolveActiveOutputWsId();
+        try {
+            return fn();
+        } finally {
+            this._wsOverride = prev;
+        }
+    },
+
+    async _withOutputWsAsync(wsId, fn) {
+        const prev = this._wsOverride;
+        this._wsOverride = wsId || this._resolveActiveOutputWsId();
+        try {
+            return await fn();
+        } finally {
+            this._wsOverride = prev;
+        }
+    },
+
+    _resolveOutputWsIdFromEl(el) {
+        if (!el || !el.closest) return null;
+        const panel = el.closest('[data-wf-dash-panel]');
+        if (!panel) return null;
+        const id = panel.getAttribute('data-wf-dash-panel');
+        return dashIsOutputTabId(id) ? id : null;
+    },
+
+    _outputPanel(wsId) {
+        if (!this._modal) return null;
+        const id = wsId || this._resolveActiveOutputWsId();
+        return this._modal.querySelector('[data-wf-dash-panel="' + id + '"]');
+    },
+
+    _outputDomId(rest, wsId) {
+        const id = wsId || this._resolveActiveOutputWsId();
+        const r = String(rest || '').replace(/^wf-dash-/, '');
+        if (id === 'search-output') return 'wf-dash-' + r;
+        return 'wf-dash-' + id + '-' + r;
+    },
+
+    _outputDomAttrs(rest, wsId) {
+        const r = String(rest || '').replace(/^wf-dash-/, '');
+        return 'id="' + dashEscHtml(this._outputDomId(r, wsId)) + '" data-wf-dash-output-el="' + dashEscHtml(r) + '"';
+    },
+
+    _queryWithinOutputPanel(panel, selector) {
+        if (!panel || !selector) return null;
+        const m = /^#wf-dash-(.+)$/.exec(selector);
+        if (m) {
+            const rest = m[1];
+            const byData = panel.querySelector('[data-wf-dash-output-el="' + rest + '"]');
+            if (byData) return byData;
+        }
+        try {
+            return panel.querySelector(selector);
+        } catch (_e) {
+            return null;
+        }
+    },
+
+    _installOutputWorkspaceBridge() {
+        const self = this;
+        const state = this._state;
+        if (!state || state.__outputWsBridged) return;
+        for (const key of DASH_OUTPUT_WS_STATE_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(state, key)) {
+                delete state[key];
+            }
+            Object.defineProperty(state, key, {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    const ws = self._ws();
+                    return ws[key];
+                },
+                set(value) {
+                    const ws = self._ws();
+                    ws[key] = value;
+                }
+            });
+        }
+        Object.defineProperty(state, '__outputWsBridged', {
+            configurable: true,
+            enumerable: false,
+            value: true
+        });
+    },
+
+    _createInitialState() {
+        return {
+            catalog: null,
+            bootstrapStatus: 'idle',
+            bootstrapError: null,
+            sessionRefreshRequired: false,
+            activeTab: this._readDefaultTabId(),
+            prefetch: null,
+            bootstrapRunPromise: null,
             msDropdownOpen: {},
             msDropdownFilter: {},
             msDropdownPinned: {},
@@ -481,8 +718,7 @@ const plugin = {
             msHoverDisarmed: {},
             msDropdownRefreshActive: false,
             msBulkToggleMode: {},
-            filterExpandAllIntent: 'expand',
-            retrieveInput: ''
+            filterExpandAllIntent: 'expand'
         };
     },
 
@@ -820,9 +1056,6 @@ const plugin = {
             }
             if (Context.dashboard && typeof Context.dashboard.captureTabState === 'function') {
                 Context.dashboard.captureTabState(this._modal);
-            }
-            if (Context.opsTab && typeof Context.opsTab.captureTaskLinkState === 'function') {
-                Context.opsTab.captureTaskLinkState(this._modal);
             }
         }
         this._overlay.style.display = 'none';
@@ -1338,7 +1571,6 @@ const plugin = {
             ];
         const tabBtns = tabs.map((t) => `
             <button type="button" class="wf-dash-tab" data-wf-dash-tab="${t.id}" style="${this._dashTextTabStyle(false)}">${t.label}</button>`).join('');
-        const taskLinkBar = ops && typeof ops.renderTaskLinkBar === 'function' ? ops.renderTaskLinkBar() : '';
         const gradeAssessmentsLink = ops && typeof ops.renderGradeAssessmentsHeaderLink === 'function'
             ? ops.renderGradeAssessmentsHeaderLink()
             : '';
@@ -1367,9 +1599,6 @@ const plugin = {
                     <nav style="display: flex; gap: 0; min-width: 0; overflow: hidden;" aria-label="Dashboard sections">
                         ${tabBtns}
                     </nav>
-                </div>
-                <div id="wf-dash-header-task-link" style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 0 12px; box-sizing: border-box; overflow: hidden;">
-                    <div style="display: flex; justify-content: center; align-items: center; width: 100%; min-width: 0;">${taskLinkBar}</div>
                 </div>
                 <div id="wf-dash-header-ops" style="flex-shrink: 0; margin-left: auto;">
                     ${gradeAssessmentsLink}
@@ -1712,7 +1941,7 @@ const plugin = {
     },
 
     _splitPanelRightHtml(rightHtml, scopeKey, statsHtml) {
-        if (scopeKey !== 'dashboard') {
+        if (!dashIsOutputSplitScope(scopeKey)) {
             return '<div data-wf-dash-split-right style="flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden;">'
                 + rightHtml + '</div>';
         }
@@ -1731,7 +1960,7 @@ const plugin = {
     _splitPanelSectionHtml(leftHtml, rightHtml, scopeKey, statsHtml) {
         const scope = scopeKey || 'dashboard';
         const width = this._readSidePanelWidthPref(scope);
-        const resultsSliver = scope === 'dashboard' ? this._resultsCollapseSliverHtml() : '';
+        const resultsSliver = dashIsOutputSplitScope(scope) ? this._resultsCollapseSliverHtml() : '';
         return '<section data-wf-dash-split-root data-wf-dash-split-scope="' + dashEscHtml(scope) + '" style="display: flex; flex: 1; min-height: 0; overflow: hidden; width: 100%;">'
             + '<aside data-wf-dash-split-left style="' + this._splitPanelAsideStyle(width) + '">' + leftHtml + '</aside>'
             + this._splitPanelHandleHtml()
@@ -1745,7 +1974,7 @@ const plugin = {
     },
 
     _splitPanelHandleReserve(scopeKey) {
-        return scopeKey === 'dashboard' ? 32 : 16;
+        return dashIsOutputSplitScope(scopeKey) ? 32 : 16;
     },
 
     _splitRootMetrics(root) {
@@ -1764,7 +1993,7 @@ const plugin = {
     _resultsSliverEffectiveWidth(root) {
         if (!root) return 0;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
-        if (scope !== 'dashboard') return 0;
+        if (!dashIsOutputSplitScope(scope)) return 0;
         if (this._readResultsPanelHiddenPref()) return DASH_STATS_PANEL_COLLAPSED_WIDTH;
         return 0;
     },
@@ -1772,7 +2001,7 @@ const plugin = {
     _statsColumnEffectiveWidth(root) {
         if (!root) return 0;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
-        if (scope !== 'dashboard') return 0;
+        if (!dashIsOutputSplitScope(scope)) return 0;
         const statsCol = root.querySelector('[data-wf-dash-stats-column]');
         if (!statsCol) return 0;
         if (this._readStatsPanelHiddenPref()) return DASH_STATS_PANEL_COLLAPSED_WIDTH;
@@ -1880,10 +2109,19 @@ const plugin = {
         return Math.round(Math.max(DASH_SIDE_PANEL_MIN_RESULTS_WIDTH, Math.min(maxResults, widthPx)));
     },
 
+    _forEachOutputSplitRoot(fn) {
+        if (!this._modal || typeof fn !== 'function') return;
+        this._modal.querySelectorAll('[data-wf-dash-split-root]').forEach((root) => {
+            const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
+            if (!dashIsOutputSplitScope(scope)) return;
+            fn(root, scope);
+        });
+    },
+
     _applyResultsPanelMaxWidth(root, statsHiddenOverride) {
         if (!root) return;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
-        if (scope !== 'dashboard') return;
+        if (!dashIsOutputSplitScope(scope)) return;
         if (this._readResultsPanelHiddenPref()) return;
         const col = root.querySelector('[data-wf-dash-results-column]');
         if (!col) return;
@@ -1919,8 +2157,7 @@ const plugin = {
     },
 
     _applyAllResultsPanelMaxWidths() {
-        if (!this._modal) return;
-        this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
+        this._forEachOutputSplitRoot((root) => {
             this._applyResultsPanelMaxWidth(root);
         });
     },
@@ -1928,7 +2165,7 @@ const plugin = {
     _applyStatsPanelWidth(root) {
         if (!root) return;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
-        if (scope !== 'dashboard') return;
+        if (!dashIsOutputSplitScope(scope)) return;
         const statsCol = root.querySelector('[data-wf-dash-stats-column]');
         if (!statsCol) return;
         const hidden = this._readStatsPanelHiddenPref();
@@ -1948,7 +2185,7 @@ const plugin = {
     _applyStatsPanelLayout(root) {
         if (!root) return;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
-        if (scope !== 'dashboard') return;
+        if (!dashIsOutputSplitScope(scope)) return;
         const statsCol = root.querySelector('[data-wf-dash-stats-column]');
         const splitRight = root.querySelector('[data-wf-dash-split-right]');
         if (!statsCol) return;
@@ -1971,8 +2208,7 @@ const plugin = {
     },
 
     _applyAllStatsPanelLayouts() {
-        if (!this._modal) return;
-        this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
+        this._forEachOutputSplitRoot((root) => {
             this._applyStatsPanelLayout(root);
         });
     },
@@ -1980,7 +2216,7 @@ const plugin = {
     _applyResultsPanelLayout(root) {
         if (!root) return;
         const scope = root.getAttribute('data-wf-dash-split-scope') || 'dashboard';
-        if (scope !== 'dashboard') return;
+        if (!dashIsOutputSplitScope(scope)) return;
         const splitRight = root.querySelector('[data-wf-dash-split-right]');
         const sliver = root.querySelector('[data-wf-dash-results-collapse-sliver]');
         const wasHidden = root.getAttribute('data-wf-dash-results-collapsed') === 'true';
@@ -2005,8 +2241,7 @@ const plugin = {
     },
 
     _applyAllResultsPanelLayouts() {
-        if (!this._modal) return;
-        this._modal.querySelectorAll('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]').forEach((root) => {
+        this._forEachOutputSplitRoot((root) => {
             this._applyResultsPanelLayout(root);
         });
     },
@@ -2178,17 +2413,20 @@ const plugin = {
             '  display: flex;',
             '  align-items: flex-end;',
             '  justify-content: flex-end;',
-            '  gap: 0.25rem;',
+            '  gap: 4px;',
             '  flex-wrap: nowrap;',
             '  flex-shrink: 0;',
             '  height: 24px;',
             '  pointer-events: auto;',
             '}',
             '#wf-dash-modal .wf-dash-card-action {',
+            '  box-sizing: border-box;',
             '  width: 2rem;',
             '  height: 24px;',
+            '  margin: 0;',
             '  padding: 0;',
-            '  border: none;',
+            '  border: 1px solid var(--border, #e2e8f0);',
+            '  border-bottom: none;',
             '  border-radius: 6px 6px 0 0;',
             '  cursor: pointer;',
             '  flex-shrink: 0;',
@@ -2196,14 +2434,14 @@ const plugin = {
             '  transition: background 0.15s, border-color 0.15s, color 0.15s;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--remove {',
+            '  border-color: #dc2626;',
             '  background: #dc2626;',
             '  color: #fff;',
             '}',
             '#wf-dash-modal .wf-dash-card-action--add-to-diff {',
             '  width: auto;',
             '  min-width: 0;',
-            '  border: 1px solid var(--brand, var(--primary, #2563eb));',
-            '  border-bottom: none;',
+            '  border-color: var(--brand, var(--primary, #2563eb));',
             '  background: var(--background, #fff);',
             '  color: var(--muted-foreground, #64748b);',
             '  padding: 0 8px;',
@@ -2213,8 +2451,6 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action--copy {',
             '  width: auto;',
             '  min-width: 0;',
-            '  border: 1px solid var(--border, #e2e8f0);',
-            '  border-bottom: none;',
             '  background: var(--background, #fff);',
             '  color: var(--muted-foreground, #64748b);',
             '  padding: 0 8px;',
@@ -2222,8 +2458,7 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action--rescue {',
             '  width: auto;',
             '  min-width: 0;',
-            '  border: 1px solid #b45309;',
-            '  border-bottom: none;',
+            '  border-color: #b45309;',
             '  background: color-mix(in srgb, #f59e0b 22%, var(--background, #fff));',
             '  color: #92400e;',
             '  padding: 0 8px;',
@@ -2234,6 +2469,7 @@ const plugin = {
             '#wf-dash-modal .wf-dash-card-action--add-to-diff:hover {',
             '  background: color-mix(in srgb, var(--brand, #2563eb) 10%, var(--background, #fff));',
             '  border-color: var(--brand, var(--primary, #2563eb));',
+            '  border-bottom: none;',
             '  color: var(--foreground, #0f172a);',
             '}',
             '#wf-dash-modal .wf-dash-card-action--get-verifier:hover,',
@@ -2260,6 +2496,7 @@ const plugin = {
             '}',
             '#wf-dash-modal .wf-dash-card-action--remove:hover {',
             '  background: #b91c1c;',
+            '  border-color: #b91c1c;',
             '}',
             '#wf-dash-modal .wf-dash-card-action-inner {',
             '  display: flex;',
@@ -2496,7 +2733,7 @@ const plugin = {
                 onMove: (ev) => {
                     const next = this._clampSidePanelWidth(root, startWidth + (ev.clientX - startX));
                     this._applySidePanelWidth(root, next);
-                    if (scope === 'dashboard') {
+                    if (dashIsOutputSplitScope(scope)) {
                         this._applyStatsPanelWidth(root);
                         if (!this._readResultsPanelHiddenPref()) {
                             this._applyResultsPanelMaxWidth(root);
@@ -2507,7 +2744,7 @@ const plugin = {
                     const finalWidth = this._clampSidePanelWidth(root, left.getBoundingClientRect().width);
                     this._writeSidePanelWidthPref(finalWidth, scope);
                     this._applySidePanelWidth(root, finalWidth);
-                    if (scope === 'dashboard') {
+                    if (dashIsOutputSplitScope(scope)) {
                         this._applyStatsPanelWidth(root);
                         if (!this._readResultsPanelHiddenPref()) {
                             this._applyResultsPanelMaxWidth(root);
@@ -2594,13 +2831,16 @@ const plugin = {
                     </div>`;
     },
 
-    _multiSelectHtml(scopeKey, label, emptyHint, bulkActions) {
+    _multiSelectHtml(scopeKey, label, emptyHint, bulkActions, opts) {
         const isFlyout = dashIsFlyoutMsKey(scopeKey);
         const toolbar = this._msToolbarHtml(scopeKey, bulkActions);
         const flyoutAttr = isFlyout ? ' data-wf-dash-ms-flyout="1"' : '';
         const panelInitialStyle = isFlyout
             ? 'display: none;'
             : 'display: block; max-height: 0; opacity: 0; overflow: hidden; border-top: 1px solid transparent; background: var(--card, #ffffff);';
+        const wsId = opts && opts.wsId ? opts.wsId : null;
+        const countAttrs = this._outputDomAttrs(scopeKey + '-count', wsId);
+        const listAttrs = this._outputDomAttrs(scopeKey + '-list', wsId);
         return `
             <div data-wf-dash-ms-wrap="${dashEscHtml(scopeKey)}"${flyoutAttr}${bulkActions ? ' data-wf-dash-ms-bulk-actions="1"' : ''} style="${this._panelBoxStyle()} min-width: 0; max-width: 100%; overflow: visible;">
                 <div data-wf-dash-ms-sticky="${dashEscHtml(scopeKey)}">
@@ -2608,13 +2848,13 @@ const plugin = {
                         <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-expanded="false" style="flex: 1; min-width: 0; display: block; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit; text-align: left;">
                             <span style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(label)}</span>
                         </button>
-                        <span id="wf-dash-${scopeKey}-count" style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
+                        <span ${countAttrs} style="display: none; flex-shrink: 0; font-size: 10px; font-weight: 600; color: var(--brand, var(--primary, #2563eb));"></span>
                         <button type="button" data-wf-dash-ms-toggle="${dashEscHtml(scopeKey)}" aria-hidden="true" tabindex="-1" style="flex-shrink: 0; padding: 0; border: none; background: transparent; cursor: pointer; font: inherit; color: inherit;">
                             <span data-wf-dash-ms-chevron="${dashEscHtml(scopeKey)}" style="font-size: 11px; color: var(--muted-foreground, #64748b);">▸</span>
                         </button>
                     </div>
                 </div>
-                <div id="wf-dash-${scopeKey}-list" data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="${panelInitialStyle}">
+                <div ${listAttrs} data-wf-dash-ms-panel="${dashEscHtml(scopeKey)}" data-wf-dash-empty="${dashEscHtml(emptyHint)}" style="${panelInitialStyle}">
                     ${toolbar}
                     <div data-wf-dash-ms-items="${dashEscHtml(scopeKey)}" style="${this._msItemsContainerStyle()}">
                         ${this._msHintHtml(emptyHint)}
@@ -2625,7 +2865,13 @@ const plugin = {
     },
 
     _q(selector) {
-        return this._modal ? this._modal.querySelector(selector) : null;
+        if (!this._modal) return null;
+        const outPanel = this._outputPanel();
+        if (outPanel && selector) {
+            const scoped = this._queryWithinOutputPanel(outPanel, selector);
+            if (scoped) return scoped;
+        }
+        return this._modal.querySelector(selector);
     },
 
     // ── Listener wiring ──,
@@ -2654,8 +2900,8 @@ const plugin = {
             if (typeof tab.attachListeners === 'function') tab.attachListeners(modal, this);
         }
 
-        if (Context.opsTab && typeof Context.opsTab.attachTaskLinkListeners === 'function') {
-            Context.opsTab.attachTaskLinkListeners(modal);
+        if (Context.opsTab && typeof Context.opsTab.attachDashboardHeaderListeners === 'function') {
+            Context.opsTab.attachDashboardHeaderListeners(modal);
         }
 
         modal.querySelectorAll('[data-wf-dash-tab]').forEach((btn) => {
@@ -3511,7 +3757,7 @@ const plugin = {
             const active = id === tabId;
             this._applyDashTextTabButton(btn, active);
         });
-        const flexPanels = new Set(['search-output', 'team-members', 'verifier-fetcher', 'diff-viewer']);
+        const flexPanels = new Set(['search-output', 'disputes', 'sr-review', 'team-members', 'verifier-fetcher', 'diff-viewer']);
         this._modal.querySelectorAll('[data-wf-dash-panel]').forEach((panel) => {
             const active = panel.getAttribute('data-wf-dash-panel') === tabId;
             if (flexPanels.has(tabId)) {
@@ -3532,7 +3778,7 @@ const plugin = {
         if (Context.opsTab && typeof Context.opsTab.revalidateOnDashboardTabActivated === 'function') {
             Context.opsTab.revalidateOnDashboardTabActivated(this._modal);
         }
-        if (tabId === 'search-output' || tabId === 'team-members' || tabId === 'diff-viewer') {
+        if (dashIsOutputTabId(tabId) || tabId === 'team-members' || tabId === 'diff-viewer') {
             this._scheduleSplitLayoutSync();
         }
     },
