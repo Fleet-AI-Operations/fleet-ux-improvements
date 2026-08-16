@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.372",
+  "archetypesVersion": "14.373",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -182,8 +182,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "8.7",
-      "hash": "sha256-4cd556bff37444b731109aea8dfea295ce960e80014f7c176aa2be94537da63a",
+      "version": "8.8",
+      "hash": "sha256-221ca512ac295af00effe911a56504bb2f5419d35b25260a944b4b40a35acf7b",
       "log": false
     },
     {
@@ -230,8 +230,8 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "10.1",
-      "hash": "sha256-16ca794d16f65a5756945211be3666b5650a0c140b0b69ec9cf33c88d2892a52",
+      "version": "10.2",
+      "hash": "sha256-a04b7391757d1b04ee10275125ed0a7d1cdf15e0745b183ad80ae2ae96abc60c",
       "log": false
     },
     {

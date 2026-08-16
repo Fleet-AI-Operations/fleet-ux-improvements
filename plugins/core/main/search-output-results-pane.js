@@ -1384,27 +1384,35 @@ const searchOutputResultsPaneMethods = {
     _isDisputePending(dispute) {
         if (!dispute) return false;
         const status = String(dispute.status || '').trim().toLowerCase();
+        if (status === 'approved' || status === 'rejected') return false;
         return !dispute.resolutionAt || status === 'pending' || !status;
     },
 
     _isFlagPending(flag) {
         if (!flag) return false;
-        return Boolean(flag.isPending)
-            || String(flag.status || '').toLowerCase() === 'pending'
-            || !flag.resolutionAt;
+        const status = String(flag.status || '').trim().toLowerCase();
+        if (flag.isConfirmed || flag.isDismissed || status === 'confirmed' || status === 'dismissed') {
+            return false;
+        }
+        if (Boolean(flag.isPending) || status === 'pending' || !status) return true;
+        return !flag.resolutionAt;
     },
 
     _itemMatchesReviewStatus(item, kind, status) {
         const wantPending = status !== 'resolved';
+        // Task-level: Pending = still has open work; Resolved = only finished entities.
+        // Using `.some(pending)` / `.some(!pending)` would keep mixed cards in both views.
         if (kind === 'dispute') {
-            return (item.disputes || []).some((d) => (
-                wantPending ? this._isDisputePending(d) : !this._isDisputePending(d)
-            ));
+            const disputes = item.disputes || [];
+            if (disputes.length === 0) return false;
+            const hasPending = disputes.some((d) => this._isDisputePending(d));
+            return wantPending ? hasPending : !hasPending;
         }
         if (kind === 'senior_review') {
-            return (item.flags || []).some((f) => (
-                wantPending ? this._isFlagPending(f) : !this._isFlagPending(f)
-            ));
+            const flags = item.flags || [];
+            if (flags.length === 0) return false;
+            const hasPending = flags.some((f) => this._isFlagPending(f));
+            return wantPending ? hasPending : !hasPending;
         }
         return true;
     },
@@ -7966,7 +7974,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.1',
+    _version: '10.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
