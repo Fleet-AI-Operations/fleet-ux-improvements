@@ -4495,6 +4495,15 @@ const searchOutputCoreMethods = {
     },
 
     _filterScopeWrapEl(scopeKey) {
+        if (!scopeKey) return null;
+        if (typeof this._msWrapEl === 'function') {
+            const wrap = this._msWrapEl(scopeKey);
+            if (wrap) return wrap;
+        }
+        if (typeof this._q === 'function') {
+            const scoped = this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
+            if (scoped) return scoped;
+        }
         return this._modal ? this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]') : null;
     },
 
@@ -6435,7 +6444,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.45',
+    _version: '9.46',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

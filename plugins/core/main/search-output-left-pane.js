@@ -1384,6 +1384,8 @@ const searchOutputLeftPaneMethods = {
         this._state.filterListOptions = empty;
         this._resetManualFilters();
         for (const { scopeKey } of dashFilterScopes()) {
+            const wrap = this._filterScopeWrapEl(scopeKey);
+            if (wrap) wrap.style.display = 'none';
             const panel = this._msPanelEl(scopeKey);
             const itemsEl = this._msItemsEl(scopeKey);
             if (!panel || !itemsEl) continue;
@@ -2588,7 +2590,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.15',
+    _version: '5.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
