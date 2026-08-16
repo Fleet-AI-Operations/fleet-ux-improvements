@@ -342,41 +342,46 @@ function dashFirstEmbed(embed) {
 
 
 const searchOutputResultsPaneMethods = {
-    _resultsPanelHtml() {
+    _resultsPanelHtml(opts) {
+        const options = opts || {};
+        const wsId = options.wsId || 'search-output';
+        const el = (rest) => this._outputDomAttrs(rest, wsId);
         const box = this._panelBoxStyle();
         const label = this._labelStyle();
         const input = this._inputStyle();
         const sortDefault = dashSortDefault();
+        const emptyStatus = options.emptyStatus
+            || 'Set search parameters on the left, then press Search.';
         return `
-                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}">
+                <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}" data-wf-dash-output-ws="${dashEscHtml(wsId)}">
                     <div style="${this._resultsHeaderBarStyle()}">
                         <div style="${this._resultsHeaderRowStyle()}">
                             <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 40%; max-width: 40%; overflow: hidden;">
                                 <span style="font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a); flex-shrink: 0;">Results</span>
-                                <span id="wf-dash-results-status" style="${label} margin: 0; min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Set search parameters on the left, then press Search.</span>
+                                <span ${el('results-status')} style="${label} margin: 0; min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${dashEscHtml(emptyStatus)}</span>
                             </div>
                             <div style="${this._resultsHScrollOuterStyle('flex: 1 1 0;')}">
                                 <div style="${this._resultsHScrollTrackStyle(8)}">
-                                <div id="wf-dash-results-hydrate-banner" style="display: none; flex-shrink: 0;"></div>
-                                <div id="wf-dash-results-prefetch-banner" style="display: none; flex-shrink: 0;"></div>
-                                <button type="button" id="wf-dash-bulk-hydrate" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
-                                <button type="button" id="wf-dash-diff-included" title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
-                                <button type="button" id="wf-dash-drop-included" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
-                                <button type="button" id="wf-dash-drop-excluded" title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
-                                <button type="button" id="wf-dash-export-tasks-json" title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
-                                <button type="button" id="wf-dash-export-user-stories" title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
-                                <button type="button" id="wf-dash-results-retrieve-clipboard" title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Retrieve Clipboard</button>
-                                <button type="button" id="wf-dash-clear-results" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
+                                <div ${el('results-hydrate-banner')} style="display: none; flex-shrink: 0;"></div>
+                                <div ${el('results-prefetch-banner')} style="display: none; flex-shrink: 0;"></div>
+                                <button type="button" ${el('bulk-hydrate')} class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
+                                <button type="button" ${el('diff-included')} title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
+                                <button type="button" ${el('drop-included')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
+                                <button type="button" ${el('drop-excluded')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
+                                <button type="button" ${el('export-tasks-json')} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
+                                <button type="button" ${el('export-user-stories')} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
+                                <button type="button" ${el('results-retrieve-clipboard')} title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;${options.hideRetrieveClipboard ? ' display: none;' : ''}">Retrieve Clipboard</button>
+                                <button type="button" ${el('clear-results')} class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                                 </div>
                             </div>
                         </div>
-                        <div id="wf-dash-results-toolbar-row2" style="${this._resultsToolbarRow2Style()}">
-                            <div id="wf-dash-results-pager-slot-kind" style="${this._resultsHScrollOuterStyle()}">
-                                <div id="wf-dash-results-pager" style="${this._resultsPagerStyle()}">
-                                    <label id="wf-dash-version-mode-wrap" style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
+                        <div ${el('results-toolbar-row2')} style="${this._resultsToolbarRow2Style()}">
+                            <div ${el('results-pager-slot-kind')} style="${this._resultsHScrollOuterStyle()}">
+                                <div ${el('results-pager')} style="${this._resultsPagerStyle()}">
+                                    <label ${el('version-mode-wrap')} style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Version</span>
-                                        <select id="wf-dash-version-mode" style="${input} width: auto; min-width: 8.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('version-mode')} style="${input} width: auto; min-width: 8.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="contributor_match">Contributor match</option>
                                             <option value="all_v1">All v1s</option>
                                             <option value="all_final">All final versions</option>
@@ -384,13 +389,13 @@ const searchOutputResultsPaneMethods = {
                                     </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Sort</span>
-                                        <select id="wf-dash-sort" style="${input} width: auto; min-width: 13rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('sort')} style="${input} width: auto; min-width: 13rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             ${this._dashSortSelectOptionsHtml(dashSortDefault())}
                                         </select>
                                     </label>
                                     <label style="${label} display: inline-flex; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Show</span>
-                                        <select id="wf-dash-results-page-size" style="${input} width: auto; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('results-page-size')} style="${input} width: auto; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="10">10</option>
                                             <option value="25">25</option>
                                             <option value="50">50</option>
@@ -398,19 +403,31 @@ const searchOutputResultsPaneMethods = {
                                             <option value="all">All</option>
                                         </select>
                                     </label>
-                                    <span id="wf-dash-results-range-count" style="${label} white-space: nowrap; flex-shrink: 0;"></span>
-                                    <button type="button" id="wf-dash-results-prev" aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('prev')}</button>
-                                    <button type="button" id="wf-dash-results-next" aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('next')}</button>
+                                    <span ${el('results-range-count')} style="${label} white-space: nowrap; flex-shrink: 0;"></span>
+                                    <button type="button" ${el('results-prev')} aria-label="Previous page" title="Previous page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('prev')}</button>
+                                    <button type="button" ${el('results-next')} aria-label="Next page" title="Next page" class="${this._dashBtnClass('basic', 'icon')}" style="flex-shrink: 0;">${this._pagerChevronSvg('next')}</button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div id="wf-dash-results" style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
+                    <div ${el('results')} style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
     },
 
+    _activeOutputSplitRoot() {
+        const wsId = this._resolveActiveOutputWsId();
+        const panel = this._outputPanel(wsId);
+        if (panel) {
+            const root = panel.querySelector('[data-wf-dash-split-root]');
+            if (root) return root;
+        }
+        return this._modal
+            ? this._modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]')
+            : null;
+    },
+
     _ensureResultsToggleButton() {
-        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot();
         let btn = root ? root.querySelector('[data-wf-dash-results-toggle]') : null;
         if (!btn) {
             btn = document.createElement('button');
@@ -426,7 +443,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _syncResultsPanelCollapseUi() {
-        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot();
         if (!root) return;
         const dashApi = Context.dashboard;
         const hidden = dashApi && typeof dashApi.readResultsPanelHiddenPref === 'function'
@@ -450,7 +467,7 @@ const searchOutputResultsPaneMethods = {
         const next = !dashApi.readResultsPanelHiddenPref();
         dashApi.writeResultsPanelHiddenPref(next);
         Logger.log('results panel ' + (next ? 'hidden' : 'shown'));
-        const root = this._q('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot();
         if (root && typeof dashApi.applyResultsPanelLayout === 'function') {
             dashApi.applyResultsPanelLayout(root);
         } else {
@@ -462,7 +479,8 @@ const searchOutputResultsPaneMethods = {
     },
 
     _applyResultsPanelLayoutOnOpen(modal) {
-        const root = modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]');
+        const root = this._activeOutputSplitRoot()
+            || (modal && modal.querySelector('[data-wf-dash-split-root][data-wf-dash-split-scope="dashboard"]'));
         const dashApi = Context.dashboard;
         if (root && dashApi && typeof dashApi.applyResultsPanelLayout === 'function') {
             dashApi.applyResultsPanelLayout(root);
@@ -3630,6 +3648,10 @@ const searchOutputResultsPaneMethods = {
     _schedulePageHydrate() {
         if (this._state.pageHydrateScheduled || this._state.autoHydrateActive || this._state.hydrateBulkActive) return;
         if (this._state.loading) return;
+        if (this._state.committed && this._state.committed.autoHydrate === false) {
+            this._state.pageHydratePending = false;
+            return;
+        }
         if (!this._bulkHydrateShowable()) {
             this._state.pageHydratePending = false;
             return;
@@ -3657,6 +3679,7 @@ const searchOutputResultsPaneMethods = {
         const resultsReady = this._state.filteredItems !== null && this._state.cachedItems !== null;
         return Boolean(
             committed
+            && committed.autoHydrate !== false
             && !committed.retrieveMode
             && this._state.hasSearched
             && !this._state.loading
@@ -3946,7 +3969,12 @@ const searchOutputResultsPaneMethods = {
         const rescuing = Boolean(this._state.cardRescuing && this._state.cardRescuing[itemId]);
         const rehydrateDisabled = (rehydrating || rescuing) ? ' disabled aria-busy="true"' : '';
         const rescueDisabled = rescuing ? ' disabled aria-busy="true"' : '';
-        const rehydrateTitle = rehydrating ? 'Rehydrating…' : 'Throw away and fully rehydrate this card';
+        const rehydrateTitle = rehydrating
+            ? ((item && item.hydrated === false) ? 'Hydrating…' : 'Rehydrating…')
+            : ((item && item.hydrated === false) ? 'Fully hydrate this card' : 'Throw away and fully rehydrate this card');
+        const rehydrateLabel = rehydrating
+            ? ((item && item.hydrated === false) ? 'Hydrating…' : 'Rehydrating…')
+            : ((item && item.hydrated === false) ? 'Hydrate' : 'Rehydrate');
         const rescueTitle = rescuing
             ? 'Rescuing…'
             : 'Lease and discard this escalated task back to the writer (Other)';
@@ -3975,7 +4003,7 @@ const searchOutputResultsPaneMethods = {
             </button>
             <button type="button" class="wf-dash-card-action wf-dash-card-action--rehydrate" data-wf-dash-rehydrate="1" data-item-id="${dashEscHtml(itemId)}" title="${dashEscHtml(rehydrateTitle)}" aria-label="${dashEscHtml(rehydrateTitle)}"${rehydrateDisabled}>
                 <span class="wf-dash-card-action-inner">
-                    <span class="wf-dash-card-action-label">${rehydrating ? 'Rehydrating…' : 'Rehydrate'}</span>
+                    <span class="wf-dash-card-action-label">${rehydrateLabel}</span>
                 </span>
             </button>
             ${rescueBtn}
@@ -5770,6 +5798,17 @@ const searchOutputResultsPaneMethods = {
             return;
         }
         if (!s.hasSearched) {
+            const wsId = typeof this._resolveActiveOutputWsId === 'function'
+                ? this._resolveActiveOutputWsId()
+                : 'search-output';
+            if (wsId === 'disputes') {
+                el.textContent = 'Waiting for dispute prefetch…';
+                return;
+            }
+            if (wsId === 'sr-review') {
+                el.textContent = 'Waiting for Sr Review flag prefetch…';
+                return;
+            }
             el.textContent = 'Set search parameters on the left, then press Search.';
             return;
         }
@@ -7686,7 +7725,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.26',
+    _version: '9.27',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

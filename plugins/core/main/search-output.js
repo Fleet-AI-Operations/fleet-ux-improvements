@@ -1721,17 +1721,281 @@ const searchOutputCoreMethods = {
         if (typeof this._updateResultsStatus === 'function') {
             this._updateResultsStatus();
         }
-        if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
-            Logger.debug('dashboard: ' + this._prefetchLabel(kind)
-                + ' prefetch complete — no cached cards to re-overlay');
-            return;
+        if (typeof this._refreshPrefetchInventoryTabs === 'function') {
+            void this._refreshPrefetchInventoryTabs(kind);
         }
-        void this._reoverlayAllCachedItems().then((changedIds) => {
-            if (!changedIds || changedIds.length === 0) return;
-            this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
-        }).catch((e) => {
-            Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
+        void this._withOutputWsAsync('search-output', async () => {
+            if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
+                Logger.debug('dashboard: ' + this._prefetchLabel(kind)
+                    + ' prefetch complete — no cached cards to re-overlay');
+                return;
+            }
+            try {
+                const changedIds = await this._reoverlayAllCachedItems();
+                if (!changedIds || changedIds.length === 0) return;
+                this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
+            } catch (e) {
+                Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
+            }
         });
+    },
+
+    _prefetchInventoryProfilesMap() {
+        return new Map();
+    },
+
+    _prefetchInventoryScope() {
+        const teamIds = this._getSearchableTeamCatalog
+            ? this._getSearchableTeamCatalog().map(([id]) => id)
+            : [];
+        return { teamIds, projectIds: null };
+    },
+
+    async _buildPrefetchInventoryDisputeItems() {
+        const openSlot = this._getPrefetchSlot('openDisputes');
+        const resolvedSlot = this._getPrefetchSlot('resolvedDisputes');
+        const grouped = new Map();
+        const mergeSlot = (slot) => {
+            if (!slot || !slot.byTaskId || slot.status !== 'done') return;
+            for (const [taskId, rows] of slot.byTaskId) {
+                if (!grouped.has(taskId)) grouped.set(taskId, []);
+                const dest = grouped.get(taskId);
+                for (const row of rows || []) dest.push(row);
+            }
+        };
+        mergeSlot(openSlot);
+        mergeSlot(resolvedSlot);
+        const profileIds = this._collectPrefetchDisputeProfileIds
+            ? this._collectPrefetchDisputeProfileIds(grouped)
+            : [];
+        let profilesMap = new Map();
+        if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
+            try {
+                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                profilesMap = this._buildProfilesMap(rows);
+            } catch (e) {
+                Logger.warn('dispute inventory profiles failed', e);
+            }
+        }
+        return this._buildPrefetchHydratedDisputeItems(
+            grouped,
+            profilesMap,
+            this._prefetchInventoryScope()
+        );
+    },
+
+    async _buildPrefetchInventoryFlagItems() {
+        const pendingSlot = this._getPrefetchSlot('pendingFlags');
+        const resolvedSlot = this._getPrefetchSlot('resolvedFlags');
+        const grouped = new Map();
+        const mergeSlot = (slot) => {
+            if (!slot || !slot.byTaskId || slot.status !== 'done') return;
+            for (const [taskId, rows] of slot.byTaskId) {
+                if (!grouped.has(taskId)) grouped.set(taskId, []);
+                const dest = grouped.get(taskId);
+                for (const row of rows || []) dest.push(row);
+            }
+        };
+        mergeSlot(pendingSlot);
+        mergeSlot(resolvedSlot);
+        const profileIds = this._collectPrefetchFlagProfileIds
+            ? this._collectPrefetchFlagProfileIds(grouped)
+            : [];
+        let profilesMap = new Map();
+        if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
+            try {
+                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                profilesMap = this._buildProfilesMap(rows);
+            } catch (e) {
+                Logger.warn('flag inventory profiles failed', e);
+            }
+        }
+        return this._buildPrefetchHydratedFlagItems(
+            grouped,
+            profilesMap,
+            this._prefetchInventoryScope()
+        );
+    },
+
+    _prefetchInventoryKindsReady(wsId) {
+        if (wsId === 'disputes') {
+            return ['openDisputes', 'resolvedDisputes'].some((kind) => {
+                const slot = this._getPrefetchSlot(kind);
+                return slot && slot.status === 'done';
+            });
+        }
+        if (wsId === 'sr-review') {
+            return ['pendingFlags', 'resolvedFlags'].some((kind) => {
+                const slot = this._getPrefetchSlot(kind);
+                return slot && slot.status === 'done';
+            });
+        }
+        return false;
+    },
+
+    _mergePrefetchInventoryItems(previous, incoming) {
+        const prev = previous || [];
+        const inc = incoming || [];
+        if (!prev.length) return inc.slice();
+        if (!inc.length) return prev.slice();
+        const byTaskId = new Map();
+        for (const item of prev) {
+            const taskId = item && item.task && item.task.id;
+            if (taskId) byTaskId.set(taskId, item);
+        }
+        const merged = [];
+        const seen = new Set();
+        for (const item of inc) {
+            const taskId = item && item.task && item.task.id;
+            if (!taskId) continue;
+            seen.add(taskId);
+            const existing = byTaskId.get(taskId);
+            if (existing && existing.hydrated === true) {
+                existing.disputes = item.disputes || existing.disputes || [];
+                existing.flags = item.flags || existing.flags || [];
+                if (item.sortAt && (!existing.sortAt || item.sortAt > existing.sortAt)) {
+                    existing.sortAt = item.sortAt;
+                }
+                merged.push(existing);
+            } else {
+                merged.push(item);
+            }
+        }
+        for (const item of prev) {
+            const taskId = item && item.task && item.task.id;
+            if (taskId && !seen.has(taskId) && item.hydrated === true) {
+                merged.push(item);
+            }
+        }
+        merged.sort((a, b) => (a.sortAt < b.sortAt ? 1 : a.sortAt > b.sortAt ? -1 : 0));
+        return merged;
+    },
+
+    async _loadPrefetchInventoryWorkspace(wsId, { merge } = {}) {
+        if (wsId !== 'disputes' && wsId !== 'sr-review') return;
+        return this._withOutputWsAsync(wsId, async () => {
+            const ready = this._prefetchInventoryKindsReady(wsId);
+            if (!ready) {
+                this._state.hasSearched = true;
+                this._state.loading = false;
+                this._state.leftTab = 'filters';
+                this._state.statsTab = 'chat';
+                if (!this._state.cachedItems) {
+                    this._state.cachedItems = [];
+                    this._state.filteredItems = [];
+                }
+                this._state.committed = {
+                    retrieveMode: false,
+                    autoHydrate: false,
+                    includeTaskCreation: false,
+                    includeQa: false,
+                    includeDisputes: wsId === 'disputes',
+                    includeSeniorReview: wsId === 'sr-review',
+                    includeSessions: false,
+                    authorCount: 0,
+                    authorLabels: [],
+                    searchKinds: wsId === 'disputes' ? ['dispute'] : ['senior_review']
+                };
+                this._updateResultsStatus();
+                this._syncResultsPrefetchBannerUi();
+                this._renderResults();
+                return;
+            }
+            const incoming = wsId === 'disputes'
+                ? await this._buildPrefetchInventoryDisputeItems()
+                : await this._buildPrefetchInventoryFlagItems();
+            const previous = merge && Array.isArray(this._state.cachedItems)
+                ? this._state.cachedItems
+                : null;
+            const items = previous
+                ? this._mergePrefetchInventoryItems(previous, incoming)
+                : incoming;
+            this._state.leftTab = 'filters';
+            this._state.statsTab = 'chat';
+            if (!merge || !previous) {
+                this._beginResultsLoad();
+            } else {
+                this._state.hasSearched = true;
+                this._state.loading = false;
+            }
+            this._finalizeResultsLoad(items, {
+                skipFiltersTab: true,
+                committed: {
+                    retrieveMode: false,
+                    autoHydrate: false,
+                    includeTaskCreation: false,
+                    includeQa: false,
+                    includeDisputes: wsId === 'disputes',
+                    includeSeniorReview: wsId === 'sr-review',
+                    includeSessions: false,
+                    authorCount: 0,
+                    authorLabels: [],
+                    searchKinds: wsId === 'disputes' ? ['dispute'] : ['senior_review']
+                }
+            });
+            this._state.loading = false;
+            this._refreshResultsView({
+                filterSource: merge && previous ? 'results-mutate' : 'search-defaults',
+                prehydrateInitialBatch: false,
+                reindexFilters: true
+            });
+            Logger.log((wsId === 'disputes' ? 'Disputes' : 'Sr Review')
+                + ' inventory — ' + items.length + ' card(s)');
+        });
+    },
+
+    async _refreshPrefetchInventoryTabs(kind) {
+        const disputeKinds = kind === 'openDisputes' || kind === 'resolvedDisputes';
+        const flagKinds = kind === 'pendingFlags' || kind === 'resolvedFlags';
+        if (disputeKinds) {
+            await this._loadPrefetchInventoryWorkspace('disputes', { merge: true });
+        }
+        if (flagKinds) {
+            await this._loadPrefetchInventoryWorkspace('sr-review', { merge: true });
+        }
+    },
+
+    async _activatePrefetchInventoryTab(wsId) {
+        await this._doBootstrap();
+        this._startPrefetchesOnce();
+        await this._loadPrefetchInventoryWorkspace(wsId, { merge: true });
+        requestAnimationFrame(() => {
+            this._applyAllSidePanelWidths();
+            if (typeof this._applyStatsPanelLayoutOnOpen === 'function') {
+                this._applyStatsPanelLayoutOnOpen(this._modal);
+            }
+            if (typeof this._applyResultsPanelLayoutOnOpen === 'function') {
+                this._applyResultsPanelLayoutOnOpen(this._modal);
+            }
+            if (this._state.statsTab === 'chat' && typeof this._activateSearchChatPanel === 'function') {
+                this._activateSearchChatPanel();
+            }
+        });
+    },
+
+    _searchPanelHtml(opts) {
+        const options = opts || {};
+        const wsId = options.wsId || 'search-output';
+        const hideSearch = Boolean(options.hideSearch);
+        const statsTabs = options.statsTabs || null;
+        const splitScope = options.splitScope
+            || (wsId === 'search-output' ? 'dashboard' : wsId);
+        const leftOpts = { wsId, hideSearch };
+        const resultsOpts = {
+            wsId,
+            hideRetrieveClipboard: hideSearch,
+            emptyStatus: options.emptyStatus
+                || (hideSearch
+                    ? 'Waiting for prefetch…'
+                    : 'Set search parameters on the left, then press Search.')
+        };
+        const statsOpts = { wsId, tabs: statsTabs || undefined };
+        return this._splitPanelSectionHtml(
+            this._leftPanelHtml(leftOpts),
+            this._resultsPanelHtml(resultsOpts),
+            splitScope,
+            this._statsPanelHtml(statsOpts)
+        );
     },
 
     async _runPrefetch(kind, loadTracker) {
@@ -4793,6 +5057,7 @@ const searchOutputCoreMethods = {
 
     async _prehydrateInitialBatchBeforeDisplay() {
         if (this._state.committed && this._state.committed.retrieveMode) return 0;
+        if (this._state.committed && this._state.committed.autoHydrate === false) return 0;
         const batch = this._getInitialHydrateBatch();
         if (batch.length === 0) return 0;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
@@ -4844,6 +5109,7 @@ const searchOutputCoreMethods = {
         const onPage = this._getUnhydratedOnPage();
         if (onPage.length === 0) return;
         if (this._state.committed && this._state.committed.retrieveMode) return;
+        if (this._state.committed && this._state.committed.autoHydrate === false) return;
         if (!Context.dashboardData || typeof Context.dashboardData.enrichTasksWithHistory !== 'function') {
             return;
         }
@@ -4960,15 +5226,6 @@ const searchOutputCoreMethods = {
         entry.resolved = true;
         if (message) entry.message = String(message).trim();
         this._syncSearchLoadPhaseUi();
-    },
-
-    _searchPanelHtml() {
-        return this._splitPanelSectionHtml(
-            this._leftPanelHtml(),
-            this._resultsPanelHtml(),
-            'dashboard',
-            this._statsPanelHtml()
-        );
     },
 };
 
@@ -5131,6 +5388,188 @@ function attachSearchOutputListeners(modal, dash) {
         const resetFilters = dash._q('#wf-dash-reset-filters');
         if (resetFilters) resetFilters.addEventListener('click', () => { void dash._resetFiltersToDefaults(); });
 
+        modal.querySelectorAll('[data-wf-dash-output-el="apply-filters"]').forEach((btn) => {
+            if (btn === applyFilters) return;
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (panel && panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._applyFiltersAndRender());
+                else dash._applyFiltersAndRender();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="reset-filters"]').forEach((btn) => {
+            if (btn === resetFilters) return;
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (panel && panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._resetFiltersToDefaults();
+                if (wsId && dash._withOutputWsAsync) void dash._withOutputWsAsync(wsId, run);
+                else void run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="prompt"]').forEach((promptEl) => {
+            const panel = promptEl.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (promptEl.getAttribute('data-wf-dash-output-bound') === '1') return;
+            promptEl.setAttribute('data-wf-dash-output-bound', '1');
+            promptEl.addEventListener('input', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(promptEl);
+                const run = () => {
+                    dash._syncPromptFilterHeight(promptEl);
+                    dash._updateSubstringErrorUi();
+                    dash._syncFieldClearButtons();
+                    dash._maybeLiveApplyPromptFilter();
+                };
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+            promptEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' || e.shiftKey) return;
+                e.preventDefault();
+                const wsId = dash._resolveOutputWsIdFromEl(promptEl);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._applyFiltersAndRender());
+                else dash._applyFiltersAndRender();
+            });
+        });
+        ['case', 'fuzzy', 'regex'].forEach((elKey) => {
+            modal.querySelectorAll('[data-wf-dash-output-el="' + elKey + '"]').forEach((el) => {
+                const panel = el.closest('[data-wf-dash-panel]');
+                if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+                if (el.getAttribute('data-wf-dash-output-bound') === '1') return;
+                el.setAttribute('data-wf-dash-output-bound', '1');
+                el.addEventListener('change', () => {
+                    const wsId = dash._resolveOutputWsIdFromEl(el);
+                    const run = () => {
+                        if (elKey === 'fuzzy' && el.checked) {
+                            const regexEl2 = dash._q('#wf-dash-regex');
+                            if (regexEl2) regexEl2.checked = false;
+                        }
+                        if (elKey === 'regex' && el.checked) {
+                            const fuzzyEl2 = dash._q('#wf-dash-fuzzy');
+                            if (fuzzyEl2) fuzzyEl2.checked = false;
+                        }
+                        dash._updateSubstringErrorUi();
+                        if (elKey !== 'regex' || !el.checked) dash._maybeLiveApplyPromptFilter();
+                    };
+                    if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                    else run();
+                });
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="sort"]').forEach((sortEl) => {
+            const panel = sortEl.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (sortEl.getAttribute('data-wf-dash-output-bound') === '1') return;
+            sortEl.setAttribute('data-wf-dash-output-bound', '1');
+            sortEl.addEventListener('change', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(sortEl);
+                const run = () => dash._applySortAndRender
+                    ? dash._applySortAndRender()
+                    : dash._applyFiltersAndRender();
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="clear-results"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._clearResults());
+                else dash._clearResults();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="results-page-size"]').forEach((sel) => {
+            const panel = sel.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (sel.getAttribute('data-wf-dash-output-bound') === '1') return;
+            sel.setAttribute('data-wf-dash-output-bound', '1');
+            sel.addEventListener('change', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(sel);
+                const run = () => {
+                    const val = sel.value;
+                    dash._state.resultsPageSize = val === 'all' ? 'all' : (Number(val) || DASH_RESULTS_PAGE_SIZE_DEFAULT);
+                    if (typeof dash._persistResultsPageSizePref === 'function') {
+                        dash._persistResultsPageSizePref(val);
+                    }
+                    dash._state.resultsPage = 0;
+                    Logger.log('dashboard: results page size — ' + val);
+                    dash._renderResults();
+                    dash._syncResultsPagerUi();
+                };
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="results-prev"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._goResultsPage(-1);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="results-next"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._goResultsPage(1);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="clear-prompt"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => {
+                    const promptEl = dash._q('#wf-dash-prompt');
+                    if (promptEl) promptEl.value = '';
+                    dash._updateSubstringErrorUi();
+                    dash._syncFieldClearButtons();
+                    dash._maybeLiveApplyPromptFilter();
+                };
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="manual-add"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._buildManualFilterRow());
+                else dash._buildManualFilterRow();
+            });
+        });
+        modal.querySelectorAll('[data-wf-dash-output-el="filter-expand-all"]').forEach((btn) => {
+            const panel = btn.closest('[data-wf-dash-panel]');
+            if (!panel || panel.getAttribute('data-wf-dash-panel') === 'search-output') return;
+            if (btn.getAttribute('data-wf-dash-output-bound') === '1') return;
+            btn.setAttribute('data-wf-dash-output-bound', '1');
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, () => dash._toggleFilterExpandAll());
+                else dash._toggleFilterExpandAll();
+            });
+        });
+
         const manualAdd = dash._q('#wf-dash-manual-add');
         if (manualAdd) manualAdd.addEventListener('click', () => dash._buildManualFilterRow());
         const manualAndOr = dash._q('#wf-dash-manual-andor');
@@ -5219,10 +5658,20 @@ function attachSearchOutputListeners(modal, dash) {
         if (clearResults) clearResults.addEventListener('click', () => dash._clearResults());
 
         modal.querySelectorAll('[data-wf-dash-left-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab')));
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._setLeftTab(btn.getAttribute('data-wf-dash-left-tab'));
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
         });
         modal.querySelectorAll('[data-wf-dash-stats-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => dash._setStatsTab(btn.getAttribute('data-wf-dash-stats-tab')));
+            btn.addEventListener('click', () => {
+                const wsId = dash._resolveOutputWsIdFromEl(btn);
+                const run = () => dash._setStatsTab(btn.getAttribute('data-wf-dash-stats-tab'));
+                if (wsId && dash._withOutputWs) dash._withOutputWs(wsId, run);
+                else run();
+            });
         });
         const filterExpandAll = dash._q('#wf-dash-filter-expand-all');
         if (filterExpandAll) {
@@ -5237,7 +5686,23 @@ function attachSearchOutputListeners(modal, dash) {
         }
         dash._applyStatsPanelLayoutOnOpen(modal);
         dash._applyResultsPanelLayoutOnOpen(modal);
-    modal.addEventListener('click', (e) => {
+        const runOutputClick = (target, fn) => {
+            const wsId = typeof dash._resolveOutputWsIdFromEl === 'function'
+                ? dash._resolveOutputWsIdFromEl(target)
+                : null;
+            if (!wsId || typeof dash._withOutputWs !== 'function') return fn();
+            return dash._withOutputWs(wsId, fn);
+        };
+        const runOutputClickAsync = (target, fn) => {
+            const wsId = (typeof dash._resolveOutputWsIdFromEl === 'function'
+                && dash._resolveOutputWsIdFromEl(target))
+                || (typeof dash._resolveActiveOutputWsId === 'function'
+                    ? dash._resolveActiveOutputWsId()
+                    : 'search-output');
+            if (typeof dash._withOutputWsAsync !== 'function') return fn();
+            return dash._withOutputWsAsync(wsId, fn);
+        };
+    modal.addEventListener('click', (e) => runOutputClick(e.target, () => {
             const statsScopeBtn = e.target.closest('[data-wf-dash-stats-scope]');
             if (statsScopeBtn && modal.contains(statsScopeBtn)) {
                 const scope = statsScopeBtn.getAttribute('data-wf-dash-stats-scope');
@@ -5568,7 +6033,7 @@ function attachSearchOutputListeners(modal, dash) {
             if (disputeClaimBtn && modal.contains(disputeClaimBtn)) {
                 const disputeId = disputeClaimBtn.getAttribute('data-dispute-id');
                 const itemId = disputeClaimBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void dash._claimDispute(disputeId, itemId);
+                if (disputeId && itemId) void runOutputClickAsync(disputeClaimBtn, () => dash._claimDispute(disputeId, itemId));
                 return;
             }
             const disputeOpenEnvBtn = e.target.closest('[data-wf-dash-dispute-open-env]');
@@ -5584,7 +6049,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const disputeId = disputeReleaseBtn.getAttribute('data-dispute-id');
                 const itemId = disputeReleaseBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void dash._handleDisputeRelease(disputeId, itemId);
+                if (disputeId && itemId) void runOutputClickAsync(disputeReleaseBtn, () => dash._handleDisputeRelease(disputeId, itemId));
                 return;
             }
             const disputeResolveBtn = e.target.closest('[data-wf-dash-dispute-resolve]');
@@ -5593,7 +6058,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const disputeId = disputeResolveBtn.getAttribute('data-dispute-id');
                 const itemId = disputeResolveBtn.getAttribute('data-item-id');
-                if (disputeId && itemId) void dash._handleDisputeResolve(disputeId, itemId);
+                if (disputeId && itemId) void runOutputClickAsync(disputeResolveBtn, () => dash._handleDisputeResolve(disputeId, itemId));
                 return;
             }
             const disputeMsgInsertBtn = e.target.closest('[data-wf-dash-dispute-msg-insert]');
@@ -5678,7 +6143,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const flagId = flagConfirmBtn.getAttribute('data-wf-dash-flag-id');
                 const itemId = flagConfirmBtn.getAttribute('data-item-id');
-                if (flagId && itemId) void dash._handleFlagResolution(flagId, itemId, 'confirmed');
+                if (flagId && itemId) void runOutputClickAsync(flagConfirmBtn, () => dash._handleFlagResolution(flagId, itemId, 'confirmed'));
                 return;
             }
             const flagDismissBtn = e.target.closest('[data-wf-dash-flag-dismiss]');
@@ -5687,7 +6152,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 const flagId = flagDismissBtn.getAttribute('data-wf-dash-flag-id');
                 const itemId = flagDismissBtn.getAttribute('data-item-id');
-                if (flagId && itemId) void dash._handleFlagResolution(flagId, itemId, 'dismissed');
+                if (flagId && itemId) void runOutputClickAsync(flagDismissBtn, () => dash._handleFlagResolution(flagId, itemId, 'dismissed'));
                 return;
             }
             const flagCreateToggleBtn = e.target.closest('[data-wf-dash-flag-create-toggle]');
@@ -5755,7 +6220,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 if (rehydrateBtn.disabled) return;
                 const itemId = rehydrateBtn.getAttribute('data-item-id');
-                if (itemId) void dash._rehydrateCardFromButton(itemId);
+                if (itemId) void runOutputClickAsync(rehydrateBtn, () => dash._rehydrateCardFromButton(itemId));
                 return;
             }
             const rescueBtn = e.target.closest('[data-wf-dash-rescue]');
@@ -5764,7 +6229,7 @@ function attachSearchOutputListeners(modal, dash) {
                 e.preventDefault();
                 if (rescueBtn.disabled) return;
                 const itemId = rescueBtn.getAttribute('data-item-id');
-                if (itemId) void dash._attemptRescueFromCard(itemId);
+                if (itemId) void runOutputClickAsync(rescueBtn, () => dash._attemptRescueFromCard(itemId));
                 return;
             }
             const removeResultBtn = e.target.closest('[data-wf-dash-remove-result]');
@@ -5828,7 +6293,7 @@ function attachSearchOutputListeners(modal, dash) {
                 if (url) dash._openScreenshotLightbox(url, alt, screenshotThumb);
                 return;
             }
-    });
+    }));
         modal.addEventListener('change', (e) => {
             const ratingsHideProv = e.target.closest('[data-wf-dash-ratings-hide-provisional]');
             if (ratingsHideProv && modal.contains(ratingsHideProv)) {
@@ -5970,7 +6435,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.44',
+    _version: '9.45',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

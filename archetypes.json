@@ -1,7 +1,7 @@
 {
   "version": "13.8",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.361",
+  "archetypesVersion": "14.362",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -206,8 +206,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "12.10",
-      "hash": "sha256-3d20ff3c763633658f7489424ce3a222fd38a21071a764298a90be9e0eca1093",
+      "version": "12.11",
+      "hash": "sha256-07676180525075f8514a8a285d2d4cba7ea3828b3ea69cc6d81984d88b93415b",
       "log": false
     },
     {
@@ -224,14 +224,14 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "5.14",
-      "hash": "sha256-4f753d8f884aaa007927a4ec09b87027387b259e20c145deb348f6384ba97365",
+      "version": "5.15",
+      "hash": "sha256-95c395b43ee16f09d5cfa81d848d432dc08d7afc3dbcf598c364066dc3ebc60e",
       "log": false
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "9.26",
-      "hash": "sha256-45cd8610452f98ebc4726dbc8f198c4fead2f0c9ec4c86367b3004ef4818698c",
+      "version": "9.27",
+      "hash": "sha256-5c518648480f3557ec795d67d88bf020989e7c4edf42b2cc90dbc0d4b851f52b",
       "log": false
     },
     {
@@ -242,20 +242,26 @@
     },
     {
       "name": "search-output-chat.js",
-      "version": "7.2",
-      "hash": "sha256-fe20b189f81d68409b13042e6b62fcdd3843621adce04b0df980f2cbba428ad8",
+      "version": "7.3",
+      "hash": "sha256-8fa920b1dfeb7a9854f754d9accc9a788247e1d3c5f7bb47756d0d9d7e65d1f1",
       "log": false
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "13.2",
-      "hash": "sha256-0f3493e796a692b37c53fc71f9718927aa743b799b8ca2926aab3d3f98b3c12d",
+      "version": "13.3",
+      "hash": "sha256-765add22ce9966b81a70a36da06d7f1a26634f30d9cf5d80379078cf02939522",
       "log": false
     },
     {
       "name": "search-output.js",
-      "version": "9.44",
-      "hash": "sha256-3ac79331dc2c06beaa5a0055a43b2947f133789cc5429f1fb4151457298a1d8f",
+      "version": "9.45",
+      "hash": "sha256-9d76091e16799c85e18f4b392218ba6cd097523aba89284232fc95c6d727429e",
+      "log": false
+    },
+    {
+      "name": "prefetch-output-tabs.js",
+      "version": "1.0",
+      "hash": "sha256-e5d2ec1fc8f458aa4ef3c08b9f7cbcc5a0c3af9f5fb4bcde2569d6eab5bc0d80",
       "log": false
     },
     {

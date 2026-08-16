@@ -4,7 +4,7 @@
 // fleet-ux:search-chat-settings (also rendered from dashboard-settings).
 
 const PLUGIN_ID = 'search-output-chat';
-const SEARCH_CHAT_VERSION = '7.0';
+const SEARCH_CHAT_VERSION = '7.1';
 const SEARCH_CHAT_SETTINGS_KEY = 'fleet-ux:search-chat-settings';
 const SEARCH_CHAT_SCOPE = '[data-wf-dash-search-chat-panel]';
 const SEARCH_CHAT_PAIR_MATCH_CAP = 2000;
@@ -46,17 +46,53 @@ const SEARCH_CHAT_SETTINGS_CLAMP = {
     maxTokens: { min: 256, max: 16384 },
 };
 
-/** @type {{ chatState: object|null, activity: object[], resultsFingerprint: string, bound: boolean, charts: object[], chartInstances: object[], panel: Element|null, sendInFlight: boolean }} */
-const searchChatUi = {
-    chatState: null,
-    activity: [],
-    resultsFingerprint: '',
-    bound: false,
-    charts: [],
-    chartInstances: [],
-    panel: null,
-    sendInFlight: false,
-};
+/** @type {Record<string, { chatState: object|null, activity: object[], resultsFingerprint: string, bound: boolean, charts: object[], chartInstances: object[], panel: Element|null, sendInFlight: boolean, wsId: string }>} */
+const searchChatByWs = Object.create(null);
+
+function searchChatCreateUiBag(wsId) {
+    return {
+        chatState: null,
+        activity: [],
+        resultsFingerprint: '',
+        bound: false,
+        charts: [],
+        chartInstances: [],
+        panel: null,
+        sendInFlight: false,
+        wsId: wsId || 'search-output',
+    };
+}
+
+function searchChatUiFor(wsId) {
+    const id = wsId || 'search-output';
+    if (!searchChatByWs[id]) searchChatByWs[id] = searchChatCreateUiBag(id);
+    return searchChatByWs[id];
+}
+
+/** Active workspace chat UI (switched in wirePanel / send). */
+let searchChatUi = searchChatUiFor('search-output');
+
+function searchChatActivateUi(wsId) {
+    searchChatUi = searchChatUiFor(wsId);
+    return searchChatUi;
+}
+
+function searchChatResolveWsId(panel, dash, opts) {
+    if (opts && opts.wsId) return String(opts.wsId);
+    if (panel) {
+        const attr = panel.getAttribute('data-wf-dash-search-chat-panel');
+        if (attr && attr !== '1') return attr;
+    }
+    if (dash && typeof dash._resolveActiveOutputWsId === 'function') {
+        return dash._resolveActiveOutputWsId();
+    }
+    return 'search-output';
+}
+
+function searchChatWsState(dash, wsId) {
+    if (dash && typeof dash._ws === 'function') return dash._ws(wsId);
+    return dash && dash._state ? dash._state : null;
+}
 
 function searchChatUuid() {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -263,19 +299,21 @@ function searchChatHasAiKey() {
         && Context.aiOpenRouter.hasStoredKey());
 }
 
-function searchChatGetScopeItems(dash) {
-    if (!dash || !dash._state) return [];
-    if (Array.isArray(dash._state.filteredItems)) return dash._state.filteredItems;
-    if (Array.isArray(dash._state.cachedItems)) return dash._state.cachedItems;
+function searchChatGetScopeItems(dash, wsId) {
+    const state = searchChatWsState(dash, wsId || (searchChatUi && searchChatUi.wsId));
+    if (!state) return [];
+    if (Array.isArray(state.filteredItems)) return state.filteredItems;
+    if (Array.isArray(state.cachedItems)) return state.cachedItems;
     return [];
 }
 
-function searchChatResultsFingerprint(dash) {
-    if (!dash || !dash._state) return '';
-    const gen = dash._state.searchGeneration != null ? String(dash._state.searchGeneration) : '';
-    const items = searchChatGetScopeItems(dash);
+function searchChatResultsFingerprint(dash, wsId) {
+    const state = searchChatWsState(dash, wsId || (searchChatUi && searchChatUi.wsId));
+    if (!state) return '';
+    const gen = state.searchGeneration != null ? String(state.searchGeneration) : '';
+    const items = searchChatGetScopeItems(dash, wsId);
     const n = items.length;
-    const tab = String(dash._state.resultsKindTab || 'all');
+    const tab = String(state.resultsKindTab || 'all');
     return gen + '|' + tab + '|' + n;
 }
 
@@ -3987,10 +4025,11 @@ function searchChatBuildSystemPrompt(dash) {
     return lines.join('\n');
 }
 
-function searchChatPanelHtml() {
+function searchChatPanelHtml(opts) {
+    const wsId = (opts && opts.wsId) || 'search-output';
     const btn = searchChatBtnClass('basic', 'compact');
     return ''
-        + '<div data-wf-dash-search-chat-panel="1" style="display: flex; flex-direction: column;'
+        + '<div data-wf-dash-search-chat-panel="' + String(wsId).replace(/"/g, '') + '" style="display: flex; flex-direction: column;'
         + ' flex: 1; min-height: 0; gap: 8px; box-sizing: border-box;">'
         + '<div data-wf-dash-search-chat-body style="display: flex; flex: 1; min-height: 0;'
         + ' flex-direction: column; gap: 8px;">'
@@ -4149,6 +4188,15 @@ function searchChatResetChat(panel, dash) {
 }
 
 async function searchChatSend(panel, dash, userText) {
+    const wsId = searchChatResolveWsId(panel, dash);
+    searchChatActivateUi(wsId);
+    if (dash && typeof dash._withOutputWsAsync === 'function') {
+        return dash._withOutputWsAsync(wsId, () => searchChatSendInner(panel, dash, userText));
+    }
+    return searchChatSendInner(panel, dash, userText);
+}
+
+async function searchChatSendInner(panel, dash, userText) {
     const chat = Context.aiChat;
     const text = String(userText || '').trim();
     if (!chat || !text) return;
@@ -4254,8 +4302,10 @@ async function searchChatSend(panel, dash, userText) {
     }
 }
 
-function searchChatWirePanel(panel, dash) {
+function searchChatWirePanel(panel, dash, opts) {
     if (!panel) return;
+    const wsId = searchChatResolveWsId(panel, dash, opts);
+    searchChatActivateUi(wsId);
     if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
         Context.uiLib.ensureButtonStyles(SEARCH_CHAT_SCOPE);
     }
@@ -4267,6 +4317,7 @@ function searchChatWirePanel(panel, dash) {
             if (clearChartsBtn && panel.contains(clearChartsBtn)) {
                 e.preventDefault();
                 e.stopPropagation();
+                searchChatActivateUi(searchChatResolveWsId(panel, dash));
                 searchChatClearCharts(panel);
                 Logger.log('charts cleared');
                 return;
@@ -4275,6 +4326,7 @@ function searchChatWirePanel(panel, dash) {
             if (stopBtn && panel.contains(stopBtn)) {
                 e.preventDefault();
                 e.stopPropagation();
+                searchChatActivateUi(searchChatResolveWsId(panel, dash));
                 if (!searchChatUi.sendInFlight) return;
                 searchChatStopTurn(panel);
                 return;
@@ -4282,6 +4334,7 @@ function searchChatWirePanel(panel, dash) {
             const clearBtn = e.target.closest('[data-wf-dash-search-chat-clear]');
             if (clearBtn && panel.contains(clearBtn)) {
                 if (!searchChatHasAiKey()) return;
+                searchChatActivateUi(searchChatResolveWsId(panel, dash));
                 searchChatResetChat(panel, dash);
             }
         });
@@ -4312,16 +4365,21 @@ function searchChatWirePanel(panel, dash) {
         const chat = Context.aiChat;
         if (chat) {
             chat.wireComposer(panel, searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
-                onSend: (value) => searchChatSend(panel, dash, value),
+                onSend: (value) => {
+                    searchChatActivateUi(searchChatResolveWsId(panel, dash));
+                    return searchChatSend(panel, dash, value);
+                },
                 onStop: () => {
+                    searchChatActivateUi(searchChatResolveWsId(panel, dash));
                     searchChatStopTurn(panel);
                 },
                 onExport: () => {
                     if (!searchChatHasAiKey()) return;
+                    searchChatActivateUi(searchChatResolveWsId(panel, dash));
                     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
                     chat.exportConversation(searchChatUi.chatState, Object.assign({}, searchChatChatOpts(), {
                         exportFilename: 'search-chat-' + stamp + '.json',
-                        exportMetadata: { feature: 'search-output-chat' },
+                        exportMetadata: { feature: 'search-output-chat', wsId },
                     }));
                 },
             }));
@@ -4340,21 +4398,29 @@ function searchChatWirePanel(panel, dash) {
 
 function searchChatOnResultsChanged(dash) {
     if (!dash) return;
-    const fp = searchChatResultsFingerprint(dash);
+    const wsId = typeof dash._resolveActiveOutputWsId === 'function'
+        ? dash._resolveActiveOutputWsId()
+        : 'search-output';
+    const ui = searchChatUiFor(wsId);
+    const fp = searchChatResultsFingerprint(dash, wsId);
     const modal = dash._modal;
-    const panel = modal && modal.querySelector(SEARCH_CHAT_SCOPE);
+    const panel = (modal && modal.querySelector('[data-wf-dash-search-chat-panel="' + wsId + '"]'))
+        || ui.panel
+        || (modal && modal.querySelector(SEARCH_CHAT_SCOPE));
     if (!panel) return;
+    searchChatActivateUi(wsId);
     searchChatUpdateBadge(panel, dash);
-    if (searchChatUi.resultsFingerprint
-        && searchChatUi.resultsFingerprint !== fp
-        && searchChatUi.chatState
-        && (searchChatUi.chatState.messages || []).length) {
+    if (ui.resultsFingerprint
+        && ui.resultsFingerprint !== fp
+        && ui.chatState
+        && (ui.chatState.messages || []).length) {
         searchChatSetStatus(
             panel,
             'Results changed; start a new chat to use the updated set.',
             false
         );
     }
+    ui.resultsFingerprint = fp;
 }
 
 function searchChatSettingsFieldsHtml(settings) {
@@ -4459,7 +4525,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '7.2',
+    _version: '7.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
