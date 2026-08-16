@@ -1113,6 +1113,18 @@ const searchOutputLeftPaneMethods = {
         Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
     },
 
+    _ensureSearchOutputTabForUserSearch() {
+        const wsId = typeof this._resolveActiveOutputWsId === 'function'
+            ? this._resolveActiveOutputWsId()
+            : null;
+        if (wsId !== 'disputes' && wsId !== 'sr-review') return false;
+        if (typeof this._setActiveTab === 'function') {
+            this._setActiveTab('search-output');
+        }
+        Logger.debug('dashboard: routed user search to Search Output');
+        return true;
+    },
+
     async _runContributorHistoryDeepDive(person, historyKind) {
         if (!this._modal) {
             Logger.warn('dashboard: contributor deep dive skipped — modal not open');
@@ -1127,6 +1139,7 @@ const searchOutputLeftPaneMethods = {
             Logger.warn('dashboard: contributor deep dive skipped — unknown history kind ' + historyKind);
             return;
         }
+        this._ensureSearchOutputTabForUserSearch();
         if (this._state.loading) {
             Logger.warn('dashboard: contributor deep dive skipped — search in progress');
             return;
@@ -1154,12 +1167,16 @@ const searchOutputLeftPaneMethods = {
             Logger.warn('dashboard: worker output deep dive skipped — missing person id');
             return;
         }
+        const opts = options || {};
+        if (opts.activeTab) {
+            this._setActiveTab(opts.activeTab);
+        } else {
+            this._ensureSearchOutputTabForUserSearch();
+        }
         if (this._state.loading) {
             Logger.warn('dashboard: worker output deep dive skipped — search in progress');
             return;
         }
-        const opts = options || {};
-        if (opts.activeTab) this._setActiveTab(opts.activeTab);
         this._setLeftTab('search');
         this._setAuthorTokens([normalized], { replace: true });
         this._setOutputTypesTaskAndQa();
@@ -2067,6 +2084,7 @@ const searchOutputLeftPaneMethods = {
     },
 
     async _submitRetrieveTask() {
+        this._ensureSearchOutputTabForUserSearch();
         const inputEl = this._q('#wf-dash-retrieve-input');
         const raw = inputEl ? inputEl.value : (this._state.retrieveInput || '');
         this._state.retrieveInput = String(raw || '').trim();
@@ -2227,6 +2245,7 @@ const searchOutputLeftPaneMethods = {
 
     async _submitSearch() {
         try {
+            this._ensureSearchOutputTabForUserSearch();
             const authorFlushError = await this._flushPendingAuthorInput();
             if (authorFlushError) {
                 this._logDashApiSkip('search', 'author input error');
@@ -2590,7 +2609,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.16',
+    _version: '5.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
