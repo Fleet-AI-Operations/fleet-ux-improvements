@@ -5457,44 +5457,69 @@ const searchOutputResultsPaneMethods = {
         }
     },
 
+    _withResultsScrollPreserved(fn) {
+        const wrap = this._q('#wf-dash-results');
+        const saved = wrap ? wrap.scrollTop : 0;
+        try {
+            return fn();
+        } finally {
+            if (!wrap || !wrap.isConnected) return;
+            const restore = () => {
+                const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+                wrap.scrollTop = Math.min(Math.max(0, saved), max);
+            };
+            restore();
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(restore);
+            }
+        }
+    },
+
     _patchTaskCard(itemId) {
         if (this._state.loading) return;
         const wrap = this._q('#wf-dash-results');
         if (!wrap || !itemId) return;
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
         if (!item) return;
-        const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
-        let existing = null;
-        for (const el of cards) {
-            if (el.getAttribute('data-item-id') === itemId) {
-                existing = el;
-                break;
+        this._withResultsScrollPreserved(() => {
+            const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
+            let existing = null;
+            for (const el of cards) {
+                if (el.getAttribute('data-item-id') === itemId) {
+                    existing = el;
+                    break;
+                }
             }
-        }
-        const html = this._resultCardHtml(item);
-        const doc = this._pageWindow().document;
-        const temp = doc.createElement('div');
-        temp.innerHTML = html;
-        const newCard = temp.firstElementChild;
-        if (!newCard) return;
-        if (existing) {
-            this._detachCardRollingListeners(existing);
-            existing.replaceWith(newCard);
-        } else {
-            wrap.appendChild(newCard);
-        }
-        const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
-        if (item2) {
-            const ui = this._getCardUi(item2.task.id);
-            const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
-            if (ui.expanded && versionCount >= 2) {
-                this._attachCardRollingListeners(newCard, itemId, item2.task.id);
+            const html = this._resultCardHtml(item);
+            const doc = this._pageWindow().document;
+            const temp = doc.createElement('div');
+            temp.innerHTML = html;
+            const newCard = temp.firstElementChild;
+            if (!newCard) return;
+            if (existing) {
+                const active = doc.activeElement;
+                if (active && typeof existing.contains === 'function' && existing.contains(active)
+                    && typeof active.blur === 'function') {
+                    active.blur();
+                }
+                this._detachCardRollingListeners(existing);
+                existing.replaceWith(newCard);
             } else {
-                this._detachCardRollingListeners(newCard);
+                wrap.appendChild(newCard);
             }
-        }
-        this._syncAutoGrowTextareasIn(newCard);
-        this._syncResultsHydrateBannerUi();
+            const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
+            if (item2) {
+                const ui = this._getCardUi(item2.task.id);
+                const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
+                if (ui.expanded && versionCount >= 2) {
+                    this._attachCardRollingListeners(newCard, itemId, item2.task.id);
+                } else {
+                    this._detachCardRollingListeners(newCard);
+                }
+            }
+            this._syncAutoGrowTextareasIn(newCard);
+            this._syncResultsHydrateBannerUi();
+        });
     },
 
     _syncAutoGrowTextarea(ta, minHeightPx) {
@@ -5900,40 +5925,43 @@ const searchOutputResultsPaneMethods = {
             this._syncSearchLoadPhaseUi();
             return;
         }
-        if (s.searchError && !s.cachedItems) {
+
+        this._withResultsScrollPreserved(() => {
+            if (s.searchError && !s.cachedItems) {
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = '';
+                return;
+            }
+            if (!s.hasSearched) {
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = `<p style="${muted}">Results will appear here after you run a search.</p>`;
+                return;
+            }
+            if (s.filteredItems === null) {
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = '';
+                return;
+            }
+            const viewItems = this._getViewItems();
+            if (!viewItems || viewItems.length === 0) {
+                const scopeTotal = this._getFilterScopeItems().length;
+                const msg = (s.cachedItems && s.cachedItems.length === 0)
+                    ? 'No results matched this search.'
+                    : scopeTotal === 0
+                        ? 'No results in this tab.'
+                        : 'No results match the current filters.';
+                this._clearAllRollingOverlayListeners();
+                wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
+                this._syncResultsToolbarDerivedUi();
+                return;
+            }
+            const pageItems = this._getPaginatedViewItems();
             this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = '';
-            return;
-        }
-        if (!s.hasSearched) {
-            this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = `<p style="${muted}">Results will appear here after you run a search.</p>`;
-            return;
-        }
-        if (s.filteredItems === null) {
-            this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = '';
-            return;
-        }
-        const viewItems = this._getViewItems();
-        if (!viewItems || viewItems.length === 0) {
-            const scopeTotal = this._getFilterScopeItems().length;
-            const msg = (s.cachedItems && s.cachedItems.length === 0)
-                ? 'No results matched this search.'
-                : scopeTotal === 0
-                    ? 'No results in this tab.'
-                    : 'No results match the current filters.';
-            this._clearAllRollingOverlayListeners();
-            wrap.innerHTML = `<p style="font-size: 12px; color: var(--muted-foreground, #64748b);">${msg}</p>`;
+            wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
             this._syncResultsToolbarDerivedUi();
-            return;
-        }
-        const pageItems = this._getPaginatedViewItems();
-        this._clearAllRollingOverlayListeners();
-        wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
-        this._syncResultsToolbarDerivedUi();
-        this._animateSeededSessionQaPanels(pageItems);
-        this._schedulePageHydrate();
+            this._animateSeededSessionQaPanels(pageItems);
+            this._schedulePageHydrate();
+        });
     },
 
     _applySessionQaSearchSeed(seedMap) {
@@ -7748,7 +7776,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.31',
+    _version: '9.32',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1294,6 +1294,7 @@ const searchOutputCoreMethods = {
         Logger.debug('card rehydrate started — ' + itemId);
 
         // Throw away hydrated payload so the in-place rebuild is a full refresh.
+        // Do not remount mid-flight: hydrated=false would swap to a quick stub and clamp scroll.
         item.hydrated = false;
         item.disputes = [];
         item.flags = [];
@@ -1301,7 +1302,6 @@ const searchOutputCoreMethods = {
         item.task.allFeedback = [];
         item.task.systemFeedbackIdRemap = {};
         delete item.task.initialCreationTimeSeconds;
-        this._patchTaskCard(itemId);
 
         const profilesMap = this._profilesMapFromHydrateItems([item]);
         this._state.hydrateFetchActive = true;
@@ -6578,7 +6578,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.50',
+    _version: '9.51',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
