@@ -69,6 +69,7 @@ const ALERT_BANNER_CLASSES = {
 const SEGMENT_CLASSES = {
     group: 'fleet-ui-seg-group',
     groupFill: 'fleet-ui-seg-group--fill',
+    groupCompact: 'fleet-ui-seg-group--compact',
     btn: 'fleet-ui-seg-btn',
     btnDivider: 'fleet-ui-seg-btn--divider'
 };
@@ -1129,6 +1130,15 @@ function fleetUiSegmentCssLines(prefix) {
         '  flex: 1;',
         '  padding: 8px 10px;',
         '}',
+        // Match toolbar nav buttons / Sort selects (4px 10px, 11px)
+        p + '.fleet-ui-seg-group--compact .fleet-ui-seg-btn {',
+        '  padding: 4px 10px;',
+        '  font-size: 11px;',
+        '}',
+        p + '.fleet-ui-seg-group--fill.fleet-ui-seg-group--compact .fleet-ui-seg-btn {',
+        '  padding: 4px 10px;',
+        '  font-size: 11px;',
+        '}',
         p + '.fleet-ui-seg-btn--divider {',
         '  border-right: 1px solid var(--border, #e2e8f0);',
         '}',
@@ -1239,7 +1249,10 @@ function fleetUiSegmentGroupHtml(opts) {
     const valueAttr = o.valueAttr || 'data-value';
     const value = o.value;
     const fill = o.fill === true;
-    const groupClass = SEGMENT_CLASSES.group + (fill ? ' ' + SEGMENT_CLASSES.groupFill : '');
+    const compact = o.compact === true;
+    let groupClass = SEGMENT_CLASSES.group;
+    if (fill) groupClass += ' ' + SEGMENT_CLASSES.groupFill;
+    if (compact) groupClass += ' ' + SEGMENT_CLASSES.groupCompact;
     const buttons = options.map((opt, i) => fleetUiSegmentBtnHtml({
         value: opt.value,
         label: opt.label,
@@ -1438,7 +1451,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.17',
+    _version: '3.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

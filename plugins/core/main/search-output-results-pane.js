@@ -1846,7 +1846,7 @@ const searchOutputResultsPaneMethods = {
             return ui.segmentGroupHtml({
                 value,
                 valueAttr: 'data-wf-dash-review-status',
-                fill: true,
+                compact: true,
                 ariaLabel: 'Review status',
                 options: [
                     { value: 'pending', label: 'Pending' },
@@ -7966,7 +7966,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.0',
+    _version: '10.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
