@@ -3945,12 +3945,15 @@ const searchOutputResultsPaneMethods = {
 
     _cardKeyTabHtml(task, itemId, highlightOpts) {
         const key = String(task && task.key || '').trim();
+        const taskId = String(task && task.id || '').trim();
+        const displayId = key || taskId;
+        const label = key ? ('Task key: ' + key) : (taskId ? ('Task ID: ' + taskId) : 'Task key');
         const inner = '<span class="wf-dash-card-key-tab-inner">'
-            + this._cardKeyCopyHtml(key, highlightOpts || {})
+            + this._cardKeyCopyHtml(displayId, highlightOpts || {})
             + this._taskOpenLinkHtml(task, itemId, { flushHorizontal: true })
             + this._taskPublicViewLinkHtml(task, { flushHorizontal: true, flushEnd: true })
             + '</span>';
-        return this._cardSurfaceTabHtml(inner, key ? ('Task key: ' + key) : 'Task key', {
+        return this._cardSurfaceTabHtml(inner, label, {
             noHorizontalPadding: true,
             shellClass: 'wf-dash-card-key-tab'
         });
@@ -7103,13 +7106,25 @@ const searchOutputResultsPaneMethods = {
             });
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
-        const disputeRightHtml = (categoryHtml || claimControlHtml)
-            ? `${categoryHtml}${claimControlHtml}`
-            : '';
         const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
             + this._liveSectionCopyIconHtml('dispute', display.id, itemId)
             + submittedHtml;
+        const filerHtml = (display.filerId || display.filerName || display.filerEmail)
+            ? this._fieldGroupHtml(
+                'Filed by',
+                this._personChipsHtml(
+                    display.filerName,
+                    display.filerEmail,
+                    display.filerId,
+                    'Open filer in Fleet',
+                    'dispute'
+                )
+            )
+            : '';
+        const disputeRightHtml = (categoryHtml || claimControlHtml || filerHtml)
+            ? `${filerHtml}${categoryHtml}${claimControlHtml}`
+            : '';
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
         const resolutionPanelHtml = !display.resolutionAt
             ? this._disputeResolutionPanelHtml(display, itemId)
@@ -7484,7 +7499,8 @@ const searchOutputResultsPaneMethods = {
             `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
         );
         let bodyInner;
-        if (item.qaFeedback) {
+        const preferQaOnly = item.kind === 'qa' && item.qaFeedback;
+        if (preferQaOnly) {
             bodyInner = taskActionsHtml;
         } else {
             bodyInner = promptSectionHtml + taskActionsHtml;
@@ -7725,7 +7741,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '9.27',
+    _version: '9.28',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -665,7 +665,7 @@ const searchOutputCoreMethods = {
             feedbackId = hist.dispute_data.feedbackId;
         }
 
-        const merged = {
+        const merged = Object.assign({}, open || {}, hist || {}, {
             id: hist.id != null ? hist.id : open.id,
             eval_task_id: hist.eval_task_id || open.eval_task_id || tid,
             team_id: open.team_id || hist.team_id || null,
@@ -677,11 +677,21 @@ const searchOutputCoreMethods = {
             resolved_by: resolverId,
             resolution_reason: body.resolutionReason,
             feedback_id: feedbackId,
-            original_feedback_created_at: open.original_feedback_created_at || null,
-            eval_task: open.eval_task || null,
-            creator: open.creator || null,
-            resolver: open.resolver || null
-        };
+            original_feedback_created_at: open.original_feedback_created_at
+                || hist.original_feedback_created_at
+                || null,
+            original_feedback_content: open.original_feedback_content
+                || hist.original_feedback_content
+                || null,
+            original_feedback_data: open.original_feedback_data
+                || hist.original_feedback_data
+                || null,
+            feedback_created_by: open.feedback_created_by || hist.feedback_created_by || null,
+            user_id: open.user_id || hist.user_id || null,
+            eval_task: open.eval_task || hist.eval_task || null,
+            creator: open.creator || hist.creator || null,
+            resolver: open.resolver || hist.resolver || null
+        });
         return this._stripResolvedDisputeRow(merged);
     },
 
@@ -1578,23 +1588,13 @@ const searchOutputCoreMethods = {
 
     _stripResolvedDisputeRow(row) {
         if (!row) return null;
-        return {
-            id: row.id,
-            eval_task_id: row.eval_task_id,
-            team_id: row.team_id,
-            created_at: row.created_at,
-            dispute_status: row.dispute_status,
-            dispute_data: row.dispute_data,
-            dispute_reason: row.dispute_reason,
-            resolved_at: row.resolved_at,
-            resolved_by: row.resolved_by,
-            resolution_reason: row.resolution_reason,
-            feedback_id: row.feedback_id,
-            original_feedback_created_at: row.original_feedback_created_at,
-            eval_task: row.eval_task || null,
-            creator: row.creator || null,
-            resolver: row.resolver || null
-        };
+        // Keep the full list payload (original_feedback_*, eval_task embed, creator, lease, …)
+        // so Disputes / prefetch cards stay useful before hydrate.
+        const out = Object.assign({}, row);
+        if (!out.eval_task_id && out.eval_task && out.eval_task.id) {
+            out.eval_task_id = out.eval_task.id;
+        }
+        return out;
     },
 
     _indexResolvedDisputeRows(rows) {
@@ -2414,10 +2414,68 @@ const searchOutputCoreMethods = {
         for (const rows of groupedRows.values()) {
             for (const row of rows) {
                 if (row.resolved_by) ids.add(row.resolved_by);
+                if (row.user_id) ids.add(row.user_id);
+                if (row.feedback_created_by) ids.add(row.feedback_created_by);
+                if (row.leased_by) ids.add(row.leased_by);
                 if (row.eval_task && row.eval_task.created_by) ids.add(row.eval_task.created_by);
             }
         }
         return [...ids];
+    },
+
+    _authorCreatorFromDisputeRows(rows, authorId) {
+        const aid = String(authorId || '').trim();
+        if (!aid) return null;
+        for (const row of rows || []) {
+            if (row && String(row.user_id || '').trim() === aid && row.creator) return row.creator;
+        }
+        return null;
+    },
+
+    _feedbackEntryFromDisputeOriginal(row, task, profilesMap) {
+        if (!row || row.feedback_id == null) return null;
+        if (!row.original_feedback_data && !row.original_feedback_content) return null;
+        const lib = dashLib();
+        if (!lib || typeof lib.buildQaFeedbackDisplay !== 'function') return null;
+        const reviewerId = String(row.feedback_created_by || '').trim();
+        const profile = reviewerId && profilesMap ? profilesMap.get(reviewerId) : null;
+        const reviewer = {
+            id: reviewerId,
+            name: profile ? this._personChipName(profile, reviewerId) : '',
+            email: (profile && profile.email) || ''
+        };
+        const feedbackAt = String(row.original_feedback_created_at || row.created_at || '');
+        const rawLike = (task.promptVersions || []).map((v) => ({
+            id: v.id,
+            version_no: v.versionNo,
+            created_at: v.createdAt,
+            prompt: v.prompt,
+            env_key: v.envKey
+        }));
+        const versionInfo = lib.resolveVersionAtFeedback(rawLike, feedbackAt);
+        const pseudoRow = {
+            id: row.feedback_id,
+            created_at: feedbackAt,
+            created_by: reviewerId,
+            feedback_content: row.original_feedback_content || '',
+            feedback_data: row.original_feedback_data || {},
+            is_positive_feedback: false,
+            is_system_feedback: false
+        };
+        const display = lib.buildQaFeedbackDisplay(pseudoRow, versionInfo, reviewer);
+        return {
+            id: String(row.feedback_id),
+            feedbackAt,
+            isPositive: Boolean(display && display.isPositive),
+            isEscalated: Boolean(display && display.isEscalated),
+            isFlaggedAsBugged: Boolean(display && display.isFlaggedAsBugged),
+            isSystemFeedback: Boolean(display && display.isSystemFeedback),
+            isVerifierFailure: Boolean(display && display.isVerifierFailure),
+            reviewer,
+            linkedVersionNo: versionInfo.rawVersionNo,
+            linkedDisplayVersionNo: versionInfo.displayVersionNo,
+            display
+        };
     },
 
     _collectPrefetchFlagProfileIds(groupedRows) {
@@ -2498,7 +2556,11 @@ const searchOutputCoreMethods = {
             }
             if (!this._prefetchEmbedMatchesProjectScope(embed, scope)) continue;
             const teamId = rows[0].team_id || embed.team_id || '';
-            const task = this._taskFromFleetTaskEmbed(embed, profilesMap, { teamId });
+            const authorCreator = this._authorCreatorFromDisputeRows(rows, embed.created_by);
+            const task = this._taskFromFleetTaskEmbed(embed, profilesMap, {
+                teamId,
+                creator: authorCreator
+            });
             if (!task) continue;
             const disputes = this._disputeRowsToDisplays(rows, profilesMap);
             let sortAt = task.createdAt || '';
@@ -2506,15 +2568,24 @@ const searchOutputCoreMethods = {
                 const ts = String(row.resolved_at || row.created_at || '');
                 if (ts && ts > sortAt) sortAt = ts;
             }
-            const linked = rows.find((r) => r.feedback_id != null);
+            const linked = rows.find((r) => r.feedback_id != null)
+                || rows.find((r) => r.original_feedback_data || r.original_feedback_content);
+            const feedbackEntry = linked
+                ? this._feedbackEntryFromDisputeOriginal(linked, task, profilesMap)
+                : null;
+            if (feedbackEntry) {
+                task.allFeedback = [feedbackEntry];
+            }
             items.push({
                 id: 'dispute-' + taskId,
                 kind: 'dispute',
                 kinds: ['dispute'],
                 sortAt,
                 task,
-                selectedFeedbackId: linked ? String(linked.feedback_id) : null,
-                qaFeedback: null,
+                selectedFeedbackId: linked && linked.feedback_id != null
+                    ? String(linked.feedback_id)
+                    : null,
+                qaFeedback: feedbackEntry ? feedbackEntry.display : null,
                 disputes,
                 flags: [],
                 hydrated: false
@@ -6444,7 +6515,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.46',
+    _version: '9.47',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
