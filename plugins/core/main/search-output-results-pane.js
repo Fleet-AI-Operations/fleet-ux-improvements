@@ -5609,19 +5609,25 @@ const searchOutputResultsPaneMethods = {
     _resultsScrollAnchor(wrap, preferredItemId) {
         if (!wrap) return null;
         const wrapRect = wrap.getBoundingClientRect();
+        const intersectsViewport = (rect) => rect.bottom > wrapRect.top && rect.top < wrapRect.bottom;
         if (preferredItemId) {
             const preferred = this._findResultsCardEl(wrap, preferredItemId);
             if (preferred) {
                 const rect = preferred.getBoundingClientRect();
-                return {
-                    itemId: preferredItemId,
-                    offset: rect.top - wrapRect.top
-                };
+                // Only anchor on the patched card when it is actually on screen.
+                // Offscreen patches must not become the scroll anchor — that yanks
+                // the viewport to background hydrates / prefetch re-overlays.
+                if (intersectsViewport(rect)) {
+                    return {
+                        itemId: preferredItemId,
+                        offset: rect.top - wrapRect.top
+                    };
+                }
             }
         }
         for (const card of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
             const rect = card.getBoundingClientRect();
-            if (rect.bottom > wrapRect.top) {
+            if (intersectsViewport(rect)) {
                 const itemId = card.getAttribute('data-item-id');
                 if (!itemId) continue;
                 return {
@@ -5636,13 +5642,18 @@ const searchOutputResultsPaneMethods = {
     _restoreResultsScrollAnchor(wrap, anchor, savedScrollTop) {
         if (!wrap || !wrap.isConnected) return;
         const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+        const applyScrollTop = (next) => {
+            const clamped = Math.min(Math.max(0, next), max);
+            if (Math.abs(clamped - wrap.scrollTop) < 1) return;
+            wrap.scrollTop = clamped;
+        };
         if (!anchor || !anchor.itemId) {
-            wrap.scrollTop = Math.min(Math.max(0, savedScrollTop || 0), max);
+            applyScrollTop(savedScrollTop || 0);
             return;
         }
         const card = this._findResultsCardEl(wrap, anchor.itemId);
         if (!card) {
-            wrap.scrollTop = Math.min(Math.max(0, savedScrollTop || 0), max);
+            applyScrollTop(savedScrollTop || 0);
             return;
         }
         const wrapRect = wrap.getBoundingClientRect();
@@ -5651,15 +5662,18 @@ const searchOutputResultsPaneMethods = {
         const delta = currentOffset - anchor.offset;
         let next = wrap.scrollTop + delta;
         next = Math.min(Math.max(0, next), max);
-        // After a shrink, keep the card from scrolling entirely past the viewport.
-        const cardTopInScroll = wrap.scrollTop + currentOffset;
-        const maxKeepVisible = cardTopInScroll + Math.max(0, cardRect.height - wrap.clientHeight);
-        next = Math.min(next, Math.max(0, maxKeepVisible));
+        // Keep-visible clamp only when the user was scrolled into this card
+        // (top was above the viewport). Never pull the view to an offscreen card.
+        if (anchor.offset < 0) {
+            const cardTopInScroll = wrap.scrollTop + currentOffset;
+            const maxKeepVisible = cardTopInScroll + Math.max(0, cardRect.height - wrap.clientHeight);
+            next = Math.min(next, Math.max(0, maxKeepVisible));
+        }
         if (Math.abs(delta) > 0.5) {
             Logger.debug('results scroll anchor restored — ' + anchor.itemId
                 + ' · delta ' + Math.round(delta) + 'px');
         }
-        wrap.scrollTop = next;
+        applyScrollTop(next);
     },
 
     _withResultsScrollPreserved(fn, opts) {
@@ -8034,7 +8048,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.3',
+    _version: '10.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
