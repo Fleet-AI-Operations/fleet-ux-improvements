@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.376",
+  "archetypesVersion": "14.378",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.18",
-      "hash": "sha256-f4fbf27932e0dbb682a34f2fb64c29af0c77967e4d06ca2e4f392b65be558aca",
+      "version": "3.19",
+      "hash": "sha256-c7143dc5532bc1702a879af9ec7671e5037b275eaf0d53f110d53229749f6181",
       "log": false
     },
     {
@@ -34,8 +34,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "11.15",
-      "hash": "sha256-5fd229b563e2772a2d640b91128ad79dfc7aba28bd2e6d95baaff749c2b08bdb",
+      "version": "11.17",
+      "hash": "sha256-269476c101a539f10e227ddff8b191f0eb7733077f83948101fb91db73082052",
       "log": false
     },
     {
@@ -272,8 +272,8 @@
     },
     {
       "name": "team-members.js",
-      "version": "5.0",
-      "hash": "sha256-afce04a5e4e5294d69dcdc138fe14c30ca6b07338c64e0aae426a5b1156befd6",
+      "version": "5.2",
+      "hash": "sha256-bff727b2bb0d0342ab4a464ab1c834302a857dc05e3dd1aec1d52e01b0ee185e",
       "log": false
     },
     {
