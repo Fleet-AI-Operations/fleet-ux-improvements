@@ -5687,13 +5687,9 @@ const searchOutputResultsPaneMethods = {
             return fn();
         } finally {
             if (!wrap || !wrap.isConnected) return;
-            const restore = () => {
-                this._restoreResultsScrollAnchor(wrap, anchor, saved);
-            };
-            restore();
-            if (typeof requestAnimationFrame === 'function') {
-                requestAnimationFrame(restore);
-            }
+            // Sync-only: a deferred rAF restore re-applies a stale card offset after
+            // the user has already scrolled and amplifies wheel motion into huge jumps.
+            this._restoreResultsScrollAnchor(wrap, anchor, saved);
         }
     },
 
@@ -8048,7 +8044,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.4',
+    _version: '10.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
