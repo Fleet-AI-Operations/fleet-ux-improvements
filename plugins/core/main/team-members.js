@@ -359,8 +359,8 @@ const teamMembersController = {
             '</div>',
             '</div>',
             '<div class="' + ab.footer + '">',
-            '<button type="button" id="wf-ops-team-search-open-team" class="' + ab.btnSecondary + '">Refresh credentials</button>',
-            '<button type="button" id="wf-ops-team-search-retry-btn" class="' + ab.btnPrimary + '">Retry search</button>',
+            '<button type="button" id="wf-ops-team-search-open-team" class="' + ab.btnPrimary + '">Refresh credentials</button>',
+            '<button type="button" id="wf-ops-team-search-retry-btn" class="' + ab.btnSecondary + '" style="display: none;">Retry search</button>',
             '</div>',
             '</div>'
         ].join('');
@@ -405,12 +405,13 @@ const teamMembersController = {
             cards.innerHTML = this._renderOpsTeamSearchActionRefreshBannerHtml();
             const self = this;
             const openTeamBtn = cards.querySelector('#wf-ops-team-search-open-team');
+            const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
             if (openTeamBtn) {
                 openTeamBtn.addEventListener('click', () => {
+                    if (retryBtn) retryBtn.style.display = '';
                     Context.opsTab.openTeamPageForCredRefresh(modal);
                 });
             }
-            const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
             if (retryBtn) {
                 retryBtn.addEventListener('click', () => {
                     void self._handleOpsTeamSearchCredentialRetry(modal);
@@ -2115,7 +2116,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
