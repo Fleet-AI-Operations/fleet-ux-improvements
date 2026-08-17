@@ -414,7 +414,7 @@ const searchOutputResultsPaneMethods = {
                             </div>
                         </div>
                     </div>
-                    <div ${el('results')} style="flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
+                    <div ${el('results')} style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
     },
 
@@ -5606,90 +5606,83 @@ const searchOutputResultsPaneMethods = {
         return null;
     },
 
-    _resultsScrollAnchor(wrap, preferredItemId) {
-        if (!wrap) return null;
+    _resultsCardIntersectsViewport(wrap, card) {
+        if (!wrap || !card) return false;
         const wrapRect = wrap.getBoundingClientRect();
-        const intersectsViewport = (rect) => rect.bottom > wrapRect.top && rect.top < wrapRect.bottom;
-        if (preferredItemId) {
-            const preferred = this._findResultsCardEl(wrap, preferredItemId);
-            if (preferred) {
-                const rect = preferred.getBoundingClientRect();
-                // Only anchor on the patched card when it is actually on screen.
-                // Offscreen patches must not become the scroll anchor — that yanks
-                // the viewport to background hydrates / prefetch re-overlays.
-                if (intersectsViewport(rect)) {
-                    return {
-                        itemId: preferredItemId,
-                        offset: rect.top - wrapRect.top
-                    };
-                }
-            }
-        }
-        for (const card of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
-            const rect = card.getBoundingClientRect();
-            if (intersectsViewport(rect)) {
-                const itemId = card.getAttribute('data-item-id');
-                if (!itemId) continue;
-                return {
-                    itemId,
-                    offset: rect.top - wrapRect.top
-                };
-            }
-        }
-        return null;
+        const rect = card.getBoundingClientRect();
+        return rect.bottom > wrapRect.top && rect.top < wrapRect.bottom;
     },
 
-    _restoreResultsScrollAnchor(wrap, anchor, savedScrollTop) {
+    /** Anchor only when the preferred card is on screen — never fall back to another card. */
+    _resultsScrollAnchorForItem(wrap, itemId) {
+        if (!wrap || !itemId) return null;
+        const card = this._findResultsCardEl(wrap, itemId);
+        if (!card || !this._resultsCardIntersectsViewport(wrap, card)) return null;
+        const wrapRect = wrap.getBoundingClientRect();
+        const rect = card.getBoundingClientRect();
+        return {
+            itemId,
+            offset: rect.top - wrapRect.top
+        };
+    },
+
+    _applyResultsScrollTop(wrap, next, meta) {
         if (!wrap || !wrap.isConnected) return;
         const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
-        const applyScrollTop = (next) => {
-            const clamped = Math.min(Math.max(0, next), max);
-            if (Math.abs(clamped - wrap.scrollTop) < 1) return;
-            wrap.scrollTop = clamped;
-        };
-        if (!anchor || !anchor.itemId) {
-            applyScrollTop(savedScrollTop || 0);
-            return;
-        }
+        const clamped = Math.min(Math.max(0, next), max);
+        const prev = wrap.scrollTop;
+        if (Math.abs(clamped - prev) < 1) return;
+        wrap.scrollTop = clamped;
+        const info = meta || {};
+        Logger.debug('results scrollTop write — ' + (info.path || 'unknown')
+            + (info.itemId ? (' · ' + info.itemId) : '')
+            + ' · delta ' + Math.round(clamped - prev) + 'px');
+    },
+
+    _restoreResultsScrollAnchor(wrap, anchor) {
+        if (!wrap || !wrap.isConnected || !anchor || !anchor.itemId) return;
         const card = this._findResultsCardEl(wrap, anchor.itemId);
-        if (!card) {
-            applyScrollTop(savedScrollTop || 0);
-            return;
-        }
+        if (!card) return;
         const wrapRect = wrap.getBoundingClientRect();
         const cardRect = card.getBoundingClientRect();
         const currentOffset = cardRect.top - wrapRect.top;
         const delta = currentOffset - anchor.offset;
         let next = wrap.scrollTop + delta;
-        next = Math.min(Math.max(0, next), max);
-        // Keep-visible clamp only when the user was scrolled into this card
-        // (top was above the viewport). Never pull the view to an offscreen card.
+        // Keep-visible clamp only when the user was scrolled into this card.
         if (anchor.offset < 0) {
             const cardTopInScroll = wrap.scrollTop + currentOffset;
             const maxKeepVisible = cardTopInScroll + Math.max(0, cardRect.height - wrap.clientHeight);
             next = Math.min(next, Math.max(0, maxKeepVisible));
         }
-        if (Math.abs(delta) > 0.5) {
-            Logger.debug('results scroll anchor restored — ' + anchor.itemId
-                + ' · delta ' + Math.round(delta) + 'px');
-        }
-        applyScrollTop(next);
+        this._applyResultsScrollTop(wrap, next, {
+            path: 'anchor',
+            itemId: anchor.itemId
+        });
     },
 
     _withResultsScrollPreserved(fn, opts) {
         const options = opts || {};
         const wrap = this._q('#wf-dash-results');
         const saved = wrap ? wrap.scrollTop : 0;
-        const anchor = wrap
-            ? this._resultsScrollAnchor(wrap, options.anchorItemId || null)
-            : null;
+        const preferredId = options.anchorItemId || null;
+        // Patch path: only restore when the patched card is on screen.
+        // Offscreen patches — zero scrollTop writes (browser overflow-anchor handles above-viewport churn).
+        if (preferredId) {
+            const anchor = wrap ? this._resultsScrollAnchorForItem(wrap, preferredId) : null;
+            try {
+                return fn();
+            } finally {
+                if (!wrap || !wrap.isConnected) return;
+                if (!anchor) return;
+                this._restoreResultsScrollAnchor(wrap, anchor);
+            }
+        }
+        // Full rebuild (_renderResults): original pre-anchor behavior — clamp saved scrollTop once.
         try {
             return fn();
         } finally {
             if (!wrap || !wrap.isConnected) return;
-            // Sync-only: a deferred rAF restore re-applies a stale card offset after
-            // the user has already scrolled and amplifies wheel motion into huge jumps.
-            this._restoreResultsScrollAnchor(wrap, anchor, saved);
+            this._applyResultsScrollTop(wrap, saved, { path: 'saved' });
         }
     },
 
@@ -8044,7 +8037,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.5',
+    _version: '10.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
