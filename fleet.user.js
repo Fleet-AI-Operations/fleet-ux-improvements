@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.8
+// @version      13.9
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.8';
+    const VERSION = '13.9';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -964,6 +964,39 @@
             const cacheData = { raw, version, cachedAt: Date.now() };
             this.set(`settings-doc-cache-${name}`, JSON.stringify(cacheData));
         },
+        // Last-known-good archetypes.json (branch-scoped fallback when GitHub fetch fails)
+        getCachedArchetypesJson(branch) {
+            const cached = this.get('archetypes-json-cache', null);
+            if (!cached) return null;
+            try {
+                const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+                if (!parsed.raw || typeof parsed.raw !== 'string') return null;
+                if (branch && parsed.branch !== branch) return null;
+                return {
+                    raw: parsed.raw,
+                    branch: parsed.branch || null,
+                    archetypesVersion: parsed.archetypesVersion != null ? parsed.archetypesVersion : null,
+                    cachedAt: typeof parsed.cachedAt === 'number' ? parsed.cachedAt : null
+                };
+            } catch (e) {
+                Logger.error('Failed to parse cached archetypes.json:', e);
+                return null;
+            }
+        },
+        setCachedArchetypesJson(raw, branch, archetypesVersion) {
+            if (!raw || typeof raw !== 'string' || !branch) return;
+            const cacheData = {
+                raw,
+                branch,
+                archetypesVersion: archetypesVersion != null ? archetypesVersion : null,
+                cachedAt: Date.now()
+            };
+            this.set('archetypes-json-cache', JSON.stringify(cacheData));
+        },
+        clearCachedArchetypesJson() {
+            this.delete('archetypes-json-cache');
+        },
         getSubmoduleLoggingEnabled() {
             return this.get('submodule-logging', DEFAULT_STORAGE_SUBMODULE_LOGGING);
         },
@@ -1095,7 +1128,8 @@
                 'debug',
                 'verbose',
                 'submodule-logging',
-                'disputes-cache'
+                'disputes-cache',
+                'archetypes-json-cache'
             ];
             globalKeys.forEach(key => {
                 this.delete(key);
@@ -2381,6 +2415,51 @@
             const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.archetypesPath}?t=${timestamp}`;
             
             Logger.debug(`Fetching archetypes from branch: ${GITHUB_CONFIG.branch} (${url})`);
+
+            const isTransientArchetypesFailure = (status) => {
+                if (status === 0 || status === 408 || status === 429) return true;
+                if (typeof status === 'number' && status >= 500 && status <= 599) return true;
+                return false;
+            };
+
+            const formatCacheAge = (cachedAt) => {
+                if (typeof cachedAt !== 'number' || !cachedAt) return 'unknown age';
+                const ms = Math.max(0, Date.now() - cachedAt);
+                const sec = Math.floor(ms / 1000);
+                if (sec < 60) return `${sec}s old`;
+                const min = Math.floor(sec / 60);
+                if (min < 60) return `${min}m old`;
+                const hr = Math.floor(min / 60);
+                if (hr < 48) return `${hr}h old`;
+                const days = Math.floor(hr / 24);
+                return `${days}d old`;
+            };
+
+            const tryFallback = (reason, resolve, reject) => {
+                const cached = Storage.getCachedArchetypesJson(GITHUB_CONFIG.branch);
+                if (!cached) {
+                    reject(reason instanceof Error ? reason : new Error(String(reason)));
+                    return;
+                }
+                try {
+                    const config = JSON.parse(cached.raw);
+                    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+                        reject(reason instanceof Error ? reason : new Error(String(reason)));
+                        return;
+                    }
+                    this._applyArchetypesConfig(config);
+                    const ver = cached.archetypesVersion != null
+                        ? cached.archetypesVersion
+                        : (config.archetypesVersion || 'unknown');
+                    Logger.warn(
+                        `GitHub fetch failed (${reason instanceof Error ? reason.message : reason}); using cached archetypes v${ver} (${formatCacheAge(cached.cachedAt)})`
+                    );
+                    resolve(config);
+                } catch (e) {
+                    Logger.error('Failed to apply cached archetypes.json:', e);
+                    reject(reason instanceof Error ? reason : new Error(String(reason)));
+                }
+            };
             
             return new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
@@ -2392,81 +2471,110 @@
                         'Expires': '0'
                     },
                     onload: (response) => {
-                        if (response.status === 200) {
+                        const status = typeof response.status === 'number' ? response.status : 0;
+                        if (status === 200) {
+                            const raw = response.responseText || '';
+                            if (!raw.trim()) {
+                                Logger.error('Failed to load archetypes: empty response body');
+                                tryFallback(new Error('empty archetypes.json body'), resolve, reject);
+                                return;
+                            }
                             try {
-                                const config = JSON.parse(response.responseText);
-                                this.archetypes = config.archetypes || [];
-                                this.devArchetypes = config.devArchetypes || [];
-                                this.corePlugins = config.corePlugins || [];
-                                this.libraries = config.libraries || [];
-                                this.opsDashboardPlugins = config.opsDashboardPlugins || [];
-                                this.opsDashboardLibraries = Array.isArray(config.opsDashboardLibraries)
-                                    ? config.opsDashboardLibraries
-                                    : [];
-                                this.devPlugins = config.devPlugins || [];
-                                this.settingsModalDocs = config.settingsModalDocs || [];
-                                
-                                // Check if script version is outdated
-                                if (config.version) {
-                                    const latestVersion = config.version;
-                                    Context.latestVersion = latestVersion;
-                                    // Simple version comparison: if versions don't match, consider outdated
-                                    // This handles semantic versioning (e.g., "3.4.0" vs "3.4.1")
-                                    Context.isOutdated = compareVersions(VERSION, latestVersion) < 0;
-                                    if (Context.isOutdated) {
-                                        Logger.warn(`Script version ${VERSION} is outdated. Latest version is ${latestVersion}`);
-                                    }
-                                } else {
-                                    // No version in config, assume up to date
-                                    Context.isOutdated = false;
-                                    Context.latestVersion = VERSION;
+                                const config = JSON.parse(raw);
+                                if (!config || typeof config !== 'object' || Array.isArray(config)) {
+                                    Logger.error('Failed to parse archetypes config: not a JSON object');
+                                    tryFallback(new Error('archetypes.json is not a JSON object'), resolve, reject);
+                                    return;
                                 }
-                                if (Context.settingsUi && typeof Context.settingsUi.refreshUpdateIndicator === 'function') {
-                                    try {
-                                        Context.settingsUi.refreshUpdateIndicator();
-                                    } catch (refreshErr) {
-                                        Logger.debug('Settings UI update indicator refresh failed', refreshErr);
-                                    }
-                                }
-                                
-                                // Always log archetypes version (cannot be disabled)
-                                Context.archetypesVersion = config.archetypesVersion || null;
-                                Context.coreOnlyMode = config.coreOnlyMode === true;
-                                Context.opsAccess = config.opsAccess && typeof config.opsAccess === 'object'
-                                    ? config.opsAccess
-                                    : null;
-                                Context.opsSecrets = config.opsSecrets && typeof config.opsSecrets === 'object'
-                                    ? config.opsSecrets
-                                    : null;
-                                applyArchetypeRemoteLoggingConfig(config);
-                                console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
-                                if (Context.coreOnlyMode) {
-                                    Logger.log('coreOnlyMode is enabled: archetype UX plugins and SPA auto-reload are off; core plugins remain active.');
-                                }
-                                
-                                Logger.log(`Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
-                                if (DEV_SCRIPTS_ENABLED) {
-                                    clearOrphanMarkerForCurrentBranch();
-                                }
+                                this._applyArchetypesConfig(config);
+                                Storage.setCachedArchetypesJson(
+                                    raw,
+                                    GITHUB_CONFIG.branch,
+                                    config.archetypesVersion != null ? config.archetypesVersion : null
+                                );
                                 resolve(config);
                             } catch (e) {
                                 Logger.error('Failed to parse archetypes config:', e);
-                                reject(e);
+                                tryFallback(e, resolve, reject);
                             }
                         } else {
-                            Logger.error(`Failed to load archetypes: ${response.status}`);
-                            if (response.status === 404 && DEV_SCRIPTS_ENABLED) {
+                            Logger.error(`Failed to load archetypes: ${status}`);
+                            if (status === 404 && DEV_SCRIPTS_ENABLED) {
                                 yieldToMainForOrphanedBranch('archetypes.json HTTP 404');
                             }
-                            reject(new Error(`HTTP ${response.status}`));
+                            if (status === 404 || !isTransientArchetypesFailure(status)) {
+                                reject(new Error(`HTTP ${status}`));
+                                return;
+                            }
+                            tryFallback(new Error(`HTTP ${status}`), resolve, reject);
                         }
                     },
                     onerror: (error) => {
                         Logger.error('Network error loading archetypes:', error);
-                        reject(error);
+                        tryFallback(error instanceof Error ? error : new Error('network error loading archetypes'), resolve, reject);
+                    },
+                    ontimeout: () => {
+                        Logger.error('Timeout loading archetypes');
+                        tryFallback(new Error('timeout loading archetypes'), resolve, reject);
                     }
                 });
             });
+        },
+
+        _applyArchetypesConfig(config) {
+            this.archetypes = config.archetypes || [];
+            this.devArchetypes = config.devArchetypes || [];
+            this.corePlugins = config.corePlugins || [];
+            this.libraries = config.libraries || [];
+            this.opsDashboardPlugins = config.opsDashboardPlugins || [];
+            this.opsDashboardLibraries = Array.isArray(config.opsDashboardLibraries)
+                ? config.opsDashboardLibraries
+                : [];
+            this.devPlugins = config.devPlugins || [];
+            this.settingsModalDocs = config.settingsModalDocs || [];
+
+            // Check if script version is outdated
+            if (config.version) {
+                const latestVersion = config.version;
+                Context.latestVersion = latestVersion;
+                // Simple version comparison: if versions don't match, consider outdated
+                // This handles semantic versioning (e.g., "3.4.0" vs "3.4.1")
+                Context.isOutdated = compareVersions(VERSION, latestVersion) < 0;
+                if (Context.isOutdated) {
+                    Logger.warn(`Script version ${VERSION} is outdated. Latest version is ${latestVersion}`);
+                }
+            } else {
+                // No version in config, assume up to date
+                Context.isOutdated = false;
+                Context.latestVersion = VERSION;
+            }
+            if (Context.settingsUi && typeof Context.settingsUi.refreshUpdateIndicator === 'function') {
+                try {
+                    Context.settingsUi.refreshUpdateIndicator();
+                } catch (refreshErr) {
+                    Logger.debug('Settings UI update indicator refresh failed', refreshErr);
+                }
+            }
+
+            // Always log archetypes version (cannot be disabled)
+            Context.archetypesVersion = config.archetypesVersion || null;
+            Context.coreOnlyMode = config.coreOnlyMode === true;
+            Context.opsAccess = config.opsAccess && typeof config.opsAccess === 'object'
+                ? config.opsAccess
+                : null;
+            Context.opsSecrets = config.opsSecrets && typeof config.opsSecrets === 'object'
+                ? config.opsSecrets
+                : null;
+            applyArchetypeRemoteLoggingConfig(config);
+            console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
+            if (Context.coreOnlyMode) {
+                Logger.log('coreOnlyMode is enabled: archetype UX plugins and SPA auto-reload are off; core plugins remain active.');
+            }
+
+            Logger.log(`Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
+            if (DEV_SCRIPTS_ENABLED) {
+                clearOrphanMarkerForCurrentBranch();
+            }
         },
 
         getCorePlugins() {
