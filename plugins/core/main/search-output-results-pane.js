@@ -1872,6 +1872,15 @@ const searchOutputResultsPaneMethods = {
         this._state.resultsPage = 0;
         Logger.log('search-output: review status → ' + next);
         this._syncReviewStatusToggleUi();
+        const wsId = typeof this._resolveActiveOutputWsId === 'function'
+            ? this._resolveActiveOutputWsId()
+            : (this._state && this._state.wsId);
+        if ((wsId === 'disputes' || wsId === 'sr-review')
+            && typeof this._loadPrefetchInventoryWorkspace === 'function') {
+            // Replace list with the matching half — do not merge opposite-status cards.
+            void this._loadPrefetchInventoryWorkspace(wsId, { merge: false });
+            return;
+        }
         this._renderResults();
         this._syncResultsPagerUi();
         this._updateResultsStatus();
@@ -8037,7 +8046,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.6',
+    _version: '10.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1211,10 +1211,10 @@ const searchOutputCoreMethods = {
         if ((item.task.allFeedback || []).length > 0 || item.qaFeedback) {
             this._addItemOutputKind(item, 'qa');
         }
-        if ((item.disputes || []).length > 0 && this._prefetchDisputesFamilyReady()) {
+        if ((item.disputes || []).length > 0 && this._prefetchDisputesAnyHalfReady()) {
             this._addItemOutputKind(item, 'dispute');
         }
-        if ((item.flags || []).length > 0 && this._prefetchFlagsFamilyReady()) {
+        if ((item.flags || []).length > 0 && this._prefetchFlagsAnyHalfReady()) {
             this._addItemOutputKind(item, 'senior_review');
         }
     },
@@ -1721,14 +1721,33 @@ const searchOutputCoreMethods = {
         return status === 'done' || status === 'error';
     },
 
-    _prefetchDisputesFamilyReady() {
-        return this._prefetchSlotTerminal('openDisputes')
-            && this._prefetchSlotTerminal('resolvedDisputes');
+    _resultsReviewStatusValue() {
+        return this._state.resultsReviewStatus === 'resolved' ? 'resolved' : 'pending';
     },
 
-    _prefetchFlagsFamilyReady() {
+    /** Inventory / review-status toggle: only the Pending or Resolved half must be ready. */
+    _prefetchDisputesHalfReady(status) {
+        const want = status === 'resolved' ? 'resolved' : 'pending';
+        return want === 'resolved'
+            ? this._prefetchSlotTerminal('resolvedDisputes')
+            : this._prefetchSlotTerminal('openDisputes');
+    },
+
+    _prefetchFlagsHalfReady(status) {
+        const want = status === 'resolved' ? 'resolved' : 'pending';
+        return want === 'resolved'
+            ? this._prefetchSlotTerminal('resolvedFlags')
+            : this._prefetchSlotTerminal('pendingFlags');
+    },
+
+    _prefetchDisputesAnyHalfReady() {
+        return this._prefetchSlotTerminal('openDisputes')
+            || this._prefetchSlotTerminal('resolvedDisputes');
+    },
+
+    _prefetchFlagsAnyHalfReady() {
         return this._prefetchSlotTerminal('pendingFlags')
-            && this._prefetchSlotTerminal('resolvedFlags');
+            || this._prefetchSlotTerminal('resolvedFlags');
     },
 
     _ensurePrefetch(kind, loadTracker) {
@@ -1803,16 +1822,9 @@ const searchOutputCoreMethods = {
             if (typeof this._refreshPrefetchInventoryTabs === 'function') {
                 await this._refreshPrefetchInventoryTabs(kind);
             }
-            const familyReady = disputeKinds
-                ? this._prefetchDisputesFamilyReady()
-                : flagKinds
-                    ? this._prefetchFlagsFamilyReady()
-                    : false;
-            if (!familyReady) {
-                Logger.debug('dashboard: ' + this._prefetchLabel(kind)
-                    + ' prefetch complete — waiting for family before Search Output overlay');
-                return;
-            }
+            // Re-overlay as soon as each half finishes — Pending/Resolved UI does not wait
+            // for the opposite status to load.
+            if (!disputeKinds && !flagKinds) return;
             await this._withOutputWsAsync('search-output', async () => {
                 if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
                     Logger.debug('dashboard: ' + this._prefetchLabel(kind)
@@ -1861,8 +1873,12 @@ const searchOutputCoreMethods = {
                 for (const row of rows || []) dest.push(row);
             }
         };
-        mergeSlot(openSlot);
-        mergeSlot(resolvedSlot);
+        // Only the half matching Pending/Resolved — opposite status stays out of this inventory view.
+        if (this._resultsReviewStatusValue() === 'resolved') {
+            mergeSlot(resolvedSlot);
+        } else {
+            mergeSlot(openSlot);
+        }
         const profileIds = this._collectPrefetchDisputeProfileIds
             ? this._collectPrefetchDisputeProfileIds(grouped)
             : [];
@@ -1894,8 +1910,11 @@ const searchOutputCoreMethods = {
                 for (const row of rows || []) dest.push(row);
             }
         };
-        mergeSlot(pendingSlot);
-        mergeSlot(resolvedSlot);
+        if (this._resultsReviewStatusValue() === 'resolved') {
+            mergeSlot(resolvedSlot);
+        } else {
+            mergeSlot(pendingSlot);
+        }
         const profileIds = this._collectPrefetchFlagProfileIds
             ? this._collectPrefetchFlagProfileIds(grouped)
             : [];
@@ -1916,8 +1935,9 @@ const searchOutputCoreMethods = {
     },
 
     _prefetchInventoryKindsReady(wsId) {
-        if (wsId === 'disputes') return this._prefetchDisputesFamilyReady();
-        if (wsId === 'sr-review') return this._prefetchFlagsFamilyReady();
+        const status = this._resultsReviewStatusValue();
+        if (wsId === 'disputes') return this._prefetchDisputesHalfReady(status);
+        if (wsId === 'sr-review') return this._prefetchFlagsHalfReady(status);
         return false;
     },
 
@@ -1968,7 +1988,7 @@ const searchOutputCoreMethods = {
                 this._state.loading = false;
                 this._state.leftTab = 'filters';
                 this._state.statsTab = 'chat';
-                if (!this._state.cachedItems) {
+                if (!merge || !this._state.cachedItems) {
                     this._state.cachedItems = [];
                     this._state.filteredItems = [];
                 }
@@ -2033,12 +2053,15 @@ const searchOutputCoreMethods = {
     },
 
     async _refreshPrefetchInventoryTabs(kind) {
-        const disputeKinds = kind === 'openDisputes' || kind === 'resolvedDisputes';
-        const flagKinds = kind === 'pendingFlags' || kind === 'resolvedFlags';
-        if (disputeKinds) {
+        const status = this._resultsReviewStatusValue();
+        // Only refresh the inventory half that matches the Pending/Resolved toggle.
+        if (kind === 'openDisputes' && status === 'pending') {
             await this._loadPrefetchInventoryWorkspace('disputes', { merge: true });
-        }
-        if (flagKinds) {
+        } else if (kind === 'resolvedDisputes' && status === 'resolved') {
+            await this._loadPrefetchInventoryWorkspace('disputes', { merge: true });
+        } else if (kind === 'pendingFlags' && status === 'pending') {
+            await this._loadPrefetchInventoryWorkspace('sr-review', { merge: true });
+        } else if (kind === 'resolvedFlags' && status === 'resolved') {
             await this._loadPrefetchInventoryWorkspace('sr-review', { merge: true });
         }
     },
@@ -2924,17 +2947,23 @@ const searchOutputCoreMethods = {
         let changed = false;
         this._ensureItemKindsArray(item);
 
-        if (!this._prefetchDisputesFamilyReady()) {
+        const openDisputesReady = this._prefetchSlotTerminal('openDisputes');
+        const resolvedDisputesReady = this._prefetchSlotTerminal('resolvedDisputes');
+        if (!openDisputesReady && !resolvedDisputesReady) {
             if (this._clearDisputeOverlaySide(item)) changed = true;
         } else {
-            const openRows = this._getAllCachedOpenDisputeRows(taskId);
-            let resolvedRows = this._getAllCachedResolvedDisputeRows(taskId);
-            const resolvedSlot = this._getPrefetchSlot('resolvedDisputes');
-            const prefetchFailed = resolvedSlot && resolvedSlot.status === 'error';
-            const cacheIncomplete = this._isPrefetchIncomplete('resolvedDisputes');
-            if (resolvedRows.length === 0 && (prefetchFailed || cacheIncomplete)) {
-                const fetched = await this._fetchTaskDisputesBatch([taskId]);
-                resolvedRows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
+            const openRows = openDisputesReady ? this._getAllCachedOpenDisputeRows(taskId) : [];
+            let resolvedRows = resolvedDisputesReady
+                ? this._getAllCachedResolvedDisputeRows(taskId)
+                : [];
+            if (resolvedDisputesReady) {
+                const resolvedSlot = this._getPrefetchSlot('resolvedDisputes');
+                const prefetchFailed = resolvedSlot && resolvedSlot.status === 'error';
+                const cacheIncomplete = this._isPrefetchIncomplete('resolvedDisputes');
+                if (resolvedRows.length === 0 && (prefetchFailed || cacheIncomplete)) {
+                    const fetched = await this._fetchTaskDisputesBatch([taskId]);
+                    resolvedRows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
+                }
             }
             const combinedDisputes = [...openRows, ...resolvedRows];
             if (combinedDisputes.length > 0) {
@@ -2951,10 +2980,19 @@ const searchOutputCoreMethods = {
             }
         }
 
-        if (!this._prefetchFlagsFamilyReady()) {
+        const pendingFlagsReady = this._prefetchSlotTerminal('pendingFlags');
+        const resolvedFlagsReady = this._prefetchSlotTerminal('resolvedFlags');
+        if (!pendingFlagsReady && !resolvedFlagsReady) {
             if (this._clearFlagOverlaySide(item)) changed = true;
         } else {
-            const flagRows = this._getAllCachedFlagRows(taskId);
+            const tid = taskId != null ? String(taskId) : '';
+            const pending = pendingFlagsReady
+                ? ((this._getPrefetchCache('pendingFlags').get(tid) || []).slice())
+                : [];
+            const resolved = resolvedFlagsReady
+                ? ((this._getPrefetchCache('resolvedFlags').get(tid) || []).slice())
+                : [];
+            const flagRows = [...pending, ...resolved];
             if (flagRows.length > 0) {
                 const flagProfileIds = [];
                 for (const row of flagRows) {
@@ -6681,7 +6719,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.56',
+    _version: '9.57',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
