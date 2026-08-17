@@ -414,7 +414,7 @@ const searchOutputResultsPaneMethods = {
                             </div>
                         </div>
                     </div>
-                    <div ${el('results')} style="flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
+                    <div ${el('results')} style="flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 16px; display: flex; flex-direction: column; gap: 24px;"></div>
                 </div>`;
     },
 
@@ -5598,16 +5598,83 @@ const searchOutputResultsPaneMethods = {
         }
     },
 
-    _withResultsScrollPreserved(fn) {
+    _findResultsCardEl(wrap, itemId) {
+        if (!wrap || !itemId) return null;
+        for (const el of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+            if (el.getAttribute('data-item-id') === itemId) return el;
+        }
+        return null;
+    },
+
+    _resultsScrollAnchor(wrap, preferredItemId) {
+        if (!wrap) return null;
+        const wrapRect = wrap.getBoundingClientRect();
+        if (preferredItemId) {
+            const preferred = this._findResultsCardEl(wrap, preferredItemId);
+            if (preferred) {
+                const rect = preferred.getBoundingClientRect();
+                return {
+                    itemId: preferredItemId,
+                    offset: rect.top - wrapRect.top
+                };
+            }
+        }
+        for (const card of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+            const rect = card.getBoundingClientRect();
+            if (rect.bottom > wrapRect.top) {
+                const itemId = card.getAttribute('data-item-id');
+                if (!itemId) continue;
+                return {
+                    itemId,
+                    offset: rect.top - wrapRect.top
+                };
+            }
+        }
+        return null;
+    },
+
+    _restoreResultsScrollAnchor(wrap, anchor, savedScrollTop) {
+        if (!wrap || !wrap.isConnected) return;
+        const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+        if (!anchor || !anchor.itemId) {
+            wrap.scrollTop = Math.min(Math.max(0, savedScrollTop || 0), max);
+            return;
+        }
+        const card = this._findResultsCardEl(wrap, anchor.itemId);
+        if (!card) {
+            wrap.scrollTop = Math.min(Math.max(0, savedScrollTop || 0), max);
+            return;
+        }
+        const wrapRect = wrap.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const currentOffset = cardRect.top - wrapRect.top;
+        const delta = currentOffset - anchor.offset;
+        let next = wrap.scrollTop + delta;
+        next = Math.min(Math.max(0, next), max);
+        // After a shrink, keep the card from scrolling entirely past the viewport.
+        const cardTopInScroll = wrap.scrollTop + currentOffset;
+        const maxKeepVisible = cardTopInScroll + Math.max(0, cardRect.height - wrap.clientHeight);
+        next = Math.min(next, Math.max(0, maxKeepVisible));
+        if (Math.abs(delta) > 0.5) {
+            Logger.debug('results scroll anchor restored — ' + anchor.itemId
+                + ' · delta ' + Math.round(delta) + 'px');
+        }
+        wrap.scrollTop = next;
+    },
+
+    _withResultsScrollPreserved(fn, opts) {
+        const options = opts || {};
         const wrap = this._q('#wf-dash-results');
         const saved = wrap ? wrap.scrollTop : 0;
+        const anchor = wrap
+            ? this._resultsScrollAnchor(wrap, options.anchorItemId || null)
+            : null;
         try {
             return fn();
         } finally {
             if (!wrap || !wrap.isConnected) return;
             const restore = () => {
-                const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
-                wrap.scrollTop = Math.min(Math.max(0, saved), max);
+                this._restoreResultsScrollAnchor(wrap, anchor, saved);
             };
             restore();
             if (typeof requestAnimationFrame === 'function') {
@@ -5623,14 +5690,7 @@ const searchOutputResultsPaneMethods = {
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
         if (!item) return;
         this._withResultsScrollPreserved(() => {
-            const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
-            let existing = null;
-            for (const el of cards) {
-                if (el.getAttribute('data-item-id') === itemId) {
-                    existing = el;
-                    break;
-                }
-            }
+            const existing = this._findResultsCardEl(wrap, itemId);
             const html = this._resultCardHtml(item);
             const doc = this._pageWindow().document;
             const temp = doc.createElement('div');
@@ -5660,7 +5720,7 @@ const searchOutputResultsPaneMethods = {
             }
             this._syncAutoGrowTextareasIn(newCard);
             this._syncResultsHydrateBannerUi();
-        });
+        }, { anchorItemId: itemId });
     },
 
     _syncAutoGrowTextarea(ta, minHeightPx) {
@@ -7974,7 +8034,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.2',
+    _version: '10.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
