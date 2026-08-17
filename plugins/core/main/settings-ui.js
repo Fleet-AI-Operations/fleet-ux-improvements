@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.14',
+    _version: '11.15',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -854,6 +854,11 @@ const plugin = {
                     ${this._createSwitchHTML(`wf-plugin-log-${plugin.id}`, moduleLoggingEnabled, null, isDisabled, { size: 'small', variant: 'log' })}
                 </div>
         ` : '';
+        const removeFromCacheHTML = !isEnabled ? `
+                <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed ${c.border};">
+                    <button type="button" id="wf-plugin-clear-cache-${plugin.id}" class="${this._settingsBtnClass('basic', 'compact')} wf-dash-btn--full" data-plugin-id="${plugin.id}">Remove from Cache</button>
+                </div>
+        ` : '';
         return `
             <div class="wf-plugin-item" data-plugin-id="${plugin.id}" style="position: relative; display: flex; flex-direction: column; padding: 12px; border: 1px solid ${c.border}; border-radius: 8px; margin-bottom: 10px; background: ${this._settingsThemeColors().card}; will-change: transform;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -879,6 +884,7 @@ const plugin = {
                 </div>
                 ${subOptionsHTML}
                 ${moduleToggleHTML}
+                ${removeFromCacheHTML}
             </div>
         `;
     },
@@ -1537,6 +1543,33 @@ const plugin = {
                     this._handleToggleChange(e);
                     Logger.setModuleLoggingEnabled(plugin.id, e.target.checked);
                     this._updateSettingsMessage(modal, plugins);
+                });
+            }
+
+            const clearCacheBtn = Context.dom.query(`#wf-plugin-clear-cache-${plugin.id}`, {
+                root: modal,
+                context: `${this.id}.pluginClearCache`
+            });
+            if (clearCacheBtn) {
+                clearCacheBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const live = PluginManager.get(plugin.id) || plugin;
+                    try {
+                        const result = Storage.clearModuleLocalData(live);
+                        Logger.log(
+                            `removed from cache: ${live.id}`
+                            + (result && result.sourcePath ? ` (${result.sourcePath})` : '')
+                        );
+                        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+                            Context.buttonFeedback.flashSuccess(clearCacheBtn);
+                        }
+                    } catch (err) {
+                        Logger.error(`Failed to remove ${plugin.id} from cache:`, err);
+                        if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+                            Context.buttonFeedback.flashFailure(clearCacheBtn);
+                        }
+                    }
                 });
             }
         });

@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         [feat/dashboard] Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.10
+// @version      13.11
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.10';
+    const VERSION = '13.11';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -945,6 +945,89 @@
         getPluginKey(filename, sourcePath) {
             // Create a unique key for the plugin based on its path
             return sourcePath || filename;
+        },
+        /**
+         * Resolve GM plugin-cache sourcePath for a registered plugin.
+         * Prefers plugin._sourcePath; otherwise reconstructs from flags + current archetype.
+         */
+        resolvePluginSourcePath(plugin) {
+            if (!plugin || typeof plugin !== 'object') return null;
+            if (typeof plugin._sourcePath === 'string' && plugin._sourcePath) {
+                return plugin._sourcePath;
+            }
+            const filename = plugin._sourceFile || null;
+            if (!filename || typeof filename !== 'string') return null;
+            if (plugin._isLib) return `libs/${filename}`;
+            if (plugin._isCore && plugin._isDev) return `core/dev/${filename}`;
+            if (plugin._isCore) return `core/main/${filename}`;
+            const am = Context.archetypeManager;
+            if (plugin._isDev) {
+                const devId = (am && am.currentDevArchetype && am.currentDevArchetype.id)
+                    || (Context.currentDevArchetype && Context.currentDevArchetype.id)
+                    || null;
+                if (devId) return `archetypes/${devId}/dev/${filename}`;
+                return null;
+            }
+            const archId = (am && am.currentArchetype && am.currentArchetype.id)
+                || (Context.currentArchetype && Context.currentArchetype.id)
+                || null;
+            if (archId) return `archetypes/${archId}/main/${filename}`;
+            return null;
+        },
+        /**
+         * Clear GM code cache and module-associated settings for a plugin.
+         * Keeps plugin-{id}-enabled. Does not unregister from PluginManager.
+         * @returns {{ clearedKeys: number, sourcePath: string|null }}
+         */
+        clearModuleLocalData(plugin) {
+            if (!plugin || !plugin.id) {
+                return { clearedKeys: 0, sourcePath: null };
+            }
+            let clearedKeys = 0;
+            const sourcePath = this.resolvePluginSourcePath(plugin);
+            const filename = plugin._sourceFile || (sourcePath ? sourcePath.split('/').pop() : null);
+
+            if (sourcePath) {
+                const pluginKey = this.getPluginKey(filename || sourcePath, sourcePath);
+                this.clearCachedPlugin(pluginKey);
+                clearedKeys++;
+                if (sourcePath.startsWith('archetypes/')) {
+                    const parts = sourcePath.split('/');
+                    if (parts.length >= 3 && parts[1] && filename) {
+                        this.unregisterCachedPlugin(parts[1], filename);
+                    }
+                }
+            }
+
+            this.delete(`module-logging-${plugin.id}`);
+            clearedKeys++;
+            if (Context.logger && Context.logger._moduleLogEnabled
+                && Object.prototype.hasOwnProperty.call(Context.logger._moduleLogEnabled, plugin.id)) {
+                delete Context.logger._moduleLogEnabled[plugin.id];
+            }
+
+            if (plugin.subOptions && Array.isArray(plugin.subOptions)) {
+                plugin.subOptions.forEach((subOption) => {
+                    if (!subOption || !subOption.id) return;
+                    this.delete(`suboption-${plugin.id}-${subOption.id}`);
+                    clearedKeys++;
+                });
+            }
+
+            this.delete(`${plugin.id}-ignored`);
+            clearedKeys++;
+
+            if (plugin.storageKeys && typeof plugin.storageKeys === 'object' && !Array.isArray(plugin.storageKeys)) {
+                Object.keys(plugin.storageKeys).forEach((k) => {
+                    const key = plugin.storageKeys[k];
+                    if (typeof key === 'string' && key) {
+                        this.delete(key);
+                        clearedKeys++;
+                    }
+                });
+            }
+
+            return { clearedKeys, sourcePath };
         },
         // Settings modal doc cache (versioned, same pattern as plugin cache)
         getCachedSettingsDoc(name) {
@@ -3387,6 +3470,7 @@
             
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded core plugin ${filename} v${version}`);
             return plugin;
@@ -3412,6 +3496,7 @@
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded library ${filename} v${version}`);
             return plugin;
@@ -3430,6 +3515,7 @@
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded dev plugin ${filename} v${version}`);
             return plugin;
@@ -3455,6 +3541,7 @@
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded ${filename} v${version} from ${sourcePath}`);
             return plugin;
@@ -3481,6 +3568,7 @@
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded dev archetype plugin ${filename} v${version} from ${sourcePath}`);
             return plugin;
