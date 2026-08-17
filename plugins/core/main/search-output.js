@@ -1777,23 +1777,33 @@ const searchOutputCoreMethods = {
         if (typeof this._updateResultsStatus === 'function') {
             this._updateResultsStatus();
         }
-        if (typeof this._refreshPrefetchInventoryTabs === 'function') {
-            void this._refreshPrefetchInventoryTabs(kind);
-        }
-        void this._withOutputWsAsync('search-output', async () => {
-            if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
-                Logger.debug('dashboard: ' + this._prefetchLabel(kind)
-                    + ' prefetch complete — no cached cards to re-overlay');
-                return;
+        void this._enqueuePrefetchUiWork(async () => {
+            if (typeof this._refreshPrefetchInventoryTabs === 'function') {
+                await this._refreshPrefetchInventoryTabs(kind);
             }
-            try {
-                const changedIds = await this._reoverlayAllCachedItems();
-                if (!changedIds || changedIds.length === 0) return;
-                this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
-            } catch (e) {
-                Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
-            }
+            await this._withOutputWsAsync('search-output', async () => {
+                if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
+                    Logger.debug('dashboard: ' + this._prefetchLabel(kind)
+                        + ' prefetch complete — no cached cards to re-overlay');
+                    return;
+                }
+                try {
+                    const changedIds = await this._reoverlayAllCachedItems();
+                    if (!changedIds || changedIds.length === 0) return;
+                    this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
+                } catch (e) {
+                    Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
+                }
+            });
         });
+    },
+
+    _enqueuePrefetchUiWork(fn) {
+        const run = typeof fn === 'function' ? fn : async () => {};
+        const prev = this._prefetchUiQueue || Promise.resolve();
+        const next = prev.then(() => run(), () => run());
+        this._prefetchUiQueue = next.then(() => undefined, () => undefined);
+        return next;
     },
 
     _prefetchInventoryProfilesMap() {
@@ -1827,7 +1837,7 @@ const searchOutputCoreMethods = {
         let profilesMap = new Map();
         if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
             try {
-                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                const rows = await this._fetchProfilesByIds(profileIds, 'ondemand', null);
                 profilesMap = this._buildProfilesMap(rows);
             } catch (e) {
                 Logger.warn('dispute inventory profiles failed', e);
@@ -1860,7 +1870,7 @@ const searchOutputCoreMethods = {
         let profilesMap = new Map();
         if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
             try {
-                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                const rows = await this._fetchProfilesByIds(profileIds, 'ondemand', null);
                 profilesMap = this._buildProfilesMap(rows);
             } catch (e) {
                 Logger.warn('flag inventory profiles failed', e);
@@ -4625,10 +4635,9 @@ const searchOutputCoreMethods = {
             if (wrap) return wrap;
         }
         if (typeof this._q === 'function') {
-            const scoped = this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
-            if (scoped) return scoped;
+            return this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
         }
-        return this._modal ? this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]') : null;
+        return null;
     },
 
     _reindexFilterListsFromScope(resetDrafts) {
@@ -6580,7 +6589,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.52',
+    _version: '9.53',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

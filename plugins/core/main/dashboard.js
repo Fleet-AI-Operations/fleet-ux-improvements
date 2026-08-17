@@ -209,7 +209,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.12',
+    _version: '12.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -220,6 +220,7 @@ const plugin = {
     _state: null,
     _workspaces: null,
     _wsOverride: null,
+    _wsOverrideStack: null,
     _lastOutputWsId: 'search-output',
     _tabs: null,
     _tabsById: null,
@@ -239,6 +240,7 @@ const plugin = {
         }
         this._workspaces = {};
         this._wsOverride = null;
+        this._wsOverrideStack = [];
         this._lastOutputWsId = 'search-output';
         this._state = this._createInitialState();
         this._initOutputWorkspaces();
@@ -612,23 +614,37 @@ const plugin = {
         return this._workspaces[wsId];
     },
 
+    _pushOutputWs(wsId) {
+        if (!this._wsOverrideStack) this._wsOverrideStack = [];
+        const next = wsId || this._resolveActiveOutputWsId();
+        this._wsOverrideStack.push(next);
+        this._wsOverride = next;
+        return next;
+    },
+
+    _popOutputWs() {
+        if (!this._wsOverrideStack) this._wsOverrideStack = [];
+        this._wsOverrideStack.pop();
+        this._wsOverride = this._wsOverrideStack.length
+            ? this._wsOverrideStack[this._wsOverrideStack.length - 1]
+            : null;
+    },
+
     _withOutputWs(wsId, fn) {
-        const prev = this._wsOverride;
-        this._wsOverride = wsId || this._resolveActiveOutputWsId();
+        this._pushOutputWs(wsId);
         try {
             return fn();
         } finally {
-            this._wsOverride = prev;
+            this._popOutputWs();
         }
     },
 
     async _withOutputWsAsync(wsId, fn) {
-        const prev = this._wsOverride;
-        this._wsOverride = wsId || this._resolveActiveOutputWsId();
+        this._pushOutputWs(wsId);
         try {
             return await fn();
         } finally {
-            this._wsOverride = prev;
+            this._popOutputWs();
         }
     },
 
@@ -2871,7 +2887,14 @@ const plugin = {
             const scoped = this._queryWithinOutputPanel(outPanel, selector);
             if (scoped) return scoped;
         }
-        return this._modal.querySelector(selector);
+        const el = this._modal.querySelector(selector);
+        if (!el) return null;
+        // Modal chrome (close, settings, …) is fine. Never steal nodes from another
+        // output panel — inventory tabs omit search controls and would otherwise hit
+        // Search Output via modal-wide fallback.
+        const elPanel = el.closest && el.closest('[data-wf-dash-panel]');
+        if (elPanel && outPanel && elPanel !== outPanel) return null;
+        return el;
     },
 
     // ── Listener wiring ──,
