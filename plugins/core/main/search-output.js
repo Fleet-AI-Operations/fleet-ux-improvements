@@ -5455,7 +5455,12 @@ function attachSearchOutputListeners(modal, dash) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     const query = authorInput.value.trim();
-                    if (query) void dash._resolveAuthorToken(query);
+                    if (query) {
+                        void dash._resolveAuthorToken(query);
+                    } else if (dash._state.draftTokens.length > 0) {
+                        Logger.debug('dashboard: Enter in Contributors with resolved tokens — submitting search');
+                        void dash._submitSearch();
+                    }
                 } else if (e.key === 'Backspace' && authorInput.value === '' && dash._state.draftTokens.length > 0) {
                     dash._removeAuthorToken(dash._state.draftTokens[dash._state.draftTokens.length - 1].id);
                 }
@@ -6603,7 +6608,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.54',
+    _version: '9.55',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
