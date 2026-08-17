@@ -5438,6 +5438,20 @@ function attachSearchOutputListeners(modal, dash) {
         if (authorBox && authorInput) {
             authorBox.addEventListener('click', () => authorInput.focus());
             authorInput.addEventListener('keydown', (e) => {
+                const candidates = dash._state._candidates || [];
+                const listOpen = candidates.length > 0;
+                if (listOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                    e.preventDefault();
+                    dash._moveAuthorCandidateHighlight(e.key === 'ArrowDown' ? 1 : -1);
+                    return;
+                }
+                if (listOpen && e.key === 'Enter') {
+                    e.preventDefault();
+                    const idx = Math.max(0, Number(dash._state._candidateIndex) || 0);
+                    const cand = candidates[idx];
+                    if (cand) dash._addAuthorToken(cand);
+                    return;
+                }
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     const query = authorInput.value.trim();
@@ -6082,7 +6096,7 @@ function attachSearchOutputListeners(modal, dash) {
             if (candidate && modal.contains(candidate)) {
                 const id = candidate.getAttribute('data-wf-dash-candidate');
                 const cand = (dash._state._candidates || []).find((c) => c.id === id);
-                if (cand) { dash._addAuthorToken(cand); if (authorInput) authorInput.value = ''; }
+                if (cand) dash._addAuthorToken(cand);
                 return;
             }
             const removeTok = e.target.closest('[data-wf-dash-remove-token]');
@@ -6589,7 +6603,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.53',
+    _version: '9.54',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
