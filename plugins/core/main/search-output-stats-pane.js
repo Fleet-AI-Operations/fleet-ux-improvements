@@ -118,6 +118,75 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _ratingsWeightingToggleHtml() {
+        const isRecency = this._ratingsWeighting() === 'recency';
+        return '<div data-wf-dash-ratings-weighting-wrap="true" class="fleet-ui-seg-group" style="flex-shrink: 0;">'
+            + this._ratingsWeightingSegBtn('recency', 'Recency', isRecency, true)
+            + this._ratingsWeightingSegBtn('flat', 'Flat', !isRecency, false)
+            + '</div>';
+    },
+
+    _ratingsWeightingSegBtn(value, label, active, divider) {
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        if (ui && typeof ui.segmentBtnHtml === 'function') {
+            return ui.segmentBtnHtml({
+                valueAttr: 'data-wf-dash-ratings-weighting',
+                value,
+                label,
+                active,
+                divider
+            });
+        }
+        const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
+        return '<button type="button" data-wf-dash-ratings-weighting="' + dashEscHtml(value) + '" class="fleet-ui-seg-btn' + divCls + '" aria-pressed="' + (active ? 'true' : 'false') + '">' + dashEscHtml(label) + '</button>';
+    },
+
+    _ratingsWeightingStorageKey() {
+        return 'ratings-weighting';
+    },
+
+    _ratingsWeighting() {
+        if (this._state.ratingsWeighting === 'flat' || this._state.ratingsWeighting === 'recency') {
+            return this._state.ratingsWeighting;
+        }
+        const storage = Context.storage;
+        let stored = null;
+        if (storage && typeof storage.get === 'function') {
+            stored = storage.get(this._ratingsWeightingStorageKey(), null);
+        }
+        const weighting = stored === 'flat' ? 'flat' : 'recency';
+        this._state.ratingsWeighting = weighting;
+        return weighting;
+    },
+
+    _setRatingsWeighting(weighting) {
+        const next = weighting === 'flat' ? 'flat' : 'recency';
+        this._state.ratingsWeighting = next;
+        const storage = Context.storage;
+        if (storage && typeof storage.set === 'function') {
+            storage.set(this._ratingsWeightingStorageKey(), next);
+        }
+        this._syncRatingsWeightingToggleUi();
+        this._renderRatingsPanel({ recompute: false });
+        Logger.log('ratings weighting ' + next);
+    },
+
+    _syncRatingsWeightingToggleUi() {
+        const weighting = this._ratingsWeighting();
+        const statsCol = this._q('[data-wf-dash-stats-column]');
+        if (!statsCol) return;
+        statsCol.querySelectorAll('[data-wf-dash-ratings-weighting-wrap]').forEach((wrap) => {
+            wrap.querySelectorAll('[data-wf-dash-ratings-weighting]').forEach((btn) => {
+                const value = btn.getAttribute('data-wf-dash-ratings-weighting');
+                const active = value === weighting;
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        });
+    },
+
     _ratingsTimeToggleHtml() {
         const includeTime = this._ratingsIncludeTime();
         return '<div data-wf-dash-ratings-time-wrap="true" class="fleet-ui-seg-group" style="flex-shrink: 0;">'
@@ -4850,11 +4919,9 @@ const searchOutputStatsPaneMethods = {
         return 0;
     },
 
-    // Returns the selected weighting variant ('flat' or 'recency') for a worker card.
-    _ratingWorkerWeighting(workerId) {
-        const stored = this._state.ratingsWeightingByWorker
-            && this._state.ratingsWeightingByWorker[String(workerId || '').trim()];
-        return stored === 'flat' ? 'flat' : 'recency';
+    // Displayed weighting variant ('flat' or 'recency') — toolbar Recency/Flat, all cards.
+    _ratingWorkerWeighting(_workerId) {
+        return this._ratingsWeighting();
     },
 
     // Returns the score block for a given weighting variant (twqs or qaqs).
@@ -5128,6 +5195,7 @@ const searchOutputStatsPaneMethods = {
             + '<div style="display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; width: 100%;">'
             + '<div id="wf-dash-ratings-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>'
             + '<div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex-shrink: 0;">'
+            + this._ratingsWeightingToggleHtml()
             + this._ratingsTimeToggleHtml()
             + this._statsScopeToggleHtml()
             + '</div>'
@@ -5153,6 +5221,7 @@ const searchOutputStatsPaneMethods = {
     _syncRatingsToolbarUi(visibleCount, totalCount) {
         const toolbar = this._q('#wf-dash-ratings-toolbar');
         if (!toolbar) return;
+        this._syncRatingsWeightingToggleUi();
         this._syncRatingsTimeToggleUi();
         const committed = this._state.committed || {};
         const hasReport = totalCount > 0;
@@ -5368,12 +5437,12 @@ const searchOutputStatsPaneMethods = {
             + '</ul>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Dual weighting — Recency vs Flat</div>'
-            + '<p style="margin: 0 0 8px;">Each card computes <strong>two variants</strong> of every score simultaneously. Toggle between them per card:</p>'
+            + '<p style="margin: 0 0 8px;">Each card computes <strong>two variants</strong> of every score simultaneously. The toolbar <strong>Recency / Flat</strong> toggle applies to all cards:</p>'
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/30) to activity inside the window, so recent events weigh more.</li>'
             + '<li><strong>Flat</strong> — all in-scope events count equally.</li>'
             + '</ul>'
-            + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed. Dispute-loss and tracked-time axes use unweighted or mean minutes as documented on each axis.</p>'
+            + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The toggle only changes what is displayed. Preference persists across sessions. Dispute-loss and tracked-time axes use unweighted or mean minutes as documented on each axis.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Time / No Time</div>'
             + '<p style="margin: 0 0 8px;">The toolbar <strong>Time / No Time</strong> toggle includes or excludes the tracked-time axes (V1 Creation Time, QA Time) from the composite. Axes stay visible when off (greyed). Preference persists across sessions; default is Time on.</p>'
@@ -5406,6 +5475,7 @@ const searchOutputStatsPaneMethods = {
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li>Scores cover the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>, regardless of which search toggles (tasks, QA, sessions, disputes, etc.) produced those results.</li>'
             + '<li>The <strong>Filtered / All</strong> scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.</li>'
+            + '<li>The <strong>Recency / Flat</strong> toggle applies the displayed weighting to all cards.</li>'
             + '<li>The <strong>Time / No Time</strong> toggle includes or excludes tracked-time axes from the composite (axes still display when off).</li>'
             + '<li>With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.</li>'
             + '<li>Outcome Quality blends the current terminal calculation with a flat closure sub-score over production, discarded, and dismissed. The closure sub-score ignores bugged/flagged paths and has no recency decay. Disputes move a score only once <strong>resolved</strong>.</li>'
@@ -5939,9 +6009,6 @@ const searchOutputStatsPaneMethods = {
         const types = scoreTypes || this._ratingSearchScoreTypes(this._state.committed);
         const name = worker.name || worker.workerId;
         const workerId = String(worker.workerId || '').trim();
-        const weighting = this._ratingWorkerWeighting(workerId);
-        const isRecency = weighting === 'recency';
-
         const twqsBlock = this._ratingBlockForWeighting(worker, 'twqs');
         const qaqsBlock = this._ratingBlockForWeighting(worker, 'qaqs');
         const hasTwqs = !!(types.showTwqs && twqsBlock && twqsBlock.score != null);
@@ -5983,29 +6050,6 @@ const searchOutputStatsPaneMethods = {
             : '';
         const box = this._panelBoxStyle();
 
-        const toggleHtml = (Context.uiLib && typeof Context.uiLib.segmentGroupHtml === 'function')
-            ? Context.uiLib.segmentGroupHtml({
-                value: isRecency ? 'recency' : 'flat',
-                valueAttr: 'data-wf-dash-rating-weighting',
-                style: 'flex-shrink: 0;',
-                options: [
-                    {
-                        value: 'recency',
-                        label: 'Recency',
-                        extraAttrs: 'data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '"'
-                    },
-                    {
-                        value: 'flat',
-                        label: 'Flat',
-                        extraAttrs: 'data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '"'
-                    }
-                ]
-            })
-            : ('<div class="fleet-ui-seg-group" style="flex-shrink: 0;">'
-                + '<button type="button" class="fleet-ui-seg-btn fleet-ui-seg-btn--divider" data-wf-dash-rating-weighting="recency" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'true' : 'false') + '">Recency</button>'
-                + '<button type="button" class="fleet-ui-seg-btn" data-wf-dash-rating-weighting="flat" data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '" aria-pressed="' + (isRecency ? 'false' : 'true') + '">Flat</button>'
-                + '</div>');
-
         const nameHtml = this._ratingCopyChipHtml(name, 'font-size: 13px; font-weight: 600; color: var(--foreground, #0f172a);');
         const emailHtml = worker.email
             ? ('<div style="margin-top: 2px;">'
@@ -6019,12 +6063,9 @@ const searchOutputStatsPaneMethods = {
             + ' gap: 12px; align-items: start; width: 100%; min-width: 0; box-sizing: border-box;">'
             + '<div class="wf-dash-rating-summary" style="' + box + ' padding: 12px; width: 100%;'
             + ' max-width: var(--wf-rating-column-max); min-width: 0; justify-self: center; box-sizing: border-box;">'
-            + '<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">'
-            + '<div style="min-width: 0;">'
+            + '<div style="margin-bottom: 6px;">'
             + '<div>' + nameHtml + '</div>'
             + emailHtml
-            + '</div>'
-            + toggleHtml
             + '</div>'
             + twqsHtml
             + qaqsHtml
@@ -6311,7 +6352,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.0',
+    _version: '14.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -5993,6 +5993,12 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._setStatsScope(scope !== 'all');
                 return;
             }
+            const ratingsWeightingBtn = e.target.closest('[data-wf-dash-ratings-weighting]');
+            if (ratingsWeightingBtn && modal.contains(ratingsWeightingBtn)) {
+                const weighting = ratingsWeightingBtn.getAttribute('data-wf-dash-ratings-weighting');
+                dash._setRatingsWeighting(weighting === 'flat' ? 'flat' : 'recency');
+                return;
+            }
             const ratingsTimeBtn = e.target.closest('[data-wf-dash-ratings-time]');
             if (ratingsTimeBtn && modal.contains(ratingsTimeBtn)) {
                 const value = ratingsTimeBtn.getAttribute('data-wf-dash-ratings-time');
@@ -6144,18 +6150,6 @@ function attachSearchOutputListeners(modal, dash) {
                     else set.delete(key);
                     Logger.log('ratings score ' + (nextOpen ? 'expanded' : 'collapsed')
                         + ' — ' + workerId + ' · ' + scoreKind);
-                    dash._renderRatingsPanel({ recompute: false });
-                }
-                return;
-            }
-            const ratingWeightingBtn = e.target.closest('[data-wf-dash-rating-weighting]');
-            if (ratingWeightingBtn && modal.contains(ratingWeightingBtn)) {
-                const workerId = String(ratingWeightingBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
-                const weighting = ratingWeightingBtn.getAttribute('data-wf-dash-rating-weighting');
-                if (workerId && (weighting === 'flat' || weighting === 'recency')) {
-                    if (!dash._state.ratingsWeightingByWorker) dash._state.ratingsWeightingByWorker = {};
-                    dash._state.ratingsWeightingByWorker[workerId] = weighting;
-                    Logger.log('ratings weighting toggled — ' + workerId + ' → ' + weighting);
                     dash._renderRatingsPanel({ recompute: false });
                 }
                 return;
@@ -6725,7 +6719,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.58',
+    _version: '9.59',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
