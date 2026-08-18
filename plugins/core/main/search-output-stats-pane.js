@@ -5409,7 +5409,7 @@ const searchOutputStatsPaneMethods = {
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
             { label: 'Outcome Quality',        weight: '35%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
-            { label: 'V1 Creation Time',       weight: '20%', measures: 'Average platform-tracked v1 creation time. Full credit from 15 to 60 minutes; the score falls toward zero as the average approaches 0 or 150 minutes. Toggleable.' },
+            { label: 'V1 Creation Time',       weight: '20%', measures: 'Each timed task is scored against that project\'s normal time band (middle half of population times for the env, else team, else global). Full credit inside the band; the score falls toward zero below the low edge or above the long-tail fence. Toggleable.' },
             { label: 'Positive Feedback Rate', weight: '15%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
             { label: 'Task Rating Quality',    weight: '10%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
             { label: 'First-Pass Acceptance',  weight: '10%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
@@ -5417,7 +5417,7 @@ const searchOutputStatsPaneMethods = {
         ];
         const qaqsRows = [
             { label: 'Return Effectiveness',  weight: '30%', measures: 'Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
-            { label: 'QA Time',               weight: '20%', measures: 'Average platform-tracked QA review time. Full credit from 15 to 60 minutes; the score falls toward zero as the average approaches 0 or 150 minutes. Toggleable.' },
+            { label: 'QA Time',               weight: '20%', measures: 'Each timed review is scored against that project\'s normal QA time band (middle half of population times for the env, else team, else global). Full credit inside the band; the score falls toward zero below the low edge or above the long-tail fence. Toggleable.' },
             { label: 'Return Actionability',  weight: '20%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
             { label: 'Label Discrimination',  weight: '10%', measures: 'Top/Bottom label usage vs an ideal ~20% rate (full credit at 20%; falls toward 0 at 0% and at 40%+). Omitted when fewer than 10 feedback rows are in scope.' },
             { label: 'Acceptance Scrutiny',   weight: '10%', measures: 'Two-sided check against unusually high or low accept rates. Full credit from 40% to 60%; the score falls toward zero as accepts approach 0% or 100%.' },
@@ -6359,7 +6359,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.2',
+    _version: '14.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
