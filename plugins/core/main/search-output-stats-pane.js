@@ -5480,6 +5480,7 @@ const searchOutputStatsPaneMethods = {
             + '<li>With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.</li>'
             + '<li>Outcome Quality blends the current terminal calculation with a flat closure sub-score over production, discarded, and dismissed. The closure sub-score ignores bugged/flagged paths and has no recency decay. Disputes move a score only once <strong>resolved</strong>.</li>'
             + '<li>Self-reviews are excluded from all feedback axes.</li>'
+            + '<li>QAQS also excludes Flag as Bug QA rows created when the same person resolved a dispute on that task.</li>'
             + '</ul>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">The axes</div>'
@@ -6399,7 +6400,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.4',
+    _version: '14.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

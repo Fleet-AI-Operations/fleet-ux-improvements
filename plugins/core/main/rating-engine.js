@@ -1,11 +1,14 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
-// Engine v14.0: cohort-relative per-event time credit (env→team→global cutoffs).
+// Engine v14.1: exclude dispute flag-as-bug QA rows from QAQS (same resolver).
 
-const RE_VERSION = '14.0';
+const RE_VERSION = '14.1';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
 const RE_DISCARDED_STALE_DAYS = 7;
+// Dispute "Flag as Bug" creates a synthetic QA row by the resolver — exclude from QAQS
+// when that row is flagged-as-bugged and timestamps align with their resolution.
+const RE_DISPUTE_FLAG_QA_MAX_SKEW_MS = 5 * 60 * 1000;
 // Reserved percent points on each end of the estimated-percentile scale (UI + exports).
 const RE_PERCENTILE_MARGIN_BOTTOM = 10;
 const RE_PERCENTILE_MARGIN_TOP = 20;
@@ -1173,7 +1176,21 @@ function reFieldAuditRow(entry, task, workerId) {
 }
 
 // Collects all QA feedback rows for a reviewer across hydrated items, deduped by feedback ID.
-// Excludes system/verifier entries and self-reviews (where reviewer === task author).
+// Excludes system/verifier entries, self-reviews (reviewer === task author), and synthetic
+// dispute "Flag as Bug" rows (same person resolved a dispute and left flagged-as-bugged QA).
+function reIsDisputeResolutionFlagQa(entry, item, workerId) {
+    if (!entry || !entry.isFlaggedAsBugged) return false;
+    const fbAt = Date.parse(reFeedbackTimestamp(entry));
+    for (const dispute of (item && item.disputes) || []) {
+        if (!dispute || !dispute.resolutionAt) continue;
+        if (!reIdsEqual(dispute.resolverId, workerId)) continue;
+        const resolvedAt = Date.parse(dispute.resolutionAt);
+        if (!Number.isFinite(fbAt) || !Number.isFinite(resolvedAt)) return true;
+        if (Math.abs(fbAt - resolvedAt) <= RE_DISPUTE_FLAG_QA_MAX_SKEW_MS) return true;
+    }
+    return false;
+}
+
 function reCollectQaqsFeedbackRows(workerId, hydratedItems) {
     const feedbackById = new Map();
     for (const item of hydratedItems) {
@@ -1185,6 +1202,7 @@ function reCollectQaqsFeedbackRows(workerId, hydratedItems) {
             const reviewerId = entry.reviewer && entry.reviewer.id;
             if (!reIdsEqual(reviewerId, workerId)) continue;
             if (authorId && reIdsEqual(reviewerId, authorId)) continue;
+            if (reIsDisputeResolutionFlagQa(entry, item, workerId)) continue;
             feedbackById.set(String(entry.id), { entry, task, item });
         }
     }
@@ -2204,7 +2222,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '14.0',
+    _version: '14.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
