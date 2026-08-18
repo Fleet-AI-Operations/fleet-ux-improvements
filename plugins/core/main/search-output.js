@@ -5993,6 +5993,18 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._setStatsScope(scope !== 'all');
                 return;
             }
+            const ratingsWeightingBtn = e.target.closest('[data-wf-dash-ratings-weighting]');
+            if (ratingsWeightingBtn && modal.contains(ratingsWeightingBtn)) {
+                const weighting = ratingsWeightingBtn.getAttribute('data-wf-dash-ratings-weighting');
+                dash._setRatingsWeighting(weighting === 'flat' ? 'flat' : 'recency');
+                return;
+            }
+            const ratingsTimeBtn = e.target.closest('[data-wf-dash-ratings-time]');
+            if (ratingsTimeBtn && modal.contains(ratingsTimeBtn)) {
+                const value = ratingsTimeBtn.getAttribute('data-wf-dash-ratings-time');
+                dash._setRatingsIncludeTime(value !== 'notime');
+                return;
+            }
             const ratingsGenerateBtn = e.target.closest('[data-wf-dash-ratings-generate]');
             if (ratingsGenerateBtn && modal.contains(ratingsGenerateBtn)) {
                 dash._generateRatingsFromResults();
@@ -6108,6 +6120,23 @@ function attachSearchOutputListeners(modal, dash) {
                 }
                 return;
             }
+            const ratingCohortDimBtn = e.target.closest('[data-wf-dash-rating-cohort-dim-toggle]');
+            if (ratingCohortDimBtn && modal.contains(ratingCohortDimBtn)) {
+                const workerId = String(ratingCohortDimBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
+                const scoreKind = String(ratingCohortDimBtn.getAttribute('data-wf-dash-rating-score-kind') || '').trim();
+                const dimension = String(ratingCohortDimBtn.getAttribute('data-wf-dash-rating-cohort-dim') || '').trim();
+                if (workerId && scoreKind && dimension && typeof dash._ratingCohortDimExpandKey === 'function') {
+                    const set = dash._ensureRatingsCohortDimExpanded();
+                    const key = dash._ratingCohortDimExpandKey(workerId, scoreKind, dimension);
+                    const nextOpen = !set.has(key);
+                    if (nextOpen) set.add(key);
+                    else set.delete(key);
+                    Logger.log('ratings cohort dim ' + (nextOpen ? 'expanded' : 'collapsed')
+                        + ' — ' + workerId + ' · ' + scoreKind + ' · ' + dimension);
+                    dash._renderRatingsPanel({ recompute: false });
+                }
+                return;
+            }
             const ratingCohortSliceBtn = e.target.closest('[data-wf-dash-rating-cohort-slice]');
             if (ratingCohortSliceBtn && modal.contains(ratingCohortSliceBtn)) {
                 const workerId = String(ratingCohortSliceBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
@@ -6138,18 +6167,6 @@ function attachSearchOutputListeners(modal, dash) {
                     else set.delete(key);
                     Logger.log('ratings score ' + (nextOpen ? 'expanded' : 'collapsed')
                         + ' — ' + workerId + ' · ' + scoreKind);
-                    dash._renderRatingsPanel({ recompute: false });
-                }
-                return;
-            }
-            const ratingWeightingBtn = e.target.closest('[data-wf-dash-rating-weighting]');
-            if (ratingWeightingBtn && modal.contains(ratingWeightingBtn)) {
-                const workerId = String(ratingWeightingBtn.getAttribute('data-wf-dash-rating-worker') || '').trim();
-                const weighting = ratingWeightingBtn.getAttribute('data-wf-dash-rating-weighting');
-                if (workerId && (weighting === 'flat' || weighting === 'recency')) {
-                    if (!dash._state.ratingsWeightingByWorker) dash._state.ratingsWeightingByWorker = {};
-                    dash._state.ratingsWeightingByWorker[workerId] = weighting;
-                    Logger.log('ratings weighting toggled — ' + workerId + ' → ' + weighting);
                     dash._renderRatingsPanel({ recompute: false });
                 }
                 return;
@@ -6719,7 +6736,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.57',
+    _version: '9.60',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
