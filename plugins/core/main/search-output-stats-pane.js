@@ -5527,6 +5527,13 @@ const searchOutputStatsPaneMethods = {
         return this._state.ratingsCohortSliceExpanded;
     },
 
+    _ensureRatingsCohortDimExpanded() {
+        if (!this._state.ratingsCohortDimExpanded) {
+            this._state.ratingsCohortDimExpanded = new Set();
+        }
+        return this._state.ratingsCohortDimExpanded;
+    },
+
     _ratingCohortSliceExpandKey(workerId, scoreKind, dimension, sliceKey) {
         return [
             String(workerId || '').trim(),
@@ -5536,9 +5543,23 @@ const searchOutputStatsPaneMethods = {
         ].join('\u001f');
     },
 
+    _ratingCohortDimExpandKey(workerId, scoreKind, dimension) {
+        return [
+            String(workerId || '').trim(),
+            String(scoreKind || '').trim(),
+            String(dimension || '').trim(),
+        ].join('\u001f');
+    },
+
     _isRatingCohortSliceExpanded(workerId, scoreKind, dimension, sliceKey) {
         return this._ensureRatingsCohortSliceExpanded().has(
             this._ratingCohortSliceExpandKey(workerId, scoreKind, dimension, sliceKey)
+        );
+    },
+
+    _isRatingCohortDimExpanded(workerId, scoreKind, dimension) {
+        return this._ensureRatingsCohortDimExpanded().has(
+            this._ratingCohortDimExpandKey(workerId, scoreKind, dimension)
         );
     },
 
@@ -5841,8 +5862,27 @@ const searchOutputStatsPaneMethods = {
             const channel = blend.channels && blend.channels[dim.id];
             const slices = (channel && Array.isArray(channel.slices)) ? channel.slices : [];
             if (!slices.length) continue;
-            sectionsHtml += '<div style="margin-top: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em; color: var(--muted-foreground, #64748b); text-transform: uppercase;">'
-                + dashEscHtml(dim.label) + '</div>';
+            const dimExpanded = this._isRatingCohortDimExpanded(workerId, scoreKind, dim.id);
+            const canToggleDim = !!(workerId && scoreKind);
+            const dimChevron = canToggleDim
+                ? ('<span style="display: inline-block; width: 10px; transform: rotate('
+                    + (dimExpanded ? '90deg' : '0deg') + '); transition: transform 120ms ease;">▸</span> ')
+                : '';
+            const dimHeaderAttrs = canToggleDim
+                ? (' role="button" tabindex="0" aria-expanded="' + (dimExpanded ? 'true' : 'false') + '"'
+                    + ' data-wf-dash-rating-cohort-dim-toggle="1"'
+                    + ' data-wf-dash-rating-worker="' + dashEscHtml(workerId) + '"'
+                    + ' data-wf-dash-rating-score-kind="' + dashEscHtml(scoreKind) + '"'
+                    + ' data-wf-dash-rating-cohort-dim="' + dashEscHtml(dim.id) + '"'
+                    + ' style="margin-top: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;'
+                    + ' color: var(--muted-foreground, #64748b); text-transform: uppercase;'
+                    + ' cursor: pointer; user-select: none;"')
+                : (' style="margin-top: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;'
+                    + ' color: var(--muted-foreground, #64748b); text-transform: uppercase;"');
+            sectionsHtml += '<div' + dimHeaderAttrs + '>'
+                + dimChevron + dashEscHtml(dim.label)
+                + '</div>';
+            if (!dimExpanded) continue;
             for (const slice of slices) {
                 if (!slice || slice.score == null) continue;
                 const key = String(slice.key || '—');
@@ -6359,7 +6399,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.3',
+    _version: '14.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
