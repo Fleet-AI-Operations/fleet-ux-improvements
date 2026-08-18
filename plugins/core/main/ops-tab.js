@@ -245,7 +245,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch',
-    _version: '13.0',
+    _version: '13.1',
     phase: 'core',
     enabledByDefault: true,
 
@@ -657,7 +657,7 @@ const plugin = {
         if (!tw || typeof tw !== 'object' || !qa || typeof qa !== 'object') return null;
         const twRequired = [
             'outcomeQuality', 'positiveFeedbackRate', 'taskRatingQuality',
-            'firstPassAcceptance', 'disputeLossAvoidance'
+            'revisionEfficiency', 'disputeLossAvoidance'
         ];
         const qaRequired = [
             'returnEffectiveness', 'returnActionability', 'acceptanceScrutiny',
