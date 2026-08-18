@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      13.8
+// @version      13.11
 // @description  UX improvements for workflow builder tool with archetype-based plugin loading
 // @author       Nicholas Doherty
 // @match        https://www.fleetai.com/*
@@ -38,7 +38,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '13.8';
+    const VERSION = '13.11';
     const STORAGE_PREFIX = 'wf-enhancer-';
     const SHARED_STORAGE_KEYS = {
         favoriteTools: 'favorite-tools'
@@ -946,6 +946,89 @@
             // Create a unique key for the plugin based on its path
             return sourcePath || filename;
         },
+        /**
+         * Resolve GM plugin-cache sourcePath for a registered plugin.
+         * Prefers plugin._sourcePath; otherwise reconstructs from flags + current archetype.
+         */
+        resolvePluginSourcePath(plugin) {
+            if (!plugin || typeof plugin !== 'object') return null;
+            if (typeof plugin._sourcePath === 'string' && plugin._sourcePath) {
+                return plugin._sourcePath;
+            }
+            const filename = plugin._sourceFile || null;
+            if (!filename || typeof filename !== 'string') return null;
+            if (plugin._isLib) return `libs/${filename}`;
+            if (plugin._isCore && plugin._isDev) return `core/dev/${filename}`;
+            if (plugin._isCore) return `core/main/${filename}`;
+            const am = Context.archetypeManager;
+            if (plugin._isDev) {
+                const devId = (am && am.currentDevArchetype && am.currentDevArchetype.id)
+                    || (Context.currentDevArchetype && Context.currentDevArchetype.id)
+                    || null;
+                if (devId) return `archetypes/${devId}/dev/${filename}`;
+                return null;
+            }
+            const archId = (am && am.currentArchetype && am.currentArchetype.id)
+                || (Context.currentArchetype && Context.currentArchetype.id)
+                || null;
+            if (archId) return `archetypes/${archId}/main/${filename}`;
+            return null;
+        },
+        /**
+         * Clear GM code cache and module-associated settings for a plugin.
+         * Keeps plugin-{id}-enabled. Does not unregister from PluginManager.
+         * @returns {{ clearedKeys: number, sourcePath: string|null }}
+         */
+        clearModuleLocalData(plugin) {
+            if (!plugin || !plugin.id) {
+                return { clearedKeys: 0, sourcePath: null };
+            }
+            let clearedKeys = 0;
+            const sourcePath = this.resolvePluginSourcePath(plugin);
+            const filename = plugin._sourceFile || (sourcePath ? sourcePath.split('/').pop() : null);
+
+            if (sourcePath) {
+                const pluginKey = this.getPluginKey(filename || sourcePath, sourcePath);
+                this.clearCachedPlugin(pluginKey);
+                clearedKeys++;
+                if (sourcePath.startsWith('archetypes/')) {
+                    const parts = sourcePath.split('/');
+                    if (parts.length >= 3 && parts[1] && filename) {
+                        this.unregisterCachedPlugin(parts[1], filename);
+                    }
+                }
+            }
+
+            this.delete(`module-logging-${plugin.id}`);
+            clearedKeys++;
+            if (Context.logger && Context.logger._moduleLogEnabled
+                && Object.prototype.hasOwnProperty.call(Context.logger._moduleLogEnabled, plugin.id)) {
+                delete Context.logger._moduleLogEnabled[plugin.id];
+            }
+
+            if (plugin.subOptions && Array.isArray(plugin.subOptions)) {
+                plugin.subOptions.forEach((subOption) => {
+                    if (!subOption || !subOption.id) return;
+                    this.delete(`suboption-${plugin.id}-${subOption.id}`);
+                    clearedKeys++;
+                });
+            }
+
+            this.delete(`${plugin.id}-ignored`);
+            clearedKeys++;
+
+            if (plugin.storageKeys && typeof plugin.storageKeys === 'object' && !Array.isArray(plugin.storageKeys)) {
+                Object.keys(plugin.storageKeys).forEach((k) => {
+                    const key = plugin.storageKeys[k];
+                    if (typeof key === 'string' && key) {
+                        this.delete(key);
+                        clearedKeys++;
+                    }
+                });
+            }
+
+            return { clearedKeys, sourcePath };
+        },
         // Settings modal doc cache (versioned, same pattern as plugin cache)
         getCachedSettingsDoc(name) {
             const cached = this.get(`settings-doc-cache-${name}`, null);
@@ -963,6 +1046,39 @@
         setCachedSettingsDoc(name, raw, version) {
             const cacheData = { raw, version, cachedAt: Date.now() };
             this.set(`settings-doc-cache-${name}`, JSON.stringify(cacheData));
+        },
+        // Last-known-good archetypes.json (branch-scoped fallback when GitHub fetch fails)
+        getCachedArchetypesJson(branch) {
+            const cached = this.get('archetypes-json-cache', null);
+            if (!cached) return null;
+            try {
+                const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+                if (!parsed.raw || typeof parsed.raw !== 'string') return null;
+                if (branch && parsed.branch !== branch) return null;
+                return {
+                    raw: parsed.raw,
+                    branch: parsed.branch || null,
+                    archetypesVersion: parsed.archetypesVersion != null ? parsed.archetypesVersion : null,
+                    cachedAt: typeof parsed.cachedAt === 'number' ? parsed.cachedAt : null
+                };
+            } catch (e) {
+                Logger.error('Failed to parse cached archetypes.json:', e);
+                return null;
+            }
+        },
+        setCachedArchetypesJson(raw, branch, archetypesVersion) {
+            if (!raw || typeof raw !== 'string' || !branch) return;
+            const cacheData = {
+                raw,
+                branch,
+                archetypesVersion: archetypesVersion != null ? archetypesVersion : null,
+                cachedAt: Date.now()
+            };
+            this.set('archetypes-json-cache', JSON.stringify(cacheData));
+        },
+        clearCachedArchetypesJson() {
+            this.delete('archetypes-json-cache');
         },
         getSubmoduleLoggingEnabled() {
             return this.get('submodule-logging', DEFAULT_STORAGE_SUBMODULE_LOGGING);
@@ -1095,7 +1211,8 @@
                 'debug',
                 'verbose',
                 'submodule-logging',
-                'disputes-cache'
+                'disputes-cache',
+                'archetypes-json-cache'
             ];
             globalKeys.forEach(key => {
                 this.delete(key);
@@ -1437,6 +1554,160 @@
     };
 
     Context.logger = Logger;
+
+    // ============= REPO CDN (session failover) =============
+    // Probe GitHub then jsDelivr for archetypes.json once; lock that host for all
+    // further repo fetches. If both miss → cache-only (GM storage only, no CDN).
+    const RepoCdn = {
+        /** @type {null|'github'|'jsdelivr'|'cache-only'} */
+        mode: null,
+        /** HTTP status from the GitHub archetypes probe (0 if network/other). */
+        lastGithubStatus: 0,
+
+        isCacheOnly() {
+            return this.mode === 'cache-only';
+        },
+
+        isNetworkLocked() {
+            return this.mode === 'github' || this.mode === 'jsdelivr';
+        },
+
+        setMode(mode) {
+            if (this.mode === mode) return;
+            this.mode = mode;
+            Logger.log(`Repo CDN: ${mode}`);
+        },
+
+        /**
+         * @param {string} repoPath - Path relative to repo root (e.g. archetypes.json, plugins/core/main/x.js)
+         * @param {'github'|'jsdelivr'} [modeOverride]
+         */
+        buildUrl(repoPath, modeOverride) {
+            const mode = modeOverride || this.mode;
+            const path = String(repoPath || '').replace(/^\//, '');
+            if (mode === 'jsdelivr') {
+                return `https://cdn.jsdelivr.net/gh/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}@${GITHUB_CONFIG.branch}/${path}`;
+            }
+            return `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${path}`;
+        },
+
+        _gmGet(url) {
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: url,
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache',
+                        'Expires': '0'
+                    },
+                    onload: (response) => {
+                        const status = typeof response.status === 'number' ? response.status : 0;
+                        if (status === 200) {
+                            resolve({ status: status, text: response.responseText || '' });
+                            return;
+                        }
+                        const err = new Error(`HTTP ${status}`);
+                        err.status = status;
+                        reject(err);
+                    },
+                    onerror: (error) => {
+                        const err = error instanceof Error ? error : new Error('network error');
+                        err.status = 0;
+                        reject(err);
+                    },
+                    ontimeout: () => {
+                        const err = new Error('timeout');
+                        err.status = 0;
+                        reject(err);
+                    }
+                });
+            });
+        },
+
+        parseArchetypesRaw(raw) {
+            if (!raw || !String(raw).trim()) {
+                throw new Error('empty archetypes.json body');
+            }
+            let config;
+            try {
+                config = JSON.parse(raw);
+            } catch (e) {
+                const err = new Error('Failed to parse archetypes config');
+                err.cause = e;
+                throw err;
+            }
+            if (!config || typeof config !== 'object' || Array.isArray(config)) {
+                throw new Error('archetypes.json is not a JSON object');
+            }
+            return config;
+        },
+
+        /**
+         * Fetch from the locked CDN only. Rejects if cache-only or unset.
+         * @param {string} repoPath
+         * @param {{ cacheBust?: boolean }} [options]
+         * @returns {Promise<{ status: number, text: string }>}
+         */
+        fetchText(repoPath, options) {
+            const opts = options || {};
+            if (!this.isNetworkLocked()) {
+                return Promise.reject(new Error('Repo CDN: no network fetch (cache-only or unset)'));
+            }
+            let url = this.buildUrl(repoPath);
+            if (opts.cacheBust) {
+                url += (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+            }
+            return this._gmGet(url);
+        },
+
+        /**
+         * First archetypes probe: GitHub → jsDelivr. Locks mode. Returns hit or null.
+         * @returns {Promise<{ raw: string, config: object, source: string }|null>}
+         */
+        async probeAndLockFromArchetypes() {
+            const path = GITHUB_CONFIG.archetypesPath;
+            this.lastGithubStatus = 0;
+
+            try {
+                const url = this.buildUrl(path, 'github') + '?t=' + Date.now();
+                Logger.debug(`Fetching archetypes from github (${url})`);
+                const res = await this._gmGet(url);
+                const config = this.parseArchetypesRaw(res.text);
+                this.setMode('github');
+                return { raw: res.text, config: config, source: 'github' };
+            } catch (e) {
+                this.lastGithubStatus = e && typeof e.status === 'number' ? e.status : 0;
+                Logger.error('Failed to load archetypes from github:', e);
+            }
+
+            try {
+                const url = this.buildUrl(path, 'jsdelivr') + '?t=' + Date.now();
+                Logger.debug(`Fetching archetypes from jsdelivr (${url})`);
+                const res = await this._gmGet(url);
+                const config = this.parseArchetypesRaw(res.text);
+                this.setMode('jsdelivr');
+                return { raw: res.text, config: config, source: 'jsdelivr' };
+            } catch (e) {
+                Logger.error('Failed to load archetypes from jsdelivr:', e);
+            }
+
+            this.setMode('cache-only');
+            return null;
+        },
+
+        /**
+         * Re-fetch archetypes from the already-locked CDN.
+         * @returns {Promise<{ raw: string, config: object, source: string }>}
+         */
+        async fetchArchetypesLocked() {
+            const res = await this.fetchText(GITHUB_CONFIG.archetypesPath, { cacheBust: true });
+            const config = this.parseArchetypesRaw(res.text);
+            return { raw: res.text, config: config, source: this.mode };
+        }
+    };
+
+    Context.repoCdn = RepoCdn;
 
     // ============= NETWORK OBSERVER =============
     /**
@@ -2377,96 +2648,145 @@
         },
 
         async _doFetchArchetypes() {
-            const timestamp = Date.now();
-            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.archetypesPath}?t=${timestamp}`;
-            
-            Logger.debug(`Fetching archetypes from branch: ${GITHUB_CONFIG.branch} (${url})`);
-            
-            return new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: url,
-                    headers: {
-                        'Cache-Control': 'no-cache, no-store, must-revalidate',
-                        'Pragma': 'no-cache',
-                        'Expires': '0'
-                    },
-                    onload: (response) => {
-                        if (response.status === 200) {
-                            try {
-                                const config = JSON.parse(response.responseText);
-                                this.archetypes = config.archetypes || [];
-                                this.devArchetypes = config.devArchetypes || [];
-                                this.corePlugins = config.corePlugins || [];
-                                this.libraries = config.libraries || [];
-                                this.opsDashboardPlugins = config.opsDashboardPlugins || [];
-                                this.opsDashboardLibraries = Array.isArray(config.opsDashboardLibraries)
-                                    ? config.opsDashboardLibraries
-                                    : [];
-                                this.devPlugins = config.devPlugins || [];
-                                this.settingsModalDocs = config.settingsModalDocs || [];
-                                
-                                // Check if script version is outdated
-                                if (config.version) {
-                                    const latestVersion = config.version;
-                                    Context.latestVersion = latestVersion;
-                                    // Simple version comparison: if versions don't match, consider outdated
-                                    // This handles semantic versioning (e.g., "3.4.0" vs "3.4.1")
-                                    Context.isOutdated = compareVersions(VERSION, latestVersion) < 0;
-                                    if (Context.isOutdated) {
-                                        Logger.warn(`Script version ${VERSION} is outdated. Latest version is ${latestVersion}`);
-                                    }
-                                } else {
-                                    // No version in config, assume up to date
-                                    Context.isOutdated = false;
-                                    Context.latestVersion = VERSION;
-                                }
-                                if (Context.settingsUi && typeof Context.settingsUi.refreshUpdateIndicator === 'function') {
-                                    try {
-                                        Context.settingsUi.refreshUpdateIndicator();
-                                    } catch (refreshErr) {
-                                        Logger.debug('Settings UI update indicator refresh failed', refreshErr);
-                                    }
-                                }
-                                
-                                // Always log archetypes version (cannot be disabled)
-                                Context.archetypesVersion = config.archetypesVersion || null;
-                                Context.coreOnlyMode = config.coreOnlyMode === true;
-                                Context.opsAccess = config.opsAccess && typeof config.opsAccess === 'object'
-                                    ? config.opsAccess
-                                    : null;
-                                Context.opsSecrets = config.opsSecrets && typeof config.opsSecrets === 'object'
-                                    ? config.opsSecrets
-                                    : null;
-                                applyArchetypeRemoteLoggingConfig(config);
-                                console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
-                                if (Context.coreOnlyMode) {
-                                    Logger.log('coreOnlyMode is enabled: archetype UX plugins and SPA auto-reload are off; core plugins remain active.');
-                                }
-                                
-                                Logger.log(`Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
-                                if (DEV_SCRIPTS_ENABLED) {
-                                    clearOrphanMarkerForCurrentBranch();
-                                }
-                                resolve(config);
-                            } catch (e) {
-                                Logger.error('Failed to parse archetypes config:', e);
-                                reject(e);
-                            }
-                        } else {
-                            Logger.error(`Failed to load archetypes: ${response.status}`);
-                            if (response.status === 404 && DEV_SCRIPTS_ENABLED) {
-                                yieldToMainForOrphanedBranch('archetypes.json HTTP 404');
-                            }
-                            reject(new Error(`HTTP ${response.status}`));
-                        }
-                    },
-                    onerror: (error) => {
-                        Logger.error('Network error loading archetypes:', error);
-                        reject(error);
-                    }
-                });
-            });
+            const formatCacheAge = (cachedAt) => {
+                if (typeof cachedAt !== 'number' || !cachedAt) return 'unknown age';
+                const ms = Math.max(0, Date.now() - cachedAt);
+                const sec = Math.floor(ms / 1000);
+                if (sec < 60) return `${sec}s old`;
+                const min = Math.floor(sec / 60);
+                if (min < 60) return `${min}m old`;
+                const hr = Math.floor(min / 60);
+                if (hr < 48) return `${hr}h old`;
+                const days = Math.floor(hr / 24);
+                return `${days}d old`;
+            };
+
+            const applyFromGmCache = (reason) => {
+                const cached = Storage.getCachedArchetypesJson(GITHUB_CONFIG.branch);
+                if (!cached) {
+                    return null;
+                }
+                try {
+                    const config = RepoCdn.parseArchetypesRaw(cached.raw);
+                    this._applyArchetypesConfig(config);
+                    const ver = cached.archetypesVersion != null
+                        ? cached.archetypesVersion
+                        : (config.archetypesVersion || 'unknown');
+                    Logger.warn(
+                        `Using cached archetypes v${ver} (${formatCacheAge(cached.cachedAt)}); ${reason}`
+                    );
+                    return config;
+                } catch (e) {
+                    Logger.error('Failed to apply cached archetypes.json:', e);
+                    return null;
+                }
+            };
+
+            const persistAndApply = (hit) => {
+                this._applyArchetypesConfig(hit.config);
+                Storage.setCachedArchetypesJson(
+                    hit.raw,
+                    GITHUB_CONFIG.branch,
+                    hit.config.archetypesVersion != null ? hit.config.archetypesVersion : null
+                );
+                return hit.config;
+            };
+
+            // Already cache-only: GM only, no network.
+            if (RepoCdn.isCacheOnly()) {
+                const config = applyFromGmCache('session is cache-only');
+                if (config) return config;
+                throw new Error('archetypes.json unavailable (cache-only, no GM cache)');
+            }
+
+            // First probe of the page session: GitHub → jsDelivr → cache-only.
+            if (!RepoCdn.mode) {
+                Logger.debug(`Probing archetypes CDN for branch: ${GITHUB_CONFIG.branch}`);
+                const hit = await RepoCdn.probeAndLockFromArchetypes();
+                if (hit) {
+                    return persistAndApply(hit);
+                }
+                const cachedConfig = applyFromGmCache('GitHub and jsDelivr both failed');
+                if (cachedConfig) return cachedConfig;
+                if (DEV_SCRIPTS_ENABLED && RepoCdn.lastGithubStatus === 404) {
+                    yieldToMainForOrphanedBranch('archetypes.json HTTP 404');
+                }
+                throw new Error(
+                    RepoCdn.lastGithubStatus === 404
+                        ? 'HTTP 404'
+                        : 'Failed to load archetypes from GitHub, jsDelivr, and GM cache'
+                );
+            }
+
+            // Locked to github or jsdelivr: fetch only from that host; on failure use GM cache.
+            try {
+                Logger.debug(`Fetching archetypes via locked CDN ${RepoCdn.mode}`);
+                const hit = await RepoCdn.fetchArchetypesLocked();
+                return persistAndApply(hit);
+            } catch (e) {
+                Logger.error(`Failed to load archetypes from locked CDN (${RepoCdn.mode}):`, e);
+                const cachedConfig = applyFromGmCache(
+                    `locked CDN ${RepoCdn.mode} failed (${e && e.message ? e.message : e})`
+                );
+                if (cachedConfig) return cachedConfig;
+                throw e instanceof Error ? e : new Error(String(e));
+            }
+        },
+
+        _applyArchetypesConfig(config) {
+            this.archetypes = config.archetypes || [];
+            this.devArchetypes = config.devArchetypes || [];
+            this.corePlugins = config.corePlugins || [];
+            this.libraries = config.libraries || [];
+            this.opsDashboardPlugins = config.opsDashboardPlugins || [];
+            this.opsDashboardLibraries = Array.isArray(config.opsDashboardLibraries)
+                ? config.opsDashboardLibraries
+                : [];
+            this.devPlugins = config.devPlugins || [];
+            this.settingsModalDocs = config.settingsModalDocs || [];
+
+            // Check if script version is outdated
+            if (config.version) {
+                const latestVersion = config.version;
+                Context.latestVersion = latestVersion;
+                // Simple version comparison: if versions don't match, consider outdated
+                // This handles semantic versioning (e.g., "3.4.0" vs "3.4.1")
+                Context.isOutdated = compareVersions(VERSION, latestVersion) < 0;
+                if (Context.isOutdated) {
+                    Logger.warn(`Script version ${VERSION} is outdated. Latest version is ${latestVersion}`);
+                }
+            } else {
+                // No version in config, assume up to date
+                Context.isOutdated = false;
+                Context.latestVersion = VERSION;
+            }
+            if (Context.settingsUi && typeof Context.settingsUi.refreshUpdateIndicator === 'function') {
+                try {
+                    Context.settingsUi.refreshUpdateIndicator();
+                } catch (refreshErr) {
+                    Logger.debug('Settings UI update indicator refresh failed', refreshErr);
+                }
+            }
+
+            // Always log archetypes version (cannot be disabled)
+            Context.archetypesVersion = config.archetypesVersion || null;
+            Context.coreOnlyMode = config.coreOnlyMode === true;
+            Context.opsAccess = config.opsAccess && typeof config.opsAccess === 'object'
+                ? config.opsAccess
+                : null;
+            Context.opsSecrets = config.opsSecrets && typeof config.opsSecrets === 'object'
+                ? config.opsSecrets
+                : null;
+            applyArchetypeRemoteLoggingConfig(config);
+            console.log(`${LOG_PREFIX} archetypes v${config.archetypesVersion || 'unknown'}`);
+            if (Context.coreOnlyMode) {
+                Logger.log('coreOnlyMode is enabled: archetype UX plugins and SPA auto-reload are off; core plugins remain active.');
+            }
+
+            Logger.log(`Loaded ${this.archetypes.length} archetypes from branch: ${GITHUB_CONFIG.branch}`);
+            if (DEV_SCRIPTS_ENABLED) {
+                clearOrphanMarkerForCurrentBranch();
+            }
         },
 
         getCorePlugins() {
@@ -2973,8 +3293,14 @@
                             this._registerCacheForArchetype(sourcePath, filename);
                             return cached.code;
                         }
+                        if (RepoCdn.isCacheOnly()) {
+                            throw new Error(`Plugin ${filename} unavailable (cache-only, cached hash mismatch)`);
+                        }
                         Logger.warn(`Cached ${filename} v${version} failed hash check. Re-fetching.`);
                     } catch (hashError) {
+                        if (RepoCdn.isCacheOnly() && hashError && /cache-only/.test(hashError.message || '')) {
+                            throw hashError;
+                        }
                         Logger.error(`Hash verification failed for ${filename}:`, hashError);
                         throw new Error(`Plugin ${filename} blocked: hash verification error — ${hashError.message || hashError}`);
                     }
@@ -2983,6 +3309,14 @@
                     this._registerCacheForArchetype(sourcePath, filename);
                     return cached.code;
                 }
+            }
+
+            // Session is cache-only: never hit CDN; missing/mismatched cache means skip.
+            if (RepoCdn.isCacheOnly()) {
+                throw new Error(`Plugin ${filename} unavailable (cache-only, no matching cache for v${version})`);
+            }
+            if (!RepoCdn.isNetworkLocked()) {
+                throw new Error(`Plugin ${filename} unavailable (Repo CDN unset)`);
             }
 
             // --- FETCH PATH ---
@@ -3132,10 +3466,11 @@
          */
         async loadCorePlugin(filename, version, hash) {
             const sourcePath = `core/main/${filename}`;
-            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
+            const url = RepoCdn.buildUrl(`${GITHUB_CONFIG.pluginsPath}/${sourcePath}`);
             
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded core plugin ${filename} v${version}`);
             return plugin;
@@ -3157,10 +3492,11 @@
                 );
             }
             const sourcePath = `libs/${filename}`;
-            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
+            const url = RepoCdn.buildUrl(`${GITHUB_CONFIG.pluginsPath}/${sourcePath}`);
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded library ${filename} v${version}`);
             return plugin;
@@ -3175,10 +3511,11 @@
          */
         async loadDevPlugin(filename, version, hash) {
             const sourcePath = `core/dev/${filename}`;
-            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
+            const url = RepoCdn.buildUrl(`${GITHUB_CONFIG.pluginsPath}/${sourcePath}`);
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded dev plugin ${filename} v${version}`);
             return plugin;
@@ -3200,10 +3537,11 @@
             }
 
             const sourcePath = `archetypes/${archetypeId}/main/${filename}`;
-            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
+            const url = RepoCdn.buildUrl(`${GITHUB_CONFIG.pluginsPath}/${sourcePath}`);
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded ${filename} v${version} from ${sourcePath}`);
             return plugin;
@@ -3226,10 +3564,11 @@
             }
 
             const sourcePath = `archetypes/${archetypeId}/dev/${filename}`;
-            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/${GITHUB_CONFIG.pluginsPath}/${sourcePath}`;
+            const url = RepoCdn.buildUrl(`${GITHUB_CONFIG.pluginsPath}/${sourcePath}`);
 
             const code = await this.loadPluginCode(filename, sourcePath, version, url, hash);
             const plugin = this.parsePluginCode(code, filename, { useModuleLogger: true });
+            plugin._sourcePath = sourcePath;
             this._loadedPluginFiles.add(sourcePath);
             Logger.debug(`Loaded dev archetype plugin ${filename} v${version} from ${sourcePath}`);
             return plugin;
@@ -3249,7 +3588,15 @@
                 Context.settingsModalDocs[filename] = { raw: cached.raw, version };
                 return;
             }
-            const url = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/${GITHUB_CONFIG.branch}/docs/settings-modal/${filename}`;
+            if (RepoCdn.isCacheOnly()) {
+                Logger.warn(`Settings doc ${filename} unavailable (cache-only, no matching cache for v${version})`);
+                return;
+            }
+            if (!RepoCdn.isNetworkLocked()) {
+                Logger.warn(`Settings doc ${filename} skipped (Repo CDN unset)`);
+                return;
+            }
+            const url = RepoCdn.buildUrl(`docs/settings-modal/${filename}`);
             Logger.debug(`Fetching settings doc ${filename} v${version}${cached ? ` (cached: v${cached.version})` : ''}`);
             return new Promise((resolve) => {
                 GM_xmlhttpRequest({

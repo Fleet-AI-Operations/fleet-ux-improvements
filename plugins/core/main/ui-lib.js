@@ -1390,6 +1390,18 @@ function fleetUiCopyIconSvg(opts) {
         + '</svg>';
 }
 
+function fleetUiAlertTriangleIconSvg(opts) {
+    const raw = opts && opts.size != null ? Number(opts.size) : 18;
+    const size = Number.isFinite(raw) && raw > 0 ? raw : 18;
+    const extraStyle = opts && opts.style != null ? String(opts.style) : '';
+    const style = extraStyle ? 'flex-shrink:0; ' + extraStyle : 'flex-shrink:0;';
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="' + style + '">'
+        + '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>'
+        + '<line x1="12" y1="9" x2="12" y2="13"></line>'
+        + '<circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"></circle>'
+        + '</svg>';
+}
+
 function fleetUiFlashTabSuccess(tabEl) {
     if (!tabEl) return;
     tabEl.classList.remove('fleet-ui-tab--pulse', 'wf-dash-tab--add-pulse');
@@ -1451,7 +1463,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.18',
+    _version: '3.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1592,6 +1604,7 @@ const plugin = {
             funnelIconSvg: fleetUiFunnelIconSvg,
             externalLinkIconSvg: fleetUiExternalLinkIconSvg,
             copyIconSvg: fleetUiCopyIconSvg,
+            alertTriangleIconSvg: fleetUiAlertTriangleIconSvg,
 
             segmentBtnClass: fleetUiSegmentBtnClass,
             segmentBtnHtml: fleetUiSegmentBtnHtml,

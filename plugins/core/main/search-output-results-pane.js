@@ -1872,6 +1872,15 @@ const searchOutputResultsPaneMethods = {
         this._state.resultsPage = 0;
         Logger.log('search-output: review status → ' + next);
         this._syncReviewStatusToggleUi();
+        const wsId = typeof this._resolveActiveOutputWsId === 'function'
+            ? this._resolveActiveOutputWsId()
+            : (this._state && this._state.wsId);
+        if ((wsId === 'disputes' || wsId === 'sr-review')
+            && typeof this._loadPrefetchInventoryWorkspace === 'function') {
+            // Replace list with the matching half — do not merge opposite-status cards.
+            void this._loadPrefetchInventoryWorkspace(wsId, { merge: false });
+            return;
+        }
         this._renderResults();
         this._syncResultsPagerUi();
         this._updateResultsStatus();
@@ -5598,21 +5607,91 @@ const searchOutputResultsPaneMethods = {
         }
     },
 
-    _withResultsScrollPreserved(fn) {
+    _findResultsCardEl(wrap, itemId) {
+        if (!wrap || !itemId) return null;
+        for (const el of wrap.querySelectorAll('[data-wf-dash-task-card]')) {
+            if (el.getAttribute('data-item-id') === itemId) return el;
+        }
+        return null;
+    },
+
+    _resultsCardIntersectsViewport(wrap, card) {
+        if (!wrap || !card) return false;
+        const wrapRect = wrap.getBoundingClientRect();
+        const rect = card.getBoundingClientRect();
+        return rect.bottom > wrapRect.top && rect.top < wrapRect.bottom;
+    },
+
+    /** Anchor only when the preferred card is on screen — never fall back to another card. */
+    _resultsScrollAnchorForItem(wrap, itemId) {
+        if (!wrap || !itemId) return null;
+        const card = this._findResultsCardEl(wrap, itemId);
+        if (!card || !this._resultsCardIntersectsViewport(wrap, card)) return null;
+        const wrapRect = wrap.getBoundingClientRect();
+        const rect = card.getBoundingClientRect();
+        return {
+            itemId,
+            offset: rect.top - wrapRect.top
+        };
+    },
+
+    _applyResultsScrollTop(wrap, next, meta) {
+        if (!wrap || !wrap.isConnected) return;
+        const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+        const clamped = Math.min(Math.max(0, next), max);
+        const prev = wrap.scrollTop;
+        if (Math.abs(clamped - prev) < 1) return;
+        wrap.scrollTop = clamped;
+        const info = meta || {};
+        Logger.debug('results scrollTop write — ' + (info.path || 'unknown')
+            + (info.itemId ? (' · ' + info.itemId) : '')
+            + ' · delta ' + Math.round(clamped - prev) + 'px');
+    },
+
+    _restoreResultsScrollAnchor(wrap, anchor) {
+        if (!wrap || !wrap.isConnected || !anchor || !anchor.itemId) return;
+        const card = this._findResultsCardEl(wrap, anchor.itemId);
+        if (!card) return;
+        const wrapRect = wrap.getBoundingClientRect();
+        const cardRect = card.getBoundingClientRect();
+        const currentOffset = cardRect.top - wrapRect.top;
+        const delta = currentOffset - anchor.offset;
+        let next = wrap.scrollTop + delta;
+        // Keep-visible clamp only when the user was scrolled into this card.
+        if (anchor.offset < 0) {
+            const cardTopInScroll = wrap.scrollTop + currentOffset;
+            const maxKeepVisible = cardTopInScroll + Math.max(0, cardRect.height - wrap.clientHeight);
+            next = Math.min(next, Math.max(0, maxKeepVisible));
+        }
+        this._applyResultsScrollTop(wrap, next, {
+            path: 'anchor',
+            itemId: anchor.itemId
+        });
+    },
+
+    _withResultsScrollPreserved(fn, opts) {
+        const options = opts || {};
         const wrap = this._q('#wf-dash-results');
         const saved = wrap ? wrap.scrollTop : 0;
+        const preferredId = options.anchorItemId || null;
+        // Patch path: only restore when the patched card is on screen.
+        // Offscreen patches — zero scrollTop writes (browser overflow-anchor handles above-viewport churn).
+        if (preferredId) {
+            const anchor = wrap ? this._resultsScrollAnchorForItem(wrap, preferredId) : null;
+            try {
+                return fn();
+            } finally {
+                if (!wrap || !wrap.isConnected) return;
+                if (!anchor) return;
+                this._restoreResultsScrollAnchor(wrap, anchor);
+            }
+        }
+        // Full rebuild (_renderResults): original pre-anchor behavior — clamp saved scrollTop once.
         try {
             return fn();
         } finally {
             if (!wrap || !wrap.isConnected) return;
-            const restore = () => {
-                const max = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
-                wrap.scrollTop = Math.min(Math.max(0, saved), max);
-            };
-            restore();
-            if (typeof requestAnimationFrame === 'function') {
-                requestAnimationFrame(restore);
-            }
+            this._applyResultsScrollTop(wrap, saved, { path: 'saved' });
         }
     },
 
@@ -5623,14 +5702,7 @@ const searchOutputResultsPaneMethods = {
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
         if (!item) return;
         this._withResultsScrollPreserved(() => {
-            const cards = wrap.querySelectorAll('[data-wf-dash-task-card]');
-            let existing = null;
-            for (const el of cards) {
-                if (el.getAttribute('data-item-id') === itemId) {
-                    existing = el;
-                    break;
-                }
-            }
+            const existing = this._findResultsCardEl(wrap, itemId);
             const html = this._resultCardHtml(item);
             const doc = this._pageWindow().document;
             const temp = doc.createElement('div');
@@ -5660,7 +5732,7 @@ const searchOutputResultsPaneMethods = {
             }
             this._syncAutoGrowTextareasIn(newCard);
             this._syncResultsHydrateBannerUi();
-        });
+        }, { anchorItemId: itemId });
     },
 
     _syncAutoGrowTextarea(ta, minHeightPx) {
@@ -7974,7 +8046,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.2',
+    _version: '10.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

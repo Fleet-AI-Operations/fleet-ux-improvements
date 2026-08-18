@@ -1211,8 +1211,12 @@ const searchOutputCoreMethods = {
         if ((item.task.allFeedback || []).length > 0 || item.qaFeedback) {
             this._addItemOutputKind(item, 'qa');
         }
-        if ((item.disputes || []).length > 0) this._addItemOutputKind(item, 'dispute');
-        if ((item.flags || []).length > 0) this._addItemOutputKind(item, 'senior_review');
+        if ((item.disputes || []).length > 0 && this._prefetchDisputesAnyHalfReady()) {
+            this._addItemOutputKind(item, 'dispute');
+        }
+        if ((item.flags || []).length > 0 && this._prefetchFlagsAnyHalfReady()) {
+            this._addItemOutputKind(item, 'senior_review');
+        }
     },
 
     /**
@@ -1711,6 +1715,41 @@ const searchOutputCoreMethods = {
         return (kinds || DASH_PREFETCH_KINDS).some((kind) => this._isPrefetchIncomplete(kind));
     },
 
+    _prefetchSlotTerminal(kind) {
+        const slot = this._getPrefetchSlot(kind);
+        const status = slot && slot.status;
+        return status === 'done' || status === 'error';
+    },
+
+    _resultsReviewStatusValue() {
+        return this._state.resultsReviewStatus === 'resolved' ? 'resolved' : 'pending';
+    },
+
+    /** Inventory / review-status toggle: only the Pending or Resolved half must be ready. */
+    _prefetchDisputesHalfReady(status) {
+        const want = status === 'resolved' ? 'resolved' : 'pending';
+        return want === 'resolved'
+            ? this._prefetchSlotTerminal('resolvedDisputes')
+            : this._prefetchSlotTerminal('openDisputes');
+    },
+
+    _prefetchFlagsHalfReady(status) {
+        const want = status === 'resolved' ? 'resolved' : 'pending';
+        return want === 'resolved'
+            ? this._prefetchSlotTerminal('resolvedFlags')
+            : this._prefetchSlotTerminal('pendingFlags');
+    },
+
+    _prefetchDisputesAnyHalfReady() {
+        return this._prefetchSlotTerminal('openDisputes')
+            || this._prefetchSlotTerminal('resolvedDisputes');
+    },
+
+    _prefetchFlagsAnyHalfReady() {
+        return this._prefetchSlotTerminal('pendingFlags')
+            || this._prefetchSlotTerminal('resolvedFlags');
+    },
+
     _ensurePrefetch(kind, loadTracker) {
         const slot = this._getPrefetchSlot(kind);
         if (!slot) return Promise.resolve(0);
@@ -1777,23 +1816,38 @@ const searchOutputCoreMethods = {
         if (typeof this._updateResultsStatus === 'function') {
             this._updateResultsStatus();
         }
-        if (typeof this._refreshPrefetchInventoryTabs === 'function') {
-            void this._refreshPrefetchInventoryTabs(kind);
-        }
-        void this._withOutputWsAsync('search-output', async () => {
-            if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
-                Logger.debug('dashboard: ' + this._prefetchLabel(kind)
-                    + ' prefetch complete — no cached cards to re-overlay');
-                return;
+        const disputeKinds = kind === 'openDisputes' || kind === 'resolvedDisputes';
+        const flagKinds = kind === 'pendingFlags' || kind === 'resolvedFlags';
+        void this._enqueuePrefetchUiWork(async () => {
+            if (typeof this._refreshPrefetchInventoryTabs === 'function') {
+                await this._refreshPrefetchInventoryTabs(kind);
             }
-            try {
-                const changedIds = await this._reoverlayAllCachedItems();
-                if (!changedIds || changedIds.length === 0) return;
-                this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
-            } catch (e) {
-                Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
-            }
+            // Re-overlay as soon as each half finishes — Pending/Resolved UI does not wait
+            // for the opposite status to load.
+            if (!disputeKinds && !flagKinds) return;
+            await this._withOutputWsAsync('search-output', async () => {
+                if (!this._state.cachedItems || this._state.cachedItems.length === 0) {
+                    Logger.debug('dashboard: ' + this._prefetchLabel(kind)
+                        + ' prefetch complete — no cached cards to re-overlay');
+                    return;
+                }
+                try {
+                    const changedIds = await this._reoverlayAllCachedItems();
+                    if (!changedIds || changedIds.length === 0) return;
+                    this._refreshResultsView({ filterSource: 'results-mutate', reindexFilters: true });
+                } catch (e) {
+                    Logger.warn('dashboard: prefetch re-overlay failed after ' + this._prefetchLabel(kind), e);
+                }
+            });
         });
+    },
+
+    _enqueuePrefetchUiWork(fn) {
+        const run = typeof fn === 'function' ? fn : async () => {};
+        const prev = this._prefetchUiQueue || Promise.resolve();
+        const next = prev.then(() => run(), () => run());
+        this._prefetchUiQueue = next.then(() => undefined, () => undefined);
+        return next;
     },
 
     _prefetchInventoryProfilesMap() {
@@ -1819,15 +1873,19 @@ const searchOutputCoreMethods = {
                 for (const row of rows || []) dest.push(row);
             }
         };
-        mergeSlot(openSlot);
-        mergeSlot(resolvedSlot);
+        // Only the half matching Pending/Resolved — opposite status stays out of this inventory view.
+        if (this._resultsReviewStatusValue() === 'resolved') {
+            mergeSlot(resolvedSlot);
+        } else {
+            mergeSlot(openSlot);
+        }
         const profileIds = this._collectPrefetchDisputeProfileIds
             ? this._collectPrefetchDisputeProfileIds(grouped)
             : [];
         let profilesMap = new Map();
         if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
             try {
-                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                const rows = await this._fetchProfilesByIds(profileIds, 'ondemand', null);
                 profilesMap = this._buildProfilesMap(rows);
             } catch (e) {
                 Logger.warn('dispute inventory profiles failed', e);
@@ -1852,15 +1910,18 @@ const searchOutputCoreMethods = {
                 for (const row of rows || []) dest.push(row);
             }
         };
-        mergeSlot(pendingSlot);
-        mergeSlot(resolvedSlot);
+        if (this._resultsReviewStatusValue() === 'resolved') {
+            mergeSlot(resolvedSlot);
+        } else {
+            mergeSlot(pendingSlot);
+        }
         const profileIds = this._collectPrefetchFlagProfileIds
             ? this._collectPrefetchFlagProfileIds(grouped)
             : [];
         let profilesMap = new Map();
         if (profileIds.length > 0 && typeof this._fetchProfilesByIds === 'function') {
             try {
-                const rows = await this._fetchProfilesByIds(profileIds, 'search', null);
+                const rows = await this._fetchProfilesByIds(profileIds, 'ondemand', null);
                 profilesMap = this._buildProfilesMap(rows);
             } catch (e) {
                 Logger.warn('flag inventory profiles failed', e);
@@ -1874,18 +1935,9 @@ const searchOutputCoreMethods = {
     },
 
     _prefetchInventoryKindsReady(wsId) {
-        if (wsId === 'disputes') {
-            return ['openDisputes', 'resolvedDisputes'].some((kind) => {
-                const slot = this._getPrefetchSlot(kind);
-                return slot && slot.status === 'done';
-            });
-        }
-        if (wsId === 'sr-review') {
-            return ['pendingFlags', 'resolvedFlags'].some((kind) => {
-                const slot = this._getPrefetchSlot(kind);
-                return slot && slot.status === 'done';
-            });
-        }
+        const status = this._resultsReviewStatusValue();
+        if (wsId === 'disputes') return this._prefetchDisputesHalfReady(status);
+        if (wsId === 'sr-review') return this._prefetchFlagsHalfReady(status);
         return false;
     },
 
@@ -1936,7 +1988,7 @@ const searchOutputCoreMethods = {
                 this._state.loading = false;
                 this._state.leftTab = 'filters';
                 this._state.statsTab = 'chat';
-                if (!this._state.cachedItems) {
+                if (!merge || !this._state.cachedItems) {
                     this._state.cachedItems = [];
                     this._state.filteredItems = [];
                 }
@@ -2001,12 +2053,15 @@ const searchOutputCoreMethods = {
     },
 
     async _refreshPrefetchInventoryTabs(kind) {
-        const disputeKinds = kind === 'openDisputes' || kind === 'resolvedDisputes';
-        const flagKinds = kind === 'pendingFlags' || kind === 'resolvedFlags';
-        if (disputeKinds) {
+        const status = this._resultsReviewStatusValue();
+        // Only refresh the inventory half that matches the Pending/Resolved toggle.
+        if (kind === 'openDisputes' && status === 'pending') {
             await this._loadPrefetchInventoryWorkspace('disputes', { merge: true });
-        }
-        if (flagKinds) {
+        } else if (kind === 'resolvedDisputes' && status === 'resolved') {
+            await this._loadPrefetchInventoryWorkspace('disputes', { merge: true });
+        } else if (kind === 'pendingFlags' && status === 'pending') {
+            await this._loadPrefetchInventoryWorkspace('sr-review', { merge: true });
+        } else if (kind === 'resolvedFlags' && status === 'resolved') {
             await this._loadPrefetchInventoryWorkspace('sr-review', { merge: true });
         }
     },
@@ -2843,48 +2898,114 @@ const searchOutputCoreMethods = {
         }
     },
 
+    _removeItemOutputKind(item, kind) {
+        if (!item || !kind) return;
+        const kinds = this._ensureItemKindsArray(item);
+        if (!kinds.includes(kind)) return;
+        item.kinds = kinds.filter((k) => k !== kind);
+        if (item.kinds.length === 0) {
+            item.kinds = [item.kind && item.kind !== kind ? item.kind : 'task_creation'];
+        }
+        if (item.kind === kind) {
+            item.kind = item.kinds[0];
+        }
+    },
+
+    _clearDisputeOverlaySide(item) {
+        if (!item) return false;
+        let changed = false;
+        if ((item.disputes || []).length > 0) {
+            item.disputes = [];
+            changed = true;
+        }
+        const kinds = this._ensureItemKindsArray(item);
+        if (kinds.includes('dispute') && kinds.some((k) => k !== 'dispute')) {
+            this._removeItemOutputKind(item, 'dispute');
+            changed = true;
+        }
+        return changed;
+    },
+
+    _clearFlagOverlaySide(item) {
+        if (!item) return false;
+        let changed = false;
+        if ((item.flags || []).length > 0) {
+            item.flags = [];
+            changed = true;
+        }
+        const kinds = this._ensureItemKindsArray(item);
+        if (kinds.includes('senior_review') && kinds.some((k) => k !== 'senior_review')) {
+            this._removeItemOutputKind(item, 'senior_review');
+            changed = true;
+        }
+        return changed;
+    },
+
     async _overlayDisputesAndFlagsForItem(item, profilesMap, scope, afterIso, beforeIso, contributorSet) {
         if (!item || !item.task || !item.task.id) return false;
         const taskId = item.task.id;
         let changed = false;
         this._ensureItemKindsArray(item);
 
-        const openRows = this._getAllCachedOpenDisputeRows(taskId);
-        let resolvedRows = this._getAllCachedResolvedDisputeRows(taskId);
-        const resolvedSlot = this._getPrefetchSlot('resolvedDisputes');
-        const prefetchFailed = resolvedSlot && resolvedSlot.status === 'error';
-        const cacheIncomplete = this._isPrefetchIncomplete('resolvedDisputes');
-        if (resolvedRows.length === 0 && (prefetchFailed || cacheIncomplete)) {
-            const fetched = await this._fetchTaskDisputesBatch([taskId]);
-            resolvedRows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
-        }
-        const combinedDisputes = [...openRows, ...resolvedRows];
-        if (combinedDisputes.length > 0) {
-            const resolverProfileIds = [];
-            for (const row of resolvedRows) {
-                if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+        const openDisputesReady = this._prefetchSlotTerminal('openDisputes');
+        const resolvedDisputesReady = this._prefetchSlotTerminal('resolvedDisputes');
+        if (!openDisputesReady && !resolvedDisputesReady) {
+            if (this._clearDisputeOverlaySide(item)) changed = true;
+        } else {
+            const openRows = openDisputesReady ? this._getAllCachedOpenDisputeRows(taskId) : [];
+            let resolvedRows = resolvedDisputesReady
+                ? this._getAllCachedResolvedDisputeRows(taskId)
+                : [];
+            if (resolvedDisputesReady) {
+                const resolvedSlot = this._getPrefetchSlot('resolvedDisputes');
+                const prefetchFailed = resolvedSlot && resolvedSlot.status === 'error';
+                const cacheIncomplete = this._isPrefetchIncomplete('resolvedDisputes');
+                if (resolvedRows.length === 0 && (prefetchFailed || cacheIncomplete)) {
+                    const fetched = await this._fetchTaskDisputesBatch([taskId]);
+                    resolvedRows = this._filterDisputeRowsForTask(fetched.get(String(taskId)) || [], taskId);
+                }
             }
-            if (resolverProfileIds.length > 0) {
-                await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+            const combinedDisputes = [...openRows, ...resolvedRows];
+            if (combinedDisputes.length > 0) {
+                const resolverProfileIds = [];
+                for (const row of resolvedRows) {
+                    if (row && row.resolved_by) resolverProfileIds.push(row.resolved_by);
+                }
+                if (resolverProfileIds.length > 0) {
+                    await this._supplementProfilesMap(profilesMap, resolverProfileIds);
+                }
+                this._mergeBulkDisputesOntoItem(item, combinedDisputes, profilesMap);
+                this._addItemOutputKind(item, 'dispute');
+                changed = true;
             }
-            this._mergeBulkDisputesOntoItem(item, combinedDisputes, profilesMap);
-            this._addItemOutputKind(item, 'dispute');
-            changed = true;
         }
 
-        const flagRows = this._getAllCachedFlagRows(taskId);
-        if (flagRows.length > 0) {
-            const flagProfileIds = [];
-            for (const row of flagRows) {
-                if (row && row.flagger_id) flagProfileIds.push(row.flagger_id);
-                if (row && row.resolved_by) flagProfileIds.push(row.resolved_by);
+        const pendingFlagsReady = this._prefetchSlotTerminal('pendingFlags');
+        const resolvedFlagsReady = this._prefetchSlotTerminal('resolvedFlags');
+        if (!pendingFlagsReady && !resolvedFlagsReady) {
+            if (this._clearFlagOverlaySide(item)) changed = true;
+        } else {
+            const tid = taskId != null ? String(taskId) : '';
+            const pending = pendingFlagsReady
+                ? ((this._getPrefetchCache('pendingFlags').get(tid) || []).slice())
+                : [];
+            const resolved = resolvedFlagsReady
+                ? ((this._getPrefetchCache('resolvedFlags').get(tid) || []).slice())
+                : [];
+            const flagRows = [...pending, ...resolved];
+            if (flagRows.length > 0) {
+                const flagProfileIds = [];
+                for (const row of flagRows) {
+                    if (row && row.flagger_id) flagProfileIds.push(row.flagger_id);
+                    if (row && row.resolved_by) flagProfileIds.push(row.resolved_by);
+                }
+                if (flagProfileIds.length > 0) {
+                    await this._supplementProfilesMap(profilesMap, flagProfileIds);
+                }
+                this._mergeBulkFlagsOntoItem(item, flagRows, profilesMap);
+                this._addItemOutputKind(item, 'senior_review');
+                changed = true;
             }
-            if (flagProfileIds.length > 0) {
-                await this._supplementProfilesMap(profilesMap, flagProfileIds);
-            }
-            this._mergeBulkFlagsOntoItem(item, flagRows, profilesMap);
-            this._addItemOutputKind(item, 'senior_review');
-            changed = true;
         }
         return changed;
     },
@@ -4625,10 +4746,9 @@ const searchOutputCoreMethods = {
             if (wrap) return wrap;
         }
         if (typeof this._q === 'function') {
-            const scoped = this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
-            if (scoped) return scoped;
+            return this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
         }
-        return this._modal ? this._modal.querySelector('[data-wf-dash-ms-wrap="' + scopeKey + '"]') : null;
+        return null;
     },
 
     _reindexFilterListsFromScope(resetDrafts) {
@@ -5429,10 +5549,29 @@ function attachSearchOutputListeners(modal, dash) {
         if (authorBox && authorInput) {
             authorBox.addEventListener('click', () => authorInput.focus());
             authorInput.addEventListener('keydown', (e) => {
+                const candidates = dash._state._candidates || [];
+                const listOpen = candidates.length > 0;
+                if (listOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                    e.preventDefault();
+                    dash._moveAuthorCandidateHighlight(e.key === 'ArrowDown' ? 1 : -1);
+                    return;
+                }
+                if (listOpen && e.key === 'Enter') {
+                    e.preventDefault();
+                    const idx = Math.max(0, Number(dash._state._candidateIndex) || 0);
+                    const cand = candidates[idx];
+                    if (cand) dash._addAuthorToken(cand);
+                    return;
+                }
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     const query = authorInput.value.trim();
-                    if (query) void dash._resolveAuthorToken(query);
+                    if (query) {
+                        void dash._resolveAuthorToken(query);
+                    } else if (dash._state.draftTokens.length > 0) {
+                        Logger.debug('dashboard: Enter in Contributors with resolved tokens — submitting search');
+                        void dash._submitSearch();
+                    }
                 } else if (e.key === 'Backspace' && authorInput.value === '' && dash._state.draftTokens.length > 0) {
                     dash._removeAuthorToken(dash._state.draftTokens[dash._state.draftTokens.length - 1].id);
                 }
@@ -6073,7 +6212,7 @@ function attachSearchOutputListeners(modal, dash) {
             if (candidate && modal.contains(candidate)) {
                 const id = candidate.getAttribute('data-wf-dash-candidate');
                 const cand = (dash._state._candidates || []).find((c) => c.id === id);
-                if (cand) { dash._addAuthorToken(cand); if (authorInput) authorInput.value = ''; }
+                if (cand) dash._addAuthorToken(cand);
                 return;
             }
             const removeTok = e.target.closest('[data-wf-dash-remove-token]');
@@ -6580,7 +6719,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.52',
+    _version: '9.57',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

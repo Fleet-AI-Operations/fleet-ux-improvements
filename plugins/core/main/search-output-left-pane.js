@@ -1099,18 +1099,26 @@ const searchOutputLeftPaneMethods = {
     },
 
     _addAuthorToken(person) {
-        if (this._isEveryoneAuthorToken(person)) return;
-        if (this._hasEveryoneAuthorToken()) {
-            this._state.draftTokens = this._state.draftTokens.filter((t) => !this._isEveryoneAuthorToken(t));
+        try {
+            if (this._isEveryoneAuthorToken(person)) return;
+            if (this._hasEveryoneAuthorToken()) {
+                this._state.draftTokens = this._state.draftTokens.filter((t) => !this._isEveryoneAuthorToken(t));
+            }
+            if (this._state.draftTokens.some((t) => t.id === person.id)) return;
+            this._state.draftTokens.push(person);
+            this._hideAuthorCandidates();
+            this._setAuthorError('');
+            this._renderAuthorTokens();
+            this._validateRangeUi();
+            this._maybeSwitchToAllTimeForContributor();
+            Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
+        } finally {
+            const input = this._q('#wf-dash-author-input');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
         }
-        if (this._state.draftTokens.some((t) => t.id === person.id)) return;
-        this._state.draftTokens.push(person);
-        this._hideAuthorCandidates();
-        this._setAuthorError('');
-        this._renderAuthorTokens();
-        this._validateRangeUi();
-        this._maybeSwitchToAllTimeForContributor();
-        Logger.log('dashboard: author token added (' + this._personDisplayLabel(person) + ')');
     },
 
     _ensureSearchOutputTabForUserSearch() {
@@ -1221,8 +1229,50 @@ const searchOutputLeftPaneMethods = {
         el.style.display = text ? 'block' : 'none';
     },
 
+    _authorCandidateBtnBaseStyle() {
+        return 'display: block; width: 100%; text-align: left; padding: 6px 8px; font-size: 11px;'
+            + ' border: none; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);';
+    },
+
+    _authorCandidateBtnStyle(active) {
+        const bg = active
+            ? 'background: var(--muted, #f1f5f9);'
+            : 'background: transparent;';
+        return this._authorCandidateBtnBaseStyle() + ' ' + bg;
+    },
+
+    _syncAuthorCandidateHighlight() {
+        const wrap = this._q('#wf-dash-author-candidates');
+        if (!wrap) return;
+        const buttons = wrap.querySelectorAll('[data-wf-dash-candidate]');
+        const idx = Number(this._state._candidateIndex);
+        buttons.forEach((btn, i) => {
+            const active = i === idx;
+            btn.style.cssText = this._authorCandidateBtnStyle(active);
+            if (active) {
+                btn.setAttribute('aria-selected', 'true');
+                btn.scrollIntoView({ block: 'nearest' });
+            } else {
+                btn.removeAttribute('aria-selected');
+            }
+        });
+    },
+
+    _moveAuthorCandidateHighlight(delta) {
+        const candidates = this._state._candidates || [];
+        if (candidates.length === 0) return;
+        const len = candidates.length;
+        let idx = Number(this._state._candidateIndex);
+        if (!Number.isFinite(idx) || idx < 0) idx = 0;
+        idx = (idx + delta) % len;
+        if (idx < 0) idx += len;
+        this._state._candidateIndex = idx;
+        this._syncAuthorCandidateHighlight();
+    },
+
     _showAuthorCandidates(results) {
         this._state._candidates = results;
+        this._state._candidateIndex = results.length > 0 ? 0 : -1;
         const wrap = this._q('#wf-dash-author-candidates');
         if (!wrap) return;
         wrap.innerHTML = `
@@ -1232,19 +1282,21 @@ const searchOutputLeftPaneMethods = {
                     const label = this._personDisplayLabel(c);
                     const showEmail = c.email && label !== c.email;
                     return `
-                    <button type="button" data-wf-dash-candidate="${dashEscHtml(c.id)}" style="display: block; width: 100%; text-align: left; padding: 6px 8px; font-size: 11px; background: transparent; border: none; border-radius: 4px; cursor: pointer; color: var(--foreground, #0f172a);">
+                    <button type="button" data-wf-dash-candidate="${dashEscHtml(c.id)}" style="${this._authorCandidateBtnStyle(false)}">
                         <span style="font-weight: 600;">${dashEscHtml(label)}</span>
                         ${showEmail ? `<span style="margin-left: 8px; color: var(--muted-foreground, #64748b);">${dashEscHtml(c.email)}</span>` : ''}
                     </button>`;
                 }).join('')}
             </div>`;
         wrap.style.display = 'block';
+        this._syncAuthorCandidateHighlight();
     },
 
     _hideAuthorCandidates() {
         const wrap = this._q('#wf-dash-author-candidates');
         if (wrap) { wrap.style.display = 'none'; wrap.innerHTML = ''; }
         this._state._candidates = [];
+        this._state._candidateIndex = -1;
     },
 
     _isDashSessionRefreshError(err) {
@@ -2609,7 +2661,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.17',
+    _version: '5.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -343,14 +343,11 @@ const teamMembersController = {
     _renderOpsTeamSearchActionRefreshBannerHtml() {
         this._ensureOpsAlertBannerStyles();
         const ab = this._opsAlertBannerClasses();
+        const icon = Context.uiLib.alertTriangleIconSvg({ size: 18, style: 'margin-right: 10px; color: #dc2626; margin-top: 2px;' });
         return [
             '<div id="wf-ops-team-search-action-refresh-banner" class="' + ab.root + ' ' + ab.danger + '">',
             '<div style="display: flex; align-items: flex-start; margin-bottom: 10px;">',
-            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 10px; color: #dc2626; flex-shrink: 0; margin-top: 2px;">',
-            '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>',
-            '<line x1="12" y1="9" x2="12" y2="13"></line>',
-            '<line x1="12" y1="17" x2="12.01" y2="17"></line>',
-            '</svg>',
+            icon,
             '<div style="flex: 1;">',
             '<h3 class="' + ab.title + '" style="font-size: 15px; font-weight: 600; margin: 0 0 8px 0;">Team Search Unavailable</h3>',
             '<p class="' + ab.body + '" style="font-size: 13px; margin: 0; line-height: 1.5;">',
@@ -362,8 +359,8 @@ const teamMembersController = {
             '</div>',
             '</div>',
             '<div class="' + ab.footer + '">',
-            '<button type="button" id="wf-ops-team-search-open-team" class="' + ab.btnSecondary + '">Refresh credentials</button>',
-            '<button type="button" id="wf-ops-team-search-retry-btn" class="' + ab.btnPrimary + '">Retry search</button>',
+            '<button type="button" id="wf-ops-team-search-open-team" class="' + ab.btnPrimary + '">Refresh credentials</button>',
+            '<button type="button" id="wf-ops-team-search-retry-btn" class="' + ab.btnSecondary + '" style="display: none;">Retry search</button>',
             '</div>',
             '</div>'
         ].join('');
@@ -408,12 +405,13 @@ const teamMembersController = {
             cards.innerHTML = this._renderOpsTeamSearchActionRefreshBannerHtml();
             const self = this;
             const openTeamBtn = cards.querySelector('#wf-ops-team-search-open-team');
+            const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
             if (openTeamBtn) {
                 openTeamBtn.addEventListener('click', () => {
+                    if (retryBtn) retryBtn.style.display = '';
                     Context.opsTab.openTeamPageForCredRefresh(modal);
                 });
             }
-            const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
             if (retryBtn) {
                 retryBtn.addEventListener('click', () => {
                     void self._handleOpsTeamSearchCredentialRetry(modal);
@@ -2118,7 +2116,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '5.0',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

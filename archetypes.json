@@ -1,7 +1,7 @@
 {
-  "version": "13.8",
+  "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.373",
+  "archetypesVersion": "14.388",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.18",
-      "hash": "sha256-f4fbf27932e0dbb682a34f2fb64c29af0c77967e4d06ca2e4f392b65be558aca",
+      "version": "3.19",
+      "hash": "sha256-c7143dc5532bc1702a879af9ec7671e5037b275eaf0d53f110d53229749f6181",
       "log": false
     },
     {
@@ -34,8 +34,8 @@
     },
     {
       "name": "settings-ui.js",
-      "version": "11.14",
-      "hash": "sha256-e0bf8a28ae58094257c4527153ae59147bcb3c835643e20989c60f3fe94d2b81",
+      "version": "11.17",
+      "hash": "sha256-269476c101a539f10e227ddff8b191f0eb7733077f83948101fb91db73082052",
       "log": false
     },
     {
@@ -206,8 +206,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "12.12",
-      "hash": "sha256-68e3c74df9bf25cd742fbc5c5429df95e24c04966547bdc070ca9a7176ba7d65",
+      "version": "12.13",
+      "hash": "sha256-b863cffbaf6042e53e352099d2789ddd4163b7a1dbe028dc5a91e53c001c6dea",
       "log": false
     },
     {
@@ -224,14 +224,14 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "5.17",
-      "hash": "sha256-ec2fddcfeb9061d9c21cd3c865d4df6f484f7f6b3c79fbcd6bd9a484595e3f49",
+      "version": "5.18",
+      "hash": "sha256-6fd082777f63fb9a863ec67835893539cb3a5cd18a4ea0ea7beaf7d8575419a9",
       "log": false
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "10.2",
-      "hash": "sha256-a04b7391757d1b04ee10275125ed0a7d1cdf15e0745b183ad80ae2ae96abc60c",
+      "version": "10.7",
+      "hash": "sha256-ce7246ad809d501bb14283e8ec3e6850c1e04d27b3e0143ed49baff2c13efb1e",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "9.52",
-      "hash": "sha256-b12c3c65342c2d2f2d0626732d281d415c986f3f3876dcde2090c307d9ae6fbe",
+      "version": "9.57",
+      "hash": "sha256-af4b495e5df588b173f6b578994163783c8d3df6d4f7e7b16eb0dfa3fe8a857a",
       "log": false
     },
     {
@@ -272,8 +272,8 @@
     },
     {
       "name": "team-members.js",
-      "version": "5.0",
-      "hash": "sha256-afce04a5e4e5294d69dcdc138fe14c30ca6b07338c64e0aae426a5b1156befd6",
+      "version": "5.3",
+      "hash": "sha256-e1cda0e6d30f05971c0db4a3de6604390dea3f5385b8d9c4a1651436884a7ea4",
       "log": false
     },
     {
