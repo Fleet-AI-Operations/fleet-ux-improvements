@@ -5854,13 +5854,20 @@ const searchOutputStatsPaneMethods = {
                 const pctLabel = this._ratingFormatEstimatedPercentile(estPct);
                 const secondary = pctLabel || (Math.round(slice.score) + ' / 100');
                 let scoreDisplay = secondary;
-                let tierId = null;
-                if (engine && typeof engine.populationTier === 'function') {
-                    const tier = engine.populationTier(slice.score, scoreKind, weighting, slice.volume);
+                let tierId = slice.tierId || null;
+                let tierLabel = String(slice.band || '').trim();
+                if ((!tierLabel || tierLabel === '—')
+                    && engine && typeof engine.populationTier === 'function') {
+                    const tier = engine.populationTier(
+                        slice.score, scoreKind, weighting, this._ratingsIncludeTime()
+                    );
                     if (tier && tier.label && tier.label !== '—') {
-                        scoreDisplay = tier.label + ' · ' + secondary;
+                        tierLabel = tier.label;
                     }
                     if (tier && tier.id) tierId = tier.id;
+                }
+                if (tierLabel && tierLabel !== '—') {
+                    scoreDisplay = tierLabel + ' · ' + secondary;
                 }
                 const vol = (slice.volume != null && Number.isFinite(slice.volume) && slice.volume > 0)
                     ? (Math.round(slice.volume * 10) / 10) + ' vol'
@@ -6352,7 +6359,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.1',
+    _version: '14.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
