@@ -5993,6 +5993,12 @@ function attachSearchOutputListeners(modal, dash) {
                 dash._setStatsScope(scope !== 'all');
                 return;
             }
+            const ratingsTimeBtn = e.target.closest('[data-wf-dash-ratings-time]');
+            if (ratingsTimeBtn && modal.contains(ratingsTimeBtn)) {
+                const value = ratingsTimeBtn.getAttribute('data-wf-dash-ratings-time');
+                dash._setRatingsIncludeTime(value !== 'notime');
+                return;
+            }
             const ratingsGenerateBtn = e.target.closest('[data-wf-dash-ratings-generate]');
             if (ratingsGenerateBtn && modal.contains(ratingsGenerateBtn)) {
                 dash._generateRatingsFromResults();
@@ -6719,7 +6725,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.57',
+    _version: '9.58',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -118,6 +118,75 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _ratingsTimeToggleHtml() {
+        const includeTime = this._ratingsIncludeTime();
+        return '<div data-wf-dash-ratings-time-wrap="true" class="fleet-ui-seg-group" style="flex-shrink: 0;">'
+            + this._ratingsTimeSegBtn('time', 'Time', includeTime, true)
+            + this._ratingsTimeSegBtn('notime', 'No Time', !includeTime, false)
+            + '</div>';
+    },
+
+    _ratingsTimeSegBtn(value, label, active, divider) {
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensureSegmentStyles === 'function') {
+            ui.ensureSegmentStyles('#wf-dash-modal');
+        }
+        if (ui && typeof ui.segmentBtnHtml === 'function') {
+            return ui.segmentBtnHtml({
+                valueAttr: 'data-wf-dash-ratings-time',
+                value,
+                label,
+                active,
+                divider
+            });
+        }
+        const divCls = divider ? ' fleet-ui-seg-btn--divider' : '';
+        return '<button type="button" data-wf-dash-ratings-time="' + dashEscHtml(value) + '" class="fleet-ui-seg-btn' + divCls + '" aria-pressed="' + (active ? 'true' : 'false') + '">' + dashEscHtml(label) + '</button>';
+    },
+
+    _ratingsIncludeTimeStorageKey() {
+        return 'ratings-include-time';
+    },
+
+    _ratingsIncludeTime() {
+        if (typeof this._state.ratingsIncludeTime === 'boolean') {
+            return this._state.ratingsIncludeTime;
+        }
+        const storage = Context.storage;
+        let stored = null;
+        if (storage && typeof storage.get === 'function') {
+            stored = storage.get(this._ratingsIncludeTimeStorageKey(), null);
+        }
+        const include = stored === false || stored === 'false' ? false : true;
+        this._state.ratingsIncludeTime = include;
+        return include;
+    },
+
+    _setRatingsIncludeTime(includeTime) {
+        const next = includeTime !== false;
+        this._state.ratingsIncludeTime = next;
+        const storage = Context.storage;
+        if (storage && typeof storage.set === 'function') {
+            storage.set(this._ratingsIncludeTimeStorageKey(), next);
+        }
+        this._syncRatingsTimeToggleUi();
+        this._renderRatingsPanel({ recompute: true });
+        Logger.log(next ? 'Time axes included in composite' : 'Time axes excluded from composite');
+    },
+
+    _syncRatingsTimeToggleUi() {
+        const includeTime = this._ratingsIncludeTime();
+        const statsCol = this._q('[data-wf-dash-stats-column]');
+        if (!statsCol) return;
+        statsCol.querySelectorAll('[data-wf-dash-ratings-time-wrap]').forEach((wrap) => {
+            wrap.querySelectorAll('[data-wf-dash-ratings-time]').forEach((btn) => {
+                const value = btn.getAttribute('data-wf-dash-ratings-time');
+                const active = includeTime ? value === 'time' : value === 'notime';
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        });
+    },
+
     _statsHScrollOuterStyle() {
         return 'min-width: 0; max-width: 100%; width: 100%; overflow-x: auto; overflow-y: hidden;'
             + ' -webkit-overflow-scrolling: touch;';
@@ -4844,7 +4913,9 @@ const searchOutputStatsPaneMethods = {
         if (engine && typeof engine.estimatePercentile === 'function'
             && score != null && Number.isFinite(Number(score))) {
             const kind = String(scoreKind || '').toLowerCase().indexOf('qa') === 0 ? 'qaqs' : 'twqs';
-            const pct = engine.estimatePercentile(score, kind, weighting || 'recency');
+            const pct = engine.estimatePercentile(
+                score, kind, weighting || 'recency', this._ratingsIncludeTime()
+            );
             return pct != null && Number.isFinite(Number(pct)) ? Math.round(Number(pct)) : null;
         }
         return null;
@@ -5040,7 +5111,8 @@ const searchOutputStatsPaneMethods = {
         return engine.compute({
             cachedItems: scopeItems,
             committed: effectiveCommitted,
-            workerProfiles: this._buildRatingWorkerProfiles(effectiveCommitted.authorIds, scopeItems)
+            workerProfiles: this._buildRatingWorkerProfiles(effectiveCommitted.authorIds, scopeItems),
+            includeTime: this._ratingsIncludeTime()
         });
     },
 
@@ -5055,7 +5127,10 @@ const searchOutputStatsPaneMethods = {
         return '<div id="wf-dash-ratings-toolbar" style="display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; min-width: 0; width: 100%;">'
             + '<div style="display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; width: 100%;">'
             + '<div id="wf-dash-ratings-summary" style="font-size: 11px; color: var(--muted-foreground, #64748b); min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></div>'
+            + '<div style="display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; flex-shrink: 0;">'
+            + this._ratingsTimeToggleHtml()
             + this._statsScopeToggleHtml()
+            + '</div>'
             + '</div>'
             + '<div style="' + this._statsHScrollOuterStyle() + '">'
             + '<div style="' + this._statsHScrollTrackStyle(8) + '">'
@@ -5078,6 +5153,7 @@ const searchOutputStatsPaneMethods = {
     _syncRatingsToolbarUi(visibleCount, totalCount) {
         const toolbar = this._q('#wf-dash-ratings-toolbar');
         if (!toolbar) return;
+        this._syncRatingsTimeToggleUi();
         const committed = this._state.committed || {};
         const hasReport = totalCount > 0;
         this._ensureRatingsSortKey(committed);
@@ -5263,16 +5339,18 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Outcome Quality',        weight: '45%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
-            { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
-            { label: 'Task Rating Quality',    weight: '15%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
+            { label: 'Outcome Quality',        weight: '35%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
+            { label: 'V1 Creation Time',       weight: '20%', measures: 'Average platform-tracked v1 creation time. Full credit from 15 to 60 minutes; the score falls toward zero as the average approaches 0 or 150 minutes. Toggleable.' },
+            { label: 'Positive Feedback Rate', weight: '15%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
+            { label: 'Task Rating Quality',    weight: '10%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
             { label: 'First-Pass Acceptance',  weight: '10%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
         ];
         const qaqsRows = [
-            { label: 'Return Effectiveness',  weight: '40%', measures: 'Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
-            { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
-            { label: 'Label Discrimination',  weight: '15%', measures: 'Top/Bottom label usage vs an ideal ~20% rate (full credit at 20%; falls toward 0 at 0% and at 40%+). Omitted when fewer than 10 feedback rows are in scope.' },
+            { label: 'Return Effectiveness',  weight: '30%', measures: 'Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
+            { label: 'QA Time',               weight: '20%', measures: 'Average platform-tracked QA review time. Full credit from 15 to 60 minutes; the score falls toward zero as the average approaches 0 or 150 minutes. Toggleable.' },
+            { label: 'Return Actionability',  weight: '20%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
+            { label: 'Label Discrimination',  weight: '10%', measures: 'Top/Bottom label usage vs an ideal ~20% rate (full credit at 20%; falls toward 0 at 0% and at 40%+). Omitted when fewer than 10 feedback rows are in scope.' },
             { label: 'Acceptance Scrutiny',   weight: '10%', measures: 'Two-sided check against unusually high or low accept rates. Full credit from 40% to 60%; the score falls toward zero as accepts approach 0% or 100%.' },
             { label: 'Dispute Loss Avoidance',weight: '10%', measures: 'Dispute losses linked to this reviewer\'s feedback, as a rate vs tasks they QA\'d. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. QA wins are neutral.' },
         ];
@@ -5295,7 +5373,10 @@ const searchOutputStatsPaneMethods = {
             + '<li><strong>Recency (default)</strong> — applies half-life decay exp(−ln(2)·age/30) to activity inside the window, so recent events weigh more.</li>'
             + '<li><strong>Flat</strong> — all in-scope events count equally.</li>'
             + '</ul>'
-            + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed.</p>'
+            + '<p style="margin: 0 0 8px;">JSON export always includes <strong>both</strong> weighting variants. The card toggle only changes what is displayed. Dispute-loss and tracked-time axes use unweighted or mean minutes as documented on each axis.</p>'
+
+            + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Time / No Time</div>'
+            + '<p style="margin: 0 0 8px;">The toolbar <strong>Time / No Time</strong> toggle includes or excludes the tracked-time axes (V1 Creation Time, QA Time) from the composite. Axes stay visible when off (greyed). Preference persists across sessions; default is Time on.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
             + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The same tier + percentile pattern appears on team / environment / month subset rows. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
@@ -5325,6 +5406,7 @@ const searchOutputStatsPaneMethods = {
             + '<ul style="margin: 0 0 10px 18px; padding: 0;">'
             + '<li>Scores cover the <strong>committed search window</strong> and <strong>hydrated result cards only</strong>, regardless of which search toggles (tasks, QA, sessions, disputes, etc.) produced those results.</li>'
             + '<li>The <strong>Filtered / All</strong> scope toggle applies: Filtered respects sidebar filters; All uses every card in the current results tab.</li>'
+            + '<li>The <strong>Time / No Time</strong> toggle includes or excludes tracked-time axes from the composite (axes still display when off).</li>'
             + '<li>With no date range, all history is eligible. With After/Before set, only events inside that window count — Recency applies within the window; Flat treats them equally.</li>'
             + '<li>Outcome Quality blends the current terminal calculation with a flat closure sub-score over production, discarded, and dismissed. The closure sub-score ignores bugged/flagged paths and has no recency decay. Disputes move a score only once <strong>resolved</strong>.</li>'
             + '<li>Self-reviews are excluded from all feedback axes.</li>'
@@ -5435,6 +5517,10 @@ const searchOutputStatsPaneMethods = {
                 return 'No human feedback rows in scope';
             case 'disputeDefense':
                 return 'No resolved disputes linked to this reviewer in scope';
+            case 'v1CreationTime':
+                return 'No tracked v1 creation time in scope';
+            case 'qaTime':
+                return 'No tracked QA review time in scope';
             // Legacy / fallback
             case 'feedbackResolution':
                 return 'No return episodes by this QA in scope';
@@ -5451,6 +5537,7 @@ const searchOutputStatsPaneMethods = {
     _ratingAxisBarHtml(axis) {
         if (!axis) return '';
         const omitted = axis.defined === false || axis.score == null;
+        const excluded = !omitted && axis.excluded === true;
         const label = axis.label || axis.id || '';
         if (omitted) {
             const reason = this._ratingAxisOmitReason(axis) || 'omitted';
@@ -5467,12 +5554,16 @@ const searchOutputStatsPaneMethods = {
             + ' background: color-mix(in srgb, var(--muted-foreground, #64748b) 22%, transparent); overflow: hidden;';
         const fillStyle = 'height: 100%; width: ' + fillPct + '%; border-radius: 3px;'
             + ' background: color-mix(in srgb, ' + barFill + ' 78%, transparent);';
-        let html = '<div style="margin-top: 6px;">'
+        const rowOpacity = excluded ? ' opacity: 0.45;' : '';
+        const labelColor = excluded
+            ? ' color: var(--muted-foreground, #64748b);'
+            : '';
+        let html = '<div style="margin-top: 6px;' + rowOpacity + '">'
             + '<div style="display: flex; align-items: center; gap: 8px; font-size: 10px;">'
-            + '<span style="flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">'
+            + '<span style="flex: 0 0 34%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;' + labelColor + '">'
             + dashEscHtml(label) + '</span>'
             + '<div style="' + trackStyle + '"><div style="' + fillStyle + '"></div></div>'
-            + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;">'
+            + '<span style="flex: 0 0 36px; text-align: right; font-variant-numeric: tabular-nums;' + labelColor + '">'
             + dashEscHtml(subPct != null ? (String(subPct) + '%') : '—') + '</span>'
             + '</div>'
             + '</div>';
@@ -6220,7 +6311,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '13.7',
+    _version: '14.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
