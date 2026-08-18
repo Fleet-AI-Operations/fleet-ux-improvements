@@ -5416,7 +5416,7 @@ const searchOutputStatsPaneMethods = {
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
         ];
         const qaqsRows = [
-            { label: 'Return Effectiveness',  weight: '30%', measures: 'Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
+            { label: 'Return Effectiveness',  weight: '30%', measures: 'Of ordinary returns (not escalations or Flag-as-Bug) on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
             { label: 'QA Time',               weight: '20%', measures: 'Each timed review is scored against that project\'s normal QA time band (middle half of population times for the env, else team, else global). Full credit inside the band; the score falls toward zero below the low edge or above the long-tail fence. Toggleable.' },
             { label: 'Return Actionability',  weight: '20%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
             { label: 'Label Discrimination',  weight: '10%', measures: 'Top/Bottom label usage vs an ideal ~20% rate (full credit at 20%; falls toward 0 at 0% and at 40%+). Omitted when fewer than 10 feedback rows are in scope.' },
@@ -6400,7 +6400,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.5',
+    _version: '14.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
