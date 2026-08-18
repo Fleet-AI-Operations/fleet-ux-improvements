@@ -126,13 +126,13 @@ const RE_TIER_THRESHOLDS = {
         flat:         { p10: 66.743, p30: 72.211, p70: 78.152, topMin: 80 },
         recency:      { p10: 70.942, p30: 74.11, p70: 76.916, topMin: 80 },
         flatNoTime:   { p10: 66.12, p30: 72.22, p70: 78.74, topMin: 80 },
-        recencyNoTime:{ p10: 70.23, p30: 74.081, p70: 77.34, topMin: 80 },
+        recencyNoTime:{ p10: 70.23, p30: 74.081, p70: 77.339, topMin: 80 },
     },
     qaqs: {
         flat:         { p10: 69.09, p30: 73.428, p70: 78.247, topMin: 78.257 },
         recency:      { p10: 71.766, p30: 74.826, p70: 78.97, topMin: 78.98 },
         flatNoTime:   { p10: 68.963, p30: 73.441, p70: 78.897, topMin: 78.907 },
-        recencyNoTime:{ p10: 72.071, p30: 74.593, p70: 79.657, topMin: 79.667 },
+        recencyNoTime:{ p10: 72.08, p30: 74.593, p70: 79.657, topMin: 79.667 },
     },
 };
 
@@ -144,15 +144,15 @@ const RE_TIER_THRESHOLDS = {
 const RE_PERCENTILE_PARAMS = {
     twqs: {
         flat:         { mu: 74.6032, sigma: 6.0451 },
-        recency:      { mu: 75.3654, sigma: 3.7703 },
+        recency:      { mu: 75.3655, sigma: 3.77 },
         flatNoTime:   { mu: 74.8039, sigma: 6.8064 },
-        recencyNoTime:{ mu: 75.4579, sigma: 4.2845 },
+        recencyNoTime:{ mu: 75.4579, sigma: 4.2839 },
     },
     qaqs: {
         flat:         { mu: 75.7275, sigma: 4.9993 },
-        recency:      { mu: 76.7142, sigma: 3.7064 },
+        recency:      { mu: 76.7145, sigma: 3.706 },
         flatNoTime:   { mu: 76.2382, sigma: 5.4664 },
-        recencyNoTime:{ mu: 77.1989, sigma: 4.2073 },
+        recencyNoTime:{ mu: 77.1997, sigma: 4.2067 },
     },
 };
 
