@@ -5267,7 +5267,7 @@ const searchOutputStatsPaneMethods = {
             { label: 'Positive Feedback Rate', weight: '20%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
             { label: 'Task Rating Quality',    weight: '15%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
             { label: 'First-Pass Acceptance',  weight: '10%', measures: 'Share of tasks accepted by the first human reviewer without a prior return.' },
-            { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Resolved dispute losses only. No disputes and dispute wins are neutral; only rejected writer disputes reduce the score.' },
+            { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
         ];
         const qaqsRows = [
             { label: 'Return Effectiveness',  weight: '40%', measures: 'Of returns on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
@@ -6220,7 +6220,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '13.6',
+    _version: '13.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
