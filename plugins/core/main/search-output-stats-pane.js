@@ -5274,7 +5274,7 @@ const searchOutputStatsPaneMethods = {
             { label: 'Return Actionability',  weight: '25%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
             { label: 'Label Discrimination',  weight: '15%', measures: 'Top/Bottom label usage vs an ideal ~20% rate (full credit at 20%; falls toward 0 at 0% and at 40%+). Omitted when fewer than 10 feedback rows are in scope.' },
             { label: 'Acceptance Scrutiny',   weight: '10%', measures: 'Two-sided check against unusually high or low accept rates. Full credit from 40% to 60%; the score falls toward zero as accepts approach 0% or 100%.' },
-            { label: 'Dispute Loss Avoidance',weight: '10%', measures: 'Disputes linked to this reviewer\'s feedback. Only disputes approved for the writer reduce the score. QA wins are neutral.' },
+            { label: 'Dispute Loss Avoidance',weight: '10%', measures: 'Dispute losses linked to this reviewer\'s feedback, as a rate vs tasks they QA\'d. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. QA wins are neutral.' },
         ];
         const td = 'padding: 4px 6px; border-bottom: 1px solid color-mix(in srgb, var(--border, #e2e8f0) 60%, transparent);';
         return '<details id="wf-dash-ratings-about" style="' + box + ' padding: 10px 12px; flex-shrink: 0;">'
@@ -6220,7 +6220,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '13.5',
+    _version: '13.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
