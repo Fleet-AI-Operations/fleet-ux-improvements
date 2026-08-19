@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.403",
+  "archetypesVersion": "14.404",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -89,9 +89,9 @@
       "log": false
     },
     {
-      "name": "dispute-screenshot-upload-improvement.js",
-      "version": "1.2",
-      "hash": "sha256-60ac4dfe99c5567002a5790ddef0df69fad57be89eafdffdc0e27718b43bef9a",
+      "name": "screenshot-upload-improvement.js",
+      "version": "1.0",
+      "hash": "sha256-68ff15e43dc1b6501589e8c926f354a537269c18d775779ad3db305acd7fdf5b",
       "log": false
     },
     {
@@ -120,8 +120,8 @@
     },
     {
       "name": "request-revisions.js",
-      "version": "1.0",
-      "hash": "sha256-e793fc29af2720de5ac4b6364a7ced390c15d7583d455ec1918058c84b5392bc",
+      "version": "1.1",
+      "hash": "sha256-24dd09f8e83fa09c73c6d2d0afe56d8bcf3c5b36264881992231501acfea0732",
       "log": false
     },
     {
@@ -632,6 +632,7 @@
         "accept-task-modal-improvements.js",
         "copy-verifier-output.js",
         "request-revisions.js",
+        "screenshot-upload-improvement.js",
         "source-data-explorer.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
@@ -744,6 +745,7 @@
         "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
         "request-revisions.js",
+        "screenshot-upload-improvement.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
@@ -849,7 +851,7 @@
       "disambiguationSelectors": [],
       "libraries": [
         "dispute-resolution-messages.js",
-        "dispute-screenshot-upload-improvement.js",
+        "screenshot-upload-improvement.js",
         "user-story-markdown.js"
       ],
       "plugins": [
@@ -873,8 +875,8 @@
         },
         {
           "name": "dispute-screenshot-upload-improvement.js",
-          "version": "1.0",
-          "hash": "sha256-209a36300a1cff37ff8133a66cbe46c7c4c5c37bfadfdc4280d951db12fa4977",
+          "version": "2.1",
+          "hash": "sha256-8fac05c811cabbd9c9d641cc386d471277c4d544609cd91d38947ecfcf2f2e8b",
           "log": false
         },
         {
@@ -899,7 +901,7 @@
       "disambiguationSelectors": [],
       "libraries": [
         "dispute-resolution-messages.js",
-        "dispute-screenshot-upload-improvement.js",
+        "screenshot-upload-improvement.js",
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
@@ -915,8 +917,8 @@
         },
         {
           "name": "dispute-screenshot-upload-improvement.js",
-          "version": "2.0",
-          "hash": "sha256-e2b32a6370d5c94201aa06928ef667ffd0e9b5a6310452618ae4567977734017",
+          "version": "2.1",
+          "hash": "sha256-8fac05c811cabbd9c9d641cc386d471277c4d544609cd91d38947ecfcf2f2e8b",
           "log": false
         },
         {

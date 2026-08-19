@@ -1,8 +1,8 @@
-// ============= dispute-screenshot-upload-improvement.js =============
-// Full-width drop/paste/click zone that forwards image files to the native
-// dispute resolution screenshot <input type="file"> (original label visually hidden).
+// ============= screenshot-upload-improvement.js (library) =============
+// Shared drag-drop / paste-image chrome that forwards files to a caller-supplied
+// native <input type="file">. Callers find the label+input anchors.
 
-const STYLE_ID = 'fleet-dispute-screenshot-upload-improvement-style';
+const STYLE_ID = 'fleet-screenshot-upload-improvement-style';
 const CONTROLS_WRAP_ATTR = 'data-fleet-screenshot-improvement-controls';
 const UPLOAD_CONTROL_ATTR = 'data-fleet-screenshot-upload-improvement';
 const PASTE_BUTTON_ATTR = 'data-fleet-screenshot-paste-image';
@@ -23,7 +23,7 @@ const DRAG_OVER_CLASSES = ['ring-2', 'ring-brand/50'];
 
 function imageFilesFromFileList(list) {
     if (!list || !list.length) return [];
-    return Array.from(list).filter(f => f.type && f.type.startsWith('image/'));
+    return Array.from(list).filter((f) => f.type && f.type.startsWith('image/'));
 }
 
 function imageFilesFromClipboard(clipboardData) {
@@ -53,26 +53,32 @@ function shouldIgnorePasteTarget(target) {
     return !passthrough.has(type);
 }
 
-const DisputeScreenshotUploadApi = {
-    id: 'disputeScreenshotUploadImprovement',
-    name: 'Dispute Screenshot Upload Improvement',
-    description:
-        'Replaces the resolution screenshot control with drag-drop/upload and paste-image controls; forwards files to the native input',
-
+const ScreenshotUploadApi = {
+    /**
+     * @param {object} state
+     * @param {object} options
+     * @param {HTMLElement} options.label — native file-input label (caller-found)
+     * @param {HTMLInputElement} options.input — native <input type="file"> (caller-found)
+     * @param {string} [options.pluginId]
+     * @param {string} [options.logTag]
+     */
     run(state, options) {
-        const pluginId = (options && options.pluginId) || this.id;
-        this.ensureStyles(state, pluginId);
-        const found = this.findNativeScreenshotControl();
-        if (!found) {
+        const opts = options || {};
+        const pluginId = opts.pluginId || 'screenshotUploadImprovement';
+        const label = opts.label;
+        const input = opts.input;
+
+        if (!label || !input) {
             if (!state.missingLogged) {
-                Logger.debug('Dispute screenshot upload improvement: native file control not found');
+                Logger.debug('native file control not found');
                 state.missingLogged = true;
             }
             return;
         }
         state.missingLogged = false;
 
-        const { label, input } = found;
+        this.ensureStyles(state, pluginId);
+
         const zone = label.parentElement;
         if (zone) {
             this.removeDuplicateImprovementControls(zone, label);
@@ -116,23 +122,23 @@ const DisputeScreenshotUploadApi = {
 `;
 
         let dragDepth = 0;
-        const onDragEnter = e => {
+        const onDragEnter = (e) => {
             e.preventDefault();
             e.stopPropagation();
             dragDepth++;
             uploadControl.classList.add(...DRAG_OVER_CLASSES);
         };
-        const onDragLeave = e => {
+        const onDragLeave = (e) => {
             e.preventDefault();
             e.stopPropagation();
             dragDepth = Math.max(0, dragDepth - 1);
             if (dragDepth === 0) uploadControl.classList.remove(...DRAG_OVER_CLASSES);
         };
-        const onDragOver = e => {
+        const onDragOver = (e) => {
             e.preventDefault();
             e.stopPropagation();
         };
-        const onDrop = e => {
+        const onDrop = (e) => {
             e.preventDefault();
             e.stopPropagation();
             dragDepth = 0;
@@ -168,15 +174,14 @@ const DisputeScreenshotUploadApi = {
         this.ensurePasteListener(state);
 
         if (!state.injectedLogged) {
-            Logger.log('Dispute screenshot upload improvement: controls row injected');
+            Logger.log('controls row injected');
             state.injectedLogged = true;
         }
     },
 
     /**
-     * React inserts the thumbnail row between our controls and the label, so
-     * label.previousElementSibling is no longer the upload button. Scope checks
-     * to the zone and remove any stray duplicate controls from older runs.
+     * React may insert a thumbnail row between our controls and the label.
+     * Scope checks to the zone and remove stray duplicates from older runs.
      */
     removeDuplicateImprovementControls(zone, label) {
         if (!zone.contains(label)) return;
@@ -188,24 +193,22 @@ const DisputeScreenshotUploadApi = {
 
         const primaryWrap = zone.querySelector(`[${CONTROLS_WRAP_ATTR}]`);
         if (primaryWrap) {
-            zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach(btn => {
+            zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach((btn) => {
                 if (!primaryWrap.contains(btn)) btn.remove();
             });
-            zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach(btn => {
+            zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach((btn) => {
                 if (!primaryWrap.contains(btn)) btn.remove();
             });
             return;
         }
 
-        zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach(btn => btn.remove());
-        zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach(btn => btn.remove());
+        zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach((btn) => btn.remove());
+        zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach((btn) => btn.remove());
     },
 
     async pasteImageFromClipboardApi(input) {
         if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
-            Logger.warn(
-                'Dispute screenshot upload improvement: Clipboard read API not available in this browser'
-            );
+            Logger.warn('Clipboard read API not available in this browser');
             return;
         }
         try {
@@ -218,25 +221,27 @@ const DisputeScreenshotUploadApi = {
                     const sub = type.split('/')[1] || 'png';
                     const safeExt = sub.replace(/[^a-z0-9]/gi, '') || 'png';
                     files.push(
-                        new File([blob], `paste-${Date.now()}.${safeExt}`, { type: blob.type || type })
+                        new File([blob], `paste-${Date.now()}.${safeExt}`, {
+                            type: blob.type || type
+                        })
                     );
                     break;
                 }
             }
             if (!files.length) {
-                Logger.debug('Dispute screenshot upload improvement: clipboard had no image');
+                Logger.debug('clipboard had no image');
                 return;
             }
             this.mergeIntoFileInput(input, files);
         } catch (err) {
-            Logger.error('Dispute screenshot upload improvement: clipboard read failed', err);
+            Logger.error('clipboard read failed', err);
         }
     },
 
     ensurePasteListener(state) {
         if (state.pasteListenerAttached) return;
         state.pasteListenerAttached = true;
-        const pasteHandler = ev => {
+        const pasteHandler = (ev) => {
             const files = imageFilesFromClipboard(ev.clipboardData);
             if (!files.length) return;
             if (shouldIgnorePasteTarget(ev.target)) return;
@@ -247,21 +252,7 @@ const DisputeScreenshotUploadApi = {
             this.mergeIntoFileInput(input, files);
         };
         CleanupRegistry.registerEventListener(document, 'paste', pasteHandler, true);
-        Logger.debug('Dispute screenshot upload improvement: document paste listener attached');
-    },
-
-    findNativeScreenshotControl() {
-        const labels = document.querySelectorAll('label');
-        for (const label of labels) {
-            const input = label.querySelector('input[type="file"][accept*="image"]');
-            if (!input || !input.multiple) continue;
-            const span = label.querySelector('span.text-sm');
-            const t = ((span && span.textContent) || '').trim().replace(/\s+/g, ' ');
-            if (t.includes('Add screenshots')) {
-                return { label, input };
-            }
-        }
-        return null;
+        Logger.debug('document paste listener attached');
     },
 
     ensureStyles(state, pluginId) {
@@ -270,7 +261,7 @@ const DisputeScreenshotUploadApi = {
         if (!style) {
             style = document.createElement('style');
             style.id = STYLE_ID;
-            style.setAttribute('data-fleet-plugin', pluginId || this.id);
+            style.setAttribute('data-fleet-plugin', pluginId);
             document.head.appendChild(style);
         }
         style.textContent = `
@@ -299,15 +290,11 @@ label[${NATIVE_LABEL_ATTR}] {
         }
         for (const f of newFiles) {
             if (f.size > MAX_BYTES) {
-                Logger.warn(
-                    `Dispute screenshot upload improvement: skipped "${f.name}" (over ${MAX_BYTES / (1024 * 1024)}MB)`
-                );
+                Logger.warn(`skipped "${f.name}" (over ${MAX_BYTES / (1024 * 1024)}MB)`);
                 continue;
             }
             if (dt.items.length >= MAX_FILES) {
-                Logger.warn(
-                    `Dispute screenshot upload improvement: max ${MAX_FILES} screenshots; extra file(s) ignored`
-                );
+                Logger.warn(`max ${MAX_FILES} screenshots; extra file(s) ignored`);
                 break;
             }
             dt.items.add(f);
@@ -319,29 +306,25 @@ label[${NATIVE_LABEL_ATTR}] {
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        Logger.log(
-            `Dispute screenshot upload improvement: merged paste/upload — ${input.files.length} file(s) on native input`
-        );
+        Logger.log(`merged paste/upload — ${input.files.length} file(s) on native input`);
     }
 };
-
 const plugin = {
-    id: 'disputeScreenshotUploadImprovementLib',
-    name: 'Dispute Screenshot Upload Improvement (library)',
+    id: 'screenshotUploadImprovementLib',
+    name: 'Screenshot Upload Improvement (library)',
     description:
-        'Shared API for dispute resolution screenshot drag-drop/upload and paste-image controls',
-    _version: '1.2',
+        'Shared drag-drop/paste screenshot chrome; callers supply native label and file input',
+    _version: '1.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
-        Context.disputeScreenshotUpload = {
-            run: (s, options) => DisputeScreenshotUploadApi.run(s, options)
+        Context.screenshotUpload = {
+            run: (s, options) => ScreenshotUploadApi.run(s, options)
         };
         if (!state.registered) {
-            Logger.log('module registered (Context.disputeScreenshotUpload)'
-            );
+            Logger.log('module registered (Context.screenshotUpload)');
             state.registered = true;
         }
     }

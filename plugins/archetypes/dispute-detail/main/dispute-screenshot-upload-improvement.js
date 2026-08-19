@@ -1,12 +1,12 @@
 // ============= dispute-screenshot-upload-improvement.js =============
-// Thin wrapper: shared Context.disputeScreenshotUpload library.
+// Finds the resolution "Add screenshots" control; chrome via Context.screenshotUpload.
 
 const plugin = {
     id: 'disputeScreenshotUploadImprovement',
     name: 'Dispute Screenshot Upload Improvement',
     description:
         'Replaces the resolution screenshot control with drag-drop/upload and paste-image controls; forwards files to the native input',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -16,9 +16,39 @@ const plugin = {
         pasteListenerAttached: false
     },
 
+    findNativeScreenshotControl() {
+        const labels = document.querySelectorAll('label');
+        for (const label of labels) {
+            const input = label.querySelector('input[type="file"][accept*="image"]');
+            if (!input || !input.multiple) continue;
+            const span = label.querySelector('span.text-sm');
+            const t = ((span && span.textContent) || '').trim().replace(/\s+/g, ' ');
+            if (t.includes('Add screenshots')) {
+                return { label, input };
+            }
+        }
+        return null;
+    },
+
     onMutation(state) {
-        const api = Context.disputeScreenshotUpload;
+        const api = Context.screenshotUpload;
         if (!api || typeof api.run !== 'function') return;
-        api.run(state, { pluginId: this.id });
+
+        const found = this.findNativeScreenshotControl();
+        if (!found) {
+            if (!state.missingLogged) {
+                Logger.debug('native file control not found');
+                state.missingLogged = true;
+            }
+            return;
+        }
+        state.missingLogged = false;
+
+        api.run(state, {
+            pluginId: this.id,
+            logTag: this.id,
+            label: found.label,
+            input: found.input
+        });
     }
 };
