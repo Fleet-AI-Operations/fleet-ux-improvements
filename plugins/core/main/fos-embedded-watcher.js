@@ -190,7 +190,7 @@ const plugin = {
     name: 'FOS Embedded Watcher',
     description:
         'Detects embedded FOS desktops and adds VM Clipboard controls on the parent page',
-    _version: '5.2',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -201,6 +201,7 @@ const plugin = {
         readyInstances: null,
         uiHosts: null,
         readinessListeners: null,
+        desktopListeners: null,
         messageListenerInstalled: false,
         resultListenerInstalled: false,
         ackListenerInstalled: false,
@@ -233,6 +234,9 @@ const plugin = {
         }
         if (!state.readinessListeners) {
             state.readinessListeners = new Set();
+        }
+        if (!state.desktopListeners) {
+            state.desktopListeners = new Set();
         }
         this._state = state;
         this._exposeApi(state);
@@ -293,6 +297,32 @@ const plugin = {
                     state.readinessListeners.delete(listener);
                 };
             },
+            isFosDesktop(instanceId) {
+                const id = String(instanceId || '');
+                if (!id) {
+                    return false;
+                }
+                const rec = state.fosInstances.get(id);
+                return !!(rec && rec.isFosDesktop);
+            },
+            subscribeDesktop(listener) {
+                if (typeof listener !== 'function') {
+                    return () => {};
+                }
+                state.desktopListeners.add(listener);
+                state.fosInstances.forEach((rec, instanceId) => {
+                    if (rec && rec.isFosDesktop) {
+                        try {
+                            listener({ instanceId, isFosDesktop: true });
+                        } catch (_e) {
+                            /* ignore */
+                        }
+                    }
+                });
+                return () => {
+                    state.desktopListeners.delete(listener);
+                };
+            },
             getReadyInstances() {
                 return self._getReadyInstancesList(state);
             },
@@ -333,6 +363,20 @@ const plugin = {
                 listener({ instanceId: String(instanceId), ready: !!ready });
             } catch (e) {
                 Logger.warn('readiness listener threw', e);
+            }
+        });
+    },
+
+    _notifyDesktopIdentification(state, instanceId) {
+        const id = String(instanceId || '');
+        if (!id || !state.desktopListeners) {
+            return;
+        }
+        state.desktopListeners.forEach((listener) => {
+            try {
+                listener({ instanceId: id, isFosDesktop: true });
+            } catch (e) {
+                Logger.warn('desktop listener threw', e);
             }
         });
     },
@@ -490,6 +534,7 @@ const plugin = {
                 id +
                 (reason ? ' (' + reason + ')' : '')
         );
+        this._notifyDesktopIdentification(state, id);
         this._onInstanceProgress(state, id);
         return true;
     },
@@ -869,6 +914,7 @@ const plugin = {
                     instanceId +
                     ' (env-key)'
             );
+            this._notifyDesktopIdentification(state, instanceId);
         }
         if (!child || !child.source || typeof child.source.postMessage !== 'function') {
             return false;

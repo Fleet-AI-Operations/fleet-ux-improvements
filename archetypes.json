@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.410",
+  "archetypesVersion": "14.411",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -40,8 +40,8 @@
     },
     {
       "name": "fos-embedded-watcher.js",
-      "version": "5.2",
-      "hash": "sha256-22baa0b02b91d82c5c2d22f470780cae2dab65c7d9deaebfb1f6f2e48bf24ede",
+      "version": "5.3",
+      "hash": "sha256-13b9abedb17188577dc8a252653235fc8116d48e387829b1ec85a2c5d4340e37",
       "log": false
     }
   ],
@@ -104,6 +104,12 @@
       "name": "fos-vm-clipboard-bar.js",
       "version": "1.7",
       "hash": "sha256-3bbdb07880f30ada510b57c95108339e5239519ea2d785837ec95197dfe7d40c",
+      "log": false
+    },
+    {
+      "name": "fos-iframe-autoconnect.js",
+      "version": "1.0",
+      "hash": "sha256-4bad186e468b548d890d3afa0b3aef87c564d547a57ffde5d36895d7b41b687d",
       "log": false
     },
     {
@@ -305,7 +311,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.36"
+      "version": "1.37"
     }
   ],
   "archetypes": [
@@ -521,6 +527,7 @@
         "embedded-urlbar-fit.js",
         "action-counter.js",
         "fos-vm-clipboard-bar.js",
+        "fos-iframe-autoconnect.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
       ],
@@ -541,6 +548,12 @@
           "name": "fos-vm-clipboard.js",
           "version": "2.1",
           "hash": "sha256-814b760804fd15837dee2087faf9b6dc73455a1245ecb922755203989dbb48c9",
+          "log": false
+        },
+        {
+          "name": "fos-iframe-autoconnect.js",
+          "version": "1.0",
+          "hash": "sha256-7fc60017878a0ae5a8d49c92fa33885f179c81aed1f96a153dc2fa23f1685940",
           "log": false
         },
         {
@@ -580,6 +593,7 @@
         "prompt-scratchpad.js",
         "action-counter.js",
         "fos-vm-clipboard-bar.js",
+        "fos-iframe-autoconnect.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
       ],
@@ -600,6 +614,12 @@
           "name": "fos-vm-clipboard.js",
           "version": "2.0",
           "hash": "sha256-7c15434c8773235ff010e6e292279abd498594a4ded07ebe51f011e59b21df8e",
+          "log": false
+        },
+        {
+          "name": "fos-iframe-autoconnect.js",
+          "version": "1.0",
+          "hash": "sha256-600bf2baa926b0881bbcb5eb2c51cb3c17a7c75236cbdfc2e09b5a608b679265",
           "log": false
         },
         {
@@ -744,6 +764,7 @@
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
+        "fos-iframe-autoconnect.js",
         "request-revisions.js",
         "screenshot-upload-improvement.js",
         "top-nav-horizontal-scroll.js",
@@ -791,6 +812,12 @@
           "name": "fos-vm-clipboard.js",
           "version": "1.2",
           "hash": "sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9",
+          "log": false
+        },
+        {
+          "name": "fos-iframe-autoconnect.js",
+          "version": "1.0",
+          "hash": "sha256-6fc5facc97878303aa1e7be038eda3917eb61d32454c6d1aefaa0ca38911f413",
           "log": false
         },
         {
@@ -905,6 +932,7 @@
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
+        "fos-iframe-autoconnect.js",
         "user-story-markdown.js",
         "verifier-source-tab.js"
       ],
@@ -937,6 +965,12 @@
           "name": "fos-vm-clipboard.js",
           "version": "1.2",
           "hash": "sha256-bb6c066c58e5bf843439c6b18e35d95ba88ab6e1f0c7a3b1fed4d813d0ab9f66",
+          "log": false
+        },
+        {
+          "name": "fos-iframe-autoconnect.js",
+          "version": "1.0",
+          "hash": "sha256-69c4c11b03d832d9378de13a3d206b3a7a7aa95eb614c242a0d0a77a74872bf1",
           "log": false
         },
         {

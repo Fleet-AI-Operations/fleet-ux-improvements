@@ -1,4 +1,4 @@
-1.36
+1.37
 
 ## Features
 
@@ -35,12 +35,14 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Computer Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### QA Tool Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
@@ -62,6 +64,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **"Request Revisions" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
@@ -74,6 +77,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Task View
 *No production plugins are configured for this archetype.*
