@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.404",
+  "archetypesVersion": "14.405",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -132,8 +132,8 @@
     },
     {
       "name": "top-nav-horizontal-scroll.js",
-      "version": "2.2",
-      "hash": "sha256-b5e338e7bc2a1f6d25222b0de492b2cde1d9aa59b5834b9914c4eba336c44e41",
+      "version": "3.0",
+      "hash": "sha256-174b3e195b9e774424b6f204d4484d6799432381bf5adacc112ae81f41be9e8a",
       "log": false
     },
     {
@@ -678,8 +678,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.2",
-          "hash": "sha256-cb761036c9419e7529586829c2e26cd7abbefe104fd92a1f49d47589868a5f26",
+          "version": "2.0",
+          "hash": "sha256-5e4e4abe13ffafc453c4200b8dde63816644a3ecfe9db36dceeb94b70639cf75",
           "log": false
         },
         {
@@ -726,8 +726,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.2",
-          "hash": "sha256-decc8534f155f4aefd64812132fb2ad453b78c2d9adb8662b2aaa0688de36479",
+          "version": "2.0",
+          "hash": "sha256-274cb70854e248ca84ef0d6cf891edaddc638928e6e4cb6ebbafdcc325ceb20d",
           "log": false
         }
       ]
@@ -801,8 +801,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "1.2",
-          "hash": "sha256-02860c2a144499de84a2f160a251337918c28193eaaa413b07418695537bc0ad",
+          "version": "2.0",
+          "hash": "sha256-db47fada7cef17db33c0dd533fdf0b374673b0bbcf1f308f3cdf44dc37504072",
           "log": false
         },
         {
