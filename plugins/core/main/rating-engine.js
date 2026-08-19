@@ -2264,8 +2264,8 @@ const RatingEngine = {
 const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
-    description: 'TWQS and QAQS computation for Worker Output Search ratings (WPS/QPS aligned)',
-    _version: '16.0',
+    description: 'Computes TWQS and QAQS scores for Worker Output Search ratings',
+    _version: '16.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -22,8 +22,8 @@ const LABEL_TO_FIELD = {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Activity Identity Reveal',
-    description: 'When Ops is unlocked, replaces anonymized task-view activity names with real worker name, email, and profile link',
-    _version: '1.7',
+    description: 'When Ops is unlocked, show real worker name, email, and profile link in task activity',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
 

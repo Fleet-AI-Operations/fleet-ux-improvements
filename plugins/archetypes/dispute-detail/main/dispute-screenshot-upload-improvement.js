@@ -5,8 +5,8 @@ const plugin = {
     id: 'disputeScreenshotUploadImprovement',
     name: 'Dispute Screenshot Upload Improvement',
     description:
-        'Replaces the resolution screenshot control with drag-drop/upload and paste-image controls; forwards files to the native input',
-    _version: '2.1',
+        'Drag-and-drop, upload, and paste for dispute resolution screenshots',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

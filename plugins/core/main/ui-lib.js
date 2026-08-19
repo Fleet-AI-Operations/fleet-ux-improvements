@@ -1462,8 +1462,8 @@ function fleetUiUserStoryProseCssText() {
 const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
-    description: 'Shared UI tokens, buttons, icon SVGs, segments, filter toggles, panels, and copy feedback',
-    _version: '3.19',
+    description: 'Shared buttons, segments, panels, and copy feedback',
+    _version: '3.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

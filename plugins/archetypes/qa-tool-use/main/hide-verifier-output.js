@@ -17,8 +17,8 @@ const plugin = {
     id: 'hideVerifierOutput',
     name: 'Hide Verifier Output',
     description:
-        'Adds Hide/Show Verifier on the Verifier Output header; hides the output body and collapses the bottom panel until shown or Run Verifier starts',
-    _version: '1.7',
+        'Hide/Show Verifier Output on the bottom panel',
+    _version: '1.8',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

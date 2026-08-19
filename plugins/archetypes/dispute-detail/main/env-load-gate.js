@@ -4,8 +4,8 @@
 const plugin = {
     id: 'disputeToolEnvGate',
     name: 'Dispute Tool Environment Gate',
-    description: 'Detects tool environment readiness for dispute detail pages',
-    _version: '1.4',
+    description: 'Marks when the tool environment is ready on dispute detail',
+    _version: '1.5',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

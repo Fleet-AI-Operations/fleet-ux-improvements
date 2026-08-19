@@ -34,8 +34,8 @@ function deepChatStripEsmExport(source) {
 const plugin = {
     id: 'deepChatLib',
     name: 'Deep Chat (library)',
-    description: 'Lazy-loads the Deep Chat Web Component for shared AI chat UI',
-    _version: '1.1',
+    description: 'Loads the Deep Chat UI used by AI chat features',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
 

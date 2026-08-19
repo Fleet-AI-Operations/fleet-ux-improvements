@@ -3,8 +3,8 @@ const EmbeddedUrlbarFitApi = {
     id: 'compUseRevisionEmbeddedUrlbarFit',
     name: 'Computer Use Revision Embedded URL Bar Fit',
     description:
-        'Keeps embedded instance toolbar right-side controls visible by forcing URL segment to shrink/truncate',
-    _version: '2.1',
+        'Keeps embedded toolbar controls visible when the URL is long',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, appliedLogged: false, hadToolbarRows: false },
@@ -71,8 +71,8 @@ const EmbeddedUrlbarFitApi = {
 const plugin = {
     id: 'embeddedUrlbarFitLib',
     name: 'Embedded URL Bar Fit (library)',
-    description: 'Shared API for embedded instance URL bar truncation',
-    _version: '2.0',
+    description: 'Keeps embedded toolbar controls visible when the URL is long',
+    _version: '2.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

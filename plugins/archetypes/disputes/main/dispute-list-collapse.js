@@ -14,8 +14,8 @@ const plugin = {
     id: 'disputeListCollapse',
     name: 'Dispute List Collapse',
     description:
-        'Hijack native dispute expand for a full collapse toggle; remember closed dispute numbers across reloads',
-    _version: '1.3',
+        'Full collapse for dispute cards; remembers closed disputes across reloads',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

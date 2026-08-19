@@ -217,8 +217,8 @@ const plugin = {
     id: 'fosVmClipboardBarLib',
     name: 'FOS VM Clipboard Bar (library)',
     description:
-        'Shared VM Clipboard Extract/Overwrite bar chrome (archetype modules supply find/mount)',
-    _version: '1.6',
+        'Shared VM Clipboard Extract/Overwrite bar',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

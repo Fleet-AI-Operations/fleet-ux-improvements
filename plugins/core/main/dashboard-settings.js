@@ -1243,8 +1243,8 @@ function attachDashboardSettingsListeners(modal) {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Settings',
-    description: 'Settings tab for dashboard tab order, Search Output defaults, AI Integration / OpenRouter, and Search Chat limits',
-    _version: '1.21',
+    description: 'Ops Settings: tab order, Search Output defaults, and AI limits',
+    _version: '1.22',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

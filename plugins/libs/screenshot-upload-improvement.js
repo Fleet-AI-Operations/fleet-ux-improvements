@@ -313,8 +313,8 @@ const plugin = {
     id: 'screenshotUploadImprovementLib',
     name: 'Screenshot Upload Improvement (library)',
     description:
-        'Shared drag-drop/paste screenshot chrome; callers supply native label and file input',
-    _version: '1.0',
+        'Shared drag-and-drop, upload, and paste for screenshots',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

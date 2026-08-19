@@ -189,8 +189,8 @@ const plugin = {
     id: 'fosEmbeddedWatcher',
     name: 'FOS Embedded Watcher',
     description:
-        'Detects embedded FOS desktop envs (env_key fos substring or noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '5.1',
+        'Detects embedded FOS desktops and adds VM Clipboard controls on the parent page',
+    _version: '5.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: {

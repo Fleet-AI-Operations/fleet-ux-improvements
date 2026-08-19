@@ -396,8 +396,8 @@ const SourceDataExplorerApi = {
 const plugin = {
     id: 'sourceDataExplorerLib',
     name: 'Explore GUI (library)',
-    description: 'Shared Explore GUI API: mcp-proxy capture, acknowledgment modal, and button chrome (archetype modules supply placement)',
-    _version: '6.3',
+    description: 'Shared Explore GUI button and environment open flow',
+    _version: '6.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

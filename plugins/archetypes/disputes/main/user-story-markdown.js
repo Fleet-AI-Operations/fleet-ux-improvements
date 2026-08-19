@@ -19,8 +19,8 @@ const plugin = {
     id: 'userStoryMarkdown',
     name: 'User Story Markdown',
     description:
-        'Markdown-rendered User Story replica and full-story copy button in the Task Scenario modal',
-    _version: '1.1',
+        'Renders the User Story as markdown with a full-story copy button in the Task Scenario modal',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

@@ -6,7 +6,7 @@ const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
-    description: 'When off, hides the External VNC Helper modal; ⌘C/⌘V and Ctrl+Shift+C/F still work.',
+    description: 'Hide the External VNC Helper panel (keyboard clipboard shortcuts still work)',
     enabledByDefault: true
 };
 const FORCE_DARK_SUBOPTION = {
@@ -21,7 +21,7 @@ const plugin = {
     name: 'External VNC Helper',
     description:
         'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '1.13',
+    _version: '1.14',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],

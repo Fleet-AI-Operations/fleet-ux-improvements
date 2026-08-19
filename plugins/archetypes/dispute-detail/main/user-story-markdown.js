@@ -20,8 +20,8 @@ const plugin = {
     id: 'userStoryMarkdown',
     name: 'User Story Markdown',
     description:
-        'Markdown-rendered Scenario / User Story collapsible and full-story copy control on dispute detail',
-    _version: '1.1',
+        'Renders Scenario / User Story as markdown with a full-story copy control on dispute detail',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

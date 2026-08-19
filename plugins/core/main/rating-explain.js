@@ -539,8 +539,8 @@ const RatingExplain = {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Rating Explain',
-    description: 'AI chat to explain Worker Output Search rating cards via OpenRouter',
-    _version: '4.10',
+    description: 'Explains Worker Output Search rating cards in chat',
+    _version: '4.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

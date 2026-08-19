@@ -469,8 +469,8 @@ const WorkHistoryApi = {
 const plugin = {
     id: 'workHistory',
     name: 'Work History',
-    description: 'Session APIs for Task Creation, Feedback Given, and Disputes Reviewed daily breakdowns',
-    _version: '1.1',
+    description: 'Session data for Task Creation, Feedback Given, and Disputes Reviewed breakdowns',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

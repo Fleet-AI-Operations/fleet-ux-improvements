@@ -5,8 +5,8 @@ const plugin = {
     id: 'compUseTaskCreationEmbeddedUrlbarFit',
     name: 'Computer Use Task Creation Embedded URL Bar Fit',
     description:
-        'Keeps embedded instance toolbar right-side controls visible by forcing URL segment to shrink/truncate',
-    _version: '1.2',
+        'Keeps embedded toolbar controls visible when the URL is long',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, appliedLogged: false, hadToolbarRows: false },

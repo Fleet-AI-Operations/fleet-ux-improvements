@@ -26,8 +26,8 @@ function chartJsGmFetchText(url) {
 const plugin = {
     id: 'chart-js',
     name: 'Chart.js Loader',
-    description: 'Lazy-loads Chart.js from jsDelivr for Worker Output Search stats charts',
-    _version: '2.2',
+    description: 'Loads Chart.js for Worker Output Search stats charts',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
 

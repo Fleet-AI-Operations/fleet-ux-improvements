@@ -4524,8 +4524,8 @@ const SearchOutputChatApi = {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
-    description: 'Chat tab over search results with OpenRouter tool loop',
-    _version: '7.3',
+    description: 'Chat over search results (OpenRouter)',
+    _version: '7.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

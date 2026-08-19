@@ -8,8 +8,8 @@ const plugin = {
     id: 'assessmentsGradeClipboardEventTimes',
     name: 'Grade Clipboard Event Times',
     description:
-        'Shows clipboard integrity event offsets as at Xm, Ys with delta from the previous event',
-    _version: '1.2',
+        'Shows clipboard event times as minutes and seconds, with gaps between events',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

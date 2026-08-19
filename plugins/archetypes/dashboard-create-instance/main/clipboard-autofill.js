@@ -5,8 +5,8 @@ const plugin = {
     id: 'dashboardCreateInstanceClipboardAutofill',
     name: 'Create Instance Clipboard Autofill',
     description:
-        'Adds Autofill & Create Instance from clipboard JSON, optional Always Autocreate, using combobox keyboard navigation like workflow cache.',
-    _version: '1.6',
+        'Autofill and create instances from clipboard JSON, with optional Always Autocreate',
+    _version: '1.7',
     enabledByDefault: true,
     phase: 'mutation',
 

@@ -464,8 +464,8 @@ const UserStoryMarkdownApi = {
 const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
-    description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.6',
+    description: 'Shared User Story markdown rendering',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

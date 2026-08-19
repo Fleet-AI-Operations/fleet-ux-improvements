@@ -4,8 +4,8 @@
 const plugin = {
     id: 'prefetch-output-tabs',
     name: 'Prefetch Output Tabs',
-    description: 'Disputes and Sr Review inventory tabs fed by session prefetch',
-    _version: '1.0',
+    description: 'Disputes and Sr Review inventory tabs',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

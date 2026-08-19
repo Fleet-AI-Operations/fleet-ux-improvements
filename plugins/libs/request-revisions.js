@@ -934,8 +934,8 @@ const plugin = {
     id: 'requestRevisionsLib',
     name: '"Request Revisions" Modal Improvements (library)',
     description:
-        'Shared API for Request Revisions guidelines, copy actions, task-only issues, and screenshot upload',
-    _version: '1.1',
+        'Shared Request Revisions guidelines, copy actions, and screenshot upload',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

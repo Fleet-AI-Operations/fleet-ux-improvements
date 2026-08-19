@@ -2447,8 +2447,8 @@ const AiChatApi = {
 const plugin = {
     id: 'aiChatLib',
     name: 'AI Chat (library)',
-    description: 'Shared OpenRouter chat transcript UI (Deep Chat) and streaming controller',
-    _version: '8.2',
+    description: 'Shared OpenRouter chat UI and streaming',
+    _version: '8.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1909,8 +1909,8 @@ function statsDefaultBuilderDraft(catalog) {
 const plugin = {
     id: 'search-output-stats-engine',
     name: 'Search Output stats engine',
-    description: 'Worker Output Search stats dashboard catalog, aggregation, and persistence',
-    _version: '8.4',
+    description: 'Builds and saves Worker Output Search stats charts',
+    _version: '8.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

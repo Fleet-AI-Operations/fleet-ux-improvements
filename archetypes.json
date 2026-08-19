@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.408",
+  "archetypesVersion": "14.409",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,20 +16,20 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.19",
-      "hash": "sha256-c7143dc5532bc1702a879af9ec7671e5037b275eaf0d53f110d53229749f6181",
+      "version": "3.20",
+      "hash": "sha256-3635b878b0cba3ddf0dd89a6ade48f5a36d4780f654daf4f65e40f67c3e6f229",
       "log": false
     },
     {
       "name": "highlight-js.js",
-      "version": "1.8",
-      "hash": "sha256-1ae4eac93c5f639cdd55358a519bc91b0ef84890f474f343690c151eb6e341bf",
+      "version": "1.9",
+      "hash": "sha256-b8fb829703daf3b7add1d03e68b4affdc5a3aa8458d41c3dd8684076a1c9be27",
       "log": false
     },
     {
       "name": "ops-tab.js",
-      "version": "13.1",
-      "hash": "sha256-43833c71966619d4624bbf69ade5cdd886334c656725250b79f7189ec1289f5e",
+      "version": "13.2",
+      "hash": "sha256-20c585dbefaa7165f4600d7ce17faf32bb3f8a97ae418257cd5a58628ac95487",
       "log": false
     },
     {
@@ -40,180 +40,180 @@
     },
     {
       "name": "fos-embedded-watcher.js",
-      "version": "5.1",
-      "hash": "sha256-20199d38ddc888e979e97ae47c913ea125f19528f23b798ab63ef00817dbb156",
+      "version": "5.2",
+      "hash": "sha256-22baa0b02b91d82c5c2d22f470780cae2dab65c7d9deaebfb1f6f2e48bf24ede",
       "log": false
     }
   ],
   "libraries": [
     {
       "name": "accept-task-modal-improvements.js",
-      "version": "2.2",
-      "hash": "sha256-64d01272e6eae90999072fb25eed6796752db9064bfd96a1a9a70fc03eca9f6b",
+      "version": "2.3",
+      "hash": "sha256-0707031982051172a43a9f2507be481f22c8c900026bfde041a94f2b86b4e6db",
       "log": false
     },
     {
       "name": "action-counter.js",
-      "version": "3.5",
-      "hash": "sha256-86569fec5340956e34eb3e1e4b2fd22aaf42354a3661eb207b799d52e069ff1a",
+      "version": "3.6",
+      "hash": "sha256-49c00218b929f28486523c00f574c65a4190ea04c1cb57a71eafd1885b003df3",
       "log": false
     },
     {
       "name": "ai-chat.js",
-      "version": "8.2",
-      "hash": "sha256-6b6b5af97c188bae67629131410ee24fd0609ae4a569174af1797e6b009ca580",
+      "version": "8.3",
+      "hash": "sha256-c435cc63964cd14aa127c2093fa73b0e9a905d47d1b27e8621f466c19df509b7",
       "log": false
     },
     {
       "name": "chart-js.js",
-      "version": "2.2",
-      "hash": "sha256-cb89649cc4258c0acf7c607c2aef0356ca65daaa43bd415de23d995dd0667a66",
+      "version": "2.3",
+      "hash": "sha256-69b3fdd2a9dd71fac325e03940a962d3ad25ff8c8c458a69b797cc40e12aea5f",
       "log": false
     },
     {
       "name": "copy-verifier-output.js",
-      "version": "5.3",
-      "hash": "sha256-993e221a95502dd30aa4aa8dbd76a000d41b764fb3de56c0c71b0afeba644a0d",
+      "version": "5.4",
+      "hash": "sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d",
       "log": false
     },
     {
       "name": "deep-chat-lib.js",
-      "version": "1.1",
-      "hash": "sha256-e462b7a2eff8656415ac3bee62d9692fef5fb85dd9b300929ffbac1f97388088",
+      "version": "1.2",
+      "hash": "sha256-2a4f0ffc38e0b607286a44cdedce05a028c85bd9da673499a250eb77c88a3bd6",
       "log": false
     },
     {
       "name": "dispute-resolution-messages.js",
-      "version": "1.3",
-      "hash": "sha256-7e5ac91ae12a77755d6ea01a4c183996f67793f3b29e0b5589f4d5db8959c748",
+      "version": "1.4",
+      "hash": "sha256-88aeeb496282fdf06e234da5968d280d0609af71d070a7966fdb1f49fe39a66c",
       "log": false
     },
     {
       "name": "screenshot-upload-improvement.js",
-      "version": "1.0",
-      "hash": "sha256-68ff15e43dc1b6501589e8c926f354a537269c18d775779ad3db305acd7fdf5b",
+      "version": "1.1",
+      "hash": "sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371",
       "log": false
     },
     {
       "name": "embedded-urlbar-fit.js",
-      "version": "2.1",
-      "hash": "sha256-5e04f59d357e8dc9983855e4cf1a61a8c52d5a1206f186100af42c7a07a8648e",
+      "version": "2.2",
+      "hash": "sha256-02544efa2b3864250729c757fe6bde61d684e2c88b0f199fa97c48a74f8ca760",
       "log": false
     },
     {
       "name": "fos-vm-clipboard-bar.js",
-      "version": "1.6",
-      "hash": "sha256-62ee006a65e9fb95150a3a38d88f5b3699c6a6ed219c4bb8877b6b1173ae3f97",
+      "version": "1.7",
+      "hash": "sha256-3bbdb07880f30ada510b57c95108339e5239519ea2d785837ec95197dfe7d40c",
       "log": false
     },
     {
       "name": "notes-resize-handle.js",
-      "version": "2.1",
-      "hash": "sha256-8c50c724de682c94b9c01e1d4e53bb0473bf0a7c781a01e452dbc6e5859e943b",
+      "version": "2.2",
+      "hash": "sha256-845e1f33ecf6a389a9c66c5e5242bb7a15830e4544b4502860a6a911d96a5dcd",
       "log": false
     },
     {
       "name": "prompt-scratchpad.js",
-      "version": "3.2",
-      "hash": "sha256-e4b1defdac35f0b0c04b3799b3d78229a736596352084be424b6ba0d4dce611a",
+      "version": "3.3",
+      "hash": "sha256-1391b3d0b3d7ab405b9680d5bc37668a58eb6935ccc2b14fae96c9fdfbfd1fb4",
       "log": false
     },
     {
       "name": "request-revisions.js",
-      "version": "1.1",
-      "hash": "sha256-24dd09f8e83fa09c73c6d2d0afe56d8bcf3c5b36264881992231501acfea0732",
+      "version": "1.2",
+      "hash": "sha256-b835c1c13b5bcb185401f3f333bf559651817b5d1b3551a8e02795d2e4f538c5",
       "log": false
     },
     {
       "name": "source-data-explorer.js",
-      "version": "6.3",
-      "hash": "sha256-411ffcfcab0c8e6a373f632f9164be98b1db408fe712c8de38fe9798b35e9943",
+      "version": "6.4",
+      "hash": "sha256-aff3b1f56971397569c9f2dee6eb087142f5692478c42ebe3d675ead7318df09",
       "log": false
     },
     {
       "name": "top-nav-horizontal-scroll.js",
-      "version": "3.1",
-      "hash": "sha256-c593101d527f30d56cba47cbfe653f7a955275d43cba3993a8a838d0727f54d6",
+      "version": "3.2",
+      "hash": "sha256-3a83b51180ecac0c1437d3bb7c398b9934d658e5557a727eff608100678731d1",
       "log": false
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.6",
-      "hash": "sha256-d7ae7b51879be8ae5b840da05b0fec90ef5c96ee33faf48861b2dd2cbd204fb2",
+      "version": "1.7",
+      "hash": "sha256-ce8d2183b74f045b5d3448394cff5b3f693e9600a2cba2b533dba0c187cdec8c",
       "log": false
     },
     {
       "name": "user-story-collapse.js",
-      "version": "1.4",
-      "hash": "sha256-4faf4681f14d913695bb57ab174637fd4351b9a4fe201870dcd7f11cb6e0dfcb",
+      "version": "1.5",
+      "hash": "sha256-281bb61ec79a77f9b2c3e2eb2ba5803ec6d990b64520d02e0faee743512a115f",
       "log": false
     },
     {
       "name": "verifier-source-tab.js",
-      "version": "3.1",
-      "hash": "sha256-d59183557a552d7b6a0da0436f41e76056b231f2647fcbb9dbb4c9a4ada6b6ff",
+      "version": "3.2",
+      "hash": "sha256-9fc5c16dc9fe75a7761579cbee3fd924ee4b62d439a21d6bea89bdc7662f9c81",
       "log": false
     },
     {
       "name": "vnc-helper.js",
-      "version": "3.5",
-      "hash": "sha256-ebf823d5a1834904b70fa425ed4d1541459b0ed58d6cc58f50291cfb809df866",
+      "version": "3.7",
+      "hash": "sha256-c358ee1e1377373edc976e473296673733716663687a44ccae77bf184aefa673",
       "log": false
     },
     {
       "name": "work-history.js",
-      "version": "1.1",
-      "hash": "sha256-7539ab2fe2ff2362e6605c92857dcc232ca1e3ef5bc79ceb222790886372a3d8",
+      "version": "1.2",
+      "hash": "sha256-f505071f33a18a1a4fa7995e5c5a2bd0edf1246c3644f1fbd948560cf099f0f3",
       "log": false
     },
     {
       "name": "env-helper.js",
-      "version": "2.4",
-      "hash": "sha256-38a274d22761d1a2bdae657d40cb0559b744452c22bf5bc7bcb134f1de508d6e",
+      "version": "2.6",
+      "hash": "sha256-a9a71855df6890b90a6c6d57511444a66a1d244b428e8f5083d3c47801165a0f",
       "log": false
     }
   ],
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "8.8",
-      "hash": "sha256-221ca512ac295af00effe911a56504bb2f5419d35b25260a944b4b40a35acf7b",
+      "version": "8.9",
+      "hash": "sha256-5a91b0ebe14ca198119b402b22d71f0af74c5b88e2f339e7bf818a3eb5d8c2ca",
       "log": false
     },
     {
       "name": "rating-engine.js",
-      "version": "16.0",
-      "hash": "sha256-dba097053943b8995e84211d6372a7981347495c808e90b95bc0c8fe37f1b6ed",
+      "version": "16.1",
+      "hash": "sha256-a46c307bd08736d3ab47daa848cf4000f0a464b3eae1f06664e0f81973956396",
       "log": false
     },
     {
       "name": "rating-explain.js",
-      "version": "4.10",
-      "hash": "sha256-56d2b7f83423264fd69dd6d984d3454e46aa37f4c7af3d1e7388ada7b6b7ba23",
+      "version": "4.11",
+      "hash": "sha256-8fe83530f00606766c50865f29ce97ef9a981a81b84ed9ce18eecce6429a6eea",
       "log": false
     },
     {
       "name": "dashboard-data.js",
-      "version": "3.1",
-      "hash": "sha256-4e3d9ca5e292886270fe460ef4079ac6ab8937c21ef8fca51017634dd48ac0a4",
+      "version": "3.2",
+      "hash": "sha256-bd63962bce4c1a1b87ffd13c59024e60af3062b0121381d1e4e1bd2653d54e4b",
       "log": false
     },
     {
       "name": "dashboard.js",
-      "version": "12.13",
-      "hash": "sha256-b863cffbaf6042e53e352099d2789ddd4163b7a1dbe028dc5a91e53c001c6dea",
+      "version": "12.14",
+      "hash": "sha256-1d8e649421f7b4a5e6930879196ccb8d0c8b223039c53300133dd4762cb0ba86",
       "log": false
     },
     {
       "name": "dashboard-chats.js",
-      "version": "4.2",
-      "hash": "sha256-f58a0b2ade59a610c748dcc78860e3bfe5b2cf737d8a62ece2cb835a4a5b5bc4",
+      "version": "4.3",
+      "hash": "sha256-c02a5e1e699136bee06dce25fcc8713588e16f10ee602464b839a5a2f396eb9e",
       "log": false
     },
     {
       "name": "diff-engine.js",
-      "version": "4.1",
-      "hash": "sha256-724b02c3cd6651eeccebb10af495bc1b5347bc7f0864f639d771e47ebcbca285",
+      "version": "4.2",
+      "hash": "sha256-ad6feb59ceea65d7bcac987ae911e6b0efdb2afe7ecf8ef8d28e7149ea0fe71d",
       "log": false
     },
     {
@@ -230,14 +230,14 @@
     },
     {
       "name": "search-output-stats-engine.js",
-      "version": "8.4",
-      "hash": "sha256-e5afeb085535b385b80bceac158b6e4815e7bd0010c22a7fef1cfc821435ca28",
+      "version": "8.5",
+      "hash": "sha256-f1564394ab74ace04cee3be17db6eb824ba2ee78d0808d9d521f6e4243391af2",
       "log": false
     },
     {
       "name": "search-output-chat.js",
-      "version": "7.3",
-      "hash": "sha256-8fa920b1dfeb7a9854f754d9accc9a788247e1d3c5f7bb47756d0d9d7e65d1f1",
+      "version": "7.4",
+      "hash": "sha256-4d7fb4938ffbaa34f7ec21daece0e40c3ef3ed1c5ccc40f4c7e8cce16d07891b",
       "log": false
     },
     {
@@ -248,20 +248,20 @@
     },
     {
       "name": "search-output.js",
-      "version": "9.60",
-      "hash": "sha256-f5a0e817fa96e99f823a5efe72ff67c8c66da5b47ac84f0d6977fb9bf4a98e21",
+      "version": "9.61",
+      "hash": "sha256-0ccdd2a4cd6f77bbaea0c6e92a8be8730e42c6ee109952e63fd6cc7059e7f9b3",
       "log": false
     },
     {
       "name": "prefetch-output-tabs.js",
-      "version": "1.0",
-      "hash": "sha256-e5d2ec1fc8f458aa4ef3c08b9f7cbcc5a0c3af9f5fb4bcde2569d6eab5bc0d80",
+      "version": "1.1",
+      "hash": "sha256-199f757396a917bbcfd9c0d936ae3c0534a95c549a698ec61df6f176be6dd6d8",
       "log": false
     },
     {
       "name": "diff-viewer.js",
-      "version": "5.11",
-      "hash": "sha256-b9487be4c715c4d3bb04792b3c7922bd6776e5d695a76607ced3f4fe7d59212f",
+      "version": "5.12",
+      "hash": "sha256-dbcae314505f7d1aabd572db83e60490914c42ed7074fd074e7ec50aca822f87",
       "log": false
     },
     {
@@ -272,14 +272,14 @@
     },
     {
       "name": "verifier-fetcher.js",
-      "version": "9.1",
-      "hash": "sha256-94602c34795e2bdb18aa657eb8184ef6478e11bdfd9d4608d836c1b32181488b",
+      "version": "9.2",
+      "hash": "sha256-77bcf212d957c45e8ff210bd4864d3dbf98d1cd55c6c59ae27a558f39822f909",
       "log": false
     },
     {
       "name": "dashboard-settings.js",
-      "version": "1.21",
-      "hash": "sha256-99923bcc257d96314a703de2af78e3dcbc0fdc60f03c76604abb9ae47690c7fe",
+      "version": "1.22",
+      "hash": "sha256-976517dfa6f72f40d984c69944f86cb4e58a2df37a6cf9ea183f270158824127",
       "log": false
     }
   ],
@@ -360,8 +360,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "2.0",
-          "hash": "sha256-6a41cf5660629ed5895d6c2e14ef7fa5105610b27277caf056fec160e37fdf62",
+          "version": "2.1",
+          "hash": "sha256-7c289d3b5546d48c6ce7d6ebed7b84767024e611d6912f0c2e0e87a636b3a52c",
           "log": false
         },
         {
@@ -378,8 +378,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "version": "1.1",
+          "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
           "log": false
         },
         {
@@ -430,8 +430,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "version": "1.1",
+          "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
           "log": false
         },
         {
@@ -463,8 +463,8 @@
         },
         {
           "name": "source-data-explorer.js",
-          "version": "2.0",
-          "hash": "sha256-99300983d547085735de2c1fc8d1fdf00d30c1b479306f72624715256e98829e",
+          "version": "2.1",
+          "hash": "sha256-4cf146a35d700887e32a865fdb2ae75be44de55584d63770a56c13df2c0809cb",
           "log": false
         },
         {
@@ -475,8 +475,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "version": "1.1",
+          "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
           "log": false
         },
         {
@@ -498,14 +498,14 @@
     {
       "id": "dashboard-create-instance",
       "name": "Dashboard Create Instance",
-      "description": "Dashboard page for creating instances; clipboard JSON autofill",
+      "description": "Dashboard page for creating instances",
       "urlPattern": "dashboard/instances/create",
       "disambiguationSelectors": [],
       "plugins": [
         {
           "name": "clipboard-autofill.js",
-          "version": "1.6",
-          "hash": "sha256-37b2aa4ab33cb95d0769e1ece0757419de82cd0a14904160f75a800cfa8fc08c",
+          "version": "1.7",
+          "hash": "sha256-382a1c8307e20229182cfb161218b02ac15e8a483366a789f7793ac6df54f95e",
           "log": false
         }
       ]
@@ -533,8 +533,8 @@
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.2",
-          "hash": "sha256-af74f8721b45ca18eff146a4edf8c6487826c6dfe9dab9e7f0a73d2ab93b1a6f",
+          "version": "1.3",
+          "hash": "sha256-d7b3cfe1e234a99b732b4b1d71d00a448ce4c6783b0d20e85d6961d43b23dfee",
           "log": false
         },
         {
@@ -557,8 +557,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "version": "1.1",
+          "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
           "log": false
         },
         {
@@ -592,8 +592,8 @@
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.2",
-          "hash": "sha256-cca653428acbc93995fea150e9169d44c5c5a9337aff413579824e4126dd90aa",
+          "version": "1.3",
+          "hash": "sha256-5e839dd994fde0ea2de4b1a2bcdd64a3c83a15bc012ff42afe5c1583fe752573",
           "log": false
         },
         {
@@ -610,8 +610,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "version": "1.1",
+          "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
           "log": false
         },
         {
@@ -648,14 +648,14 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "4.1",
-          "hash": "sha256-f1c1c2347b110c25bbe15d4106108f7e737fa012203bc33c8863693a91dfe347",
+          "version": "4.2",
+          "hash": "sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b",
           "log": false
         },
         {
           "name": "hide-verifier-output.js",
-          "version": "1.7",
-          "hash": "sha256-8bb9cbbc72446d748aaddeb372f327d17da260d4fd1d9829274a4138307e19b3",
+          "version": "1.8",
+          "hash": "sha256-22888468f4715d7152cb411e98d2de55183327fb540d8ba455273875c1806781",
           "log": false
         },
         {
@@ -678,8 +678,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "2.1",
-          "hash": "sha256-1e96ab1073b692bbe15d2e8d161cbf8cbf7e2d8d4baa70e4254a33a5160492ac",
+          "version": "2.2",
+          "hash": "sha256-827919bffce8c2baf8833c11a41dcea2a5abfb35d7dcf3990ccf70bf543cd0b6",
           "log": false
         },
         {
@@ -690,14 +690,14 @@
         },
         {
           "name": "useful-links-buttons.js",
-          "version": "3.1",
-          "hash": "sha256-b1d99a9dd317c86850aebaa0fccd1f72543cb2bdb2c3c8e690ff7b038191ea04",
+          "version": "3.2",
+          "hash": "sha256-f6076bffaa4d8ddf68ae267a933cf7333a19f33565f7750c39db303cad9cdf6a",
           "log": false
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "version": "1.1",
+          "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
           "log": false
         },
         {
@@ -720,14 +720,14 @@
       "plugins": [
         {
           "name": "auto-expand-verifier-section.js",
-          "version": "1.2",
-          "hash": "sha256-f10b37ced30242adc7084eee83b2c65d3c4e3865402e46dd9db8de3ac7257272",
+          "version": "1.3",
+          "hash": "sha256-08f201bc87f3c63a8182ba504af603d46499b72ea97a1fcae3d9fcb54ad9df85",
           "log": false
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "2.1",
-          "hash": "sha256-687925448c3b8ce5c7f123403adf7402ebbc5105eac8720e8f01a81531f32412",
+          "version": "2.2",
+          "hash": "sha256-0a61a1e2b543345ea199d697e08166fc457bda0373094a603dd6b38644b95d42",
           "log": false
         }
       ]
@@ -735,7 +735,7 @@
     {
       "id": "qa-comp-use",
       "name": "Computer Use Task Creation Page",
-      "description": "Page for  reviewing and approving tasks",
+      "description": "Page for reviewing and approving tasks",
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
       "libraries": [
@@ -765,8 +765,8 @@
         },
         {
           "name": "auto-start-recording.js",
-          "version": "1.3",
-          "hash": "sha256-60ac4e852ea1e4b846c30eff16124aaa275f5e4d9db3208def47f371d36c436e",
+          "version": "1.4",
+          "hash": "sha256-41c516f670f44c9d03d736b938ecfe346313b28810766e3860b322d039a80cd1",
           "log": false
         },
         {
@@ -777,14 +777,14 @@
         },
         {
           "name": "copy-verifier-output.js",
-          "version": "4.1",
-          "hash": "sha256-f1c1c2347b110c25bbe15d4106108f7e737fa012203bc33c8863693a91dfe347",
+          "version": "4.2",
+          "hash": "sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b",
           "log": false
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.2",
-          "hash": "sha256-58491167edb29153eafe3448763e68dea1209ec4073036a1b77721478a8dc3cf",
+          "version": "1.3",
+          "hash": "sha256-76e1e3289a6c0ed618366c64bc3e28d00dc767376dfd19ba7bcde61b84bd4e40",
           "log": false
         },
         {
@@ -801,8 +801,8 @@
         },
         {
           "name": "top-nav-horizontal-scroll.js",
-          "version": "2.1",
-          "hash": "sha256-87b11b12acd20cda2cbc5dacac125e80f719345093c6f1d402b66f0d3b663ee8",
+          "version": "2.2",
+          "hash": "sha256-be233916bed1e6914a0e522617c38a34841226a4d9ce9129f7abd3c935300152",
           "log": false
         },
         {
@@ -813,8 +813,8 @@
         },
         {
           "name": "show-verifier-on-run.js",
-          "version": "1.3",
-          "hash": "sha256-7676c0b584c589a3499abc17a063ba36982c1e7024b56866c5e0289689b5fa95",
+          "version": "1.4",
+          "hash": "sha256-c2e4e617d066522280dfa894595d996e75ffb9040f2abad75315f8a872d8975c",
           "log": false
         },
         {
@@ -825,8 +825,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-121a4fb079e347d59dea84d3f9bad5b2617ed79bed0fc4cfc41dc8504234c17e",
+          "version": "1.1",
+          "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
           "log": false
         },
         {
@@ -863,8 +863,8 @@
         },
         {
           "name": "dispute-list-collapse.js",
-          "version": "1.3",
-          "hash": "sha256-8db4052a0743941d3e3001a7fd8bf2c6cdce48c1d1f2f6cec6b1dbe704dfa866",
+          "version": "1.4",
+          "hash": "sha256-e8a9e18eb30ffb30ec4338175f5eb845899e231a55fa989a354565fce04a44fd",
           "log": false
         },
         {
@@ -875,8 +875,8 @@
         },
         {
           "name": "dispute-screenshot-upload-improvement.js",
-          "version": "2.1",
-          "hash": "sha256-8fac05c811cabbd9c9d641cc386d471277c4d544609cd91d38947ecfcf2f2e8b",
+          "version": "2.2",
+          "hash": "sha256-bc3d1a676819d7d6ec6affd0ce16c21ff6fa1ceed6f60584b28b51b53f1d0780",
           "log": false
         },
         {
@@ -887,8 +887,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.1",
-          "hash": "sha256-56491a288b5ee729f80452739b339b4ba989d3c21d98a149bfc581b93698ddf1",
+          "version": "1.2",
+          "hash": "sha256-053a47538155b35ec5a766ee7b55291b3b78d8de4a113dcd609975101d138bc3",
           "log": false
         }
       ]
@@ -911,26 +911,26 @@
       "plugins": [
         {
           "name": "copy-verifier-output.js",
-          "version": "4.1",
-          "hash": "sha256-f1c1c2347b110c25bbe15d4106108f7e737fa012203bc33c8863693a91dfe347",
+          "version": "4.2",
+          "hash": "sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b",
           "log": false
         },
         {
           "name": "dispute-screenshot-upload-improvement.js",
-          "version": "2.1",
-          "hash": "sha256-8fac05c811cabbd9c9d641cc386d471277c4d544609cd91d38947ecfcf2f2e8b",
+          "version": "2.2",
+          "hash": "sha256-bc3d1a676819d7d6ec6affd0ce16c21ff6fa1ceed6f60584b28b51b53f1d0780",
           "log": false
         },
         {
           "name": "embedded-urlbar-fit.js",
-          "version": "1.2",
-          "hash": "sha256-0bd9cac617ff209a365f6fea6650b18724ac033ebb19912945c42936e1e7df6a",
+          "version": "1.3",
+          "hash": "sha256-b2782d65cff615f80605c8c3a03cb6fb0b1affd896e354b088eb16caca9506df",
           "log": false
         },
         {
           "name": "env-load-gate.js",
-          "version": "1.4",
-          "hash": "sha256-637cf09fe09fb404a9b4c65be52b6387f999127f3f6363bb49ad5ac54e9e0b0e",
+          "version": "1.5",
+          "hash": "sha256-d0db96fef820b7c12ca1d15ee7d999694eec5ad797960500caa08f94b1642bdc",
           "log": false
         },
         {
@@ -971,8 +971,8 @@
         },
         {
           "name": "user-story-markdown.js",
-          "version": "1.1",
-          "hash": "sha256-7bac72db888c579a7089370d8fb8d3f1e107502617539cc766eb5299ac8072a6",
+          "version": "1.2",
+          "hash": "sha256-bd4703bc5f63c20aa08db6babe4177f495ff40e10e69f604d5730edcd8905ae0",
           "log": false
         }
       ]
@@ -980,14 +980,14 @@
     {
       "id": "task-view",
       "name": "Task View",
-      "description": "Page for viewing a task (view-task)",
+      "description": "Page for viewing a task",
       "urlPattern": "work/problems/view-task*",
       "disambiguationSelectors": [],
       "plugins": [
         {
           "name": "activity-identity-reveal.js",
-          "version": "1.7",
-          "hash": "sha256-5ddba31f661bf7598a8bb52a89a3381aaf27637bd608915e8cc90939a251b870",
+          "version": "1.8",
+          "hash": "sha256-5d94671a274b81d9d2ba7eb055e55db971dc7c87eec85ef83744681cbd0bbe4f",
           "log": false
         }
       ]
@@ -995,7 +995,7 @@
     {
       "id": "dashboard-data-task",
       "name": "Dashboard Data Task View",
-      "description": "Dashboard task detail page at dashboard/data/tasks/task_*",
+      "description": "Dashboard task detail page",
       "urlPattern": "dashboard/data/tasks/*",
       "disambiguationSelectors": [],
       "libraries": [
@@ -1010,8 +1010,8 @@
         },
         {
           "name": "prompt-version-actions.js",
-          "version": "2.4",
-          "hash": "sha256-096e4e429f66ecd0368ac1166c63de6a03ccf7c33202e4e187d2ba968f0d2c71",
+          "version": "2.5",
+          "hash": "sha256-937ed3084118d62e281a1733595572555149357f95ca0b8e7582821201cbce4c",
           "log": false
         },
         {
@@ -1025,7 +1025,7 @@
     {
       "id": "dashboard-data-expert",
       "name": "Dashboard Data Expert Profile",
-      "description": "Expert profile page at dashboard/data/experts/*",
+      "description": "Expert profile page on the dashboard",
       "urlPattern": "dashboard/data/experts/*",
       "disambiguationSelectors": [],
       "plugins": [
@@ -1056,14 +1056,14 @@
       "plugins": [
         {
           "name": "vnc-helper.js",
-          "version": "1.13",
-          "hash": "sha256-ff810da3d3f1a18d93b2a24cc7b2d214a2c1e86c3879c1eb8eef31ef7c425a03",
+          "version": "1.14",
+          "hash": "sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411",
           "log": false
         },
         {
           "name": "env-helper.js",
-          "version": "1.5",
-          "hash": "sha256-e86c9a6a1750ee28bb89baf9c4a4030fcb5191b4f8beba999ed20db03eb8588a",
+          "version": "1.6",
+          "hash": "sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c",
           "log": false
         }
       ]
@@ -1071,7 +1071,7 @@
     {
       "id": "assessments-grade",
       "name": "Assessments Grade",
-      "description": "Assessment grading queue at work/assessments/grade",
+      "description": "Assessment grading queue",
       "urlPattern": "work/assessments/grade",
       "disambiguationSelectors": [
         "text:To grade"
@@ -1079,14 +1079,14 @@
       "plugins": [
         {
           "name": "grade-content-full-width.js",
-          "version": "1.0",
-          "hash": "sha256-9f023778f7689b94da062bf7c292ff101eb39ff768ecc1f4c292de842ea5d2d7",
+          "version": "1.1",
+          "hash": "sha256-3a2c3f5b9bb8ef593b88fabb96a85a7ac0a88e09a09eb24ff2c27c9e5fba8b23",
           "log": false
         },
         {
           "name": "submitted-prompt-scroll-resize.js",
-          "version": "1.3",
-          "hash": "sha256-41352c354195201d24a2fb262a1066fdf5eb3d30dffeb478f16c8dfdfb0330b1",
+          "version": "1.4",
+          "hash": "sha256-16cc7c11f199b036cebccffe97130ed85767e9c870726db7919074982a72d4f2",
           "log": false
         }
       ]
@@ -1094,7 +1094,7 @@
     {
       "id": "assessments-grade-detail",
       "name": "Assessments Grade Detail",
-      "description": "Individual assessment grading at work/assessments/grade/*",
+      "description": "Individual assessment grading page",
       "urlPattern": "work/assessments/grade/*",
       "disambiguationSelectors": [
         "text:← Back to queue"
@@ -1102,8 +1102,8 @@
       "plugins": [
         {
           "name": "clipboard-event-relative-times.js",
-          "version": "1.2",
-          "hash": "sha256-3cc93b4e3efaa74595a8f462d45ed90864a79c078ffac69b029b0d1497d55f4e",
+          "version": "1.3",
+          "hash": "sha256-ff11fe712e0cd68e4efd21420d580dabc8444c8acfacc6f6777925495a5e0667",
           "log": false
         },
         {
@@ -1254,7 +1254,7 @@
     {
       "id": "qa-comp-use",
       "name": "Computer Use Task Creation Page",
-      "description": "Page for  reviewing and approving tasks",
+      "description": "Page for reviewing and approving tasks",
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
       "plugins": []

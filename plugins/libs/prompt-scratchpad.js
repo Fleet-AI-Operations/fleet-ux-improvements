@@ -5,7 +5,7 @@ const PromptScratchpadApi = {
     id: 'promptScratchpad',
     name: 'Scratchpad',
     description: 'Adds an adjustable height scratchpad to the page',
-    _version: '3.2',
+    _version: '3.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -232,8 +232,8 @@ const PromptScratchpadApi = {
 const plugin = {
     id: 'promptScratchpadLib',
     name: 'Prompt Scratchpad (library)',
-    description: 'Shared API for adjustable prompt scratchpad',
-    _version: '3.1',
+    description: 'Shared adjustable prompt scratchpad',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1930,8 +1930,8 @@ function attachVerifierFetcherListeners(modal) {
 const plugin = {
     id: 'verifier-fetcher',
     name: 'Verifier Fetcher',
-    description: 'Verifier code fetch tab for the Ops dashboard (Verifier Output + optional AI Decode/chat)',
-    _version: '9.1',
+    description: 'Verifier code tab for the Ops dashboard, with optional AI decode',
+    _version: '9.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

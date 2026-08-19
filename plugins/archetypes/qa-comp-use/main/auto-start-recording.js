@@ -4,8 +4,8 @@
 const plugin = {
     id: 'autoStartRecording',
     name: 'Auto Start Recording',
-    description: 'Automatically clicks the "Start Recording" button once when it appears on the page.',
-    _version: '1.3',
+    description: 'Starts recording automatically when the button appears',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

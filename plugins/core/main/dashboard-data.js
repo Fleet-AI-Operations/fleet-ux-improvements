@@ -8,8 +8,8 @@ const DASH_DATA_FEEDBACK_MAX_PAGES = 20;
 const plugin = {
     id: 'dashboard-data',
     name: 'Dashboard Data',
-    description: 'Batch version + feedback enrichment for the Worker Output Search dashboard',
-    _version: '3.1',
+    description: 'Loads version and feedback details for Worker Output Search',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

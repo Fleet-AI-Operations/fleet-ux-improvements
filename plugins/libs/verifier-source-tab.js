@@ -1399,8 +1399,8 @@ const plugin = {
     id: 'verifierSourceTabLib',
     name: 'Verifier Source Tab (library)',
     description:
-        'Shared primary | Verifier tab shell and searchable verifier source (archetype modules supply placement)',
-    _version: '3.1',
+        'Shared Environment/Workflow | Verifier tabs and searchable source',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -208,8 +208,8 @@ function dashEscHtml(value) {
 const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
-    description: 'Ops dashboard loader: modal shell, tab registry, shared UI primitives',
-    _version: '12.13',
+    description: 'Ops dashboard window, tabs, and shared chrome',
+    _version: '12.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
