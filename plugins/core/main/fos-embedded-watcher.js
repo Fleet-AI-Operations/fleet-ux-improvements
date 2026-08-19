@@ -1,7 +1,7 @@
 // fos-embedded-watcher.js
-// Parent-page watcher: detects FOS desktop envs via orchestrator + latch + noVNC/child shape
-// (not env_key name substrings), authorizes embedded iframe clipboard bridge, and hosts
-// VM Clipboard UI (system clipboard I/O stays on the parent).
+// Parent-page watcher: detects FOS desktop envs via orchestrator + latch + either
+// env_key "fos" substring or noVNC/child shape, authorizes embedded iframe clipboard
+// bridge, and hosts VM Clipboard UI (system clipboard I/O stays on the parent).
 // Bar hosts on CU creation/QA claim UI via Context.fosEmbedded; floating panel mounts only when no host claimed.
 
 const FOS_ENV_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
@@ -21,8 +21,13 @@ function fosInstanceIdFromHostname(hostname) {
     return String(hostname || '').split('.')[0] || '';
 }
 
+/** Case-insensitive: env_key contains "fos" (codename path; concurrent with desktop shape). */
+function fosIsFosEnvKey(envKey) {
+    return String(envKey || '').toLowerCase().includes('fos');
+}
+
 /**
- * FOS desktop / noVNC fetch shape (not env_key names).
+ * FOS desktop / noVNC fetch shape (concurrent with env_key name check).
  * Root /api/v1/env/timestamp alone is NOT sufficient — single-app web envs use it too.
  */
 function fosIsDesktopShapePath(pathname) {
@@ -184,8 +189,8 @@ const plugin = {
     id: 'fosEmbeddedWatcher',
     name: 'FOS Embedded Watcher',
     description:
-        'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '5.0',
+        'Detects embedded FOS desktop envs (env_key fos substring or noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
+    _version: '5.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -851,8 +856,19 @@ const plugin = {
 
     _tryNotifyChild(state, instanceId, child) {
         const rec = state.fosInstances.get(instanceId);
-        if (!rec || !rec.latchReady || !rec.envKey || !rec.isFosDesktop) {
+        if (!rec || !rec.latchReady || !rec.envKey) {
             return false;
+        }
+        if (!rec.isFosDesktop) {
+            if (!fosIsFosEnvKey(rec.envKey)) {
+                return false;
+            }
+            // Codename hit: mark here without _markFosDesktop (avoids re-entrant flush).
+            rec.isFosDesktop = true;
+            Logger.log('FOS desktop shape for instance ' +
+                    instanceId +
+                    ' (env-key)'
+            );
         }
         if (!child || !child.source || typeof child.source.postMessage !== 'function') {
             return false;
@@ -996,6 +1012,9 @@ const plugin = {
                                 ' env=' +
                                 rec.envKey
                         );
+                        if (fosIsFosEnvKey(rec.envKey)) {
+                            self._markFosDesktop(state, instanceId, 'env-key');
+                        }
                         self._onInstanceProgress(state, instanceId);
                     })
                     .catch(() => { /* ignore non-JSON */ });
