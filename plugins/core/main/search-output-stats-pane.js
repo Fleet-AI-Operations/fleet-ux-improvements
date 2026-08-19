@@ -36,7 +36,7 @@ const searchOutputStatsPaneMethods = {
         const ws = this._ws(wsId);
         let statsTab = ws ? (ws.statsTab || 'stats') : 'stats';
         if (!allowedTabs.includes(statsTab)) statsTab = allowedTabs[0];
-        const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; gap: 12px;';
+        const panelScroll = 'flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 14px; flex-direction: column; align-items: center; gap: 12px;';
         const statsPanel = 'flex: 1; min-height: 0; overflow: hidden; padding: 14px; flex-direction: column; gap: 12px;';
         const showStats = allowedTabs.includes('stats');
         const showRatings = allowedTabs.includes('ratings');
@@ -77,8 +77,8 @@ const searchOutputStatsPaneMethods = {
                 + '" data-wf-dash-output-el="stats-panel-ratings" style="' + panelScroll + '; display: '
                 + (statsTab === 'ratings' ? 'flex' : 'none') + ';">'
                 + '<div id="' + dashEscHtml(this._outputDomId('ratings-content', wsId))
-                + '" data-wf-dash-output-el="ratings-content" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: '
-                + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
+                + '" data-wf-dash-output-el="ratings-content" style="display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: '
+                + RATINGS_CONTENT_MAX_WIDTH_PX + 'px; margin: 0 auto; align-self: center; box-sizing: border-box;">'
                 + '<div style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: '
                 + RATINGS_COLUMN_MAX_WIDTH_PX + 'px; margin: 0 auto; box-sizing: border-box;">'
                 + this._ratingsAboutSectionHtml()
@@ -87,7 +87,7 @@ const searchOutputStatsPaneMethods = {
                 + this._ratingsToolbarHtml()
                 + '</div>'
                 + '<div id="' + dashEscHtml(this._outputDomId('ratings-cards', wsId))
-                + '" data-wf-dash-output-el="ratings-cards" style="display: flex; flex-direction: column; gap: 12px;"></div>'
+                + '" data-wf-dash-output-el="ratings-cards" style="display: none; flex-direction: column; align-items: center; gap: 12px; width: 100%; box-sizing: border-box;"></div>'
                 + '</div>'
                 + '</div>')
             : '';
@@ -707,9 +707,15 @@ const searchOutputStatsPaneMethods = {
         const importJsonBtn = this._q('[data-wf-dash-stats-import-json]');
         const dashEl = this._q('#wf-dash-stats-dashboard');
         const builderEl = this._q('#wf-dash-stats-builder');
+        const emptyEl = this._q('#wf-dash-stats-empty');
+        const statsWarnEl = this._q('#wf-dash-stats-warnings');
         const panelStats = this._q('#wf-dash-stats-panel-stats');
         const mode = this._state.statsViewMode || 'dashboard';
         const showDashboardToolbar = tab === 'stats' && mode === 'dashboard' && this._statsDashboardHasChartData();
+        if (tab !== 'stats') {
+            if (emptyEl) emptyEl.style.display = 'none';
+            if (statsWarnEl) statsWarnEl.style.display = 'none';
+        }
         if (toolbar) {
             toolbar.style.display = (tab === 'stats' && (mode === 'builder' || showDashboardToolbar)) ? 'flex' : 'none';
         }
@@ -4731,6 +4737,7 @@ const searchOutputStatsPaneMethods = {
             });
         }
         this._syncStatsScopeToggleUi();
+        this._syncStatsToolbarUi();
     },
 
     _ensureStatsToggleButton(statsCol) {
@@ -6131,6 +6138,18 @@ const searchOutputStatsPaneMethods = {
             + '</div>';
     },
 
+    _setRatingsCardsHtml(cardsEl, html) {
+        if (!cardsEl) return;
+        const content = html == null ? '' : String(html);
+        if (!content) {
+            cardsEl.innerHTML = '';
+            cardsEl.style.display = 'none';
+            return;
+        }
+        cardsEl.style.display = 'flex';
+        cardsEl.innerHTML = content;
+    },
+
     _renderRatingsPanel(options) {
         const opts = options || {};
         const recompute = opts.recompute !== false;
@@ -6156,14 +6175,14 @@ const searchOutputStatsPaneMethods = {
         }
 
         if (!this._state.hasSearched || !this._state.cachedItems) {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Run a search to load results.</p>';
+            this._setRatingsCardsHtml(cardsEl, '');
             this._state.ratingsReport = null;
             this._syncRatingsToolbarUi(0, 0);
             return;
         }
 
         if (!bulkMode && authorCount === 0) {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">Search by specific contributors, use @everyone, or click <strong>Generate cards</strong> for everyone in the current results.</p>';
+            this._setRatingsCardsHtml(cardsEl, '');
             this._state.ratingsReport = null;
             this._syncRatingsToolbarUi(0, 0);
             return;
@@ -6171,7 +6190,7 @@ const searchOutputStatsPaneMethods = {
 
         const engine = Context.ratingEngine;
         if (!engine || typeof engine.compute !== 'function') {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">Rating engine not loaded. Reload the page and try again.</p>';
+            this._setRatingsCardsHtml(cardsEl, '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">Rating engine not loaded. Reload the page and try again.</p>');
             this._state.ratingsReport = null;
             this._syncRatingsToolbarUi(0, 0);
             return;
@@ -6200,17 +6219,17 @@ const searchOutputStatsPaneMethods = {
 
         const report = this._state.ratingsReport;
         if (report && report.error && report.error.code === 'baselinesUnavailable') {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">'
+            this._setRatingsCardsHtml(cardsEl, '<p style="font-size: 12px; color: var(--destructive, #dc2626); margin: 0;">'
                 + dashEscHtml(report.error.message
                     || 'Rating baselines are unavailable. Unlock the Ops dashboard so encrypted priors can load, then retry.')
-                + '</p>';
+                + '</p>');
             this._syncRatingsToolbarUi(0, 0);
             return;
         }
         const allWorkers = (report && report.workers) || [];
 
         if (allWorkers.length === 0) {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No contributor ratings available.</p>';
+            this._setRatingsCardsHtml(cardsEl, '');
             this._syncRatingsToolbarUi(0, 0);
             return;
         }
@@ -6219,12 +6238,12 @@ const searchOutputStatsPaneMethods = {
         this._syncRatingsToolbarUi(visibleWorkers.length, allWorkers.length);
 
         if (visibleWorkers.length === 0) {
-            cardsEl.innerHTML = '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No ratings match the current filters.</p>';
+            this._setRatingsCardsHtml(cardsEl, '<p style="font-size: 12px; color: var(--muted-foreground, #64748b); margin: 0;">No ratings match the current filters.</p>');
             Logger.debug('ratings view — showing 0 of ' + allWorkers.length);
             return;
         }
 
-        cardsEl.innerHTML = visibleWorkers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join('');
+        this._setRatingsCardsHtml(cardsEl, visibleWorkers.map((w) => this._ratingWorkerCardHtml(w, scoreTypes)).join(''));
         if (Context.ratingExplain && typeof Context.ratingExplain.remountOpen === 'function') {
             Context.ratingExplain.remountOpen(cardsEl);
         }
@@ -6402,7 +6421,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.7',
+    _version: '14.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
