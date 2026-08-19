@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.409",
+  "archetypesVersion": "14.410",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.20",
-      "hash": "sha256-3635b878b0cba3ddf0dd89a6ade48f5a36d4780f654daf4f65e40f67c3e6f229",
+      "version": "3.21",
+      "hash": "sha256-12a6547a6d78015a74466396f29345e235897902a8071873011521d2ddae7e42",
       "log": false
     },
     {
@@ -138,8 +138,8 @@
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.7",
-      "hash": "sha256-ce8d2183b74f045b5d3448394cff5b3f693e9600a2cba2b533dba0c187cdec8c",
+      "version": "1.8",
+      "hash": "sha256-f79abc7752f53a04efb59a673bbbe67651ffe63d4d98a237a356d9776889a27f",
       "log": false
     },
     {
