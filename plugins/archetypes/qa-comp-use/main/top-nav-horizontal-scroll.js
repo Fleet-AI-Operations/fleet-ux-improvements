@@ -5,8 +5,8 @@ const plugin = {
     id: 'qaCompUseTopNavScroll',
     name: 'QA header compact',
     description:
-        'Compacts the QA header ([data-ui="qa-header"]): hides Prompt v# and Environment/Team labels, and allows horizontal scrolling of the action-button cluster when it overflows',
-    _version: '2.0',
+        'Compacts the QA header: hides Prompt v# and Environment/Team labels, and allows horizontal scrolling of the action-button cluster when it overflows',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

@@ -20,8 +20,8 @@ const TopNavHorizontalScrollApi = {
     id: 'qaCompUseTopNavScroll',
     name: 'QA header compact',
     description:
-        'Compacts the QA header ([data-ui="qa-header"]): hides Prompt v# and Environment/Team labels, and allows horizontal scrolling of the action-button cluster when it overflows',
-    _version: '3.0',
+        'Compacts the QA header: hides Prompt v# and Environment/Team labels, and allows horizontal scrolling of the action-button cluster when it overflows',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -197,7 +197,7 @@ const plugin = {
     id: 'topNavHorizontalScrollLib',
     name: 'QA Header Compact (library)',
     description: 'Shared API for QA header compact + action-cluster horizontal scroll',
-    _version: '3.0',
+    _version: '3.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
