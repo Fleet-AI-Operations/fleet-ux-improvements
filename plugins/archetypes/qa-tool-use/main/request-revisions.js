@@ -1,46 +1,23 @@
 // ============= request-revisions.js =============
-// Improvements to the Request Revisions Workflow
-
-const FLEET_GUIDELINES = {
-    general: 'https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3',
-    toolUse: 'https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b',
-    qa: 'https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43',
-    timeSubmission: 'https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c'
-};
-
-const GUIDELINE_BUTTON_SPECS = [
-    { group: 'general', subOptionId: 'copy-link-general-guidelines', title: 'General Guidelines', url: FLEET_GUIDELINES.general },
-    { group: 'tool-use', subOptionId: 'copy-link-tool-use-guidelines', title: 'Tool Use Guidelines', url: FLEET_GUIDELINES.toolUse },
-    { group: 'qa-guidelines', subOptionId: 'copy-link-qa-guidelines', title: 'QA Guidelines', url: FLEET_GUIDELINES.qa },
-    { group: 'time-submission', subOptionId: 'copy-link-time-submission-guidelines', title: 'Time Submission Guidelines', url: FLEET_GUIDELINES.timeSubmission }
-];
-
-const GUIDELINE_COPY_WRAPPER_MARKER = 'data-fleet-guideline-copy-links';
-const COPY_PROMPT_MARKER = 'data-fleet-revisions-copy-prompt';
-const COPY_PROMPT_SUBOPTION_ID = 'copy-prompt-button';
-const COPY_VERIFIER_OUTPUT_MARKER = 'data-fleet-revisions-copy-verifier';
-const COPY_VERIFIER_SUBOPTION_ID = 'copy-verifier-output-button';
-
-const PROMPT_QUALITY_VALUES = ['Top 10%', 'Average', 'Bottom 10%'];
-const PROMPT_QUALITY_LISTENER_MARKER = 'data-fleet-prompt-quality-listener';
+// Thin wrapper: shared Context.requestRevisions library.
 
 const plugin = {
     id: 'requestRevisions',
     name: '"Request Revisions" Modal Improvements',
-    description: 'Improvements to the Request Revisions Workflow',
-    _version: '7.4',
+    description:
+        'Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions',
+    _version: '8.0',
     enabledByDefault: true,
     phase: 'mutation',
-    
-    // ========== SUB-OPTIONS ==========
+
     subOptions: [
         {
-            id: COPY_PROMPT_SUBOPTION_ID,
+            id: 'copy-prompt-button',
             name: 'Copy Prompt button',
             enabledByDefault: true
         },
         {
-            id: COPY_VERIFIER_SUBOPTION_ID,
+            id: 'copy-verifier-output-button',
             name: 'Copy Verifier Output button',
             enabledByDefault: true
         },
@@ -63,574 +40,41 @@ const plugin = {
             id: 'copy-link-time-submission-guidelines',
             name: 'Time Submission Guidelines',
             enabledByDefault: true
+        },
+        {
+            id: 'task-only-issues',
+            name: 'Task-only issues',
+            enabledByDefault: true
+        },
+        {
+            id: 'screenshot-upload-improvement',
+            name: 'Screenshot upload improvement',
+            enabledByDefault: true
         }
     ],
-    
+
     initialState: {
         missingLogged: false,
+        warnLogged: false,
+        activationLogged: false,
+        taskOnlyStyleReady: false,
+        screenshotStyleReady: false,
+        screenshotMissingLogged: false,
+        injectedLogged: false,
+        pasteListenerAttached: false,
         promptText: null,
         verifierOutput: null,
         verifierObserver: null,
         verifierElement: null,
         verifierChangeObserver: null,
-        verifierWatchEligibleAt: undefined, // defer body observer until this time (or once modal seen)
-        promptQualityRating: null // persisted Prompt Quality Rating selection for this page instance
-    },
-    
-    onMutation(state, context) {
-        // Defer starting verifier watch until after initial load (avoids second body observer during mutation storm)
-        if (state.verifierWatchEligibleAt === undefined) {
-            state.verifierWatchEligibleAt = Date.now() + 1500;
-        }
-        
-        // Look for the Request Revisions modal
-        const dialogs = Context.dom.queryAll('div[role="dialog"][data-state="open"]', {
-            context: `${this.id}.dialogs`
-        });
-        
-        if (dialogs.length === 0) {
-            if (state.lastSig !== 0) state.lastSig = 0;
-            return;
-        }
-
-        const sig = dialogs.length + '|' + dialogs.map((d) => d.outerHTML.length).join(',');
-        if (sig === state.lastSig) return;
-        state.lastSig = sig;
-        
-        // Find the Request Revisions modal: heading "Request Revisions"; prefer dialog that contains #feedback-Task / #feedback-Environment
-        let requestRevisionsModal = null;
-        for (const dialog of dialogs) {
-            const heading = Context.dom.query('h2', {
-                root: dialog,
-                context: `${this.id}.heading`
-            });
-            if (!heading || !heading.textContent.includes('Request Revisions')) continue;
-            const hasFeedbackId = dialog.querySelector('#feedback-Task, #feedback-Environment, [id^="feedback-"]');
-            if (hasFeedbackId) {
-                requestRevisionsModal = dialog;
-                break;
-            }
-        }
-        if (!requestRevisionsModal) {
-            for (const dialog of dialogs) {
-                const heading = Context.dom.query('h2', { root: dialog, context: `${this.id}.heading` });
-                if (heading && heading.textContent.includes('Request Revisions')) {
-                    requestRevisionsModal = dialog;
-                    break;
-                }
-            }
-        }
-        
-        if (!requestRevisionsModal) {
-            if (!state.missingLogged) {
-                Logger.debug('Request Revisions modal not found');
-                state.missingLogged = true;
-            }
-            // Capture verifier output for copy button when eligible (after delay or once modal has been seen)
-            const copyVerifierEnabled = Storage.getSubOptionEnabled(this.id, COPY_VERIFIER_SUBOPTION_ID, true);
-            if (copyVerifierEnabled && state.verifierWatchEligibleAt !== undefined && Date.now() >= state.verifierWatchEligibleAt) {
-                this.watchVerifierOutput(state);
-            }
-            return;
-        }
-        
-        // Reset missing log once modal is found; allow verifier watch immediately when modal is open
-        state.missingLogged = false;
-        state.verifierWatchEligibleAt = Math.min(state.verifierWatchEligibleAt ?? Infinity, Date.now());
-        
-        // Watch for verifier output when copy button is enabled (now eligible: modal seen or delay passed)
-        const copyVerifierEnabled = Storage.getSubOptionEnabled(this.id, COPY_VERIFIER_SUBOPTION_ID, true);
-        if (copyVerifierEnabled && Date.now() >= state.verifierWatchEligibleAt) {
-            this.watchVerifierOutput(state);
-        }
-        
-        // Inject guideline open buttons if enabled
-        this.injectGuidelineCopyButtons(state, requestRevisionsModal);
-        
-        // Persist and restore Prompt Quality Rating selection within this page instance
-        this.capturePromptQualityRating(state, requestRevisionsModal);
-        this.restorePromptQualityRating(state, requestRevisionsModal);
+        verifierWatchEligibleAt: undefined,
+        promptQualityRating: null,
+        lastSig: 0
     },
 
-    findTaskPanel() {
-        // Strategy 1: find panel that contains the Prompt label and prompt content (exact "Prompt" label)
-        const panels = document.querySelectorAll('[data-panel][data-panel-id]');
-        for (const p of panels) {
-            const hasPromptLabel = Array.from(p.querySelectorAll('span, label')).some(el => (el.textContent || '').trim() === 'Prompt');
-            const promptContent = p.querySelector('.text-sm.whitespace-pre-wrap');
-            if (hasPromptLabel && promptContent) return p;
-        }
-        // Strategy 2: flexible label (e.g. "Prompt" as substring) and content (primary or fallback class)
-        for (const p of panels) {
-            const hasPromptLabel = Array.from(p.querySelectorAll('span, label')).some(el => {
-                const t = (el.textContent || '').trim();
-                return t === 'Prompt' || (t.length > 0 && t.includes('Prompt'));
-            });
-            const promptContent = p.querySelector('.text-sm.whitespace-pre-wrap') || p.querySelector('[class*="whitespace-pre-wrap"]');
-            if (hasPromptLabel && promptContent && promptContent.textContent.trim().length > 0) return p;
-        }
-        // Strategy 3: fallback to Radix ID (unstable across sessions)
-        return document.querySelector('[id=":re:"]') || document.querySelector('[data-panel-id=":re:"]');
-    },
-
-    findWhereAreTheIssuesButtonRow(modal) {
-        const labels = modal.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-3');
-        for (const label of labels) {
-            if (label.textContent && label.textContent.includes('Where are the issues')) {
-                const buttonRow = label.nextElementSibling;
-                if (buttonRow && buttonRow.classList.contains('flex') && buttonRow.classList.contains('gap-3')) {
-                    return buttonRow;
-                }
-                return null;
-            }
-        }
-        return null;
-    },
-
-    injectGuidelineCopyButtons(state, modal) {
-        const buttonRow = this.findWhereAreTheIssuesButtonRow(modal);
-        if (!buttonRow) return;
-
-        const buttonClass = 'inline-flex items-center justify-center whitespace-nowrap font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background transition-colors hover:bg-accent hover:text-accent-foreground h-8 rounded-sm pl-3 pr-3 text-xs';
-
-        let wrapper = modal.querySelector(`[${GUIDELINE_COPY_WRAPPER_MARKER}="true"]`);
-        if (wrapper) {
-            this.removeLegacyGuidelineGroups(wrapper);
-            this.syncGuidelineCopyButtons(state, wrapper, buttonClass);
-            return;
-        }
-
-        wrapper = document.createElement('div');
-        wrapper.setAttribute('data-fleet-plugin', this.id);
-        wrapper.setAttribute(GUIDELINE_COPY_WRAPPER_MARKER, 'true');
-        wrapper.className = 'flex flex-wrap gap-2 mt-2';
-
-        for (const spec of GUIDELINE_BUTTON_SPECS) {
-            wrapper.appendChild(this.createGuidelineOpenButton(buttonClass, spec.group, spec.url, spec.title));
-        }
-
-        buttonRow.insertAdjacentElement('afterend', wrapper);
-        Logger.log('Request Revisions: guideline buttons added');
-        this.removeLegacyGuidelineGroups(wrapper);
-        this.syncGuidelineCopyButtons(state, wrapper, buttonClass);
-    },
-
-    removeLegacyGuidelineGroups(wrapper) {
-        for (const legacy of ['kinesis', 'meridian']) {
-            const n = wrapper.querySelector(`[data-guideline-group="${legacy}"]`);
-            if (n) n.remove();
-        }
-    },
-
-    _reorderGuidelineGroupsAfterUtilities(wrapper, orderedGroupIds) {
-        let lastUtility = null;
-        const v = wrapper.querySelector(`[${COPY_VERIFIER_OUTPUT_MARKER}="true"]`);
-        const p = wrapper.querySelector(`[${COPY_PROMPT_MARKER}="true"]`);
-        if (v) lastUtility = v;
-        if (p) lastUtility = p;
-        let ref = lastUtility;
-        for (const gid of orderedGroupIds) {
-            const node = wrapper.querySelector(`[data-guideline-group="${gid}"]`);
-            if (!node || node.style.display === 'none') continue;
-            if (ref) {
-                if (ref.nextSibling !== node) wrapper.insertBefore(node, ref.nextSibling);
-                ref = node;
-            } else {
-                wrapper.insertBefore(node, wrapper.firstChild);
-                ref = node;
-            }
-        }
-    },
-
-    createGuidelineOpenButton(buttonClass, groupId, url, shortTitle) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = buttonClass;
-        btn.setAttribute('data-fleet-plugin', this.id);
-        btn.setAttribute('data-guideline-group', groupId);
-        btn.textContent = shortTitle;
-        btn.title = `Open ${shortTitle} in a new tab`;
-        btn.addEventListener('click', () => {
-            window.open(url, '_blank');
-            Logger.log(`Request Revisions: opened ${shortTitle}`);
-        });
-        return btn;
-    },
-
-    migrateLegacyGuidelineOpenControl(wrapper, groupId, url, shortTitle, buttonClass) {
-        const el = wrapper.querySelector(`[data-guideline-group="${groupId}"]`);
-        if (!el) return;
-        const isLegacy = el.tagName === 'SPAN' && el.querySelector('a');
-        if (!isLegacy) return;
-        const btn = this.createGuidelineOpenButton(buttonClass, groupId, url, shortTitle);
-        el.replaceWith(btn);
-        Logger.debug(`Request Revisions: migrated legacy ${shortTitle} control to open-only button`);
-    },
-
-    syncGuidelineCopyButtons(state, wrapper, buttonClass) {
-        this.removeLegacyGuidelineGroups(wrapper);
-        for (const spec of GUIDELINE_BUTTON_SPECS) {
-            this.migrateLegacyGuidelineOpenControl(wrapper, spec.group, spec.url, spec.title, buttonClass);
-        }
-        for (const spec of GUIDELINE_BUTTON_SPECS) {
-            const enabled = Storage.getSubOptionEnabled(this.id, spec.subOptionId, true);
-            let el = wrapper.querySelector(`[data-guideline-group="${spec.group}"]`);
-            if (!enabled) {
-                if (el) el.style.display = 'none';
-                continue;
-            }
-            if (!el) {
-                el = this.createGuidelineOpenButton(buttonClass, spec.group, spec.url, spec.title);
-                wrapper.appendChild(el);
-            } else {
-                el.style.display = '';
-                if (el.textContent !== spec.title) {
-                    el.replaceWith(this.createGuidelineOpenButton(buttonClass, spec.group, spec.url, spec.title));
-                }
-            }
-        }
-
-        const copyVerifierEnabled = Storage.getSubOptionEnabled(this.id, COPY_VERIFIER_SUBOPTION_ID, true);
-        this.syncCopyVerifierOutputButton(state, wrapper, copyVerifierEnabled, buttonClass);
-        const copyPromptEnabled = Storage.getSubOptionEnabled(this.id, COPY_PROMPT_SUBOPTION_ID, true);
-        this.syncCopyPromptButton(state, wrapper, copyPromptEnabled, buttonClass);
-        this._reorderGuidelineGroupsAfterUtilities(wrapper, GUIDELINE_BUTTON_SPECS.map(s => s.group));
-    },
-
-    syncCopyVerifierOutputButton(state, wrapper, copyVerifierEnabled, buttonClass) {
-        let btn = wrapper.querySelector(`[${COPY_VERIFIER_OUTPUT_MARKER}="true"]`);
-        if (copyVerifierEnabled) {
-            if (!btn) {
-                btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = buttonClass;
-                btn.setAttribute('data-fleet-plugin', this.id);
-                btn.setAttribute(COPY_VERIFIER_OUTPUT_MARKER, 'true');
-                btn.textContent = 'Copy Verifier Output';
-                btn.title = 'Copy verifier output to clipboard';
-                btn.addEventListener('click', () => this.handleCopyVerifierOutputClick(state, btn));
-                wrapper.insertBefore(btn, wrapper.firstChild);
-                Logger.debug('Request Revisions: Copy Verifier Output button added');
-            }
-            btn.style.display = '';
-        } else if (btn) {
-            btn.style.display = 'none';
-        }
-    },
-
-    syncCopyPromptButton(state, wrapper, copyPromptEnabled, buttonClass) {
-        let btn = wrapper.querySelector(`[${COPY_PROMPT_MARKER}="true"]`);
-        if (copyPromptEnabled) {
-            if (!btn) {
-                btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = buttonClass;
-                btn.setAttribute('data-fleet-plugin', this.id);
-                btn.setAttribute(COPY_PROMPT_MARKER, 'true');
-                btn.textContent = 'Copy Prompt';
-                btn.title = 'Copy task prompt to clipboard';
-                btn.addEventListener('click', () => this.handleCopyPromptClick(state, btn));
-                wrapper.insertBefore(btn, wrapper.firstChild);
-                Logger.debug('Request Revisions: Copy Prompt button added');
-            }
-            btn.style.display = '';
-        } else if (btn) {
-            btn.style.display = 'none';
-        }
-    },
-
-    getPromptTextForClipboard(state) {
-        const panel = this.findTaskPanel();
-        if (panel) {
-            const el = panel.querySelector('.text-sm.whitespace-pre-wrap') ||
-                panel.querySelector('[class*="whitespace-pre-wrap"]');
-            if (el) {
-                const text = el.textContent.trim();
-                if (text) {
-                    state.promptText = text;
-                    return text;
-                }
-            }
-        }
-        return (state.promptText && String(state.promptText).trim()) || '';
-    },
-
-    handleCopyPromptClick(state, button) {
-        const text = this.getPromptTextForClipboard(state);
-        if (!text) {
-            Logger.warn('Request Revisions: No prompt text to copy');
-            this.showCopyFailurePulse(button);
-            return;
-        }
-        navigator.clipboard.writeText(text).then(() => {
-            Logger.log(`Request Revisions: Copied prompt to clipboard (${text.length} chars)`);
-            this.showCopySuccessFlash(button);
-        }).catch((err) => {
-            Logger.error('Request Revisions: Failed to copy prompt', err);
-            this.showCopyFailurePulse(button);
-        });
-    },
-
-    getVerifierTextForClipboard(state) {
-        const fresh = this.tryCaptureVerifierOutput();
-        if (fresh) {
-            const text = fresh.kind === 'pre'
-                ? fresh.node.textContent.trim()
-                : (this.buildScoreVerifierMarkdown(fresh.node) || '').trim();
-            if (text) return text;
-        }
-        return (state.verifierOutput && String(state.verifierOutput).trim()) || '';
-    },
-
-    clearRequestRevisionsCopyButtonFeedback(button) {
-        if (Context.buttonFeedback) Context.buttonFeedback.clear(button);
-    },
-
-    showCopySuccessFlash(button) {
-        if (Context.buttonFeedback) Context.buttonFeedback.flashSuccess(button, { restoreStyles: false });
-    },
-
-    showCopyFailurePulse(button) {
-        if (Context.buttonFeedback) Context.buttonFeedback.flashFailure(button, { restoreStyles: false });
-    },
-
-    handleCopyVerifierOutputClick(state, button) {
-        const text = this.getVerifierTextForClipboard(state);
-        if (!text) {
-            Logger.warn('Request Revisions: No verifier output to copy');
-            this.showCopyFailurePulse(button);
-            return;
-        }
-        navigator.clipboard.writeText(text).then(() => {
-            Logger.log(`Request Revisions: Copied verifier output to clipboard (${text.length} chars)`);
-            this.showCopySuccessFlash(button);
-        }).catch((err) => {
-            Logger.error('Request Revisions: Failed to copy verifier output', err);
-            this.showCopyFailurePulse(button);
-        });
-    },
-
-    findPromptQualityRatingSection(modal) {
-        const labels = modal.querySelectorAll('label');
-        for (const label of labels) {
-            if (label.textContent && label.textContent.includes('Prompt Quality Rating')) {
-                const container = label.closest('div.flex.flex-col.gap-2') || label.parentElement;
-                if (container) {
-                    const buttonGroup = container.querySelector('div.flex.gap-2');
-                    if (buttonGroup) return { container, buttonGroup };
-                }
-                break;
-            }
-        }
-        return null;
-    },
-
-    getRatingButtons(buttonGroup) {
-        const buttons = buttonGroup.querySelectorAll('button');
-        const result = {};
-        for (const btn of buttons) {
-            const text = btn.textContent.trim();
-            if (PROMPT_QUALITY_VALUES.includes(text)) result[text] = btn;
-        }
-        return result;
-    },
-
-    isRatingButtonSelected(button) {
-        return button.classList.contains('border-brand') ||
-               button.classList.contains('bg-brand') ||
-               button.classList.contains('bg-brand/5') ||
-               button.classList.contains('bg-gray-50') ||
-               (button.getAttribute('class') || '').includes('dark:bg-gray-800');
-    },
-
-    capturePromptQualityRating(state, modal) {
-        const section = this.findPromptQualityRatingSection(modal);
-        if (!section || section.buttonGroup.getAttribute(PROMPT_QUALITY_LISTENER_MARKER) === 'true') return;
-        section.buttonGroup.setAttribute(PROMPT_QUALITY_LISTENER_MARKER, 'true');
-        section.buttonGroup.setAttribute('data-fleet-plugin', this.id);
-        section.buttonGroup.addEventListener('click', (e) => {
-            const button = e.target.closest('button');
-            if (!button) return;
-            const text = button.textContent.trim();
-            if (PROMPT_QUALITY_VALUES.includes(text)) {
-                state.promptQualityRating = text;
-                Logger.debug(`Request Revisions: prompt quality rating set to "${text}"`);
-            }
-        });
-    },
-
-    restorePromptQualityRating(state, modal) {
-        if (!state.promptQualityRating || !PROMPT_QUALITY_VALUES.includes(state.promptQualityRating)) return;
-        const section = this.findPromptQualityRatingSection(modal);
-        if (!section) return;
-        const buttons = this.getRatingButtons(section.buttonGroup);
-        const targetButton = buttons[state.promptQualityRating];
-        if (!targetButton || this.isRatingButtonSelected(targetButton)) return;
-        targetButton.click();
-        Logger.debug(`Request Revisions: restored prompt quality rating to "${state.promptQualityRating}"`);
-    },
-
-    // Same search logic as copy-verifier-output.js
-    findScoreRow() {
-        const candidates = document.querySelectorAll('div.flex.items-center.text-sm.mb-3');
-        for (const el of candidates) {
-            for (const s of el.querySelectorAll('span')) {
-                if (s.textContent.trim() === 'Score:') {
-                    return el;
-                }
-            }
-        }
-        return null;
-    },
-
-    findStdoutRow() {
-        const candidates = document.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-1');
-        for (const el of candidates) {
-            if (el.textContent.trim() === 'Stdout') {
-                return el;
-            }
-        }
-        return null;
-    },
-
-    buildScoreVerifierMarkdown(container) {
-        const list = container.querySelector('div.text-xs.mb-3.space-y-0\\.5');
-        if (!list) {
-            return null;
-        }
-        const rows = list.querySelectorAll(':scope > div.flex.items-start');
-        const successes = [];
-        const failures = [];
-        for (const row of rows) {
-            const svg = row.querySelector(':scope > svg');
-            if (!svg) continue;
-            const cls = svg.getAttribute('class') || '';
-            const span = row.querySelector(':scope > span');
-            const text = (span ? String(span.textContent || '').replace(/\s+/g, ' ').trim() : '')
-                .replace(/^\[(?:C|X)\]\s*/i, '')
-                .trim();
-            if (!text) continue;
-            if (cls.includes('text-emerald')) {
-                successes.push(text);
-            } else if (cls.includes('text-red')) {
-                failures.push(text);
-            }
-        }
-        if (successes.length === 0 && failures.length === 0) {
-            return null;
-        }
-        const lines = ['## Verifier'];
-        if (successes.length > 0) {
-            lines.push('#### Successes');
-            for (const t of successes) {
-                lines.push(`✅ ${t}`);
-            }
-        }
-        if (failures.length > 0) {
-            lines.push('');
-            lines.push('#### Failures');
-            for (const t of failures) {
-                lines.push(`❌ ${t}`);
-            }
-        }
-        const body = lines.join('\n');
-        let maxRun = 0;
-        let run = 0;
-        for (let i = 0; i < body.length; i++) {
-            if (body[i] === '`') {
-                run++;
-                if (run > maxRun) maxRun = run;
-            } else {
-                run = 0;
-            }
-        }
-        const fenceLen = Math.max(3, maxRun + 1);
-        const fence = '`'.repeat(fenceLen);
-        return `${fence}\n${body}\n${fence}`;
-    },
-
-    getVerifierPreFromContainer(container) {
-        const pre = container.querySelector('div.overflow-x-auto.bg-background.border.rounded pre');
-        return pre && pre.textContent.trim().length > 0 ? pre : null;
-    },
-
-    tryCaptureVerifierOutput() {
-        const scoreRow = this.findScoreRow();
-        if (scoreRow) {
-            const container = scoreRow.closest('div.p-3') || scoreRow.closest('div.p-2');
-            if (container) {
-                const md = this.buildScoreVerifierMarkdown(container);
-                if (md && md.length > 0) {
-                    return { kind: 'score', node: container };
-                }
-            }
-        }
-        const stdoutRow = this.findStdoutRow();
-        if (!stdoutRow) return null;
-        const container = stdoutRow.closest('div.text-xs.w-full');
-        if (!container) return null;
-        const pre = this.getVerifierPreFromContainer(container);
-        return pre ? { kind: 'pre', node: pre } : null;
-    },
-
-    watchVerifierOutput(state) {
-        if (state.verifierObserver) {
-            return;
-        }
-
-        const tryCaptureVerifier = () => this.tryCaptureVerifierOutput();
-
-        const captured = tryCaptureVerifier();
-        if (captured) {
-            Logger.debug(`Verifier container detected`);
-            this.saveVerifierOutput(state, captured);
-            return;
-        }
-
-        const containerObserver = new MutationObserver(() => {
-            const next = tryCaptureVerifier();
-            if (next) {
-                Logger.debug(`Verifier container detected`);
-                containerObserver.disconnect();
-                state.verifierObserver = null;
-                this.saveVerifierOutput(state, next);
-            }
-        });
-
-        containerObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-        state.verifierObserver = containerObserver;
-    },
-
-    saveVerifierOutput(state, capture) {
-        const getText = () => {
-            if (capture.kind === 'pre') {
-                return capture.node.textContent.trim();
-            }
-            return this.buildScoreVerifierMarkdown(capture.node) || '';
-        };
-
-        state.verifierOutput = getText();
-        state.verifierElement = capture.node;
-
-        Logger.debug(`Verifier output saved (${state.verifierOutput.length} chars)`);
-
-        const changeObserver = new MutationObserver(() => {
-            const newOutput = getText();
-            if (newOutput !== state.verifierOutput && newOutput.length > 0) {
-                state.verifierOutput = newOutput;
-                Logger.debug(`Verifier output updated (${state.verifierOutput.length} chars)`);
-            }
-        });
-
-        changeObserver.observe(capture.node, {
-            childList: true,
-            subtree: true,
-            characterData: true
-        });
-
-        state.verifierChangeObserver = changeObserver;
+    onMutation(state) {
+        const api = Context.requestRevisions;
+        if (!api || typeof api.run !== 'function') return;
+        api.run(state, { pluginId: this.id, logTag: this.id });
     }
 };

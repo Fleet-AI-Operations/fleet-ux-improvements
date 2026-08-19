@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.402",
+  "archetypesVersion": "14.403",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -119,15 +119,9 @@
       "log": false
     },
     {
-      "name": "request-revisions-screenshot-upload-improvement.js",
-      "version": "2.2",
-      "hash": "sha256-5ad84b5faabe10c5361873d7e4421ef808820ef6789367b790547c8346a650b3",
-      "log": false
-    },
-    {
-      "name": "request-revisions-task-only.js",
-      "version": "1.4",
-      "hash": "sha256-775379e5123669e5f4cf1b200dde060616ee149ef7965540191301accc850097",
+      "name": "request-revisions.js",
+      "version": "1.0",
+      "hash": "sha256-e793fc29af2720de5ac4b6364a7ced390c15d7583d455ec1918058c84b5392bc",
       "log": false
     },
     {
@@ -311,7 +305,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.35"
+      "version": "1.36"
     }
   ],
   "archetypes": [
@@ -637,8 +631,7 @@
       "libraries": [
         "accept-task-modal-improvements.js",
         "copy-verifier-output.js",
-        "request-revisions-screenshot-upload-improvement.js",
-        "request-revisions-task-only.js",
+        "request-revisions.js",
         "source-data-explorer.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
@@ -672,20 +665,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "7.4",
-          "hash": "sha256-a0efc2744ab61402812fcb363e0a15c987dd91aa13b1b4961610c39067031b6c",
-          "log": false
-        },
-        {
-          "name": "request-revisions-screenshot-upload-improvement.js",
-          "version": "1.2",
-          "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
-          "log": false
-        },
-        {
-          "name": "request-revisions-task-only.js",
-          "version": "1.1",
-          "hash": "sha256-adb2f7c84f6078d4117d1b6eea1405ab494d55cc2a7d4690e02452257038f926",
+          "version": "8.0",
+          "hash": "sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c",
           "log": false
         },
         {
@@ -762,8 +743,7 @@
         "copy-verifier-output.js",
         "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
-        "request-revisions-screenshot-upload-improvement.js",
-        "request-revisions-task-only.js",
+        "request-revisions.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
@@ -825,20 +805,8 @@
         },
         {
           "name": "request-revisions.js",
-          "version": "6.4",
-          "hash": "sha256-9395ef395e5af73007372dfd0dfe3b186de0c668d71a727438af992c48c72e02",
-          "log": false
-        },
-        {
-          "name": "request-revisions-screenshot-upload-improvement.js",
-          "version": "1.2",
-          "hash": "sha256-b8097a8c2cec1025d87c25bb182e8fd0e9d22dc2233b0d33c2a15333d3ab7a8f",
-          "log": false
-        },
-        {
-          "name": "request-revisions-task-only.js",
-          "version": "1.1",
-          "hash": "sha256-adb2f7c84f6078d4117d1b6eea1405ab494d55cc2a7d4690e02452257038f926",
+          "version": "8.0",
+          "hash": "sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c",
           "log": false
         },
         {

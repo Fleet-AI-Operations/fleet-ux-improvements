@@ -130,8 +130,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **Hide Verifier Output**: Adds Hide/Show Verifier before Run Verifier; hides the output body and collapses the bottom panel until shown or a verifier run starts
 - **Workflow Verifier Tab**: Adds Workflow | Verifier tabs on the QA workflow panel and shows searchable verifier source for the current task
-- **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
-- **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
+- **"Request Revisions" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Useful Link Buttons**: Add useful link buttons to the page
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
@@ -143,8 +142,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
-- **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
-- **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
+- **"Request Revisions" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
