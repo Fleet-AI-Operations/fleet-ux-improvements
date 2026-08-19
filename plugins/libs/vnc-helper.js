@@ -50,7 +50,7 @@ const VncHelperApi = {
     name: 'External VNC Helper',
     description:
         'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '3.4',
+    _version: '3.5',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -824,12 +824,18 @@ const VncHelperApi = {
                 return;
             }
             if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'c') {
+                if (isTypingTarget(document.activeElement)) {
+                    return;
+                }
                 e.preventDefault();
                 e.stopPropagation();
                 clipQueue = clipQueue.then(runCopyVmToHost).catch(() => {});
                 return;
             }
             if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'v') {
+                if (isTypingTarget(document.activeElement)) {
+                    return;
+                }
                 e.preventDefault();
                 e.stopPropagation();
                 clipQueue = clipQueue.then(runPasteFromClipboard).catch(() => {});
@@ -903,7 +909,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'External VNC Helper (library)',
     description: 'Shared API for External VNC Helper panel and clipboard helpers',
-    _version: '3.4',
+    _version: '3.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1006,6 +1012,36 @@ function focusVncTarget() {
             /* ignore */
         }
     }
+}
+
+/** True when focus is in a field that should get native ⌘C/⌘V (Prompt/Scratchpad, etc.). */
+function isTypingTarget(el) {
+    if (!el || el === document.body || el === document.documentElement) {
+        return false;
+    }
+    const tag = (el.tagName || '').toUpperCase();
+    if (tag === 'TEXTAREA' || tag === 'SELECT') {
+        return true;
+    }
+    if (tag === 'INPUT') {
+        const type = String(el.type || 'text').toLowerCase();
+        return (
+            type === '' ||
+            type === 'text' ||
+            type === 'search' ||
+            type === 'url' ||
+            type === 'tel' ||
+            type === 'email' ||
+            type === 'password' ||
+            type === 'number' ||
+            type === 'date' ||
+            type === 'datetime-local' ||
+            type === 'month' ||
+            type === 'week' ||
+            type === 'time'
+        );
+    }
+    return !!el.isContentEditable;
 }
 
 /** Truncation for button toasts; empty becomes "(empty)". */
