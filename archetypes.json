@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.401",
+  "archetypesVersion": "14.402",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -126,8 +126,8 @@
     },
     {
       "name": "request-revisions-task-only.js",
-      "version": "1.3",
-      "hash": "sha256-d230776b15dbce61fbd81785ae828a94744e465895899c684973bd9ef6ed74f7",
+      "version": "1.4",
+      "hash": "sha256-775379e5123669e5f4cf1b200dde060616ee149ef7965540191301accc850097",
       "log": false
     },
     {

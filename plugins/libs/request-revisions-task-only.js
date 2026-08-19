@@ -1,6 +1,6 @@
 // ============= request-revisions-task-only.js =============
-// On Request Revisions modal: hide Task/Environment/Grading issue buttons via CSS tags,
-// and auto-select Task once per modal open.
+// On Request Revisions modal: hide "Where are the issues?" plus Task/Environment/Grading
+// buttons via CSS tags, and auto-select Task once per modal open.
 
 const STYLE_ID = 'fleet-request-revisions-task-only-style';
 const DIALOG_ATTR = 'data-fleet-rr-task-only';
@@ -30,8 +30,8 @@ const RequestRevisionsTaskOnlyApi = {
 
         if (modal.getAttribute(DIALOG_ATTR) === '1') return;
 
-        const buttonRow = this.findWhereAreTheIssuesButtonRow(modal);
-        if (!buttonRow) {
+        const section = this.findWhereAreTheIssuesSection(modal);
+        if (!section || !section.buttonRow) {
             if (!state.warnLogged) {
                 Logger.warn(`Request Revisions modal open but "Where are the issues?" button row missing`);
                 state.warnLogged = true;
@@ -44,7 +44,7 @@ const RequestRevisionsTaskOnlyApi = {
         let clickedTask = false;
         let taskAlreadySelected = false;
 
-        const buttons = buttonRow.querySelectorAll('button[type="button"]');
+        const buttons = section.buttonRow.querySelectorAll('button[type="button"]');
         for (const btn of buttons) {
             const label = this.getIssueButtonLabel(btn);
             if (label === 'Task') {
@@ -61,6 +61,11 @@ const RequestRevisionsTaskOnlyApi = {
                 hidParts.push(label);
             }
         }
+
+        if (section.label) {
+            section.label.setAttribute(HIDDEN_ATTR, '1');
+        }
+        section.buttonRow.setAttribute(HIDDEN_ATTR, '1');
 
         modal.setAttribute(DIALOG_ATTR, '1');
 
@@ -85,7 +90,7 @@ const RequestRevisionsTaskOnlyApi = {
             document.head.appendChild(style);
         }
         style.textContent = `
-button[${HIDDEN_ATTR}="1"] {
+[${HIDDEN_ATTR}="1"] {
     display: none !important;
 }
 `;
@@ -113,7 +118,7 @@ button[${HIDDEN_ATTR}="1"] {
         return null;
     },
 
-    findWhereAreTheIssuesButtonRow(modal) {
+    findWhereAreTheIssuesSection(modal) {
         const labels = modal.querySelectorAll('div.text-sm.text-muted-foreground.font-medium.mb-3');
         for (const label of labels) {
             if (label.textContent && label.textContent.includes('Where are the issues')) {
@@ -123,9 +128,9 @@ button[${HIDDEN_ATTR}="1"] {
                     buttonRow.classList.contains('flex') &&
                     buttonRow.classList.contains('gap-3')
                 ) {
-                    return buttonRow;
+                    return { label, buttonRow };
                 }
-                return null;
+                return { label, buttonRow: null };
             }
         }
         return null;
@@ -147,7 +152,7 @@ const plugin = {
     name: 'Request Revisions Task-Only Issues (library)',
     description:
         'Shared API to hide Task/Environment/Grading and auto-select Task on Request Revisions',
-    _version: '1.3',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
