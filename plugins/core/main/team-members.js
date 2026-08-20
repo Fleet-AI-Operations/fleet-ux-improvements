@@ -68,6 +68,7 @@ const teamMembersController = {
         return sessionId != null && this._opsTeamSearchActive === sessionId;
     },
     hasMemberSearchCache() { return !!this._opsTeamSearchMemberCache; },
+    exportTeamMembersJson(modal) { return this._exportOpsTeamMembersJson(modal); },
     clearExpertStatsCache() {
         this._opsExpertStatsHydrateGen++;
         if (this._opsExpertStatsCache) this._opsExpertStatsCache.clear();
@@ -493,12 +494,14 @@ const teamMembersController = {
         const status = this._opsQuery(modal, '#wf-ops-team-search-status', 'teamSearchStatus');
         const clearBtn = this._opsQuery(modal, '#wf-ops-team-search-clear-btn', 'teamSearchClearBtn');
         const expandAllBtn = this._opsQuery(modal, '#wf-ops-team-expand-all-btn', 'teamSearchExpandAllBtn');
+        const exportBtn = this._opsQuery(modal, '#wf-ops-team-export-json-btn', 'teamSearchExportJsonBtn');
         const placeholder = this._opsQuery(modal, '#wf-ops-team-search-status-placeholder', 'teamSearchStatusPlaceholder');
         if (!status) return;
         if (!message) {
             if (row) row.style.display = 'none';
             if (clearBtn) clearBtn.style.display = 'none';
             if (expandAllBtn) expandAllBtn.style.display = 'none';
+            if (exportBtn) exportBtn.style.display = 'none';
             if (placeholder) placeholder.style.display = '';
             return;
         }
@@ -508,6 +511,7 @@ const teamMembersController = {
         if (isHtml) { status.innerHTML = message; } else { status.textContent = message; }
         if (clearBtn) clearBtn.style.display = showClear ? 'inline-block' : 'none';
         if (expandAllBtn) expandAllBtn.style.display = showClear ? 'inline-block' : 'none';
+        if (exportBtn) exportBtn.style.display = showClear ? 'inline-block' : 'none';
     },
 
     _syncOpsExpandAllBtn(modal) {
@@ -762,6 +766,17 @@ const teamMembersController = {
         return 'fellows';
     },
 
+    _opsMemberBadgeLabel(category) {
+        const labels = {
+            mts: 'MTS',
+            ui: 'UI',
+            verticals: 'VERTICALS',
+            epic: 'EPIC',
+            fellows: 'FELLOWS'
+        };
+        return labels[category] || labels.fellows;
+    },
+
     _opsMemberBadgeHtml(category) {
         const styles = {
             mts: 'background:var(--foreground, #0f172a);color:var(--background, #fff);',
@@ -770,18 +785,90 @@ const teamMembersController = {
             epic: 'background:#7c3aed;color:#fff;',
             fellows: 'background:#64748b;color:#fff;'
         };
-        const labels = {
-            mts: 'MTS',
-            ui: 'UI',
-            verticals: 'VERTICALS',
-            epic: 'EPIC',
-            fellows: 'FELLOWS'
-        };
-        const key = labels[category] ? category : 'fellows';
+        const key = styles[category] ? category : 'fellows';
         return '<span style="display:inline-block;font-size:9px;font-weight:700;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;'
             + (styles[key] || styles.fellows)
             + 'line-height:1.4;flex-shrink:0;">'
-            + labels[key] + '</span>';
+            + this._opsMemberBadgeLabel(key) + '</span>';
+    },
+
+    _getOpsTeamSearchFilteredMembers() {
+        const cache = this._opsTeamSearchMemberCache;
+        if (!cache || !(cache.memberMap instanceof Map)) return [];
+        let members = [...cache.memberMap.values()];
+        const active = this._opsTeamActiveFilters;
+        const numericRows = active && active.numericFilters ? active.numericFilters : [];
+        const andOr = active ? active.andOr : 'and';
+        members = members.filter((m) => this._opsMemberMatchesNumericFilters(m, numericRows, andOr));
+        const teamC = this._getOpsTeamMemberTeamConstraints();
+        const permC = this._getOpsTeamMemberPermConstraints();
+        const badgeC = this._getOpsTeamMemberBadgeConstraints();
+        members = members.filter((m) => this._opsMemberMatchesTeamConstraints(m, teamC));
+        members = members.filter((m) => this._opsMemberMatchesPermConstraints(m, permC));
+        members = members.filter((m) => this._opsMemberMatchesBadgeConstraints(m, badgeC));
+        members.sort((a, b) => {
+            const diff = (b.teamLabels ? b.teamLabels.size : 0) - (a.teamLabels ? a.teamLabels.size : 0);
+            return diff !== 0 ? diff : (a.full_name || '').localeCompare(b.full_name || '');
+        });
+        return members;
+    },
+
+    _buildOpsTeamMemberExportObject(member) {
+        const teams = member && member.teamLabels instanceof Set
+            ? [...member.teamLabels].sort((a, b) => String(a).localeCompare(String(b)))
+            : [];
+        const permissions = this._opsMemberPermissionKeys(member);
+        return {
+            name: member && member.full_name != null ? String(member.full_name) : '',
+            email: member && member.email != null ? String(member.email) : '',
+            uuid: member && member.id != null ? String(member.id) : '',
+            badge: this._opsMemberBadgeLabel(this._opsMemberBadgeCategory(member)),
+            teams,
+            permissions: Array.isArray(permissions) ? [...permissions] : []
+        };
+    },
+
+    _opsTeamMembersExportTimestampSlug(iso) {
+        return String(iso || new Date().toISOString()).replace(/[:.]/g, '-');
+    },
+
+    _downloadOpsTeamMembersTextFile(filename, content, mime) {
+        try {
+            const blob = new Blob([content], { type: mime || 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            Logger.error('team members export download failed', e);
+        }
+    },
+
+    _exportOpsTeamMembersJson(modal) {
+        if (!Context.isDevBranch) {
+            Logger.warn('team members export skipped — not a dev build');
+            return;
+        }
+        if (!this._opsTeamSearchMemberCache) {
+            Logger.warn('team members export skipped — no search results');
+            return;
+        }
+        const members = this._getOpsTeamSearchFilteredMembers();
+        if (!members.length) {
+            Logger.warn('team members export skipped — no matching members');
+            return;
+        }
+        const payload = members.map((m) => this._buildOpsTeamMemberExportObject(m));
+        const exportedAt = new Date().toISOString();
+        const filename = 'team-members-' + this._opsTeamMembersExportTimestampSlug(exportedAt) + '.json';
+        const json = JSON.stringify(payload, null, 2);
+        this._downloadOpsTeamMembersTextFile(filename, json, 'application/json;charset=utf-8');
+        Logger.log('team members exported — ' + payload.length + ' member(s) · ' + filename);
     },
 
     _getOpsTeamMemberBadgeConstraints() {
@@ -1941,6 +2028,13 @@ function teamMembersPanelHtml() {
             : 'wf-dash-btn wf-dash-btn--' + variant + ' wf-dash-btn--' + size;
     };
     const pagerChevron = (dir) => (dash && typeof dash.pagerChevronSvg === 'function' ? dash.pagerChevronSvg(dir) : '');
+    const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
+        ? Context.uiLib.devBtnAttr()
+        : 'data-fleet-dev="1"';
+    const exportJsonBtnHtml = Context.isDevBranch
+        ? ('<button type="button" id="wf-ops-team-export-json-btn" class="' + btnClass('basic', 'compact')
+            + '" ' + devBtnAttr + ' title="Export matching team members as JSON" style="display: none;">Export JSON</button>')
+        : '';
 
     const leftHtml = `
                     <div style="${box} display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
@@ -1993,6 +2087,7 @@ function teamMembersPanelHtml() {
                         <div id="wf-ops-team-search-status-row" style="display: none; align-items: center; justify-content: space-between; gap: 8px;">
                             <div id="wf-ops-team-search-status" style="flex: 1; min-width: 0; font-size: 12px; color: var(--muted-foreground, #666); line-height: 1.45;"></div>
                             <div style="display: flex; gap: 6px; flex-shrink: 0; align-items: center;">
+                                ${exportJsonBtnHtml}
                                 <button type="button" id="wf-ops-team-expand-all-btn" class="${btnClass('basic', 'compact')}" style="display: none;">Collapse All</button>
                                 <button type="button" id="wf-ops-team-search-clear-btn" class="${btnClass('basic', 'compact')}" style="display: none;">Clear</button>
                             </div>
@@ -2060,6 +2155,10 @@ function attachTeamMembersListeners(modal, dash) {
     if (teamExpandAllBtn && typeof tm.toggleTeamExpandAll === 'function') {
         teamExpandAllBtn.addEventListener('click', () => tm.toggleTeamExpandAll(modal));
     }
+    const teamExportJsonBtn = modal.querySelector('#wf-ops-team-export-json-btn');
+    if (teamExportJsonBtn && typeof tm.exportTeamMembersJson === 'function') {
+        teamExportJsonBtn.addEventListener('click', () => tm.exportTeamMembersJson(modal));
+    }
     const applyBtn = modal.querySelector('#wf-ops-team-apply-filters');
     if (applyBtn && typeof dash._onTeamMembersApply === 'function') {
         applyBtn.addEventListener('click', () => dash._onTeamMembersApply(modal));
@@ -2116,7 +2215,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '5.3',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
