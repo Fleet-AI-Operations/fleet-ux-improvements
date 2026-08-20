@@ -1,14 +1,14 @@
-// ============= request-revisions-screenshot-upload-improvement.js =============
-// Full-width drop/paste/click zone for Request Revisions screenshot uploads.
-// Forwards image files to the native hidden screenshot <input type="file">.
+// ============= screenshot-upload-improvement.js (library) =============
+// Shared drag-drop / paste-image chrome that forwards files to a caller-supplied
+// native <input type="file">. Callers find the label+input anchors.
 
-const STYLE_ID = 'fleet-request-revisions-screenshot-upload-improvement-style';
-const CONTROLS_WRAP_ATTR = 'data-fleet-request-revisions-screenshot-controls';
-const UPLOAD_CONTROL_ATTR = 'data-fleet-request-revisions-screenshot-upload';
-const PASTE_BUTTON_ATTR = 'data-fleet-request-revisions-paste-image';
-const NATIVE_LABEL_ATTR = 'data-fleet-request-revisions-native-label';
-const FILE_INPUT_ATTR = 'data-fleet-request-revisions-forward-input';
-const ZONE_WRAP_ATTR = 'data-fleet-request-revisions-screenshot-zone';
+const STYLE_ID = 'fleet-screenshot-upload-improvement-style';
+const CONTROLS_WRAP_ATTR = 'data-fleet-screenshot-improvement-controls';
+const UPLOAD_CONTROL_ATTR = 'data-fleet-screenshot-upload-improvement';
+const PASTE_BUTTON_ATTR = 'data-fleet-screenshot-paste-image';
+const NATIVE_LABEL_ATTR = 'data-fleet-screenshot-native-label';
+const FILE_INPUT_ATTR = 'data-fleet-screenshot-forward-input';
+const ZONE_WRAP_ATTR = 'data-fleet-screenshot-zone';
 
 const MAX_FILES = 5;
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -23,7 +23,7 @@ const DRAG_OVER_CLASSES = ['ring-2', 'ring-brand/50'];
 
 function imageFilesFromFileList(list) {
     if (!list || !list.length) return [];
-    return Array.from(list).filter(f => f.type && f.type.startsWith('image/'));
+    return Array.from(list).filter((f) => f.type && f.type.startsWith('image/'));
 }
 
 function imageFilesFromClipboard(clipboardData) {
@@ -36,8 +36,8 @@ function imageFilesFromClipboard(clipboardData) {
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.kind !== 'file') continue;
-        const file = item.getAsFile();
-        if (file && file.type.startsWith('image/')) out.push(file);
+        const f = item.getAsFile();
+        if (f && f.type.startsWith('image/')) out.push(f);
     }
     return out;
 }
@@ -53,26 +53,32 @@ function shouldIgnorePasteTarget(target) {
     return !passthrough.has(type);
 }
 
-const RequestRevisionsScreenshotUploadApi = {
-    id: 'requestRevisionsScreenshotUploadImprovement',
-    name: 'Request Revisions Screenshot Upload Improvement',
-    description:
-        'Replaces Request Revisions screenshot upload with drag-drop/upload and paste-image controls; forwards files to native input',
-
+const ScreenshotUploadApi = {
+    /**
+     * @param {object} state
+     * @param {object} options
+     * @param {HTMLElement} options.label — native file-input label (caller-found)
+     * @param {HTMLInputElement} options.input — native <input type="file"> (caller-found)
+     * @param {string} [options.pluginId]
+     * @param {string} [options.logTag]
+     */
     run(state, options) {
-        const pluginId = (options && options.pluginId) || this.id;
-        this.ensureStyles(state, pluginId);
-        const found = this.findNativeScreenshotControl();
-        if (!found) {
+        const opts = options || {};
+        const pluginId = opts.pluginId || 'screenshotUploadImprovement';
+        const label = opts.label;
+        const input = opts.input;
+
+        if (!label || !input) {
             if (!state.missingLogged) {
-                Logger.debug('Request Revisions screenshot upload improvement: native file control not found');
+                Logger.debug('native file control not found');
                 state.missingLogged = true;
             }
             return;
         }
         state.missingLogged = false;
 
-        const { label, input } = found;
+        this.ensureStyles(state, pluginId);
+
         const zone = label.parentElement;
         if (zone) {
             this.removeDuplicateImprovementControls(zone, label);
@@ -100,7 +106,10 @@ const RequestRevisionsScreenshotUploadApi = {
         uploadControl.type = 'button';
         uploadControl.setAttribute(UPLOAD_CONTROL_ATTR, '1');
         uploadControl.className = UPLOAD_CONTROL_CLASS;
-        uploadControl.setAttribute('aria-label', 'Drag and drop images here or click to upload screenshots');
+        uploadControl.setAttribute(
+            'aria-label',
+            'Drag and drop images here or click to upload screenshots'
+        );
         uploadControl.innerHTML = `
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0" aria-hidden="true">
   <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7"></path>
@@ -113,23 +122,23 @@ const RequestRevisionsScreenshotUploadApi = {
 `;
 
         let dragDepth = 0;
-        const onDragEnter = e => {
+        const onDragEnter = (e) => {
             e.preventDefault();
             e.stopPropagation();
             dragDepth++;
             uploadControl.classList.add(...DRAG_OVER_CLASSES);
         };
-        const onDragLeave = e => {
+        const onDragLeave = (e) => {
             e.preventDefault();
             e.stopPropagation();
             dragDepth = Math.max(0, dragDepth - 1);
             if (dragDepth === 0) uploadControl.classList.remove(...DRAG_OVER_CLASSES);
         };
-        const onDragOver = e => {
+        const onDragOver = (e) => {
             e.preventDefault();
             e.stopPropagation();
         };
-        const onDrop = e => {
+        const onDrop = (e) => {
             e.preventDefault();
             e.stopPropagation();
             dragDepth = 0;
@@ -165,11 +174,15 @@ const RequestRevisionsScreenshotUploadApi = {
         this.ensurePasteListener(state);
 
         if (!state.injectedLogged) {
-            Logger.log('Request Revisions screenshot upload improvement: controls row injected');
+            Logger.log('controls row injected');
             state.injectedLogged = true;
         }
     },
 
+    /**
+     * React may insert a thumbnail row between our controls and the label.
+     * Scope checks to the zone and remove stray duplicates from older runs.
+     */
     removeDuplicateImprovementControls(zone, label) {
         if (!zone.contains(label)) return;
 
@@ -180,24 +193,22 @@ const RequestRevisionsScreenshotUploadApi = {
 
         const primaryWrap = zone.querySelector(`[${CONTROLS_WRAP_ATTR}]`);
         if (primaryWrap) {
-            zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach(btn => {
+            zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach((btn) => {
                 if (!primaryWrap.contains(btn)) btn.remove();
             });
-            zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach(btn => {
+            zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach((btn) => {
                 if (!primaryWrap.contains(btn)) btn.remove();
             });
             return;
         }
 
-        zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach(btn => btn.remove());
-        zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach(btn => btn.remove());
+        zone.querySelectorAll(`button[${UPLOAD_CONTROL_ATTR}]`).forEach((btn) => btn.remove());
+        zone.querySelectorAll(`button[${PASTE_BUTTON_ATTR}]`).forEach((btn) => btn.remove());
     },
 
     async pasteImageFromClipboardApi(input) {
         if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
-            Logger.warn(
-                'Request Revisions screenshot upload improvement: Clipboard read API not available in this browser'
-            );
+            Logger.warn('Clipboard read API not available in this browser');
             return;
         }
         try {
@@ -210,25 +221,27 @@ const RequestRevisionsScreenshotUploadApi = {
                     const sub = type.split('/')[1] || 'png';
                     const safeExt = sub.replace(/[^a-z0-9]/gi, '') || 'png';
                     files.push(
-                        new File([blob], `paste-${Date.now()}.${safeExt}`, { type: blob.type || type })
+                        new File([blob], `paste-${Date.now()}.${safeExt}`, {
+                            type: blob.type || type
+                        })
                     );
                     break;
                 }
             }
             if (!files.length) {
-                Logger.debug('Request Revisions screenshot upload improvement: clipboard had no image');
+                Logger.debug('clipboard had no image');
                 return;
             }
             this.mergeIntoFileInput(input, files);
         } catch (err) {
-            Logger.error('Request Revisions screenshot upload improvement: clipboard read failed', err);
+            Logger.error('clipboard read failed', err);
         }
     },
 
     ensurePasteListener(state) {
         if (state.pasteListenerAttached) return;
         state.pasteListenerAttached = true;
-        const pasteHandler = ev => {
+        const pasteHandler = (ev) => {
             const files = imageFilesFromClipboard(ev.clipboardData);
             if (!files.length) return;
             if (shouldIgnorePasteTarget(ev.target)) return;
@@ -239,28 +252,7 @@ const RequestRevisionsScreenshotUploadApi = {
             this.mergeIntoFileInput(input, files);
         };
         CleanupRegistry.registerEventListener(document, 'paste', pasteHandler, true);
-        Logger.debug('Request Revisions screenshot upload improvement: document paste listener attached');
-    },
-
-    findNativeScreenshotControl() {
-        const dialogs = document.querySelectorAll('div[role="dialog"][data-state="open"]');
-        for (const dialog of dialogs) {
-            const heading = dialog.querySelector('h2');
-            const headingText = (heading && heading.textContent ? heading.textContent : '').trim();
-            if (!headingText.includes('Request Revisions')) continue;
-
-            const labels = dialog.querySelectorAll('label');
-            for (const label of labels) {
-                const input = label.querySelector('input[type="file"][accept*="image"]');
-                if (!input || !input.multiple) continue;
-                const span = label.querySelector('span.text-sm');
-                const text = ((span && span.textContent) || '').trim().replace(/\s+/g, ' ');
-                if (text.includes('Add screenshots')) {
-                    return { label, input };
-                }
-            }
-        }
-        return null;
+        Logger.debug('document paste listener attached');
     },
 
     ensureStyles(state, pluginId) {
@@ -269,7 +261,7 @@ const RequestRevisionsScreenshotUploadApi = {
         if (!style) {
             style = document.createElement('style');
             style.id = STYLE_ID;
-            style.setAttribute('data-fleet-plugin', pluginId || this.id);
+            style.setAttribute('data-fleet-plugin', pluginId);
             document.head.appendChild(style);
         }
         style.textContent = `
@@ -292,53 +284,47 @@ label[${NATIVE_LABEL_ATTR}] {
     mergeIntoFileInput(input, newFiles) {
         const dt = new DataTransfer();
         const existing = Array.from(input.files || []);
-        for (const file of existing) {
+        for (const f of existing) {
             if (dt.items.length >= MAX_FILES) break;
-            dt.items.add(file);
+            dt.items.add(f);
         }
-        for (const file of newFiles) {
-            if (file.size > MAX_BYTES) {
-                Logger.warn(
-                    `Request Revisions screenshot upload improvement: skipped "${file.name}" (over ${MAX_BYTES / (1024 * 1024)}MB)`
-                );
+        for (const f of newFiles) {
+            if (f.size > MAX_BYTES) {
+                Logger.warn(`skipped "${f.name}" (over ${MAX_BYTES / (1024 * 1024)}MB)`);
                 continue;
             }
             if (dt.items.length >= MAX_FILES) {
-                Logger.warn(
-                    `Request Revisions screenshot upload improvement: max ${MAX_FILES} screenshots; extra file(s) ignored`
-                );
+                Logger.warn(`max ${MAX_FILES} screenshots; extra file(s) ignored`);
                 break;
             }
-            dt.items.add(file);
+            dt.items.add(f);
         }
         const beforeLen = input.files ? input.files.length : 0;
-        if (dt.files.length === beforeLen) return;
+        if (dt.files.length === beforeLen) {
+            return;
+        }
         input.files = dt.files;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.dispatchEvent(new Event('change', { bubbles: true }));
-        Logger.log(
-            `Request Revisions screenshot upload improvement: merged paste/upload — ${input.files.length} file(s) on native input`
-        );
+        Logger.log(`merged paste/upload — ${input.files.length} file(s) on native input`);
     }
 };
-
 const plugin = {
-    id: 'requestRevisionsScreenshotUploadImprovementLib',
-    name: 'Request Revisions Screenshot Upload Improvement (library)',
+    id: 'screenshotUploadImprovementLib',
+    name: 'Screenshot Upload Improvement (library)',
     description:
-        'Shared API for Request Revisions screenshot drag-drop/upload and paste-image controls',
-    _version: '2.2',
+        'Shared drag-and-drop, upload, and paste for screenshots',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
 
     init(state) {
-        Context.requestRevisionsScreenshotUpload = {
-            run: (s, options) => RequestRevisionsScreenshotUploadApi.run(s, options)
+        Context.screenshotUpload = {
+            run: (s, options) => ScreenshotUploadApi.run(s, options)
         };
         if (!state.registered) {
-            Logger.log('module registered (Context.requestRevisionsScreenshotUpload)'
-            );
+            Logger.log('module registered (Context.screenshotUpload)');
             state.registered = true;
         }
     }

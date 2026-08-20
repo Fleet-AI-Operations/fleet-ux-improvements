@@ -3658,8 +3658,8 @@ function _dvApiAddTasks(seeds) {
 const plugin = {
     id: 'diff-viewer',
     name: 'Diff Viewer',
-    description: 'Slot-machine task/version diff tab for the Ops dashboard',
-    _version: '5.11',
+    description: 'Task/version diff tab for the Ops dashboard',
+    _version: '5.12',
     phase: 'core',
     enabledByDefault: true,
 

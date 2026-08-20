@@ -19,8 +19,8 @@ const BUTTONS = [
 const plugin = {
     id: 'guidelineButtons',
     name: 'Useful Link Buttons',
-    description: 'Add useful link buttons to the page',
-    _version: '3.1',
+    description: 'Adds guideline and useful-link buttons',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
 

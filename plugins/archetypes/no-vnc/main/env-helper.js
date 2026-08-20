@@ -6,7 +6,7 @@ const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
-    description: 'When off, hides the External Env Helper modal.',
+    description: 'Hide the External Env Helper panel',
     enabledByDefault: true
 };
 const FORCE_DARK_SUBOPTION = {
@@ -20,7 +20,7 @@ const plugin = {
     id: 'envHelper',
     name: 'External Env Helper',
     description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '1.5',
+    _version: '1.6',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],

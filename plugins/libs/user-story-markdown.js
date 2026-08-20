@@ -6,6 +6,8 @@ const ORIGINAL_MARKER = 'data-fleet-user-story-original';
 const REPLICA_MARKER = 'data-fleet-user-story-replica';
 const PROSE_ATTR = 'data-fleet-user-story-prose';
 const LABEL_TEXT = 'User Story';
+const NOTES_FROM_TASK_CREATOR_LABEL = 'Notes from Task Creator';
+const COLLAPSE_TOGGLE_SLOT = 'user-story-collapse-toggle';
 const DIV_MARKDOWN_LABELS = new Set(['User Story', 'Annotator Instructions']);
 const TASK_INSTRUCTIONS_RE = /^\s*Task Instructions\s*$/i;
 const SCENARIO_INTRO_RE = /Write a problem inspired by the following scenario/i;
@@ -90,19 +92,45 @@ const UserStoryMarkdownApi = {
         return String(text || '').replace(/\s+/g, ' ').trim();
     },
 
+    /** Label text with collapse Hide/Show stripped (matches user-story-collapse). */
+    labelTextFromEl(el) {
+        if (!el) return '';
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('[data-slot="' + COLLAPSE_TOGGLE_SLOT + '"]').forEach((n) => n.remove());
+        return this.normalizeLabelText(clone.textContent);
+    },
+
     isUserStoryLabel(el) {
         if (!el) return false;
-        return this.normalizeLabelText(el.textContent) === LABEL_TEXT;
+        return this.labelTextFromEl(el) === LABEL_TEXT;
     },
 
     isDivMarkdownLabel(el) {
         if (!el || el.tagName !== 'DIV') return false;
-        return DIV_MARKDOWN_LABELS.has(this.normalizeLabelText(el.textContent));
+        return DIV_MARKDOWN_LABELS.has(this.labelTextFromEl(el));
     },
 
     isTaskInstructionsHeading(el) {
         if (!el) return false;
-        return TASK_INSTRUCTIONS_RE.test(this.normalizeLabelText(el.textContent));
+        return TASK_INSTRUCTIONS_RE.test(this.labelTextFromEl(el));
+    },
+
+    isNotesFromTaskCreatorBody(el) {
+        if (!el) return false;
+        const cls = String(el.className || '');
+        if (/\bborder-amber-200\b/.test(cls) || /\bbg-amber-50\b/.test(cls)) return true;
+        let prev = el.previousElementSibling;
+        while (prev) {
+            if (prev.getAttribute && prev.getAttribute(REPLICA_MARKER) === 'true') {
+                prev = prev.previousElementSibling;
+                continue;
+            }
+            if (prev.tagName === 'LABEL' || prev.tagName === 'SPAN' || prev.tagName === 'DIV') {
+                return this.labelTextFromEl(prev) === NOTES_FROM_TASK_CREATOR_LABEL;
+            }
+            break;
+        }
+        return false;
     },
 
     findBodyForLabel(label) {
@@ -117,13 +145,19 @@ const UserStoryMarkdownApi = {
                 continue;
             }
             if (sibling.matches && sibling.matches('.whitespace-pre-wrap')) {
+                if (this.isNotesFromTaskCreatorBody(sibling)) {
+                    sibling = sibling.nextElementSibling;
+                    continue;
+                }
                 return sibling;
             }
             sibling = sibling.nextElementSibling;
         }
 
-        const nested = parent.querySelector('.whitespace-pre-wrap');
-        if (nested && !nested.closest('[' + REPLICA_MARKER + '="true"]')) {
+        const nestedAll = parent.querySelectorAll('.whitespace-pre-wrap');
+        for (const nested of nestedAll) {
+            if (nested.closest('[' + REPLICA_MARKER + '="true"]')) continue;
+            if (this.isNotesFromTaskCreatorBody(nested)) continue;
             return nested;
         }
         return null;
@@ -140,14 +174,14 @@ const UserStoryMarkdownApi = {
         for (const el of formLabels) {
             if (!this.isUserStoryLabel(el)) continue;
             const body = this.findBodyForLabel(el);
-            if (!body || seen.has(body)) continue;
+            if (!body || seen.has(body) || this.isNotesFromTaskCreatorBody(body)) continue;
             seen.add(body);
             bodies.push(body);
         }
         for (const el of divLabels) {
             if (!this.isDivMarkdownLabel(el)) continue;
             const body = this.findBodyForLabel(el);
-            if (!body || seen.has(body)) continue;
+            if (!body || seen.has(body) || this.isNotesFromTaskCreatorBody(body)) continue;
             seen.add(body);
             bodies.push(body);
         }
@@ -165,6 +199,7 @@ const UserStoryMarkdownApi = {
             for (const quote of quotes) {
                 if (seen.has(quote)) continue;
                 if (quote.closest('[' + REPLICA_MARKER + '="true"]')) continue;
+                if (this.isNotesFromTaskCreatorBody(quote)) continue;
                 seen.add(quote);
                 bodies.push(quote);
             }
@@ -182,7 +217,7 @@ const UserStoryMarkdownApi = {
         const intros = document.querySelectorAll('p');
         const bodies = [];
         for (const intro of intros) {
-            if (!SCENARIO_INTRO_RE.test(this.normalizeLabelText(intro.textContent))) continue;
+            if (!SCENARIO_INTRO_RE.test(this.labelTextFromEl(intro))) continue;
 
             const blueBox = intro.closest('div.rounded-lg.border');
             if (!blueBox || !this.isBlueStoryBox(blueBox)) continue;
@@ -193,6 +228,7 @@ const UserStoryMarkdownApi = {
                 if (body === intro) continue;
                 if (seen.has(body)) continue;
                 if (body.closest('[' + REPLICA_MARKER + '="true"]')) continue;
+                if (this.isNotesFromTaskCreatorBody(body)) continue;
                 seen.add(body);
                 bodies.push(body);
             }
@@ -280,13 +316,20 @@ const UserStoryMarkdownApi = {
         if (!raw) return '';
         const lines = raw.split(/\r?\n/);
         const out = [];
-        let inList = false;
+        let listKind = null; // 'ul' | 'ol' | null
 
         const closeList = () => {
-            if (inList) {
-                out.push('</ul>');
-                inList = false;
+            if (listKind) {
+                out.push('</' + listKind + '>');
+                listKind = null;
             }
+        };
+
+        const openList = (kind) => {
+            if (listKind === kind) return;
+            closeList();
+            listKind = kind;
+            out.push('<' + kind + '>');
         };
 
         for (let i = 0; i < lines.length; i++) {
@@ -302,6 +345,7 @@ const UserStoryMarkdownApi = {
             const h2 = /^##\s+(.+)$/.exec(trimmed);
             const h1 = /^#\s+(.+)$/.exec(trimmed);
             const ul = /^[-•]\s+(.+)$/.exec(trimmed);
+            const ol = /^\d+\.\s+(.+)$/.exec(trimmed);
 
             if (h1 || h2 || h3 || h4) {
                 closeList();
@@ -314,11 +358,14 @@ const UserStoryMarkdownApi = {
             }
 
             if (ul) {
-                if (!inList) {
-                    inList = true;
-                    out.push('<ul>');
-                }
+                openList('ul');
                 out.push('<li>' + this.processInlines(this.escapeHtml(ul[1])) + '</li>');
+                continue;
+            }
+
+            if (ol) {
+                openList('ol');
+                out.push('<li>' + this.processInlines(this.escapeHtml(ol[1])) + '</li>');
                 continue;
             }
 
@@ -464,8 +511,8 @@ const UserStoryMarkdownApi = {
 const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
-    description: 'Shared API: hide native User Story bodies and show markdown replicas',
-    _version: '1.6',
+    description: 'Shared User Story markdown rendering',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

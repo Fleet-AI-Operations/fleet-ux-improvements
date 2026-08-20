@@ -12,8 +12,8 @@ const OPS_BUNDLE_WAIT_TIMEOUT_MS = 30000;
 const plugin = {
     id: PLUGIN_ID,
     name: 'Prompt Version Actions',
-    description: 'On dashboard task pages with prompt history, copy version UUID prefix and open view-task link',
-    _version: '2.4',
+    description: 'Copy a short version ID and open the task view from prompt history',
+    _version: '2.5',
     enabledByDefault: true,
     phase: 'mutation',
 

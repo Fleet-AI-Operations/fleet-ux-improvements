@@ -847,8 +847,8 @@ function _deDiffUnits(baseText, compareText, granularity) {
 const plugin = {
     id: 'diff-engine',
     name: 'Diff Engine',
-    description: 'Shared LCS diff math and HTML rendering for dashboard diff features',
-    _version: '4.1',
+    description: 'Diff comparison helpers for Ops dashboard diff features',
+    _version: '4.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

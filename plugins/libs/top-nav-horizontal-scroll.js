@@ -1,26 +1,38 @@
 // ============= top-nav-horizontal-scroll.js ============= (library)
-// Makes the QA review header action row horizontally scrollable when it overflows.
+// Compacts the QA review header: hides Prompt v# + Environment/Team labels,
+// and makes the action-button cluster horizontally scrollable when it overflows.
 
 const ATTR_SCROLL = 'data-fleet-qa-top-nav-scroll';
 const ATTR_WRAP = 'data-fleet-qa-top-nav-scroll-wrap';
 const ATTR_INNER = 'data-fleet-qa-top-nav-scroll-inner';
+const ATTR_COMPACT_HIDE = 'data-fleet-qa-compact-hide';
+const ATTR_ACTIONS_INNER = 'data-fleet-qa-top-nav-actions-inner';
+
+const ACTION_UI_SELECTORS = [
+    '[data-ui="approve-task"]',
+    '[data-ui="request-revisions"]',
+    '[data-ui="flag-bugged"]'
+];
+
+const LABEL_TEXTS = new Set(['Environment:', 'Team:']);
 
 const TopNavHorizontalScrollApi = {
     id: 'qaCompUseTopNavScroll',
-    name: 'Top nav horizontal scroll',
+    name: 'QA header compact',
     description:
-        'Allows horizontal scrolling on the QA header ([data-ui="qa-header"]) when action buttons exceed the viewport width',
-    _version: '2.2',
+        'Compacts the QA header and scrolls action buttons when they overflow',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
 
     initialState: {
         missingLogged: false,
+        waitingActionsLogged: false,
         activationLogged: false,
         hadHeader: false,
+        hadActions: false,
         styleInjected: false,
-        noInnerLogged: false,
-        noCenterLogged: false
+        noInnerLogged: false
     },
 
     findQaHeader() {
@@ -32,18 +44,37 @@ const TopNavHorizontalScrollApi = {
         return direct || null;
     },
 
-    findCenterCluster(innerRow) {
-        for (const child of innerRow.children) {
-            if (child.classList && child.classList.contains('flex-1')) {
-                return child;
-            }
-        }
-        const byApprove = innerRow.querySelector('[data-ui="approve-task"]');
-        if (byApprove) {
-            let el = byApprove.closest('.flex.flex-1');
-            if (el && el.parentElement === innerRow) return el;
+    findActionAnchor(header) {
+        for (const sel of ACTION_UI_SELECTORS) {
+            const el = header.querySelector(sel);
+            if (el) return el;
         }
         return null;
+    },
+
+    findActionCluster(innerRow, header) {
+        const anchor = this.findActionAnchor(header);
+        if (!anchor) return null;
+        let el = anchor;
+        while (el && el.parentElement !== innerRow) {
+            el = el.parentElement;
+        }
+        return el && el.parentElement === innerRow ? el : null;
+    },
+
+    findActionsInnerRow(cluster) {
+        const direct = cluster.querySelector(':scope > .flex.items-center');
+        return direct || cluster.querySelector('.flex.items-center.gap-1') || null;
+    },
+
+    hideMetaLabels(header) {
+        const spans = header.querySelectorAll('span');
+        for (const span of spans) {
+            const text = (span.textContent || '').trim();
+            if (LABEL_TEXTS.has(text)) {
+                span.setAttribute(ATTR_COMPACT_HIDE, 'true');
+            }
+        }
     },
 
     ensureScrollStyles(state) {
@@ -67,42 +98,55 @@ const TopNavHorizontalScrollApi = {
 [${ATTR_SCROLL}="true"] {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+[${ATTR_ACTIONS_INNER}="true"] {
+    flex-wrap: nowrap !important;
+    min-width: max-content;
     justify-content: flex-start !important;
+}
+[data-ui="qa-header"] [data-ui="qa-prompt-version"] {
+    display: none !important;
+}
+[data-ui="qa-header"] [${ATTR_COMPACT_HIDE}] {
+    display: none !important;
 }
 `;
         document.head.appendChild(style);
         state.styleInjected = true;
     },
 
-    applyWrap(header, innerRow, center, state) {
+    applyWrap(header, innerRow, actionsCluster, state) {
         this.ensureScrollStyles(state);
         header.setAttribute(ATTR_WRAP, 'true');
         innerRow.setAttribute(ATTR_INNER, 'true');
         innerRow.classList.add('w-full', 'min-w-0');
 
-        center.setAttribute(ATTR_SCROLL, 'true');
-        center.setAttribute('data-fleet-plugin', this.id);
-        center.classList.add(
-            'min-w-0',
-            'flex-1',
-            'overflow-x-auto',
-            'overflow-y-hidden',
-            'justify-start'
-        );
-        if (center.classList.contains('flex')) {
-            center.classList.add('flex-nowrap');
+        actionsCluster.setAttribute(ATTR_SCROLL, 'true');
+        actionsCluster.setAttribute('data-fleet-plugin', this.id);
+        actionsCluster.classList.add('min-w-0', 'overflow-x-auto', 'overflow-y-hidden');
+
+        const actionsInner = this.findActionsInnerRow(actionsCluster);
+        if (actionsInner) {
+            actionsInner.setAttribute(ATTR_ACTIONS_INNER, 'true');
+            actionsInner.classList.add('flex-nowrap');
         }
+
+        this.hideMetaLabels(header);
     },
 
     run(state) {
         const header = this.findQaHeader();
         if (!header) {
-            if (state.hadHeader) {
-                Logger.debug(`[data-ui="qa-header"] left DOM — scroll inactive`);
+            if (state.hadHeader || state.hadActions) {
+                Logger.debug(`[data-ui="qa-header"] left DOM — compact inactive`);
                 state.hadHeader = false;
+                state.hadActions = false;
                 state.activationLogged = false;
+                state.waitingActionsLogged = false;
                 state.noInnerLogged = false;
-                state.noCenterLogged = false;
             }
             if (!state.missingLogged) {
                 Logger.debug(`QA header not found yet`);
@@ -123,20 +167,26 @@ const TopNavHorizontalScrollApi = {
         }
         state.noInnerLogged = false;
 
-        const center = this.findCenterCluster(innerRow);
-        if (!center) {
-            if (!state.noCenterLogged) {
-                Logger.warn(`QA header inner row has no flex-1 center cluster`);
-                state.noCenterLogged = true;
+        const actionsCluster = this.findActionCluster(innerRow, header);
+        if (!actionsCluster) {
+            if (state.hadActions) {
+                Logger.debug(`QA header action cluster left DOM — compact inactive`);
+                state.hadActions = false;
+                state.activationLogged = false;
+            }
+            if (!state.waitingActionsLogged) {
+                Logger.debug(`QA header present but action cluster not ready yet`);
+                state.waitingActionsLogged = true;
             }
             return;
         }
-        state.noCenterLogged = false;
+        state.waitingActionsLogged = false;
+        state.hadActions = true;
 
-        this.applyWrap(header, innerRow, center, state);
+        this.applyWrap(header, innerRow, actionsCluster, state);
 
         if (!state.activationLogged) {
-            Logger.log(`horizontal scroll enabled on QA header action cluster`);
+            Logger.log(`QA header compacted: Prompt v# and Environment/Team labels hidden; action cluster scroll enabled`);
             state.activationLogged = true;
         }
     }
@@ -145,9 +195,9 @@ const TopNavHorizontalScrollApi = {
 
 const plugin = {
     id: 'topNavHorizontalScrollLib',
-    name: 'Top Nav Horizontal Scroll (library)',
-    description: 'Shared API for QA header horizontal scroll',
-    _version: '2.1',
+    name: 'QA Header Compact (library)',
+    description: 'Compacts the QA header and scrolls action buttons when they overflow',
+    _version: '3.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -164,7 +214,7 @@ const plugin = {
             }
         };
         if (!state.registered) {
-            Logger.log('topNavHorizontalScrollLib: module registered (Context.topNavHorizontalScroll)');
+            Logger.log('module registered (Context.topNavHorizontalScroll)');
             state.registered = true;
         }
     }

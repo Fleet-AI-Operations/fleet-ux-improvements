@@ -159,8 +159,8 @@
     },
     {
       "file": "request-revisions.js",
-      "name": "Request Revisions Improvements",
-      "description": "Improvements to the Request Revisions Workflow"
+      "name": "\"Request Revisions\" Modal Improvements",
+      "description": "Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions"
     },
     {
       "file": "toggle-main-panels.js",
@@ -230,7 +230,7 @@
     {
       "file": "request-revisions.js",
       "name": "\"Request Revisions\" Modal Improvements",
-      "description": "Improvements to the Request Revisions Workflow"
+      "description": "Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions"
     },
     {
       "file": "text-sanitizer.js",

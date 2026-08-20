@@ -6735,8 +6735,8 @@ function attachSearchOutputListeners(modal, dash) {
 const plugin = {
     id: 'search-output',
     name: 'Search Output',
-    description: 'Worker Output Search tab core: bootstrap, search, prefetch, filter engine',
-    _version: '9.60',
+    description: 'Worker Output Search: search, filters, and result prefetch',
+    _version: '9.61',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

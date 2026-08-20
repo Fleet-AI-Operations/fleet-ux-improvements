@@ -222,8 +222,8 @@ const plugin = {
     id: 'actionCounterLib',
     name: 'Action Counter (library)',
     description:
-        'Shared API for action counter chrome and storage (archetype modules supply find/mount)',
-    _version: '3.5',
+        'Shared Action Counter UI and storage',
+    _version: '3.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1,7 +1,7 @@
 // fos-embedded-watcher.js
-// Parent-page watcher: detects FOS desktop envs via orchestrator + latch + noVNC/child shape
-// (not env_key name substrings), authorizes embedded iframe clipboard bridge, and hosts
-// VM Clipboard UI (system clipboard I/O stays on the parent).
+// Parent-page watcher: detects FOS desktop envs via orchestrator + latch + either
+// env_key "fos" substring or noVNC/child shape, authorizes embedded iframe clipboard
+// bridge, and hosts VM Clipboard UI (system clipboard I/O stays on the parent).
 // Bar hosts on CU creation/QA claim UI via Context.fosEmbedded; floating panel mounts only when no host claimed.
 
 const FOS_ENV_HOST_PATTERN = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
@@ -21,8 +21,13 @@ function fosInstanceIdFromHostname(hostname) {
     return String(hostname || '').split('.')[0] || '';
 }
 
+/** Case-insensitive: env_key contains "fos" (codename path; concurrent with desktop shape). */
+function fosIsFosEnvKey(envKey) {
+    return String(envKey || '').toLowerCase().includes('fos');
+}
+
 /**
- * FOS desktop / noVNC fetch shape (not env_key names).
+ * FOS desktop / noVNC fetch shape (concurrent with env_key name check).
  * Root /api/v1/env/timestamp alone is NOT sufficient — single-app web envs use it too.
  */
 function fosIsDesktopShapePath(pathname) {
@@ -184,8 +189,8 @@ const plugin = {
     id: 'fosEmbeddedWatcher',
     name: 'FOS Embedded Watcher',
     description:
-        'Detects embedded FOS desktop envs (noVNC/child shape), signals the iframe child, and hosts parent-side VM Clipboard controls',
-    _version: '5.0',
+        'Detects embedded FOS desktops and adds VM Clipboard controls on the parent page',
+    _version: '5.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -196,6 +201,7 @@ const plugin = {
         readyInstances: null,
         uiHosts: null,
         readinessListeners: null,
+        desktopListeners: null,
         messageListenerInstalled: false,
         resultListenerInstalled: false,
         ackListenerInstalled: false,
@@ -228,6 +234,9 @@ const plugin = {
         }
         if (!state.readinessListeners) {
             state.readinessListeners = new Set();
+        }
+        if (!state.desktopListeners) {
+            state.desktopListeners = new Set();
         }
         this._state = state;
         this._exposeApi(state);
@@ -288,6 +297,32 @@ const plugin = {
                     state.readinessListeners.delete(listener);
                 };
             },
+            isFosDesktop(instanceId) {
+                const id = String(instanceId || '');
+                if (!id) {
+                    return false;
+                }
+                const rec = state.fosInstances.get(id);
+                return !!(rec && rec.isFosDesktop);
+            },
+            subscribeDesktop(listener) {
+                if (typeof listener !== 'function') {
+                    return () => {};
+                }
+                state.desktopListeners.add(listener);
+                state.fosInstances.forEach((rec, instanceId) => {
+                    if (rec && rec.isFosDesktop) {
+                        try {
+                            listener({ instanceId, isFosDesktop: true });
+                        } catch (_e) {
+                            /* ignore */
+                        }
+                    }
+                });
+                return () => {
+                    state.desktopListeners.delete(listener);
+                };
+            },
             getReadyInstances() {
                 return self._getReadyInstancesList(state);
             },
@@ -328,6 +363,20 @@ const plugin = {
                 listener({ instanceId: String(instanceId), ready: !!ready });
             } catch (e) {
                 Logger.warn('readiness listener threw', e);
+            }
+        });
+    },
+
+    _notifyDesktopIdentification(state, instanceId) {
+        const id = String(instanceId || '');
+        if (!id || !state.desktopListeners) {
+            return;
+        }
+        state.desktopListeners.forEach((listener) => {
+            try {
+                listener({ instanceId: id, isFosDesktop: true });
+            } catch (e) {
+                Logger.warn('desktop listener threw', e);
             }
         });
     },
@@ -485,6 +534,7 @@ const plugin = {
                 id +
                 (reason ? ' (' + reason + ')' : '')
         );
+        this._notifyDesktopIdentification(state, id);
         this._onInstanceProgress(state, id);
         return true;
     },
@@ -851,8 +901,20 @@ const plugin = {
 
     _tryNotifyChild(state, instanceId, child) {
         const rec = state.fosInstances.get(instanceId);
-        if (!rec || !rec.latchReady || !rec.envKey || !rec.isFosDesktop) {
+        if (!rec || !rec.latchReady || !rec.envKey) {
             return false;
+        }
+        if (!rec.isFosDesktop) {
+            if (!fosIsFosEnvKey(rec.envKey)) {
+                return false;
+            }
+            // Codename hit: mark here without _markFosDesktop (avoids re-entrant flush).
+            rec.isFosDesktop = true;
+            Logger.log('FOS desktop shape for instance ' +
+                    instanceId +
+                    ' (env-key)'
+            );
+            this._notifyDesktopIdentification(state, instanceId);
         }
         if (!child || !child.source || typeof child.source.postMessage !== 'function') {
             return false;
@@ -996,6 +1058,9 @@ const plugin = {
                                 ' env=' +
                                 rec.envKey
                         );
+                        if (fosIsFosEnvKey(rec.envKey)) {
+                            self._markFosDesktop(state, instanceId, 'env-key');
+                        }
                         self._onInstanceProgress(state, instanceId);
                     })
                     .catch(() => { /* ignore non-JSON */ });

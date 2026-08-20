@@ -5,8 +5,8 @@ const plugin = {
     id: 'sourceDataExplorer',
     name: 'Explore GUI',
     description:
-        'Adds an Explore GUI control that opens the underlying environment in a new tab so you can inspect data without parsing JSON. This links to the actual instance that your tool calls are modifying. BE AWARE: if you make changes inside the instance, they will be reflected in your tool calls. Only use the tools to perform write actions, or you may run into unexpected problems when your submission is graded.',
-    _version: '2.0',
+        'Opens the task environment in a new tab for inspection',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: { missingLogged: false, interceptionInstalled: false },

@@ -6,8 +6,8 @@ const plugin = {
     id: 'sessionTraceAutoExpandVerifier',
     name: 'Auto-expand verifier output section',
     description:
-        'Clicks the Verifier Output score/timing header once per page so expanded content is shown',
-    _version: '1.2',
+        'Expands Verifier Output on session trace pages',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
 

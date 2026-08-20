@@ -807,8 +807,8 @@ function dashLibFormatVerifierStdout(raw) {
 const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
-    description: 'Pure helpers for the Worker Output Search dashboard (filters, versions, highlighting)',
-    _version: '8.8',
+    description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
+    _version: '8.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -287,8 +287,8 @@ const UserStoryCollapseApi = {
 const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
-    description: 'Shared API to hide/show User Story bodies from the label row',
-    _version: '1.4',
+    description: 'Shared Hide/Show for User Story bodies',
+    _version: '1.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

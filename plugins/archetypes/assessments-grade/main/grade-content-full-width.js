@@ -9,8 +9,8 @@ const plugin = {
     id: 'assessmentsGradeContentFullWidth',
     name: 'Grade Assessments Full Width',
     description:
-        'Removes the max-w-6xl cap from grade assessments content containers (mx-auto px-6 py-12 wrappers)',
-    _version: '1.0',
+        'Lets the grading queue use the full page width',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

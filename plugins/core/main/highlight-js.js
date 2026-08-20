@@ -84,8 +84,8 @@ function resolveFleetSyntaxTheme() {
 const plugin = {
     id: 'highlight-js',
     name: 'Highlight.js Loader',
-    description: 'Lazy-loads highlight.js from jsDelivr for Python syntax highlighting',
-    _version: '1.8',
+    description: 'Loads Python syntax highlighting for code views',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
 

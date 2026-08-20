@@ -114,6 +114,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Computer Use Task Revision Page
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
@@ -121,6 +122,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### QA Tool Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
@@ -130,8 +132,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **Hide Verifier Output**: Adds Hide/Show Verifier before Run Verifier; hides the output body and collapses the bottom panel until shown or a verifier run starts
 - **Workflow Verifier Tab**: Adds Workflow | Verifier tabs on the QA workflow panel and shows searchable verifier source for the current task
-- **"Request Revisions" Modal Improvements**: Improvements to the Request Revisions Workflow
-- **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
+- **"Request Revisions" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Useful Link Buttons**: Add useful link buttons to the page
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
@@ -143,11 +144,11 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard
 - **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
-- **Request Revisions Improvements**: Improvements to the Request Revisions Workflow
-- **Request Revisions Task-Only Issues**: Hides Task/Environment/Grading on Request Revisions and auto-selects the Task issue section
+- **"Request Revisions" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Dispute Review Page
 - **Dispute List Collapse**: Hijacks the native expand control for a full collapse that hides everything except the status/time/#id header row; remembers closed dispute numbers across reloads
@@ -164,6 +165,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)
+- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Session Trace Review Page
 - **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)

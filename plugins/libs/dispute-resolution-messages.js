@@ -515,8 +515,8 @@ const plugin = {
     id: 'disputeResolutionMessages',
     name: 'Dispute Resolution Messages',
     description:
-        'Shared cached named messages for dispute resolution textareas (create, insert, delete)',
-    _version: '1.3',
+        'Saved named messages for dispute resolution (create, insert, delete)',
+    _version: '1.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

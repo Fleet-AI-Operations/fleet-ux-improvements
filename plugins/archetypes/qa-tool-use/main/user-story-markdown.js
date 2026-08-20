@@ -4,8 +4,8 @@
 const plugin = {
     id: 'userStoryMarkdown',
     name: 'User Story Markdown',
-    description: 'Hide native User Story bodies and show markdown-rendered blue-framed replicas',
-    _version: '1.0',
+    description: 'Renders the User Story as markdown',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

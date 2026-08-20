@@ -3,17 +3,20 @@
 
 const plugin = {
     id: 'qaToolUseTopNavScroll',
-    name: 'Top nav horizontal scroll',
+    name: 'QA header compact',
     description:
-        'Allows horizontal scrolling on the QA header ([data-ui="qa-header"]) when action buttons exceed the viewport width',
-    _version: '1.2',
+        'Compacts the QA header and scrolls action buttons when they overflow',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         missingLogged: false,
+        waitingActionsLogged: false,
         activationLogged: false,
         hadHeader: false,
-        styleInjected: false
+        hadActions: false,
+        styleInjected: false,
+        noInnerLogged: false
     },
 
     onMutation(state) {

@@ -34,7 +34,7 @@ const LAYOUT_STORAGE_KEYS = {
 const SHOW_PANEL_SUBOPTION = {
     id: SHOW_PANEL_SUBOPTION_ID,
     name: 'Show panel',
-    description: 'When off, hides the External Env Helper modal.',
+    description: 'Hide the External Env Helper panel',
     enabledByDefault: true
 };
 
@@ -49,7 +49,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'External Env Helper',
     description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '2.4',
+    _version: '2.6',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -753,8 +753,8 @@ const EnvHelperApi = {
 const plugin = {
     id: 'envHelperLib',
     name: 'External Env Helper (library)',
-    description: 'Shared API for External Env Helper panel on non-VNC env pages',
-    _version: '2.4',
+    description: 'Shared External Env Helper panel for non-VNC env pages',
+    _version: '2.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

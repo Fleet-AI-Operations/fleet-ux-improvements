@@ -175,8 +175,8 @@ const AcceptTaskModalApi = {
 const plugin = {
     id: 'acceptTaskModalImprovementsLib',
     name: '"Accept Task" Modal Improvements (library)',
-    description: 'Shared API for the Approve Task motivate-worker button',
-    _version: '2.2',
+    description: 'Shared Approve Task positive-comment button',
+    _version: '2.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

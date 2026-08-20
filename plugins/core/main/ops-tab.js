@@ -244,8 +244,8 @@ async function opsDecryptWithPassword(blob, password) {
 const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
-    description: 'Ops platform: password gate, PostgREST, team catalog/search APIs, verifier fetch',
-    _version: '13.1',
+    description: 'Ops unlock, team catalog/search, and verifier fetch for the Ops dashboard',
+    _version: '13.2',
     phase: 'core',
     enabledByDefault: true,
 

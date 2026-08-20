@@ -1020,8 +1020,8 @@ const DashboardChatsApi = {
 const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
-    description: 'Ops dashboard Chats tab — OpenRouter conversations by generation id',
-    _version: '4.2',
+    description: 'Ops Chats tab for OpenRouter conversations',
+    _version: '4.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

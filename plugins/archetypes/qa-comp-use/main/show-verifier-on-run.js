@@ -6,8 +6,8 @@ const plugin = {
     id: 'showVerifierOnRun',
     name: 'Show Verifier On Run',
     description:
-        'Automatically clicks "Show Grading" when the verifier runs if the grading panel is hidden; no-op when already visible.',
-    _version: '1.3',
+        'Shows grading when the verifier runs if the panel is hidden',
+    _version: '1.4',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

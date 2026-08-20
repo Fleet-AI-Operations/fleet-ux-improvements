@@ -51,8 +51,8 @@ const NotesResizeHandleApi = {
 const plugin = {
     id: 'notesResizeHandleLib',
     name: 'Notes Resize Handle (library)',
-    description: 'Shared API for enabling vertical resize on the QA reviewer notes textarea',
-    _version: '2.1',
+    description: 'Shared vertical resize for the QA reviewer notes textarea',
+    _version: '2.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
