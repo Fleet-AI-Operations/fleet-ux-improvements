@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.417",
+  "archetypesVersion": "14.418",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -188,8 +188,8 @@
     },
     {
       "name": "rating-engine.js",
-      "version": "17.0",
-      "hash": "sha256-761b9826c2fb43adea5f391a363b5f0516feda5ee9b040806a9d9bb734d24692",
+      "version": "17.1",
+      "hash": "sha256-b7d2af551afcde36c08c580f57933bed9c918f9764edfe0d741343f373c3dcda",
       "log": false
     },
     {
