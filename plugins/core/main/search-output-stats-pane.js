@@ -5418,7 +5418,7 @@ const searchOutputStatsPaneMethods = {
             { label: 'Outcome Quality',        weight: '35%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
             { label: 'V1 Creation Time',       weight: '20%', measures: 'Each timed task is scored against that project\'s normal time band (middle half of population times for the env, else team, else global). Full credit inside the band; the score falls toward zero below the low edge or above the long-tail fence. Toggleable.' },
             { label: 'Positive Feedback Rate', weight: '15%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
-            { label: 'Task Rating Quality',    weight: '10%', measures: 'Mean of explicit prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Unscored feedback is excluded.' },
+            { label: 'Task Rating Quality',    weight: '10%', measures: 'Mean of peer prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Missing labels count as Average.' },
             { label: 'Revision Efficiency',    weight: '10%', measures: 'On terminal tasks with version history: full credit at one display version; each extra version halves credit (0.5^(v−1)). Upheld writer disputes do not count against the version total.' },
             { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
         ];
@@ -5599,7 +5599,7 @@ const searchOutputStatsPaneMethods = {
                 return 'No human feedback on authored tasks in scope';
             case 'taskRatingQuality':
             case 'nonBottomScoreRate':
-                return 'No explicitly scored feedback in scope';
+                return 'No human feedback on authored tasks in scope';
             case 'revisionEfficiency':
                 return 'No terminal tasks with version history in scope';
             case 'firstPassAcceptance':
@@ -6421,7 +6421,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.10',
+    _version: '14.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
