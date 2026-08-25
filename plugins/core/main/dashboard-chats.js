@@ -362,6 +362,7 @@ function chatsRatingBlockFromPayload(score, scoreKind) {
         band: score.tier || null,
         tierId: chatsRatingTierId(score.tier, score.tierId),
         estimatedPercentile: score.estimatedPercentile,
+        estimatedPercentilePrevious: score.estimatedPercentilePrevious,
         confidence: {
             label: score.confidence || '',
             tier: chatsRatingConfidenceTier(score.confidence),
@@ -1021,7 +1022,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Dashboard Chats',
     description: 'Ops Chats tab for OpenRouter conversations',
-    _version: '4.3',
+    _version: '4.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

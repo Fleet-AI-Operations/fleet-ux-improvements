@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.420",
+  "archetypesVersion": "14.421",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -188,14 +188,14 @@
     },
     {
       "name": "rating-engine.js",
-      "version": "17.1",
-      "hash": "sha256-b7d2af551afcde36c08c580f57933bed9c918f9764edfe0d741343f373c3dcda",
+      "version": "17.2",
+      "hash": "sha256-93d06253f77b9e490507f0e5c4057f41d640c310c55d32add56ac6337c5206af",
       "log": false
     },
     {
       "name": "rating-explain.js",
-      "version": "4.12",
-      "hash": "sha256-2d1b8655b7c2f8e295d77fa59713180a7d9b1709ac8201eb980aaac664d246b2",
+      "version": "4.13",
+      "hash": "sha256-edf2cbcd2004f82d614e04290a1d5cdeef2a4a5521001bfd570ce4c1a8875f20",
       "log": false
     },
     {
@@ -212,8 +212,8 @@
     },
     {
       "name": "dashboard-chats.js",
-      "version": "4.3",
-      "hash": "sha256-c02a5e1e699136bee06dce25fcc8713588e16f10ee602464b839a5a2f396eb9e",
+      "version": "4.4",
+      "hash": "sha256-0f9db6bb8bcf0dd1bc08dad060b48caf563c19f29d3faf1383aa9d9455597046",
       "log": false
     },
     {
@@ -248,8 +248,8 @@
     },
     {
       "name": "search-output-stats-pane.js",
-      "version": "14.11",
-      "hash": "sha256-b5bbf89d3795b57088d7e53ab480f2619bec31b56dbe2130d0d838ced69359a0",
+      "version": "14.12",
+      "hash": "sha256-0e0864073c77d5a5f822ae49ff04b06f421f45f74c5c801313c2ceb744617197",
       "log": false
     },
     {
