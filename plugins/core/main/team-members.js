@@ -409,7 +409,12 @@ const teamMembersController = {
             const retryBtn = cards.querySelector('#wf-ops-team-search-retry-btn');
             if (openTeamBtn) {
                 openTeamBtn.addEventListener('click', () => {
-                    if (retryBtn) retryBtn.style.display = '';
+                    if (retryBtn) {
+                        retryBtn.style.display = '';
+                        const ab = self._opsAlertBannerClasses();
+                        retryBtn.className = ab.btnPrimary;
+                        openTeamBtn.className = ab.btnSecondary;
+                    }
                     Context.opsTab.openTeamPageForCredRefresh(modal);
                 });
             }
@@ -2215,7 +2220,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '5.4',
+    _version: '5.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
