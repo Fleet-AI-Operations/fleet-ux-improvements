@@ -209,7 +209,7 @@ const plugin = {
     id: 'dashboard',
     name: 'Dashboard',
     description: 'Ops dashboard window, tabs, and shared chrome',
-    _version: '12.14',
+    _version: '12.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2880,6 +2880,10 @@ const plugin = {
         `;
     },
 
+    // Prefer the current output workspace (_outputPanel / _withOutputWs), then modal-wide.
+    // Do not prefer activeTab first — that ignores _wsOverride and leaks inventory into Search Output.
+    // Modal-wide hits: allow chrome (no data-wf-dash-panel) and non-output tabs (team-members, …).
+    // Reject only a node that lives in a different output tab (search-output / disputes / sr-review).
     _q(selector) {
         if (!this._modal) return null;
         const outPanel = this._outputPanel();
@@ -2889,12 +2893,20 @@ const plugin = {
         }
         const el = this._modal.querySelector(selector);
         if (!el) return null;
-        // Modal chrome (close, settings, …) is fine. Never steal nodes from another
-        // output panel — inventory tabs omit search controls and would otherwise hit
-        // Search Output via modal-wide fallback.
         const elPanel = el.closest && el.closest('[data-wf-dash-panel]');
-        if (elPanel && outPanel && elPanel !== outPanel) return null;
+        if (elPanel && outPanel && elPanel !== outPanel) {
+            const elTabId = elPanel.getAttribute('data-wf-dash-panel');
+            if (dashIsOutputTabId(elTabId)) return null;
+        }
         return el;
+    },
+
+    _teamMembersPanel() {
+        return this._modal ? this._modal.querySelector('[data-wf-dash-panel="team-members"]') : null;
+    },
+
+    _queryInTeamMembersPanel(selector) {
+        return this._queryWithinOutputPanel(this._teamMembersPanel(), selector);
     },
 
     // ── Listener wiring ──,
@@ -3081,6 +3093,9 @@ const plugin = {
     },
 
     _msPanelEl(scopeKey) {
+        if (dashIsTeamMembersMsKey(scopeKey)) {
+            return this._queryInTeamMembersPanel('#wf-dash-' + scopeKey + '-list');
+        }
         return this._q('#wf-dash-' + scopeKey + '-list');
     },
 
@@ -3090,6 +3105,9 @@ const plugin = {
     },
 
     _msWrapEl(scopeKey) {
+        if (dashIsTeamMembersMsKey(scopeKey)) {
+            return this._queryInTeamMembersPanel('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
+        }
         return this._q('[data-wf-dash-ms-wrap="' + scopeKey + '"]');
     },
 
@@ -3575,7 +3593,9 @@ const plugin = {
                 : (scopeKey && scopeKey.startsWith('stats-chart-filter-') ? '[data-wf-dash-stats-body]'
                     : (scopeKey && scopeKey.startsWith('team-members-') ? '#wf-ops-team-left-scroll' : null)));
         if (!panelId) return null;
-        const panel = this._q(panelId);
+        const panel = dashIsTeamMembersMsKey(scopeKey)
+            ? this._queryInTeamMembersPanel(panelId)
+            : this._q(panelId);
         if (!panel || panel.style.display === 'none') return null;
         for (const child of panel.children) {
             if (!(child instanceof this._pageWindow().HTMLElement)) continue;
@@ -4004,7 +4024,9 @@ const plugin = {
     },
 
     _updateMsCount(scopeKey) {
-        const countEl = this._q('#wf-dash-' + scopeKey + '-count');
+        const countEl = dashIsTeamMembersMsKey(scopeKey)
+            ? this._queryInTeamMembersPanel('#wf-dash-' + scopeKey + '-count')
+            : this._q('#wf-dash-' + scopeKey + '-count');
         if (!countEl) return;
         if (dashIsTeamMembersDualConstraintMsKey(scopeKey)) {
             const sel = this._readDualConstraintSelection(scopeKey);
