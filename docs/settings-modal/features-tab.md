@@ -1,4 +1,4 @@
-1.37
+1.38
 
 ## Features
 
@@ -10,6 +10,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning
 
 ### Tool Use Task Creation Page
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
@@ -20,24 +21,28 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
 - **Tool Favorites**: Add favorite stars to tools list
 - **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Tool Use Task Revision Page
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 
 ### Computer Use Task Creation Page
 - **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 - **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Computer Use Task Revision Page
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas

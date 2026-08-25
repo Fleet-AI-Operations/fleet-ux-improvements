@@ -83,6 +83,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Tool Use Task Creation Page
 - **Explore GUI**: Opens the underlying tool environment in a new tab (captures env root from `/api/mcp-proxy` subdomain, with legacy `/mcp` fallback; acknowledgment modal before opening)
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
@@ -95,6 +96,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
 - **Tool Favorites**: Add favorite stars to tools list
 - **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
@@ -103,6 +105,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Tool Use Task Revision Page
 - **Explore GUI**: Opens the underlying tool environment in a new tab (captures env root from `/api/mcp-proxy` subdomain, with legacy `/mcp` fallback; acknowledgment modal before opening)
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
@@ -110,6 +113,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Computer Use Task Creation Page
 - **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
@@ -117,6 +121,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Computer Use Task Revision Page
+- **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label

@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '4.2',
+    _version: '4.3',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -222,7 +222,7 @@ const plugin = {
 
         const wrapperEl = document.createElement('div');
         wrapperEl.setAttribute('data-fleet-prompt-cache-restore-wrapper', 'true');
-        wrapperEl.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:6px;';
+        wrapperEl.className = 'fleet-prompt-cache-restore-wrapper';
 
         const bindRestoreSlot = (slotParts, version) => {
             const { restoreBtn, cancelBtn, confirmBtn } = slotParts;
@@ -253,8 +253,8 @@ const plugin = {
             });
         };
 
-        const slotCurrent = this.buildRestoreSlot('Restore last saved prompt?', 'current');
-        const slotPrevious = this.buildRestoreSlot('Restore previous to last saved prompt?', 'previous');
+        const slotCurrent = this.buildRestoreSlot('Last Saved Prompt', 'current');
+        const slotPrevious = this.buildRestoreSlot('Previous to Last Saved Prompt', 'previous');
         bindRestoreSlot(slotCurrent, 'current');
         bindRestoreSlot(slotPrevious, 'previous');
 
@@ -498,6 +498,16 @@ const plugin = {
         const style = document.createElement('style');
         style.id = 'fleet-prompt-cache-styles';
         style.textContent = `
+            .fleet-prompt-cache-restore-wrapper {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+                margin-bottom: 6px;
+            }
+            .fleet-prompt-cache-restore-slot {
+                flex: 1 1 auto;
+                min-width: max-content;
+            }
             .fleet-prompt-cache-restore-btn-wrap {
                 display: block;
                 width: 100%;
@@ -517,6 +527,7 @@ const plugin = {
                 background-color: transparent;
                 color: inherit;
                 border: 1px solid var(--border, #e2e8f0);
+                white-space: nowrap;
                 animation: none;
                 transition: background-color 0.15s, color 0.15s, border-color 0.15s;
             }
