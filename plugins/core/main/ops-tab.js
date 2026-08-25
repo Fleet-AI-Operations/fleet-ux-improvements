@@ -661,7 +661,7 @@ const plugin = {
         ];
         const qaRequired = [
             'returnEffectiveness', 'returnActionability', 'acceptanceScrutiny',
-            'disputeDefense', 'labelDiscrimination'
+            'disputeDefense', 'labelDiscriminationTop', 'labelDiscriminationBottom'
         ];
         for (const id of twRequired) {
             if (!Number.isFinite(Number(tw[id]))) return null;

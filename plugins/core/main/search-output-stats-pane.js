@@ -5450,7 +5450,7 @@ const searchOutputStatsPaneMethods = {
             { label: 'Return Effectiveness',  weight: '30%', measures: 'Of ordinary returns (not escalations or Flag-as-Bug) on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
             { label: 'QA Time',               weight: '20%', measures: 'Each timed review is scored against that project\'s normal QA time band (middle half of population times for the env, else team, else global). Full credit inside the band; the score falls toward zero below the low edge or above the long-tail fence. Toggleable.' },
             { label: 'Return Actionability',  weight: '20%', measures: 'The task author responds positively to their return (next human feedback is positive).' },
-            { label: 'Label Discrimination',  weight: '10%', measures: 'Top/Bottom label usage vs an ideal ~20% rate (full credit at 20%; falls toward 0 at 0% and at 40%+). Omitted when fewer than 10 feedback rows are in scope.' },
+            { label: 'Label Discrimination',  weight: '10%', measures: 'Top and Bottom label usage each vs an ideal 10% rate (full credit at 10% per label; each side falls toward 0 at 0% and at 20%+). Axis is the average of the two. Omitted when fewer than 10 feedback rows are in scope.' },
             { label: 'Acceptance Scrutiny',   weight: '10%', measures: 'Two-sided check against unusually high or low accept rates. Full credit from 40% to 60%; the score falls toward zero as accepts approach 0% or 100%.' },
             { label: 'Dispute Loss Avoidance',weight: '10%', measures: 'Dispute losses linked to this reviewer\'s feedback, as a rate vs tasks they QA\'d. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. QA wins are neutral.' },
         ];
@@ -6454,7 +6454,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.12',
+    _version: '14.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
