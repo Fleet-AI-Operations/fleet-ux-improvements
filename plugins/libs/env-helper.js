@@ -49,7 +49,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'External Env Helper',
     description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '2.6',
+    _version: '2.7',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -148,9 +148,6 @@ const EnvHelperApi = {
         const shadow = c.dark
             ? '0 12px 40px rgba(0,0,0,0.55)'
             : '0 12px 40px rgba(15,23,42,0.18)';
-        const chipShadow = c.dark
-            ? '0 6px 18px rgba(0,0,0,0.35)'
-            : '0 6px 18px rgba(15,23,42,0.14)';
         if (root) {
             root.dataset.fleetHelperTheme = theme;
             root.style.background = c.bg;
@@ -181,11 +178,11 @@ const EnvHelperApi = {
         }
         if (chip) {
             chip.dataset.fleetHelperTheme = theme;
-            chip.style.background = c.bg;
+            chip.style.background = '';
+            chip.style.boxShadow = '';
             chip.style.color = c.fg;
             chip.style.border = '1px solid ' + c.border;
             chip.style.borderRadius = '10px';
-            chip.style.boxShadow = chipShadow;
             chip.querySelectorAll('button').forEach((el) => {
                 el.style.background = 'transparent';
                 el.style.color = c.fg;
@@ -468,8 +465,8 @@ const EnvHelperApi = {
 
             const openBtn = document.createElement('button');
             openBtn.type = 'button';
-            openBtn.textContent = 'External Env Helper';
-            openBtn.setAttribute('aria-label', 'Toggle External Env Helper');
+            openBtn.textContent = 'Helper';
+            openBtn.setAttribute('aria-label', 'Toggle Helper');
             openBtn.addEventListener('click', () => {
                 if (!root) {
                     return;
@@ -485,8 +482,11 @@ const EnvHelperApi = {
 
             const refreshBtn = document.createElement('button');
             refreshBtn.type = 'button';
-            refreshBtn.textContent = '\u21BB';
-            refreshBtn.setAttribute('aria-label', 'Reset External Env Helper to default position');
+            const refreshGlyph = document.createElement('span');
+            refreshGlyph.textContent = '\u21BB';
+            refreshGlyph.style.cssText = 'display:inline-block;transform:rotate(90deg);';
+            refreshBtn.appendChild(refreshGlyph);
+            refreshBtn.setAttribute('aria-label', 'Reset Helper to default position');
             refreshBtn.title = 'Reset to default position';
             refreshBtn.className = pc.chipSep || '';
             refreshBtn.addEventListener('click', (ev) => {
@@ -531,7 +531,7 @@ const EnvHelperApi = {
             const headerEl = document.createElement('div');
             headerEl.className = pc.header || '';
             const headerTitle = document.createElement('div');
-            headerTitle.textContent = 'External Env Helper';
+            headerTitle.textContent = 'Helper';
             headerTitle.className = pc.title || '';
             headerTitle.style.cursor = 'grab';
             headerTitle.style.padding = '2px 0';
@@ -754,7 +754,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'External Env Helper (library)',
     description: 'Shared External Env Helper panel for non-VNC env pages',
-    _version: '2.6',
+    _version: '2.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

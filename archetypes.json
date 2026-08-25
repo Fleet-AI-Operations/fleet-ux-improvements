@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.422",
+  "archetypesVersion": "14.423",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.21",
-      "hash": "sha256-12a6547a6d78015a74466396f29345e235897902a8071873011521d2ddae7e42",
+      "version": "3.22",
+      "hash": "sha256-723e848270666f41af60b64449fc08cf279906e7b0cfa71b887f8b6fbc34d113",
       "log": false
     },
     {
@@ -162,8 +162,8 @@
     },
     {
       "name": "vnc-helper.js",
-      "version": "3.7",
-      "hash": "sha256-c358ee1e1377373edc976e473296673733716663687a44ccae77bf184aefa673",
+      "version": "3.8",
+      "hash": "sha256-bb42697752e241ebc1870d5836954f87bb81f9c40e5534fd4870dcb84c68211c",
       "log": false
     },
     {
@@ -174,8 +174,8 @@
     },
     {
       "name": "env-helper.js",
-      "version": "2.6",
-      "hash": "sha256-a9a71855df6890b90a6c6d57511444a66a1d244b428e8f5083d3c47801165a0f",
+      "version": "2.7",
+      "hash": "sha256-6fe5e48e2efc7b95af9f4102125fb214d7a361ca61a3ccef77d25d66596e5809",
       "log": false
     }
   ],
