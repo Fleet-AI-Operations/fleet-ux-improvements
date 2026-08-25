@@ -5439,12 +5439,13 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Outcome Quality',        weight: '35%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
+            { label: 'Outcome Quality',        weight: '30%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
             { label: 'V1 Creation Time',       weight: '20%', measures: 'Each timed task is scored against that project\'s normal time band (middle half of population times for the env, else team, else global). Full credit inside the band; the score falls toward zero below the low edge or above the long-tail fence. Toggleable.' },
-            { label: 'Positive Feedback Rate', weight: '15%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
+            { label: 'Positive Feedback Rate', weight: '15%', measures: 'Share of human QA on their tasks that was an accept. Prompt-quality labels are ignored. Self-reviews excluded.' },
+            { label: 'Edits by QA',            weight: '10%', measures: 'Share of terminal tasks with version history that QA did not patch. A patch is a non-latest display version with no linked feedback. v1 counts as clean.' },
             { label: 'Task Rating Quality',    weight: '10%', measures: 'Mean of peer prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Missing labels count as Average.' },
-            { label: 'Revision Efficiency',    weight: '10%', measures: 'On terminal tasks with version history: full credit at one display version; each extra version halves credit (0.5^(v−1)). Upheld writer disputes do not count against the version total.' },
-            { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
+            { label: 'Revision Efficiency',    weight: '10%', measures: 'On terminal tasks with version history: full credit at one display version; each extra version halves credit (0.5^(v−1)). Upheld writer disputes do not count against the version total. QA-edit versions still count.' },
+            { label: 'Dispute Loss Avoidance', weight: '5%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
         ];
         const qaqsRows = [
             { label: 'Return Effectiveness',  weight: '30%', measures: 'Of ordinary returns (not escalations or Flag-as-Bug) on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
@@ -5625,6 +5626,8 @@ const searchOutputStatsPaneMethods = {
             case 'nonBottomScoreRate':
                 return 'No human feedback on authored tasks in scope';
             case 'revisionEfficiency':
+                return 'No terminal tasks with version history in scope';
+            case 'editsByQa':
                 return 'No terminal tasks with version history in scope';
             case 'firstPassAcceptance':
                 return 'No authored tasks with human feedback in scope';
@@ -6454,7 +6457,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.13',
+    _version: '14.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
