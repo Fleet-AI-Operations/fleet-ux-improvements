@@ -8,7 +8,7 @@ const plugin = {
     id: 'promptCache',
     name: 'Prompt Cache',
     description: 'Auto-saves the prompt and offers to restore it when returning to the same task instance',
-    _version: '4.1',
+    _version: '4.2',
     enabledByDefault: true,
     phase: 'mutation',
 
@@ -49,7 +49,7 @@ const plugin = {
             state.stylesInjected = true;
         }
 
-        const textarea = document.getElementById('prompt-editor');
+        const textarea = this.findPromptTextarea();
         if (!textarea) {
             if (!state.missingLogged) {
                 Logger.debug('Prompt Cache: prompt editor not found');
@@ -69,6 +69,24 @@ const plugin = {
         if (state.textarea && !state.restoreInjected) {
             this.ensureRestoreButtons(state, textarea);
         }
+    },
+
+    findPromptTextarea() {
+        const form = document.getElementById('problem-form');
+        const scope = form || document;
+        const labels = scope.querySelectorAll('.text-sm.text-muted-foreground.font-medium');
+        for (const label of labels) {
+            const text = (label.textContent || '').replace(/\*/g, '').trim();
+            if (text !== 'Prompt') continue;
+            const section = label.closest('.relative.space-y-2') || label.closest('.space-y-2');
+            const ta = section && section.querySelector('textarea');
+            if (ta) return ta;
+        }
+        if (form) {
+            const ta = form.querySelector('textarea');
+            if (ta) return ta;
+        }
+        return null;
     },
 
     teardown(state) {
