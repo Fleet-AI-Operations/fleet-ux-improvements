@@ -11,8 +11,8 @@ const TEAM_MEMBERS_EPIC_TRYOUTS_LABEL = 'Fleet: Epic Tryouts';
 const TEAM_MEMBERS_EPIC_LABELS = new Set([TEAM_MEMBERS_EPIC_EXPERTS_LABEL, TEAM_MEMBERS_EPIC_TRYOUTS_LABEL]);
 const TEAM_MEMBERS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 
-/** All known permissions in Fleet UI order: [apiKey, displayLabel]. */
-const TEAM_MEMBERS_ALL_PERMISSIONS = [
+/** Label overrides in Fleet UI order. Extra API keys are appended after these. */
+const TEAM_MEMBERS_PERMISSION_LABEL_OVERRIDES = [
     ['QA_CUA_TASKS', 'QA CUA Tasks'],
     ['MAKE_CUA_TASKS', 'Make CUA Tasks'],
     ['QA_TOOL_USE_TASKS', 'QA Tool Use Tasks'],
@@ -24,9 +24,24 @@ const TEAM_MEMBERS_ALL_PERMISSIONS = [
     ['COMMENT_AGENT_SESSIONS', 'Comment Agent Sessions'],
     ['REVIEW_DISPUTES', 'Review Disputes (Senior QA)'],
     ['VIEW_OWN_TASK_RESULTS', 'View Own Task Results'],
+    ['VIEW_ALL_TASK_RESULTS', 'View All Task Results (Oversight)'],
+    ['LAUNCH_AGENTS', 'Launch Agents (Oversight)'],
+    ['VIEW_ENV_FAILURES', 'View Env Failures'],
     ['REVIEW_CONTRACTOR_APPLICATIONS', 'Contractor Review']
 ];
-const TEAM_MEMBERS_PERMISSION_LABEL_BY_KEY = Object.fromEntries(TEAM_MEMBERS_ALL_PERMISSIONS);
+const TEAM_MEMBERS_PERMISSION_LABEL_BY_KEY = Object.fromEntries(TEAM_MEMBERS_PERMISSION_LABEL_OVERRIDES);
+
+function opsFormatPermissionKeyLabel(permKey) {
+    return String(permKey || '')
+        .split('_')
+        .filter(Boolean)
+        .map((token) => {
+            if (token.toUpperCase() === 'QA') return 'QA';
+            const lower = token.toLowerCase();
+            return lower.charAt(0).toUpperCase() + lower.slice(1);
+        })
+        .join(' ');
+}
 
 const teamMembersController = {
     _opsTeamSearchActive: null,
@@ -293,7 +308,7 @@ const teamMembersController = {
         const teamItems = (allTeams || [])
             .map(([, label]) => ({ id: label, label }))
             .sort((a, b) => a.label.localeCompare(b.label));
-        const permItems = TEAM_MEMBERS_ALL_PERMISSIONS.map(([id, label]) => ({ id, label }));
+        const permItems = this._opsPermissionCatalog(null, true).map(([id, label]) => ({ id, label }));
         dash.renderTeamMemberConstraintLists({
             loading: false,
             teamItems,
@@ -309,20 +324,17 @@ const teamMembersController = {
         const opts = options || {};
         const modal = opts.modal || null;
         const teamLabels = new Set();
-        const permKeys = new Set();
         if (memberMap) {
             for (const member of memberMap.values()) {
                 const labels = member.teamLabels;
                 if (labels) {
                     for (const label of labels) teamLabels.add(label);
                 }
-                for (const key of this._opsMemberPermissionKeys(member)) permKeys.add(key);
             }
         }
         const teamItems = [...teamLabels].sort((a, b) => a.localeCompare(b))
             .map((label) => ({ id: label, label }));
-        const permItems = [...permKeys].sort((a, b) => a.localeCompare(b))
-            .map((key) => ({ id: key, label: TEAM_MEMBERS_PERMISSION_LABEL_BY_KEY[key] || key }));
+        const permItems = this._opsPermissionCatalog(memberMap, false).map(([id, label]) => ({ id, label }));
         dash.renderTeamMemberConstraintLists({
             loading: false,
             teamItems,
@@ -482,16 +494,55 @@ const teamMembersController = {
     },
 
     _getOpsPermissionDisplayLabel(permKey) {
-        return TEAM_MEMBERS_PERMISSION_LABEL_BY_KEY[permKey] || String(permKey || '').replace(/_/g, ' ');
+        const key = String(permKey || '');
+        if (!key) return '';
+        return TEAM_MEMBERS_PERMISSION_LABEL_BY_KEY[key] || opsFormatPermissionKeyLabel(key);
     },
 
     _opsMemberPermissionKeys(member) {
         return Array.isArray(member.permissions) ? member.permissions : [];
     },
 
-    _opsMemberKnownPermissionCount(member) {
+    _opsCollectPermissionKeys(memberMap) {
+        const keys = new Set();
+        if (!memberMap) return keys;
+        for (const member of memberMap.values()) {
+            for (const key of this._opsMemberPermissionKeys(member)) {
+                if (key) keys.add(key);
+            }
+        }
+        return keys;
+    },
+
+    _opsPermissionCatalog(memberMap, includeUnusedKnown) {
+        const discovered = this._opsCollectPermissionKeys(memberMap);
+        const catalog = [];
+        const seen = new Set();
+        for (const [key] of TEAM_MEMBERS_PERMISSION_LABEL_OVERRIDES) {
+            if (includeUnusedKnown || discovered.has(key)) {
+                catalog.push([key, this._getOpsPermissionDisplayLabel(key)]);
+                seen.add(key);
+            }
+        }
+        const extras = [];
+        for (const key of discovered) {
+            if (!seen.has(key)) extras.push(key);
+        }
+        extras.sort((a, b) =>
+            this._getOpsPermissionDisplayLabel(a).localeCompare(this._getOpsPermissionDisplayLabel(b)));
+        for (const key of extras) {
+            catalog.push([key, this._getOpsPermissionDisplayLabel(key)]);
+        }
+        return catalog;
+    },
+
+    _opsMemberKnownPermissionCount(member, permCatalog) {
         const keys = new Set(this._opsMemberPermissionKeys(member));
-        return TEAM_MEMBERS_ALL_PERMISSIONS.reduce((count, [key]) => count + (keys.has(key) ? 1 : 0), 0);
+        const catalog = permCatalog || this._opsPermissionCatalog(
+            this._opsTeamSearchMemberCache && this._opsTeamSearchMemberCache.memberMap,
+            true
+        );
+        return catalog.reduce((count, [key]) => count + (keys.has(key) ? 1 : 0), 0);
     },
 
     _setOpsTeamSearchStatus(modal, message, isError, isHtml, showClear) {
@@ -995,7 +1046,8 @@ const teamMembersController = {
         const tileEl = wrap.querySelector('[data-ops-member-tile="' + attrId + '"]');
         const detailsEl = tileEl ? tileEl.querySelector('.wf-ops-member-details') : null;
         const wasOpen = forceOpen === true || (detailsEl && detailsEl.open);
-        const html = this._renderOpsTeamMemberTileHtml(member, cache.allTeams, wasOpen);
+        const html = this._renderOpsTeamMemberTileHtml(
+            member, cache.allTeams, wasOpen, true, this._opsPermissionCatalog(cache.memberMap, true));
 
         if (tileEl) {
             tileEl.outerHTML = html;
@@ -1290,14 +1342,18 @@ const teamMembersController = {
         '</span>';
     },
 
-    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen, teamsSearchComplete = true) {
+    _renderOpsTeamMemberTileHtml(member, allTeams, isOpen, teamsSearchComplete = true, permCatalog) {
         const memberId = member.id || '';
         const personChipsHtml = this._renderOpsTeamMemberPersonChipsHtml(member);
         const teamLabels = member.teamLabels || new Set();
         const session = this._getOpsMemberEditSession(memberId);
         const displayTeamLabels = session ? session.stagedTeams : teamLabels;
         const displayPermKeys = session ? session.stagedPerms : new Set(this._opsMemberPermissionKeys(member));
-        const knownPermCount = TEAM_MEMBERS_ALL_PERMISSIONS.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
+        const catalog = permCatalog || this._opsPermissionCatalog(
+            this._opsTeamSearchMemberCache && this._opsTeamSearchMemberCache.memberMap,
+            true
+        );
+        const grantedPermCount = catalog.reduce((count, [key]) => count + (displayPermKeys.has(key) ? 1 : 0), 0);
         const memberBadgeHtml = teamsSearchComplete
             ? this._opsMemberBadgeHtml(this._opsMemberBadgeCategory(member))
             : '';
@@ -1305,11 +1361,11 @@ const teamMembersController = {
         const teamsColHtml = allTeams.map(([, label]) =>
             this._renderOpsMemberTeamRowHtml(label, member, session)).join('');
 
-        const permsColHtml = TEAM_MEMBERS_ALL_PERMISSIONS.map(([permKey, permLabel]) =>
+        const permsColHtml = catalog.map(([permKey, permLabel]) =>
             this._renderOpsMemberPermRowHtml(permKey, permLabel, member, session)).join('');
 
         const summaryLabel = 'Teams (' + displayTeamLabels.size + '/' + allTeams.length + ')  ·  Permissions (' +
-            knownPermCount + '/' + TEAM_MEMBERS_ALL_PERMISSIONS.length + ')';
+            grantedPermCount + '/' + catalog.length + ')';
 
         const colHeader = (text) =>
             '<div style="font-size:10px;font-weight:600;color:var(--muted-foreground,#999);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">' +
@@ -1411,10 +1467,11 @@ const teamMembersController = {
             members = dash.getTeamMembersPageSlice(members);
         }
 
+        const permCatalog = this._opsPermissionCatalog(memberMap, true);
         wrap.style.display = 'block';
         const teamsSearchComplete = pendingCount === 0;
         cards.innerHTML = members.map((m) =>
-            this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id), teamsSearchComplete)).join('');
+            this._renderOpsTeamMemberTileHtml(m, allTeams, resolvedOpenIds.has(m.id), teamsSearchComplete, permCatalog)).join('');
 
         this._syncOpsExpandAllBtn(modal);
 
@@ -2220,7 +2277,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '5.5',
+    _version: '6.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
