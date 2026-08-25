@@ -1,7 +1,7 @@
 // rating-engine.js — TWQS / QAQS computation for Worker Output Search Ratings tab.
-// Engine v17.0: Task Rating Quality treats blank/missing labels as Average.
+// Engine v18.0: Label Discrimination scores Top and Bottom usage against 10% tents.
 
-const RE_VERSION = '17.0';
+const RE_VERSION = '18.0';
 const RE_MS_PER_DAY = 86400000;
 const RE_HALFLIFE_DAYS = 30;
 const RE_DIAG_SAMPLE_ROWS = 5;
@@ -73,8 +73,8 @@ const RE_QAQS_ACCEPT_SCRUTINY_C = 10;
 const RE_QAQS_LABEL_DISC_C      = 5;
 // Omit Label Discrimination on thin QA samples (matches TW provisional threshold).
 const RE_QAQS_LABEL_DISC_MIN_N  = 10;
-// Label Discrimination: ideal Top/Bottom usage rate (tent peak); score 0 at 0% and at 2×ideal.
-const RE_QAQS_LABEL_DISC_IDEAL  = 0.20;
+// Label Discrimination: per-label tent peak (Top and Bottom each); score 0 at 0% and at 2×ideal.
+const RE_QAQS_LABEL_DISC_IDEAL  = 0.10;
 // Acceptance Scrutiny: full credit between T_LO and T (high); taper to 0 at 0% and 100%.
 const RE_QAQS_ACCEPT_SCRUTINY_T_LO = 0.40;
 const RE_QAQS_ACCEPT_SCRUTINY_T = 0.60;
@@ -129,10 +129,10 @@ const RE_TIER_THRESHOLDS = {
         recencyNoTime:{ p10: 70.871, p30: 74.141, p70: 76.849, topMin: 80 },
     },
     qaqs: {
-        flat:         { p10: 70.232, p30: 74.258, p70: 79.16, topMin: 79.17 },
-        recency:      { p10: 72.662, p30: 75.466, p70: 79.402, topMin: 79.412 },
-        flatNoTime:   { p10: 70.956, p30: 74.29, p70: 79.594, topMin: 79.604 },
-        recencyNoTime:{ p10: 72.464, p30: 75.552, p70: 80.46, topMin: 80.47 },
+        flat:         { p10: 70.232, p30: 74.094, p70: 78.048, topMin: 78.058 },
+        recency:      { p10: 72.554, p30: 74.928, p70: 79.076, topMin: 79.086 },
+        flatNoTime:   { p10: 70.674, p30: 74.002, p70: 78.114, topMin: 78.124 },
+        recencyNoTime:{ p10: 72.07, p30: 74.996, p70: 79.33, topMin: 79.34 },
     },
 };
 
@@ -144,15 +144,15 @@ const RE_TIER_THRESHOLDS = {
 const RE_PERCENTILE_PARAMS = {
     twqs: {
         flat:         { mu: 74.3923, sigma: 5.4507 },
-        recency:      { mu: 75.0797, sigma: 3.3775 },
+        recency:      { mu: 75.0799, sigma: 3.3771 },
         flatNoTime:   { mu: 74.7639, sigma: 5.7477 },
-        recencyNoTime:{ mu: 75.2117, sigma: 3.703 },
+        recencyNoTime:{ mu: 75.2118, sigma: 3.7023 },
     },
     qaqs: {
-        flat:         { mu: 76.1838, sigma: 5.3213 },
-        recency:      { mu: 77.0972, sigma: 4.2 },
-        flatNoTime:   { mu: 76.6874, sigma: 5.6925 },
-        recencyNoTime:{ mu: 77.6867, sigma: 4.6774 },
+        flat:         { mu: 75.4753, sigma: 4.9849 },
+        recency:      { mu: 76.5878, sigma: 4.2003 },
+        flatNoTime:   { mu: 75.7949, sigma: 5.1376 },
+        recencyNoTime:{ mu: 77.0501, sigma: 4.5619 },
     },
 };
 
@@ -453,7 +453,8 @@ function reValidateRolePriors(kind, priors) {
     if (!priors || typeof priors !== 'object') return null;
     const required = kind === 'twqs'
         ? ['outcomeQuality', 'positiveFeedbackRate', 'taskRatingQuality', 'revisionEfficiency', 'disputeLossAvoidance']
-        : ['returnEffectiveness', 'returnActionability', 'acceptanceScrutiny', 'disputeDefense', 'labelDiscrimination'];
+        : ['returnEffectiveness', 'returnActionability', 'acceptanceScrutiny', 'disputeDefense',
+            'labelDiscriminationTop', 'labelDiscriminationBottom'];
     const out = {};
     for (const id of required) {
         const n = Number(priors[id]);
@@ -1799,9 +1800,9 @@ const RatingEngine = {
         // Return Actionability: neg on production → next human row positive?
         let raKsum = 0, raNsum = 0;
         let raActionableCount = 0, raEligibleCount = 0;
-        // Label Discrimination: usage rate of explicit Top/Bottom labels
-        let ldKsum = 0, ldNsum = 0;
-        let ldLabeledCount = 0;
+        // Label Discrimination: separate Top / Bottom usage vs 10% ideal each
+        let ldTopKsum = 0, ldBottomKsum = 0, ldNsum = 0;
+        let ldTopCount = 0, ldBottomCount = 0;
         // Acceptance Scrutiny: accept rate vs threshold
         let asKsum = 0, asNsum = 0;
         let asAcceptedCount = 0;
@@ -1838,8 +1839,13 @@ const RatingEngine = {
             }
             const rawRating = entry.display && entry.display.qualityRatingRaw;
             if (rawRating && RE_EXPLICIT_LABEL_SET[rawRating]) {
-                ldKsum += fw;
-                ldLabeledCount += 1;
+                if (rawRating === 'Top 10%') {
+                    ldTopKsum += fw;
+                    ldTopCount += 1;
+                } else {
+                    ldBottomKsum += fw;
+                    ldBottomCount += 1;
+                }
             }
 
             // QA Time: platform-tracked qa_review_duration_seconds (skip zeros).
@@ -1916,10 +1922,17 @@ const RatingEngine = {
         const raDefined = raNsum > 0;
         const raScore = raDefined ? reShrunkRate(raKsum, raNsum, RE_QAQS_RET_ACT_C, priors.returnActionability) : null;
         const ldDefined = inScopeFeedbackCount >= RE_QAQS_LABEL_DISC_MIN_N;
-        const ldUsageRate = ldDefined
-            ? reShrunkRate(ldKsum, ldNsum, RE_QAQS_LABEL_DISC_C, priors.labelDiscrimination)
+        const ldTopRate = ldDefined
+            ? reShrunkRate(ldTopKsum, ldNsum, RE_QAQS_LABEL_DISC_C, priors.labelDiscriminationTop)
             : null;
-        const ldScore = ldDefined ? reLabelDiscriminationScore(ldUsageRate) : null;
+        const ldBottomRate = ldDefined
+            ? reShrunkRate(ldBottomKsum, ldNsum, RE_QAQS_LABEL_DISC_C, priors.labelDiscriminationBottom)
+            : null;
+        const ldTopScore = ldDefined ? reLabelDiscriminationScore(ldTopRate) : null;
+        const ldBottomScore = ldDefined ? reLabelDiscriminationScore(ldBottomRate) : null;
+        const ldScore = (ldDefined && ldTopScore != null && ldBottomScore != null)
+            ? ((ldTopScore + ldBottomScore) / 2)
+            : null;
         const asAcceptRate = reShrunkRate(asKsum, asNsum, RE_QAQS_ACCEPT_SCRUTINY_C, priors.acceptanceScrutiny);
         const asScore = reAcceptanceScrutinyScore(asAcceptRate);
         const ddTasksReviewed = ddTaskIds.size;
@@ -2002,14 +2015,21 @@ const RatingEngine = {
                     defined = ldDefined;
                     score = ldScore;
                     raw = {
-                        usageRate: ldUsageRate != null ? Math.round(ldUsageRate * 1000) / 1000 : null,
+                        topRate: ldTopRate != null ? Math.round(ldTopRate * 1000) / 1000 : null,
+                        bottomRate: ldBottomRate != null ? Math.round(ldBottomRate * 1000) / 1000 : null,
+                        topScore: ldTopScore != null ? Math.round(ldTopScore * 1000) / 1000 : null,
+                        bottomScore: ldBottomScore != null ? Math.round(ldBottomScore * 1000) / 1000 : null,
                         idealRate: RE_QAQS_LABEL_DISC_IDEAL,
-                        weightedLabeled: Math.round(ldKsum * 1000) / 1000,
+                        weightedTop: Math.round(ldTopKsum * 1000) / 1000,
+                        weightedBottom: Math.round(ldBottomKsum * 1000) / 1000,
                         weightedTotal: Math.round(ldNsum * 1000) / 1000,
                         sampleN: inScopeFeedbackCount,
                         minSampleN: RE_QAQS_LABEL_DISC_MIN_N,
                         observedCounts: {
-                            labeled: ldLabeledCount,
+                            top: ldTopCount,
+                            bottom: ldBottomCount,
+                            labeled: ldTopCount + ldBottomCount,
+                            unlabeled: inScopeFeedbackCount - ldTopCount - ldBottomCount,
                             total: inScopeFeedbackCount,
                             sampleN: inScopeFeedbackCount,
                         },
@@ -2067,7 +2087,8 @@ const RatingEngine = {
             raNsum: Math.round(raNsum * 1000) / 1000,
             asKsum: Math.round(asKsum * 1000) / 1000,
             asNsum: Math.round(asNsum * 1000) / 1000,
-            ldKsum: Math.round(ldKsum * 1000) / 1000,
+            ldTopKsum: Math.round(ldTopKsum * 1000) / 1000,
+            ldBottomKsum: Math.round(ldBottomKsum * 1000) / 1000,
             ldNsum: Math.round(ldNsum * 1000) / 1000,
             ddLosses,
             ddWins,
@@ -2311,7 +2332,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'Computes TWQS and QAQS scores for Worker Output Search ratings',
-    _version: '17.2',
+    _version: '18.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
