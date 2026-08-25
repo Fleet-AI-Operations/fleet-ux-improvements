@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.427",
+  "archetypesVersion": "14.428",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -317,7 +317,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.37"
+      "version": "1.38"
     }
   ],
   "archetypes": [
