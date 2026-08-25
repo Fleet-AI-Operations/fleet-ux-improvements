@@ -15,18 +15,13 @@ const TEAM_MEMBERS_EXPERT_STATS_HYDRATE_CONCURRENCY = 5;
 const TEAM_MEMBERS_PERMISSION_LABEL_OVERRIDES = [
     ['QA_CUA_TASKS', 'QA CUA Tasks'],
     ['MAKE_CUA_TASKS', 'Make CUA Tasks'],
-    ['QA_TOOL_USE_TASKS', 'QA Tool Use Tasks'],
-    ['MAKE_TOOL_USE_TASKS', 'Make Tool Use Tasks'],
     ['MAKE_TAIGA_TASKS', 'Make Tundra Tasks'],
     ['QA_CUA_ENVS', 'QA CUA Environments'],
     ['QA_TOOL_USE_ENVS', 'QA Tool Use Environments'],
     ['QA_SESSIONS', 'QA Agent Sessions'],
-    ['COMMENT_AGENT_SESSIONS', 'Comment Agent Sessions'],
     ['REVIEW_DISPUTES', 'Review Disputes (Senior QA)'],
-    ['VIEW_OWN_TASK_RESULTS', 'View Own Task Results'],
     ['VIEW_ALL_TASK_RESULTS', 'View All Task Results (Oversight)'],
     ['LAUNCH_AGENTS', 'Launch Agents (Oversight)'],
-    ['VIEW_ENV_FAILURES', 'View Env Failures'],
     ['REVIEW_CONTRACTOR_APPLICATIONS', 'Contractor Review']
 ];
 const TEAM_MEMBERS_PERMISSION_LABEL_BY_KEY = Object.fromEntries(TEAM_MEMBERS_PERMISSION_LABEL_OVERRIDES);
@@ -2277,7 +2272,7 @@ const plugin = {
     id: 'team-members',
     name: 'Team Members',
     description: 'Team member search tab for the Ops dashboard',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
