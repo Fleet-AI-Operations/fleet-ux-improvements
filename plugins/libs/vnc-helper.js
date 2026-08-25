@@ -50,7 +50,7 @@ const VncHelperApi = {
     name: 'External VNC Helper',
     description:
         'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
-    _version: '3.8',
+    _version: '3.9',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -590,6 +590,9 @@ const VncHelperApi = {
             }
             this.applyPromptTextareaSizing(promptTextarea, cachedPrompt);
             promptBody.appendChild(promptTextarea);
+            if (Context.promptTextCounter && typeof Context.promptTextCounter.attach === 'function') {
+                Context.promptTextCounter.attach(promptTextarea, { mountParent: promptBody });
+            }
 
             let resetPromptBtn = null;
             if (cachedPrompt) {
@@ -598,6 +601,7 @@ const VncHelperApi = {
                     ev.stopPropagation();
                     promptTextarea.value = initialPromptText;
                     this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
+                    promptTextarea.dispatchEvent(new Event('input', { bubbles: true }));
                     Logger.log('prompt reset to page-load state');
                 });
             }
@@ -909,7 +913,7 @@ const plugin = {
     id: 'vncHelperLib',
     name: 'External VNC Helper (library)',
     description: 'Shared External VNC Helper panel and clipboard helpers',
-    _version: '3.8',
+    _version: '3.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

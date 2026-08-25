@@ -49,7 +49,7 @@ const EnvHelperApi = {
     id: 'envHelper',
     name: 'External Env Helper',
     description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
-    _version: '2.7',
+    _version: '2.8',
     enabledByDefault: true,
     phase: 'mutation',
     subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
@@ -560,6 +560,9 @@ const EnvHelperApi = {
             }
             this.applyPromptTextareaSizing(promptTextarea, cachedPrompt);
             promptBody.appendChild(promptTextarea);
+            if (Context.promptTextCounter && typeof Context.promptTextCounter.attach === 'function') {
+                Context.promptTextCounter.attach(promptTextarea, { mountParent: promptBody });
+            }
 
             let resetPromptBtn = null;
             if (cachedPrompt) {
@@ -568,6 +571,7 @@ const EnvHelperApi = {
                     ev.stopPropagation();
                     promptTextarea.value = initialPromptText;
                     this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
+                    promptTextarea.dispatchEvent(new Event('input', { bubbles: true }));
                     Logger.log('prompt reset to page-load state');
                 });
             }
@@ -754,7 +758,7 @@ const plugin = {
     id: 'envHelperLib',
     name: 'External Env Helper (library)',
     description: 'Shared External Env Helper panel for non-VNC env pages',
-    _version: '2.7',
+    _version: '2.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
