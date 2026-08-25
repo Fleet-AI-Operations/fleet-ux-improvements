@@ -161,15 +161,23 @@ const RE_PERCENTILE_PARAMS = {
 };
 
 // Frozen overall-percentile μ/σ from the 2026-08-20 snapshot (633 WPS / 244 QPS),
-// before the 2026-08-24 mass dismissal. Headline cards map the current composite
-// through these params for the parenthetical old percentile. Do not overwrite
-// on later ingests or recalibrations — only RE_PERCENTILE_PARAMS is refreshed.
+// before the 2026-08-24 mass dismissal, expressed in current score units.
+// Headline cards map the current composite through these params for the
+// parenthetical old percentile.
+//
+// Data-only ingest: leave this table unchanged; only RE_PERCENTILE_PARAMS moves.
+// Formula / weight / axis changes: affine-shift PREVIOUS into the new score
+// units using live params being replaced vs new live params:
+//   a = σ_new / σ_old_live;  b = μ_new − a × μ_old_live;
+//   μ_prev' = b + a × μ_prev;  σ_prev' = a × σ_prev
+// (per kind/key that actually changed). TWQS below was shifted for engine 19.0
+// (Edits by QA); QAQS formula was unchanged so QAQS PREVIOUS is still raw 08-20.
 const RE_PERCENTILE_PARAMS_PREVIOUS = {
     twqs: {
-        flat:         { mu: 73.9069, sigma: 5.4008 },
-        recency:      { mu: 74.552, sigma: 3.5987 },
-        flatNoTime:   { mu: 73.8636, sigma: 5.8937 },
-        recencyNoTime:{ mu: 74.3838, sigma: 3.9983 },
+        flat:         { mu: 74.4866, sigma: 5.0026 },
+        recency:      { mu: 74.9945, sigma: 3.2938 },
+        flatNoTime:   { mu: 74.6204, sigma: 5.3406 },
+        recencyNoTime:{ mu: 74.9651, sigma: 3.5832 },
     },
     qaqs: {
         flat:         { mu: 75.6067, sigma: 5.2692 },
@@ -2385,7 +2393,7 @@ const plugin = {
     id: 'rating-engine',
     name: 'Rating Engine',
     description: 'Computes TWQS and QAQS scores for Worker Output Search ratings',
-    _version: '19.0',
+    _version: '19.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

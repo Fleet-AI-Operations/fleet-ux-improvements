@@ -5480,7 +5480,7 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">The toolbar <strong>Time / No Time</strong> toggle includes or excludes the tracked-time axes (V1 Creation Time, QA Time) from the composite. Axes stay visible when off (greyed). Preference persists across sessions; default is Time on.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
-            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The headline also shows the previous-population overall percentile in parentheses (e.g. ~37th (old: ~61st)). Team / environment / month subset rows show the current percentile only. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The headline also shows the previous-population overall percentile in parentheses (e.g. ~37th (old: ~61st)) — the pre-dismissal population mapped in current score units. Team / environment / month subset rows show the current percentile only. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
             + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
             + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
@@ -6457,7 +6457,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.14',
+    _version: '14.15',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
