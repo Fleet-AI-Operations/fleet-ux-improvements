@@ -1,6 +1,6 @@
 // ============= fos-iframe-autoconnect.js (library) =============
-// Rewrite FOS env iframe src with noVNC autoconnect params, reconnect on tab
-// visibility, and replace the native open-in-new-tab control with the same URL.
+// Patch FOS env iframe src with noVNC remote-resize and autoconnect params,
+// reconnect on tab visibility, and replace the native open-in-new-tab control.
 
 const FOS_AUTOCONNECT_ENV_HOST = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 const FOS_AUTOCONNECT_OPEN_TAB_MARKER = 'data-fleet-fos-open-tab';
@@ -344,10 +344,10 @@ const FosIframeAutoconnectApi = {
 
 const plugin = {
     id: 'fosIframeAutoconnectLib',
-    name: 'FOS Iframe Autoconnect (library)',
+    name: 'FOS Viewport Resize (library)',
     description:
-        'Auto-connects embedded FOS instances and open-in-new-tab URLs; reconnects on tab focus',
-    _version: '1.0',
+        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs; reconnects on tab focus',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

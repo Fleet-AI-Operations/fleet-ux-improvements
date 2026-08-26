@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.437",
+  "archetypesVersion": "14.438",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -108,8 +108,8 @@
     },
     {
       "name": "fos-iframe-autoconnect.js",
-      "version": "1.0",
-      "hash": "sha256-4bad186e468b548d890d3afa0b3aef87c564d547a57ffde5d36895d7b41b687d",
+      "version": "1.1",
+      "hash": "sha256-febaf9f3aeb018f567f184e4cbaf76fc66548ba23e7159d759c92dc581bef565",
       "log": false
     },
     {
@@ -317,7 +317,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.38"
+      "version": "1.39"
     }
   ],
   "archetypes": [
@@ -580,8 +580,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-7fc60017878a0ae5a8d49c92fa33885f179c81aed1f96a153dc2fa23f1685940",
+          "version": "1.1",
+          "hash": "sha256-a2d9843e984e5bb9f59d1ae37ec531cb9fac349bbf164e0cb83b7654e6dc7103",
           "log": false
         },
         {
@@ -653,8 +653,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-600bf2baa926b0881bbcb5eb2c51cb3c17a7c75236cbdfc2e09b5a608b679265",
+          "version": "1.1",
+          "hash": "sha256-7ae0c747ecae9196dff1d8878537a333362d3d10f20d663e674849834f4da8bf",
           "log": false
         },
         {
@@ -857,8 +857,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-6fc5facc97878303aa1e7be038eda3917eb61d32454c6d1aefaa0ca38911f413",
+          "version": "1.1",
+          "hash": "sha256-5589efe8ee5758e14a0b4707105f8caab82da49f33423f314700a3a27bf1cf2d",
           "log": false
         },
         {
@@ -1010,8 +1010,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-69c4c11b03d832d9378de13a3d206b3a7a7aa95eb614c242a0d0a77a74872bf1",
+          "version": "1.1",
+          "hash": "sha256-984c3ab6639460b716f71e6c399f0ac107af368a96353f0ca8c4a33d7f11a4aa",
           "log": false
         },
         {

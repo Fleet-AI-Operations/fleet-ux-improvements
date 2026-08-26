@@ -3,10 +3,10 @@
 
 const plugin = {
     id: 'qaCompUseFosIframeAutoconnect',
-    name: 'FOS Autoconnect',
+    name: 'FOS Viewport Resize',
     description:
-        'Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again',
-    _version: '1.0',
+        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
