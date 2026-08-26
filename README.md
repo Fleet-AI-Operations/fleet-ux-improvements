@@ -119,6 +119,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change
 
 ### Computer Use Task Revision Page
 - **Prompt Text Counter**: Shows a live word and character count below the prompt

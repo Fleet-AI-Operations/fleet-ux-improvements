@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.439",
+  "archetypesVersion": "14.440",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -317,7 +317,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.39"
+      "version": "1.40"
     }
   ],
   "archetypes": [
@@ -601,6 +601,12 @@
           "version": "1.0",
           "hash": "sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c",
           "log": false
+        },
+        {
+          "name": "time-remaining-chip.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-3759514e5babfb7420a45a189ed7a68c1434d210e19b65a2d89dc5f22b850873"
         },
         {
           "name": "user-story-markdown.js",
