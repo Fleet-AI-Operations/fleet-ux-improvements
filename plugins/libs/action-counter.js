@@ -93,19 +93,15 @@ const ActionCounterApi = {
         input.style.color = this.countColor(val);
     },
 
-    makeBtn(label, title, onClick, extraStyle, variant) {
+    makeBtn(label, title, onClick) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = label;
         btn.title = title;
-        if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
-            Context.uiLib.ensureButtonStyles('[data-fleet-action-counter="true"]');
-        }
         const base = (Context.uiLib && typeof Context.uiLib.btnClass === 'function')
-            ? Context.uiLib.btnClass(variant || 'basic', 'compact')
+            ? Context.uiLib.btnClass('basic', 'compact')
             : 'wf-dash-btn wf-dash-btn--basic wf-dash-btn--compact';
         btn.className = base;
-        btn.style.cssText = extraStyle || '';
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
@@ -123,6 +119,10 @@ const ActionCounterApi = {
 
     buildCounter(state) {
         this.migrateLegacyCount(state);
+
+        if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
+            Context.uiLib.ensureButtonStyles('[data-fleet-action-counter="true"]');
+        }
 
         const counter = document.createElement('div');
         counter.setAttribute(COUNTER_MARKER, 'true');
@@ -191,29 +191,18 @@ const ActionCounterApi = {
             }
         });
 
-        const btnPlus = this.makeBtn(
-            '+',
-            'Add 1',
-            () => this.applyCountDisplay(input, this.setCount(this.getCount() + 1, '+')),
-            'width: 52px; height: 22px; font-size: 18px; padding: 0; border: 1px solid var(--border, #e2e8f0);',
-            'success'
-        );
         const btnMinus = this.makeBtn(
             '−',
             'Subtract 1',
-            () => this.applyCountDisplay(input, this.setCount(this.getCount() - 1, '−')),
-            'width: 40px; height: 22px; font-size: 18px; padding: 0;',
-            'basic'
+            () => this.applyCountDisplay(input, this.setCount(this.getCount() - 1, '−'))
         );
-        const btnReset = this.makeBtn(
-            '↺',
-            'Reset to 0',
-            () => this.applyCountDisplay(input, this.setCount(0, 'reset')),
-            'width: 20px; height: 20px; font-size: 13px; padding: 0;',
-            'basic'
+        const btnPlus = this.makeBtn(
+            '+',
+            'Add 1',
+            () => this.applyCountDisplay(input, this.setCount(this.getCount() + 1, '+'))
         );
 
-        counter.append(btnReset, input, btnMinus, btnPlus);
+        counter.append(btnMinus, input, btnPlus);
         return counter;
     }
 };
@@ -223,7 +212,7 @@ const plugin = {
     name: 'Action Counter (library)',
     description:
         'Shared Action Counter UI and storage',
-    _version: '3.6',
+    _version: '3.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

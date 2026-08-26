@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.438",
+  "archetypesVersion": "14.439",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -54,8 +54,8 @@
     },
     {
       "name": "action-counter.js",
-      "version": "3.6",
-      "hash": "sha256-49c00218b929f28486523c00f574c65a4190ea04c1cb57a71eafd1885b003df3",
+      "version": "3.7",
+      "hash": "sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35",
       "log": false
     },
     {
