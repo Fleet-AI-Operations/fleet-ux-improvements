@@ -245,7 +245,7 @@ const plugin = {
     id: 'ops-tab',
     name: 'Ops Tab',
     description: 'Ops unlock, team catalog/search, and verifier fetch for the Ops dashboard',
-    _version: '13.2',
+    _version: '13.3',
     phase: 'core',
     enabledByDefault: true,
 
@@ -656,7 +656,7 @@ const plugin = {
         const qa = global && global.priors && global.priors.qaqs;
         if (!tw || typeof tw !== 'object' || !qa || typeof qa !== 'object') return null;
         const twRequired = [
-            'outcomeQuality', 'positiveFeedbackRate', 'taskRatingQuality',
+            'outcomeQuality',             'positiveFeedbackRate', 'editsByQa', 'taskRatingQuality',
             'revisionEfficiency', 'disputeLossAvoidance'
         ];
         const qaRequired = [

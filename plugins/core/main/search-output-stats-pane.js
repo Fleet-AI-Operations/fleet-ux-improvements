@@ -453,7 +453,9 @@ const searchOutputStatsPaneMethods = {
             getVersionCount: (item) => {
                 if (!item || !item.hydrated || !item.task) return null;
                 return dash._displayPromptVersionCount(item.task);
-            }
+            },
+            committed: this._state.committed || {},
+            smartBindings: this._state.statsSmartBindings || {}
         };
     },
 
@@ -503,6 +505,7 @@ const searchOutputStatsPaneMethods = {
         }
         if (this._state.statsBuilderDraft) {
             this._ensureStatsBuilderChartFilters(this._state.statsBuilderDraft);
+            this._ensureStatsBuilderSmartFilters(this._state.statsBuilderDraft);
             if (this._state.statsBuilderDashboardId) {
                 this._state.statsBuilderDraft.dashboardId = this._state.statsBuilderDashboardId;
             }
@@ -574,7 +577,10 @@ const searchOutputStatsPaneMethods = {
             }),
             height: this._statsResolvedChartHeight(draft),
             presetKey: draft.presetKey || null,
-            chartFilters: draft.chartFilters || {}
+            chartFilters: draft.chartFilters || {},
+            smartFilters: (engine.normalizeSmartFilters
+                ? engine.normalizeSmartFilters(draft.smartFilters)
+                : (draft.smartFilters || []))
         };
         if (engineMeta.needsPointMode) {
             chart.pointMode = draft.pointMode === 'task' ? 'task' : 'bucket';
@@ -1024,6 +1030,9 @@ const searchOutputStatsPaneMethods = {
 
         const draft = this._state.statsBuilderDraft;
         const engine = Context.statsEngine;
+        const smartOn = !!(draft && draft.smartFilters && draft.smartFilters.length);
+        wrapEl.style.borderColor = smartOn ? '#ea580c' : 'var(--border, #e2e8f0)';
+        wrapEl.style.boxShadow = smartOn ? 'inset 0 0 0 1px #ea580c' : '';
         if (!draft || !engine) {
             if (statusEl) {
                 statusEl.style.display = '';
@@ -1292,6 +1301,112 @@ const searchOutputStatsPaneMethods = {
         return parts.join(' · ');
     },
 
+    _ensureStatsBuilderSmartFilters(draft) {
+        const engine = Context.statsEngine;
+        if (!draft) return [];
+        draft.smartFilters = engine && typeof engine.normalizeSmartFilters === 'function'
+            ? engine.normalizeSmartFilters(draft.smartFilters)
+            : (Array.isArray(draft.smartFilters) ? draft.smartFilters : []);
+        return draft.smartFilters;
+    },
+
+    _statsSmartRoles() {
+        const engine = Context.statsEngine;
+        const lib = Context.dashboardLib;
+        if (engine && typeof engine.smartRoles === 'function') return engine.smartRoles();
+        return (lib && lib.smartRoles) || [];
+    },
+
+    _statsSmartPeopleForRole(roleId) {
+        const lib = Context.dashboardLib;
+        if (!lib || typeof lib.collectRolePeople !== 'function') return [];
+        return lib.collectRolePeople(this._getStatsScopeItems(), roleId);
+    },
+
+    _statsSmartBindingsForChart(chart) {
+        const engine = Context.statsEngine;
+        if (engine && typeof engine.resolveSmartBindings === 'function') {
+            return engine.resolveSmartBindings(chart, this._statsCatalogCtx(this._getStatsScopeItems()));
+        }
+        return {};
+    },
+
+    _statsSmartAutoFill() {
+        const lib = Context.dashboardLib;
+        if (!lib || typeof lib.smartSearchAutoFill !== 'function') return {};
+        return lib.smartSearchAutoFill(this._state.committed || {});
+    },
+
+    _setStatsSmartBinding(chartId, role, personId) {
+        if (!this._state.statsSmartBindings) this._state.statsSmartBindings = {};
+        const id = String(chartId || '');
+        if (!id || !role) return;
+        const next = Object.assign({}, this._state.statsSmartBindings[id] || {});
+        const pid = String(personId || '').trim();
+        if (!pid) delete next[role];
+        else next[role] = pid;
+        this._state.statsSmartBindings[id] = next;
+        Logger.log('stats smart bind ' + role + (pid ? ' → ' + pid : ' cleared'));
+        void this._renderStatsPanel();
+    },
+
+    _statsSmartHeaderControlsHtml(chart) {
+        const slots = (chart && chart.smartFilters) || [];
+        if (!slots.length) return '';
+        const auto = this._statsSmartAutoFill();
+        const bound = this._statsSmartBindingsForChart(chart);
+        const roles = this._statsSmartRoles();
+        const parts = [];
+        for (const slot of slots) {
+            const role = roles.find((r) => r.id === slot.role);
+            if (!role) continue;
+            const people = this._statsSmartPeopleForRole(slot.role);
+            const autoId = auto[slot.role] || '';
+            const selected = bound[slot.role] || '';
+            if (autoId) {
+                const person = people.find((p) => p.id === autoId);
+                const label = person ? person.label : autoId;
+                parts.push('<span style="font-size: 10px; font-weight: 600; color: #c2410c; white-space: nowrap;" title="'
+                    + dashEscHtml(role.label) + '">' + dashEscHtml(role.label) + ': ' + dashEscHtml(label) + '</span>');
+                continue;
+            }
+            if (!people.length) continue;
+            parts.push('<label style="display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--foreground, #0f172a);">'
+                + '<span>' + dashEscHtml(role.label) + '</span>'
+                + '<select data-wf-dash-stats-smart-bind="' + dashEscHtml(chart.id) + '" data-smart-role="'
+                + dashEscHtml(slot.role) + '" aria-label="' + dashEscHtml(role.label) + '" style="max-width: 140px; font-size: 10px; padding: 2px 4px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff); color: var(--foreground, #0f172a);">'
+                + '<option value="">Choose…</option>'
+                + people.map((p) => {
+                    const sel = p.id === selected ? ' selected' : '';
+                    return '<option value="' + dashEscHtml(p.id) + '"' + sel + '>' + dashEscHtml(p.label) + '</option>';
+                }).join('')
+                + '</select></label>');
+        }
+        if (!parts.length) return '';
+        return '<div class="wf-dash-stats-smart-binds" style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">'
+            + parts.join('') + '</div>';
+    },
+
+    _statsSmartBuilderHtml(draft) {
+        const roles = this._statsSmartRoles();
+        const selected = ((draft && draft.smartFilters) || [])[0];
+        const selectedRole = selected && selected.role ? selected.role : '';
+        return '<div><div style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 6px;">Smart Insertion</div>'
+            + '<div style="display: flex; flex-direction: column; gap: 6px;">'
+            + '<label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">'
+            + '<input type="radio" name="wf-dash-stats-smart-role" data-wf-dash-stats-smart-role="" value=""'
+            + (selectedRole ? '' : ' checked') + '>'
+            + '<span>None</span></label>'
+            + roles.map((role) => {
+                const checked = role.id === selectedRole ? ' checked' : '';
+                return '<label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">'
+                    + '<input type="radio" name="wf-dash-stats-smart-role" data-wf-dash-stats-smart-role="'
+                    + dashEscHtml(role.id) + '" value="' + dashEscHtml(role.id) + '"' + checked + '>'
+                    + '<span>' + dashEscHtml(role.label) + '</span></label>';
+            }).join('')
+            + '</div></div>';
+    },
+
     _statsChartStackKind(chart) {
         if (!chart || chart.allowHorizontalStack === false) return null;
         if (chart.type === 'scorecard') return 'scorecard-row';
@@ -1320,6 +1435,7 @@ const searchOutputStatsPaneMethods = {
             + (canMoveDown ? '' : ' disabled') + '>↓</button>'
             + '</span>'
             + '<div class="wf-dash-stats-chart-header-text">' + dashEscHtml(chart.title) + '</div>'
+            + this._statsSmartHeaderControlsHtml(chart)
             + '</div>'
             + '<div class="wf-dash-stats-chart-header-actions">'
             + '<div class="wf-dash-stats-hscroll-track">'
@@ -1387,7 +1503,8 @@ const searchOutputStatsPaneMethods = {
         const cardLayout = inStackRow
             ? ('flex: 1 1 ' + minWidth + 'px; min-width: min(' + minWidth + 'px, 100%); max-width: 100%; box-sizing: border-box;')
             : 'flex-shrink: 0; width: 100%; box-sizing: border-box;';
-        return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '" style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative; display: flex; flex-direction: column;">'
+        const smartAttr = (chart.smartFilters && chart.smartFilters.length) ? ' data-smart="1"' : '';
+        return '<div class="wf-dash-stats-chart-card" data-chart-id="' + dashEscHtml(chart.id) + '" data-chart-type="' + dashEscHtml(chart.type) + '"' + smartAttr + ' style="' + box + ' padding: 10px 12px; ' + cardLayout + ' position: relative; display: flex; flex-direction: column;">'
             + this._statsChartCardHeaderHtml(chart, moveState)
             + filterSubtitle
             + '<div style="position: relative; height: ' + height + 'px; max-width: 100%;' + canvasOpacity + '">'
@@ -3173,6 +3290,7 @@ const searchOutputStatsPaneMethods = {
         }
         style.textContent = ''
             + '.wf-dash-stats-chart-card { display: flex; flex-direction: column; min-width: 0; }'
+            + '.wf-dash-stats-chart-card[data-smart="1"] { border-color: #ea580c; box-shadow: inset 0 0 0 1px #ea580c; }'
             + '.wf-dash-stats-chart-header { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; margin-bottom: 8px; min-width: 0; max-width: 100%; }'
             + '.wf-dash-stats-chart-header-title { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; max-width: 100%; overflow: hidden; }'
             + '.wf-dash-stats-chart-header-text { font-size: 12px; font-weight: 600; color: var(--foreground, #0f172a); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }'
@@ -4052,6 +4170,7 @@ const searchOutputStatsPaneMethods = {
             + (chartSettings.labelOptionsHtml || '')
             + '<div><div style="' + styles.sectionLabel + '">' + seriesSectionLabel + '</div>'
             + seriesStackHtml + seriesActions + '</div>'
+            + this._statsSmartBuilderHtml(draft)
             + '<details style="margin-top: 2px;">'
             + '<summary style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); cursor: pointer; user-select: none;">Result filters (optional)</summary>'
             + '<div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">' + chartFiltersHtml + '</div>'
@@ -4115,6 +4234,12 @@ const searchOutputStatsPaneMethods = {
         } else {
             delete draft.allowHorizontalStack;
         }
+        const smartChecked = this._modal.querySelector('[name="wf-dash-stats-smart-role"]:checked');
+        const smartRole = smartChecked && smartChecked.value ? smartChecked.value : '';
+        const smartRoles = smartRole ? [{ role: smartRole }] : [];
+        draft.smartFilters = Context.statsEngine && typeof Context.statsEngine.normalizeSmartFilters === 'function'
+            ? Context.statsEngine.normalizeSmartFilters(smartRoles)
+            : smartRoles;
         delete draft.labelFormat;
         delete draft.labelShowAbsolute;
         delete draft.labelShowPercent;
@@ -5439,12 +5564,13 @@ const searchOutputStatsPaneMethods = {
         const box = this._panelBoxStyle();
         const muted = 'color: var(--muted-foreground, #64748b);';
         const twqsRows = [
-            { label: 'Outcome Quality',        weight: '35%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
+            { label: 'Outcome Quality',        weight: '30%', measures: 'Blend of current terminal quality and flat closure quality: production 1.0, discarded 0.5, dismissed 0.0. Closure excludes bugged/flagged paths.' },
             { label: 'V1 Creation Time',       weight: '20%', measures: 'Each timed task is scored against that project\'s normal time band (middle half of population times for the env, else team, else global). Full credit inside the band; the score falls toward zero below the low edge or above the long-tail fence. Toggleable.' },
-            { label: 'Positive Feedback Rate', weight: '15%', measures: 'Share of human feedback on their tasks that was positive (upvote or score ≥ Satisfactory). Self-reviews excluded.' },
+            { label: 'Positive Feedback Rate', weight: '15%', measures: 'Share of human QA on their tasks that was an accept. Prompt-quality labels are ignored. Self-reviews excluded.' },
+            { label: 'Edits by QA',            weight: '10%', measures: 'Share of terminal tasks with version history that QA did not patch. A patch is a non-latest display version with no linked feedback. v1 counts as clean.' },
             { label: 'Task Rating Quality',    weight: '10%', measures: 'Mean of peer prompt-quality labels on their tasks: Bottom 10% = 0, Average = 0.5, Top 10% = 1. Missing labels count as Average.' },
-            { label: 'Revision Efficiency',    weight: '10%', measures: 'On terminal tasks with version history: full credit at one display version; each extra version halves credit (0.5^(v−1)). Upheld writer disputes do not count against the version total.' },
-            { label: 'Dispute Loss Avoidance', weight: '10%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
+            { label: 'Revision Efficiency',    weight: '10%', measures: 'On terminal tasks with version history: full credit at one display version; each extra version halves credit (0.5^(v−1)). Upheld writer disputes do not count against the version total. QA-edit versions still count.' },
+            { label: 'Dispute Loss Avoidance', weight: '5%', measures: 'Rejected writer disputes as a rate vs tasks they authored. Full credit at zero losses; the score falls toward zero as losses approach 10% of tasks. Approved disputes are neutral.' },
         ];
         const qaqsRows = [
             { label: 'Return Effectiveness',  weight: '30%', measures: 'Of ordinary returns (not escalations or Flag-as-Bug) on tasks that stayed on a shippable path (production, bugged, or escalated), how often the task reached production. Discarded and dismissed tasks are excluded.' },
@@ -5479,7 +5605,7 @@ const searchOutputStatsPaneMethods = {
             + '<p style="margin: 0 0 8px;">The toolbar <strong>Time / No Time</strong> toggle includes or excludes the tracked-time axes (V1 Creation Time, QA Time) from the composite. Axes stay visible when off (greyed). Preference persists across sessions; default is Time on.</p>'
 
             + '<div style="font-size: 11px; font-weight: 600; margin-bottom: 4px;">Population tier</div>'
-            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The headline also shows the previous-population overall percentile in parentheses (e.g. ~37th (old: ~61st)). Team / environment / month subset rows show the current percentile only. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
+            + '<p style="margin: 0 0 8px;">The <strong>primary display</strong> is a <em>population tier</em> label (Poor, Below average, Typical, Above average, Top tier), with an <em>estimated percentile</em> shown muted beside it (e.g. ~62nd). The headline also shows the previous-population overall percentile in parentheses (e.g. ~37th (old: ~61st)) — the pre-dismissal population mapped in current score units. Team / environment / month subset rows show the current percentile only. Tiers use empirical cutoffs from the scored population (~10% / 20% / 40% / 20% / remainder): scores below p10 are Poor; p10–p30 Below average; p30–p70 Typical; p70 up to the top peg Above average; at/above the top peg Top tier. Top score pegs are absolute: <strong>TWQS ≥ 80</strong>, <strong>QAQS ≥ 70</strong>. Panel color follows the tier on a four-stop red→yellow→green ramp (Above average and Top tier share the top green). The raw 0–100 composite remains the internal score and export field; axis bars still use raw axis sub-scores.</p>'
             + this._ratingsAboutTierScaleTableHtml('TWQS cutoffs', 'twqs')
             + this._ratingsAboutTierScaleTableHtml('QAQS cutoffs', 'qaqs')
 
@@ -5625,6 +5751,8 @@ const searchOutputStatsPaneMethods = {
             case 'nonBottomScoreRate':
                 return 'No human feedback on authored tasks in scope';
             case 'revisionEfficiency':
+                return 'No terminal tasks with version history in scope';
+            case 'editsByQa':
                 return 'No terminal tasks with version history in scope';
             case 'firstPassAcceptance':
                 return 'No authored tasks with human feedback in scope';
@@ -6454,7 +6582,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '14.13',
+    _version: '15.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

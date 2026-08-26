@@ -1701,7 +1701,9 @@ function searchChatGetScope(dash) {
             sortOrder: applied.sortOrder || null,
             promptText: applied.promptText ? String(applied.promptText).slice(0, 80) : '',
             hasPromptFilter: !!(applied.promptText && String(applied.promptText).trim()),
-            manualFilterCount: Array.isArray(applied.manualFilters) ? applied.manualFilters.length : 0,
+            manualFilterCount: Array.isArray(applied.manualFilters)
+                ? applied.manualFilters.filter((g) => g && ((g.conditions && g.conditions.length) || g.field)).length
+                : 0,
             checkboxKeys: Object.keys(applied).filter((k) =>
                 Array.isArray(applied[k]) || (applied[k] && typeof applied[k] === 'object' && applied[k].selected)
             ).slice(0, 30),
@@ -4525,7 +4527,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat over search results (OpenRouter)',
-    _version: '7.4',
+    _version: '7.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

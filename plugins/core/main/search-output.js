@@ -4875,6 +4875,14 @@ const searchOutputCoreMethods = {
     },
 
     _itemPassesManualFilters(item, rows, andOr) {
+        const lib = dashLib();
+        if (lib && typeof lib.itemPassesFilterGroups === 'function') {
+            return lib.itemPassesFilterGroups(item, rows, andOr, {
+                helpfulnessUi: this._state.helpfulnessUi || {},
+                currentUserId: typeof this._dashGetCurrentUserId === 'function' ? this._dashGetCurrentUserId() : '',
+                sessionQaUi: this._state.sessionQaUi || {}
+            });
+        }
         if (!rows || rows.length === 0) return true;
         const results = rows.map((row) => {
             const actual = this._searchOutputManualFilterValue(item, row.field);
@@ -4889,11 +4897,23 @@ const searchOutputCoreMethods = {
     },
 
     _applyManualFiltersToResult(items, manualRows, andOr) {
+        const lib = dashLib();
+        if (lib && typeof lib.applyFilterGroupsToItems === 'function') {
+            return lib.applyFilterGroupsToItems(items, manualRows, andOr, {
+                helpfulnessUi: this._state.helpfulnessUi || {},
+                currentUserId: typeof this._dashGetCurrentUserId === 'function' ? this._dashGetCurrentUserId() : '',
+                sessionQaUi: this._state.sessionQaUi || {}
+            });
+        }
         if (!manualRows || manualRows.length === 0) return items;
         return items.filter((item) => this._itemPassesManualFilters(item, manualRows, andOr));
     },
 
     _manualFilterRowsEqual(a, b) {
+        const lib = dashLib();
+        if (lib && typeof lib.filterGroupsEqual === 'function') {
+            return lib.filterGroupsEqual(a, b);
+        }
         const left = a || [];
         const right = b || [];
         if (left.length !== right.length) return false;
@@ -5861,31 +5881,68 @@ function attachSearchOutputListeners(modal, dash) {
         const manualRows = dash._q('#wf-dash-manual-rows');
         if (manualRows) {
             manualRows.addEventListener('change', (e) => {
-                const fieldSel = e.target.closest('[data-wf-dash-manual-field]');
-                if (!fieldSel) return;
-                const row = fieldSel.closest('[data-wf-dash-manual-row]');
-                if (!row) return;
-                const field = fieldSel.value;
-                const meta = dashManualFilterFields().find((f) => f.id === field);
-                const isDate = meta && meta.type === 'date';
-                const compSel = row.querySelector('[data-wf-dash-manual-comparator]');
-                const valueInp = row.querySelector('[data-wf-dash-manual-value]');
-                if (compSel) {
-                    compSel.innerHTML = dash._numericComparatorOptionsHtml(isDate ? 'date' : 'number', 'gte');
+                const entitySel = e.target.closest('[data-wf-dash-group-entity]');
+                if (entitySel) {
+                    const groupEl = entitySel.closest('[data-wf-dash-filter-group]');
+                    if (groupEl) {
+                        const conds = groupEl.querySelector('[data-wf-dash-group-conditions]');
+                        if (conds) {
+                            conds.innerHTML = '';
+                            conds.appendChild(dash._buildFilterGroupConditionEl(entitySel.value, null));
+                        }
+                    }
+                    dash._updateApplyFiltersUi();
+                    return;
                 }
-                if (valueInp) {
-                    valueInp.type = isDate ? 'date' : 'number';
-                    valueInp.value = '';
+                const fieldSel = e.target.closest('[data-wf-dash-group-field]');
+                if (fieldSel) {
+                    const condEl = fieldSel.closest('[data-wf-dash-group-cond]');
+                    const groupEl = fieldSel.closest('[data-wf-dash-filter-group]');
+                    const entityEl = groupEl && groupEl.querySelector('[data-wf-dash-group-entity]');
+                    const slot = condEl && condEl.querySelector('[data-wf-dash-group-value-slot]');
+                    if (slot && entityEl) {
+                        slot.innerHTML = dash._filterGroupConditionValueSlotHtml(entityEl.value, fieldSel.value, null);
+                    }
+                    dash._updateApplyFiltersUi();
+                    return;
                 }
                 dash._updateApplyFiltersUi();
             });
             manualRows.addEventListener('input', () => dash._updateApplyFiltersUi());
             manualRows.addEventListener('click', (e) => {
-                const removeBtn = e.target.closest('[data-wf-dash-manual-remove]');
-                if (!removeBtn || !manualRows.contains(removeBtn)) return;
-                const row = removeBtn.closest('[data-wf-dash-manual-row]');
-                if (row) row.remove();
-                dash._updateApplyFiltersUi();
+                const addCond = e.target.closest('[data-wf-dash-group-cond-add]');
+                if (addCond && manualRows.contains(addCond)) {
+                    const groupEl = addCond.closest('[data-wf-dash-filter-group]');
+                    const entityEl = groupEl && groupEl.querySelector('[data-wf-dash-group-entity]');
+                    const conds = groupEl && groupEl.querySelector('[data-wf-dash-group-conditions]');
+                    if (conds && entityEl) {
+                        conds.appendChild(dash._buildFilterGroupConditionEl(entityEl.value, null));
+                    }
+                    dash._updateApplyFiltersUi();
+                    return;
+                }
+                const removeCond = e.target.closest('[data-wf-dash-group-cond-remove]');
+                if (removeCond && manualRows.contains(removeCond)) {
+                    const condEl = removeCond.closest('[data-wf-dash-group-cond]');
+                    const groupEl = removeCond.closest('[data-wf-dash-filter-group]');
+                    const conds = groupEl && groupEl.querySelector('[data-wf-dash-group-conditions]');
+                    if (condEl) condEl.remove();
+                    if (conds && !conds.querySelector('[data-wf-dash-group-cond]') && groupEl) {
+                        const entityEl = groupEl.querySelector('[data-wf-dash-group-entity]');
+                        conds.appendChild(dash._buildFilterGroupConditionEl(entityEl ? entityEl.value : 'card', null));
+                    }
+                    dash._updateApplyFiltersUi();
+                    return;
+                }
+                const removeGroup = e.target.closest('[data-wf-dash-group-remove]');
+                if (removeGroup && manualRows.contains(removeGroup)) {
+                    const groupEl = removeGroup.closest('[data-wf-dash-filter-group]');
+                    if (groupEl) groupEl.remove();
+                    if (!manualRows.querySelector('[data-wf-dash-filter-group]')) {
+                        dash._buildManualFilterRow();
+                    }
+                    dash._updateApplyFiltersUi();
+                }
             });
         }
 
@@ -6616,6 +6673,12 @@ function attachSearchOutputListeners(modal, dash) {
                     return;
                 }
             }
+            const statsSmartRole = e.target.closest('[data-wf-dash-stats-smart-role]');
+            if (statsSmartRole && modal.contains(statsSmartRole)) {
+                dash._syncStatsBuilderDraftFromForm();
+                dash._scheduleStatsBuilderPreview();
+                return;
+            }
             const statsDraftField = e.target.closest('[data-wf-dash-stats-draft]');
             if (statsDraftField && modal.contains(statsDraftField)) {
                 const field = statsDraftField.getAttribute('data-wf-dash-stats-draft');
@@ -6630,6 +6693,13 @@ function attachSearchOutputListeners(modal, dash) {
             const statsDashSelect = e.target.closest('[data-wf-dash-stats-dashboard-select]');
             if (statsDashSelect && modal.contains(statsDashSelect)) {
                 dash._setActiveStatsDashboard(statsDashSelect.value);
+                return;
+            }
+            const statsSmartBind = e.target.closest('[data-wf-dash-stats-smart-bind]');
+            if (statsSmartBind && modal.contains(statsSmartBind)) {
+                const chartId = statsSmartBind.getAttribute('data-wf-dash-stats-smart-bind');
+                const role = statsSmartBind.getAttribute('data-smart-role');
+                dash._setStatsSmartBinding(chartId, role, statsSmartBind.value);
                 return;
             }
             const statsCopyTo = e.target.closest('[data-wf-dash-stats-chart-copy-to]');
@@ -6736,7 +6806,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '9.61',
+    _version: '10.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

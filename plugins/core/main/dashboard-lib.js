@@ -152,6 +152,95 @@ const DASH_LIB_MANUAL_FILTER_FIELDS = [
 const DASH_LIB_MANUAL_FILTER_DEFAULT_FIELD = 'prompt_version_count';
 const DASH_LIB_MANUAL_FILTER_DEFAULT_COMPARATOR = 'gte';
 
+const DASH_LIB_FILTER_ENTITIES = [
+    { id: 'card', label: 'Card' },
+    { id: 'qa_round', label: 'QA Round' },
+    { id: 'dispute', label: 'Dispute' },
+    { id: 'sr_review', label: 'Sr Review' }
+];
+
+const DASH_LIB_SMART_ROLES = [
+    { id: 'qa', label: 'Smart QA', entity: 'qa_round', field: 'reviewerIds' },
+    { id: 'tw', label: 'Smart TW', entity: 'card', field: 'authorIds' },
+    { id: 'dispute_resolver', label: 'Smart Dispute Resolver', entity: 'dispute', field: 'resolverIds' },
+    { id: 'sr_flag_resolver', label: 'Smart Sr Flag Resolver', entity: 'sr_review', field: 'srResolverIds' }
+];
+
+const DASH_LIB_QA_DISPOSITION_ORDER = ['accepted', 'returned', 'escalated', 'flagged'];
+const DASH_LIB_QA_DISPOSITION_LABELS = {
+    accepted: 'Accepted',
+    returned: 'Returned',
+    escalated: 'Escalated',
+    flagged: 'Flagged as bugged'
+};
+const DASH_LIB_YES_NO_OPTIONS = [
+    { id: 'yes', label: 'Yes' },
+    { id: 'no', label: 'No' }
+];
+
+const DASH_LIB_GROUP_CONDITION_FIELDS = [
+    { id: 'statuses', entity: 'card', type: 'set', label: 'Current Task Status', optionsKey: 'statuses' },
+    { id: 'envKeys', entity: 'card', type: 'set', label: 'Environment', optionsKey: 'envs' },
+    { id: 'teamIds', entity: 'card', type: 'set', label: 'Team', optionsKey: 'teams' },
+    { id: 'projectIds', entity: 'card', type: 'set', label: 'Project', optionsKey: 'projects' },
+    { id: 'taskCreatedYear', entity: 'card', type: 'set', label: 'Task Created Year', optionsKey: 'taskCreatedYear' },
+    { id: 'taskCreatedMonth', entity: 'card', type: 'set', label: 'Task Created Month', optionsKey: 'taskCreatedMonth' },
+    { id: 'taskCreatedWeek', entity: 'card', type: 'set', label: 'Task Created Week', optionsKey: 'taskCreatedWeek' },
+    { id: 'taskCreatedDay', entity: 'card', type: 'set', label: 'Task Created Day', optionsKey: 'taskCreatedDay' },
+    { id: 'v1CreationTimeMinutes', entity: 'card', type: 'set', label: 'V1 Creation Time Minutes', optionsKey: 'v1CreationTimeMinutes' },
+    { id: 'v1_creation_time_minutes', entity: 'card', type: 'number', label: 'V1 Creation Time Minutes *', hydrateHint: true },
+    { id: 'prompt_word_count', entity: 'card', type: 'number', label: 'Prompt Length (words) *' },
+    { id: 'prompt_version_count', entity: 'card', type: 'number', label: 'Unique Task Versions *', hydrateHint: true },
+    { id: 'rejection_issue_count', entity: 'card', type: 'number', label: 'Unique Task Issues *' },
+    { id: 'qa_rounds_count', entity: 'card', type: 'number', label: 'Number of QA Rounds *', hydrateHint: true },
+    { id: 'authorIds', entity: 'card', type: 'person', label: 'Task Writer', personRole: 'tw' },
+
+    { id: 'reviewerIds', entity: 'qa_round', type: 'person', label: 'QA Reviewer', personRole: 'qa' },
+    { id: 'qaTimeMinutes', entity: 'qa_round', type: 'set', label: 'QA Time Minutes', optionsKey: 'qaTimeMinutes', hydrateHint: true },
+    { id: 'qa_time_minutes', entity: 'qa_round', type: 'number', label: 'QA Time Minutes *', hydrateHint: true },
+    { id: 'promptRatings', entity: 'qa_round', type: 'set', label: 'Prompt Rating', optionsKey: 'promptRatings' },
+    { id: 'taskIssues', entity: 'qa_round', type: 'set', label: 'Task Issues', optionsKey: 'taskIssues' },
+    { id: 'returnTypes', entity: 'qa_round', type: 'set', label: 'Issue Areas', optionsKey: 'returnTypes' },
+    { id: 'qaDisposition', entity: 'qa_round', type: 'set', label: 'QA Disposition', staticOptions: DASH_LIB_QA_DISPOSITION_ORDER.map((id) => ({ id, label: DASH_LIB_QA_DISPOSITION_LABELS[id] })) },
+    { id: 'qaHelpfulness', entity: 'qa_round', type: 'set', label: 'QA Helpfulness', optionsKey: 'qaHelpfulness' },
+    { id: 'linkedDisputeExists', entity: 'qa_round', type: 'set', label: 'Linked Dispute', staticOptions: DASH_LIB_YES_NO_OPTIONS },
+    { id: 'linkedDisputeOutcomes', entity: 'qa_round', type: 'set', label: 'Linked Dispute Outcome', optionsKey: 'disputeOutcomes' },
+    { id: 'linkedDisputeResolutionTimeMinutes', entity: 'qa_round', type: 'set', label: 'Linked Dispute Resolution Time', optionsKey: 'disputeResolutionTimeMinutes', hydrateHint: true },
+    { id: 'linked_dispute_resolution_time_minutes', entity: 'qa_round', type: 'number', label: 'Linked Dispute Resolution Time Minutes *', hydrateHint: true },
+
+    { id: 'disputeOutcomes', entity: 'dispute', type: 'set', label: 'Dispute Outcome', optionsKey: 'disputeOutcomes' },
+    { id: 'disputeResolutionTimeMinutes', entity: 'dispute', type: 'set', label: 'Dispute Resolution Time Minutes', optionsKey: 'disputeResolutionTimeMinutes', hydrateHint: true },
+    { id: 'dispute_resolution_time_minutes', entity: 'dispute', type: 'number', label: 'Dispute Resolution Time Minutes *', hydrateHint: true },
+    { id: 'resolverIds', entity: 'dispute', type: 'person', label: 'Dispute Resolver', personRole: 'dispute_resolver' },
+    { id: 'linkedQaReviewerIds', entity: 'dispute', type: 'person', label: 'Linked QA Reviewer', personRole: 'qa' },
+    { id: 'linkedQaPromptRatings', entity: 'dispute', type: 'set', label: 'Linked QA Prompt Rating', optionsKey: 'promptRatings' },
+    { id: 'linkedQaTimeMinutes', entity: 'dispute', type: 'set', label: 'Linked QA Time Minutes', optionsKey: 'qaTimeMinutes', hydrateHint: true },
+
+    { id: 'srReviewOutcomes', entity: 'sr_review', type: 'set', label: 'Sr Review Outcome', optionsKey: 'srReviewOutcomes' },
+    { id: 'srResolverIds', entity: 'sr_review', type: 'person', label: 'Sr Flag Resolver', personRole: 'sr_flag_resolver' }
+];
+
+const DASH_LIB_EVENT_DIM_ENTITY = {
+    qaTimeMinutes: 'qa_round',
+    promptRatings: 'qa_round',
+    taskIssues: 'qa_round',
+    returnTypes: 'qa_round',
+    qaHelpfulness: 'qa_round',
+    disputeOutcomes: 'dispute',
+    disputeResolutionTimeMinutes: 'dispute',
+    srReviewOutcomes: 'sr_review'
+};
+
+const DASH_LIB_INSTANCE_METRIC_FIELDS = {
+    qa_time_minutes: 'qa_time_minutes',
+    dispute_resolution_time_minutes: 'dispute_resolution_time_minutes',
+    v1_creation_time_minutes: 'v1_creation_time_minutes',
+    prompt_word_count: 'prompt_word_count',
+    prompt_version_count: 'prompt_version_count',
+    rejection_issue_count: 'rejection_issue_count',
+    qa_rounds_count: 'qa_rounds_count'
+};
+
 const DASH_LIB_RESULTS_MODE_HINTS = {
     clear: 'Clears previous results and replaces with new search results.',
     add: 'Adds new search results to previous ones (deduplicated).'
@@ -171,6 +260,178 @@ function dashLibManualFilterWordCount(text) {
     const trimmed = String(text || '').trim();
     if (!trimmed) return 0;
     return trimmed.split(/\s+/).filter(Boolean).length;
+}
+
+function dashLibFilterEntityById(entityId) {
+    return DASH_LIB_FILTER_ENTITIES.find((e) => e.id === entityId) || DASH_LIB_FILTER_ENTITIES[0];
+}
+
+function dashLibGroupConditionFieldsForEntity(entityId) {
+    return DASH_LIB_GROUP_CONDITION_FIELDS.filter((f) => f.entity === entityId);
+}
+
+function dashLibGroupConditionField(fieldId, entityId) {
+    if (entityId) {
+        return DASH_LIB_GROUP_CONDITION_FIELDS.find((f) => f.id === fieldId && f.entity === entityId)
+            || DASH_LIB_GROUP_CONDITION_FIELDS.find((f) => f.id === fieldId)
+            || null;
+    }
+    return DASH_LIB_GROUP_CONDITION_FIELDS.find((f) => f.id === fieldId) || null;
+}
+
+function dashLibSmartRoleById(roleId) {
+    return DASH_LIB_SMART_ROLES.find((r) => r.id === roleId) || null;
+}
+
+function dashLibDefaultFilterGroups() {
+    return [{ entity: 'card', conditions: [{ field: 'statuses', values: [] }] }];
+}
+
+function dashLibEvaluateNumericComparator(actual, comparator, expected, valueType) {
+    if (actual == null || !Number.isFinite(actual)) return null;
+    if (!Number.isFinite(expected)) return false;
+    if (valueType === 'date') {
+        const day = new Date(expected);
+        const dayEnd = new Date(expected);
+        dayEnd.setHours(23, 59, 59, 999);
+        const endMs = dayEnd.getTime();
+        switch (comparator) {
+            case 'gt': return actual > endMs;
+            case 'gte': return actual >= expected;
+            case 'lt': return actual < expected;
+            case 'lte': return actual <= endMs;
+            case 'eq': {
+                const a = new Date(actual);
+                return a.getFullYear() === day.getFullYear()
+                    && a.getMonth() === day.getMonth()
+                    && a.getDate() === day.getDate();
+            }
+            case 'neq': {
+                const a = new Date(actual);
+                return !(a.getFullYear() === day.getFullYear()
+                    && a.getMonth() === day.getMonth()
+                    && a.getDate() === day.getDate());
+            }
+            default: return true;
+        }
+    }
+    switch (comparator) {
+        case 'gt': return actual > expected;
+        case 'gte': return actual >= expected;
+        case 'lt': return actual < expected;
+        case 'lte': return actual <= expected;
+        case 'eq': return actual === expected;
+        case 'neq': return actual !== expected;
+        default: return true;
+    }
+}
+
+function dashLibConditionIsComplete(condition, field) {
+    if (!condition || !field) return false;
+    if (field.type === 'number' || field.type === 'date') {
+        return condition.comparator && condition.value !== '' && condition.value != null
+            && Number.isFinite(Number(condition.value));
+    }
+    return Array.isArray(condition.values) && condition.values.length > 0;
+}
+
+function dashLibNormalizeFilterGroups(raw) {
+    if (!Array.isArray(raw) || raw.length === 0) return [];
+    if (raw[0] && raw[0].field && !raw[0].conditions && !raw[0].entity) {
+        const conditions = [];
+        for (const row of raw) {
+            const field = dashLibGroupConditionField(row.field);
+            if (!field || !dashLibConditionIsComplete(row, field)) continue;
+            conditions.push({
+                field: row.field,
+                comparator: row.comparator,
+                value: row.value,
+                valueType: row.valueType || field.type
+            });
+        }
+        if (!conditions.length) return [];
+        const entity = (dashLibGroupConditionField(conditions[0].field) || {}).entity || 'card';
+        return [{ entity, conditions }];
+    }
+    const groups = [];
+    for (const group of raw) {
+        if (!group || !group.entity) continue;
+        const conditions = [];
+        for (const cond of group.conditions || []) {
+            const field = dashLibGroupConditionField(cond.field, group.entity);
+            if (!field || !dashLibConditionIsComplete(cond, field)) continue;
+            if (field.type === 'number' || field.type === 'date') {
+                conditions.push({
+                    field: cond.field,
+                    comparator: cond.comparator,
+                    value: Number(cond.value),
+                    valueType: cond.valueType || field.type
+                });
+            } else {
+                conditions.push({
+                    field: cond.field,
+                    values: (cond.values || []).map((id) => String(id))
+                });
+            }
+        }
+        if (conditions.length) groups.push({ entity: group.entity, conditions });
+    }
+    return groups;
+}
+
+function dashLibFilterGroupsEqual(a, b) {
+    const left = JSON.stringify(dashLibNormalizeFilterGroups(a));
+    const right = JSON.stringify(dashLibNormalizeFilterGroups(b));
+    return left === right;
+}
+
+function dashLibSmartSearchAutoFill(committed) {
+    const c = committed || {};
+    const authorIds = (c.authorIds || []).map((id) => String(id)).filter(Boolean);
+    const everyone = c.ratingsEveryone === true || authorIds.length === 0;
+    if (everyone || authorIds.length !== 1) return {};
+    const personId = authorIds[0];
+    const tw = Boolean(c.includeTaskCreation || c.includeTasks);
+    const qa = Boolean(c.includeQa);
+    const dispute = Boolean(c.includeDisputes);
+    const sr = Boolean(c.includeSeniorReview);
+    const sessions = Boolean(c.includeSessions);
+    const on = [tw && 'tw', qa && 'qa', dispute && 'dispute', sr && 'sr', sessions && 'sessions'].filter(Boolean);
+    const fill = {};
+    if (on.length === 1 && on[0] === 'qa') fill.qa = personId;
+    if (on.length === 1 && on[0] === 'tw') fill.tw = personId;
+    if (on.length === 1 && on[0] === 'dispute') fill.dispute_resolver = personId;
+    if (on.length === 1 && on[0] === 'sr') fill.sr_flag_resolver = personId;
+    if (on.length === 2 && tw && qa) {
+        fill.tw = personId;
+        fill.qa = personId;
+    }
+    return fill;
+}
+
+function dashLibNormalizeSmartFilters(raw) {
+    if (!Array.isArray(raw)) return [];
+    for (const slot of raw) {
+        const role = slot && slot.role != null ? String(slot.role) : '';
+        if (!dashLibSmartRoleById(role)) continue;
+        return [{ role }];
+    }
+    return [];
+}
+
+function dashLibSmartGroupsFromBindings(smartFilters, bindings) {
+    const groups = [];
+    const bound = bindings || {};
+    for (const slot of dashLibNormalizeSmartFilters(smartFilters)) {
+        const role = dashLibSmartRoleById(slot.role);
+        const personId = bound[slot.role] != null ? String(bound[slot.role]).trim() : '';
+        if (!role || !personId) continue;
+        groups.push({
+            entity: role.entity,
+            conditions: [{ field: role.field, values: [personId] }]
+        });
+    }
+    return groups;
 }
 
 const DASH_LIB_VERIFIER_FAILED_EVENT_TYPE = 'instance.verifier_failed';
@@ -808,7 +1069,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
-    _version: '8.9',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -940,7 +1201,30 @@ const plugin = {
             manualFilterDefaultField: DASH_LIB_MANUAL_FILTER_DEFAULT_FIELD,
             manualFilterDefaultComparator: DASH_LIB_MANUAL_FILTER_DEFAULT_COMPARATOR,
             defaultManualFilterStageRows: dashLibDefaultManualFilterStageRows,
+            defaultFilterGroups: dashLibDefaultFilterGroups,
             manualFilterWordCount: dashLibManualFilterWordCount,
+            filterEntities: DASH_LIB_FILTER_ENTITIES,
+            groupConditionFields: DASH_LIB_GROUP_CONDITION_FIELDS,
+            groupConditionFieldsForEntity: dashLibGroupConditionFieldsForEntity,
+            groupConditionField: dashLibGroupConditionField,
+            smartRoles: DASH_LIB_SMART_ROLES,
+            smartRoleById: dashLibSmartRoleById,
+            normalizeFilterGroups: dashLibNormalizeFilterGroups,
+            filterGroupsEqual: dashLibFilterGroupsEqual,
+            evaluateNumericComparator: dashLibEvaluateNumericComparator,
+            conditionIsComplete: dashLibConditionIsComplete,
+            smartSearchAutoFill: dashLibSmartSearchAutoFill,
+            normalizeSmartFilters: dashLibNormalizeSmartFilters,
+            smartGroupsFromBindings: dashLibSmartGroupsFromBindings,
+            itemPassesFilterGroups: bind(self._itemPassesFilterGroups),
+            applyFilterGroupsToItems: bind(self._applyFilterGroupsToItems),
+            itemMatchingInstances: bind(self._itemMatchingInstances),
+            extractFilterInstances: bind(self._extractFilterInstances),
+            collectRolePeople: bind(self._collectRolePeople),
+            groupConditionOptions: bind(self._groupConditionOptions),
+            instanceMetricValue: bind(self._instanceMetricValue),
+            instanceDimensionValues: bind(self._instanceDimensionValues),
+            eventEntityForDimension: (dimKey) => DASH_LIB_EVENT_DIM_ENTITY[dimKey] || null,
             noneSelectedHint: DASH_LIB_NONE_SELECTED_HINT,
             substringFilterHelp: DASH_LIB_SUBSTRING_FILTER_HELP,
             resultsModeHints: DASH_LIB_RESULTS_MODE_HINTS,
@@ -1139,6 +1423,343 @@ const plugin = {
         if (entry.isEscalated) return 'escalated';
         if (entry.isFlaggedAsBugged) return 'bugged';
         return 'returned';
+    },
+
+    _qaEntryReviewerId(entry) {
+        if (!entry) return '';
+        const display = entry.display;
+        return String(
+            (entry.reviewer && entry.reviewer.id)
+            || (display && display.qaReviewerId)
+            || ''
+        ).trim();
+    },
+
+    _qaEntryReviewerPerson(entry) {
+        const display = entry && entry.display;
+        const id = this._qaEntryReviewerId(entry);
+        return {
+            id,
+            name: String((entry && entry.reviewer && entry.reviewer.name)
+                || (display && display.qaReviewerName)
+                || '').trim(),
+            email: String((entry && entry.reviewer && entry.reviewer.email)
+                || (display && display.qaReviewerEmail)
+                || '').trim()
+        };
+    },
+
+    _disputeOutcomeFlags(dispute) {
+        if (!dispute) return [];
+        const status = String(dispute.status || '').trim().toLowerCase();
+        if (!dispute.resolutionAt || status === 'pending' || !status) return ['pending'];
+        if (DASH_LIB_DISPUTE_OUTCOME_ORDER.includes(status)) return [status];
+        return [];
+    },
+
+    _srReviewOutcomeFlags(flag) {
+        if (!flag) return [];
+        const status = String(flag.status || '').toLowerCase();
+        if (flag.isConfirmed || status === 'confirmed') return ['confirmed'];
+        if (flag.isDismissed || status === 'dismissed') return ['dismissed'];
+        if (flag.isPending || status === 'pending' || !status || !flag.resolutionAt) return ['pending'];
+        return [];
+    },
+
+    _feedbackHelpfulnessFlags(entry, helpfulnessUi, currentUserId) {
+        if (!entry || !this._feedbackEligibleForHelpfulness(entry, currentUserId)) return [];
+        const ui = helpfulnessUi && helpfulnessUi[String(entry.id)];
+        if (!ui) return [];
+        const flags = [];
+        if (ui.isHelpful === true) flags.push('helpful');
+        if (ui.isHelpful === false) flags.push('not_helpful');
+        const reviewText = ui.reportText != null ? String(ui.reportText).trim() : '';
+        if (reviewText.length) flags.push('written_review');
+        return flags;
+    },
+
+    _findFeedbackEntryById(item, feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid || !item || !item.task) return null;
+        return (item.task.allFeedback || []).find((e) => String(e.id) === fid) || null;
+    },
+
+    _disputesLinkedToFeedback(item, feedbackId) {
+        const fid = String(feedbackId || '').trim();
+        if (!fid) return [];
+        return ((item && item.disputes) || []).filter((d) => String(d.feedbackId || '') === fid);
+    },
+
+    _cardInstanceFromItem(item) {
+        const task = item && item.task;
+        if (!task) return null;
+        const authorId = task.author && task.author.id ? String(task.author.id) : '';
+        const v1Min = this._itemV1CreationTimeMinutes(item);
+        const inst = {
+            entity: 'card',
+            item,
+            statuses: task.status ? [task.status] : [],
+            envKeys: (task.envKey || task.environment) ? [task.envKey || task.environment] : [],
+            teamIds: task.teamId ? [task.teamId] : [],
+            projectIds: task.projectId ? [task.projectId] : [],
+            taskCreatedYear: this._itemTaskCreatedBuckets(item, 'year'),
+            taskCreatedMonth: this._itemTaskCreatedBuckets(item, 'month'),
+            taskCreatedWeek: this._itemTaskCreatedBuckets(item, 'week'),
+            taskCreatedDay: this._itemTaskCreatedBuckets(item, 'day'),
+            v1CreationTimeMinutes: this._itemV1CreationTimeBuckets(item),
+            v1_creation_time_minutes: v1Min,
+            prompt_word_count: dashLibManualFilterWordCount(task.prompt),
+            prompt_version_count: (task.promptVersions && task.promptVersions.length)
+                ? task.promptVersions.length
+                : 1,
+            rejection_issue_count: this._taskIssueLabels(task).length,
+            qa_rounds_count: this._itemQaRoundsCount(item),
+            authorIds: authorId ? [authorId] : []
+        };
+        return inst;
+    },
+
+    _qaRoundInstanceFromEntry(item, entry, ctx) {
+        if (!entry || this._returnTypeOf(entry) == null) return null;
+        const display = entry.display || {};
+        const reviewer = this._qaEntryReviewerPerson(entry);
+        const sec = display.reviewDurationSeconds;
+        const minutes = (sec != null && Number.isFinite(Number(sec)) && Number(sec) >= 0)
+            ? dashLibV1CreationTimeMinutes(Number(sec))
+            : null;
+        const bucketId = minutes != null ? dashLibV1CreationTimeBucketId(minutes) : null;
+        const linked = this._disputesLinkedToFeedback(item, entry.id);
+        const linkedOutcomes = [];
+        const linkedTimeBuckets = [];
+        let linkedTimeMax = null;
+        for (const dispute of linked) {
+            for (const flag of this._disputeOutcomeFlags(dispute)) linkedOutcomes.push(flag);
+            const dSec = dispute.reviewDurationSeconds;
+            if (dSec != null && Number.isFinite(Number(dSec)) && Number(dSec) >= 0) {
+                const dMin = dashLibV1CreationTimeMinutes(Number(dSec));
+                const dBucket = dashLibV1CreationTimeBucketId(dMin);
+                if (dBucket) linkedTimeBuckets.push(dBucket);
+                if (dMin != null && (linkedTimeMax == null || dMin > linkedTimeMax)) linkedTimeMax = dMin;
+            }
+        }
+        const helpfulnessUi = (ctx && ctx.helpfulnessUi) || {};
+        const currentUserId = (ctx && ctx.currentUserId) || '';
+        const rt = this._returnTypeOf(entry);
+        const disposition = rt === 'bugged' ? 'flagged' : rt;
+        return {
+            entity: 'qa_round',
+            item,
+            entry,
+            reviewerIds: reviewer.id ? [reviewer.id] : [],
+            qaTimeMinutes: bucketId ? [bucketId] : [],
+            qa_time_minutes: minutes,
+            promptRatings: display.qualityRating ? [display.qualityRating] : [],
+            taskIssues: (display.rejectionBadges || []).slice(),
+            returnTypes: this._feedbackFieldsOf(entry),
+            qaDisposition: disposition ? [disposition] : [],
+            qaHelpfulness: this._feedbackHelpfulnessFlags(entry, helpfulnessUi, currentUserId),
+            linkedDisputeExists: [linked.length ? 'yes' : 'no'],
+            linkedDisputeOutcomes: [...new Set(linkedOutcomes)],
+            linkedDisputeResolutionTimeMinutes: [...new Set(linkedTimeBuckets)],
+            linked_dispute_resolution_time_minutes: linkedTimeMax
+        };
+    },
+
+    _disputeInstanceFromDispute(item, dispute) {
+        if (!dispute) return null;
+        const sec = dispute.reviewDurationSeconds;
+        const minutes = (sec != null && Number.isFinite(Number(sec)) && Number(sec) >= 0)
+            ? dashLibV1CreationTimeMinutes(Number(sec))
+            : null;
+        const bucketId = minutes != null ? dashLibV1CreationTimeBucketId(minutes) : null;
+        const linkedEntry = this._findFeedbackEntryById(item, dispute.feedbackId);
+        const linkedReviewer = this._qaEntryReviewerId(linkedEntry);
+        const linkedDisplay = linkedEntry && linkedEntry.display;
+        const linkedSec = linkedDisplay && linkedDisplay.reviewDurationSeconds;
+        const linkedMin = (linkedSec != null && Number.isFinite(Number(linkedSec)) && Number(linkedSec) >= 0)
+            ? dashLibV1CreationTimeMinutes(Number(linkedSec))
+            : null;
+        const linkedBucket = linkedMin != null ? dashLibV1CreationTimeBucketId(linkedMin) : null;
+        return {
+            entity: 'dispute',
+            item,
+            dispute,
+            disputeOutcomes: this._disputeOutcomeFlags(dispute),
+            disputeResolutionTimeMinutes: bucketId ? [bucketId] : [],
+            dispute_resolution_time_minutes: minutes,
+            resolverIds: dispute.resolverId ? [String(dispute.resolverId)] : [],
+            linkedQaReviewerIds: linkedReviewer ? [linkedReviewer] : [],
+            linkedQaPromptRatings: (linkedDisplay && linkedDisplay.qualityRating)
+                ? [linkedDisplay.qualityRating]
+                : [],
+            linkedQaTimeMinutes: linkedBucket ? [linkedBucket] : []
+        };
+    },
+
+    _srReviewInstanceFromFlag(item, flag) {
+        if (!flag) return null;
+        return {
+            entity: 'sr_review',
+            item,
+            flag,
+            srReviewOutcomes: this._srReviewOutcomeFlags(flag),
+            srResolverIds: flag.resolverId ? [String(flag.resolverId)] : []
+        };
+    },
+
+    _extractFilterInstances(item, entity, ctx) {
+        if (!item) return [];
+        if (entity === 'card') {
+            const inst = this._cardInstanceFromItem(item);
+            return inst ? [inst] : [];
+        }
+        if (entity === 'qa_round') {
+            const out = [];
+            for (const entry of (item.task && item.task.allFeedback) || []) {
+                const inst = this._qaRoundInstanceFromEntry(item, entry, ctx);
+                if (inst) out.push(inst);
+            }
+            return out;
+        }
+        if (entity === 'dispute') {
+            return ((item.disputes || []).map((d) => this._disputeInstanceFromDispute(item, d)).filter(Boolean));
+        }
+        if (entity === 'sr_review') {
+            return ((item.flags || []).map((f) => this._srReviewInstanceFromFlag(item, f)).filter(Boolean));
+        }
+        return [];
+    },
+
+    _instancePassesCondition(instance, condition, item) {
+        const field = dashLibGroupConditionField(condition.field, instance && instance.entity);
+        if (!field) return true;
+        if (field.hydrateHint && item && item.hydrated !== true) return true;
+        if (field.type === 'number' || field.type === 'date') {
+            const actual = instance[field.id];
+            const result = dashLibEvaluateNumericComparator(
+                actual, condition.comparator, Number(condition.value), condition.valueType || field.type
+            );
+            return result === true;
+        }
+        const selected = condition.values || [];
+        if (!selected.length) return true;
+        const values = instance[field.id];
+        const have = Array.isArray(values) ? values.map((v) => String(v)) : [];
+        const set = new Set(selected.map((v) => String(v)));
+        return have.some((v) => set.has(v));
+    },
+
+    _instancePassesGroup(instance, group, item) {
+        if (!instance || !group) return false;
+        for (const condition of group.conditions || []) {
+            if (!this._instancePassesCondition(instance, condition, item)) return false;
+        }
+        return true;
+    },
+
+    _itemPassesFilterGroup(item, group, ctx) {
+        const normalized = dashLibNormalizeFilterGroups([group]);
+        if (!normalized.length) return true;
+        const g = normalized[0];
+        if (g.conditions.some((c) => {
+            const field = dashLibGroupConditionField(c.field, g.entity);
+            return field && field.hydrateHint;
+        }) && item && item.hydrated !== true) {
+            return true;
+        }
+        const instances = this._extractFilterInstances(item, g.entity, ctx);
+        if (!instances.length) return false;
+        return instances.some((inst) => this._instancePassesGroup(inst, g, item));
+    },
+
+    _itemPassesFilterGroups(item, groups, andOr, ctx) {
+        const normalized = dashLibNormalizeFilterGroups(groups);
+        if (!normalized.length) return true;
+        if (andOr === 'or') {
+            return normalized.some((g) => this._itemPassesFilterGroup(item, g, ctx));
+        }
+        return normalized.every((g) => this._itemPassesFilterGroup(item, g, ctx));
+    },
+
+    _itemMatchingInstances(item, groups, andOr, entity, ctx) {
+        const normalized = dashLibNormalizeFilterGroups(groups);
+        const instances = this._extractFilterInstances(item, entity, ctx);
+        if (!instances.length) return [];
+        const entityGroups = normalized.filter((g) => g.entity === entity);
+        if (!entityGroups.length) return instances;
+        if (andOr === 'or') {
+            return instances.filter((inst) => entityGroups.some((g) => this._instancePassesGroup(inst, g, item)));
+        }
+        return instances.filter((inst) => entityGroups.every((g) => this._instancePassesGroup(inst, g, item)));
+    },
+
+    _applyFilterGroupsToItems(items, groups, andOr, ctx) {
+        const normalized = dashLibNormalizeFilterGroups(groups);
+        if (!normalized.length) return items || [];
+        return (items || []).filter((item) => this._itemPassesFilterGroups(item, normalized, andOr, ctx));
+    },
+
+    _collectRolePeople(items, role) {
+        const byId = new Map();
+        const add = (id, name, email) => {
+            const pid = String(id || '').trim();
+            if (!pid) return;
+            if (byId.has(pid)) return;
+            const label = String(name || '').trim() || String(email || '').trim() || pid;
+            byId.set(pid, { id: pid, label, name: String(name || '').trim(), email: String(email || '').trim() });
+        };
+        for (const item of items || []) {
+            if (!item) continue;
+            if (role === 'tw') {
+                const author = item.task && item.task.author;
+                if (author) add(author.id, author.name, author.email);
+            } else if (role === 'qa') {
+                for (const entry of (item.task && item.task.allFeedback) || []) {
+                    if (this._returnTypeOf(entry) == null) continue;
+                    const person = this._qaEntryReviewerPerson(entry);
+                    add(person.id, person.name, person.email);
+                }
+            } else if (role === 'dispute_resolver') {
+                for (const dispute of item.disputes || []) {
+                    add(dispute.resolverId, dispute.resolverName, dispute.resolverEmail);
+                }
+            } else if (role === 'sr_flag_resolver') {
+                for (const flag of item.flags || []) {
+                    add(flag.resolverId, flag.resolverName, flag.resolverEmail);
+                }
+            }
+        }
+        return [...byId.values()].sort((a, b) => a.label.localeCompare(b.label));
+    },
+
+    _groupConditionOptions(field, filterListOptions, items) {
+        if (!field) return [];
+        if (field.staticOptions) return field.staticOptions.slice();
+        if (field.type === 'person') {
+            return this._collectRolePeople(items, field.personRole);
+        }
+        const fromLists = (filterListOptions && field.optionsKey)
+            ? (filterListOptions[field.optionsKey] || [])
+            : [];
+        return fromLists.map((o) => ({ id: o.id, label: o.label || o.id }));
+    },
+
+    _instanceMetricValue(instance, fieldId) {
+        if (!instance) return null;
+        const key = DASH_LIB_INSTANCE_METRIC_FIELDS[fieldId];
+        if (!key) return null;
+        const v = instance[key];
+        return v != null && Number.isFinite(Number(v)) ? Number(v) : null;
+    },
+
+    _instanceDimensionValues(instance, dimKey) {
+        if (!instance) return [];
+        const values = instance[dimKey];
+        return Array.isArray(values) ? values.map((v) => String(v)) : [];
+    },
+
+    _eventEntityForDimension(dimKey) {
+        return DASH_LIB_EVENT_DIM_ENTITY[dimKey] || null;
     },
 
     /** Human QA dispositions that leave the QA's possession (accept / return / escalate / flag). Excludes system feedback, Sr Review flags, and disputes. */

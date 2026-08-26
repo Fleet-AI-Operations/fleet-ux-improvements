@@ -501,8 +501,8 @@ const searchOutputLeftPaneMethods = {
                                             <span>Match any (OR)</span>
                                         </label>
                                     </div>
-                                    <div ${el('manual-rows')} style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
-                                    <button type="button" ${el('manual-add')} class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add filter</button>
+                                    <div ${el('manual-rows')} style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; min-width: 0; max-width: 100%; overflow-x: hidden;"></div>
+                                    <button type="button" ${el('manual-add')} class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add group</button>
                                 </div>
                             </div>
                         </div>
@@ -696,24 +696,160 @@ const searchOutputLeftPaneMethods = {
         Logger.log('dashboard: results mode — ' + next);
     },
 
+    _filterGroupItemsForOptions() {
+        return this._getFilterScopeItems
+            ? this._getFilterScopeItems()
+            : (this._state.cachedItems || []);
+    },
+
+    _filterGroupFieldOptions(entityId) {
+        const lib = dashLib();
+        if (lib && typeof lib.groupConditionFieldsForEntity === 'function') {
+            return lib.groupConditionFieldsForEntity(entityId);
+        }
+        return [];
+    },
+
+    _filterGroupConditionValueOptions(field) {
+        const lib = dashLib();
+        if (!lib || typeof lib.groupConditionOptions !== 'function') return [];
+        return lib.groupConditionOptions(
+            field,
+            this._state.filterListOptions || {},
+            this._filterGroupItemsForOptions()
+        );
+    },
+
+    _filterGroupEntitySelectHtml(selectedId) {
+        const lib = dashLib();
+        const entities = (lib && lib.filterEntities) || [];
+        const sel = selectedId || 'card';
+        return '<select data-wf-dash-group-entity="1" aria-label="Look at" style="'
+            + this._inputStyle() + ' padding: 4px 8px; font-size: 11px; flex: 1 1 0%; min-width: 0; max-width: 100%; overflow: hidden;">'
+            + entities.map((e) => {
+                const selected = e.id === sel ? ' selected' : '';
+                return '<option value="' + dashEscHtml(e.id) + '"' + selected + '>'
+                    + dashEscHtml(e.label) + '</option>';
+            }).join('')
+            + '</select>';
+    },
+
+    _filterGroupFieldSelectHtml(entityId, selectedId) {
+        const fields = this._filterGroupFieldOptions(entityId);
+        const sel = selectedId || (fields[0] && fields[0].id) || '';
+        return '<select data-wf-dash-group-field="1" aria-label="Condition field" style="'
+            + this._inputStyle() + ' padding: 4px 8px; font-size: 11px; flex: 1 1 0%; min-width: 0; max-width: 100%; overflow: hidden;">'
+            + fields.map((f) => {
+                const selected = f.id === sel ? ' selected' : '';
+                return '<option value="' + dashEscHtml(f.id) + '"' + selected + '>'
+                    + dashEscHtml(f.label) + '</option>';
+            }).join('')
+            + '</select>';
+    },
+
+    _filterGroupSetValuesHtml(field, selectedValues) {
+        const options = this._filterGroupConditionValueOptions(field);
+        const selected = new Set((selectedValues || []).map((id) => String(id)));
+        const count = selected.size;
+        const summary = count === 0 ? 'Any' : (count + ' selected');
+        if (!options.length) {
+            return '<span data-wf-dash-group-values="1" style="font-size: 10px; color: var(--muted-foreground, #64748b);">No options in scope</span>';
+        }
+        return '<details data-wf-dash-group-values="1" style="flex: 1 1 auto; min-width: 0; max-width: 100%;">'
+            + '<summary style="font-size: 11px; cursor: pointer; user-select: none; color: var(--foreground, #0f172a);">'
+            + dashEscHtml(summary) + '</summary>'
+            + '<div style="display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow: auto; margin-top: 6px; padding: 6px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff);">'
+            + options.map((opt) => {
+                const id = String(opt.id);
+                const checked = selected.has(id) ? ' checked' : '';
+                return '<label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">'
+                    + '<input type="checkbox" data-wf-dash-group-value="1" value="' + dashEscHtml(id) + '"' + checked + '>'
+                    + '<span>' + dashEscHtml(opt.label || id) + '</span></label>';
+            }).join('')
+            + '</div></details>';
+    },
+
+    _filterGroupNumericValuesHtml(field, condition) {
+        const inputStyle = this._inputStyle() + ' padding: 4px 8px; font-size: 11px;';
+        const isDate = field && field.type === 'date';
+        const comparator = (condition && condition.comparator) || 'gte';
+        const value = condition && condition.value != null ? String(condition.value) : '';
+        const dateLocal = condition && condition.dateLocal != null ? String(condition.dateLocal) : '';
+        return '<select data-wf-dash-group-comparator="1" style="' + inputStyle + ' width: '
+            + (isDate ? '96px' : '52px') + '; flex-shrink: 0;">'
+            + this._numericComparatorOptionsHtml(isDate ? 'date' : 'number', comparator)
+            + '</select>'
+            + '<input type="' + (isDate ? 'date' : 'number') + '" data-wf-dash-group-number="1" placeholder="Value" step="any" value="'
+            + dashEscHtml(isDate ? dateLocal : value) + '" style="' + inputStyle + ' width: '
+            + (isDate ? '118px' : '72px') + '; flex-shrink: 0;">';
+    },
+
+    _filterGroupConditionValueSlotHtml(entityId, fieldId, condition) {
+        const lib = dashLib();
+        const field = lib && typeof lib.groupConditionField === 'function'
+            ? lib.groupConditionField(fieldId, entityId)
+            : null;
+        if (!field) return '';
+        if (field.type === 'number' || field.type === 'date') {
+            return this._filterGroupNumericValuesHtml(field, condition);
+        }
+        return this._filterGroupSetValuesHtml(field, condition && condition.values);
+    },
+
+    _buildFilterGroupConditionEl(entityId, condition) {
+        const fields = this._filterGroupFieldOptions(entityId);
+        const fieldId = (condition && condition.field) || (fields[0] && fields[0].id) || '';
+        const wrap = document.createElement('div');
+        wrap.setAttribute('data-wf-dash-group-cond', '1');
+        wrap.style.cssText = 'display: flex; gap: 6px; align-items: flex-start; flex-wrap: nowrap; min-width: 0; max-width: 100%;';
+        wrap.innerHTML = '<span data-wf-dash-group-cond-main="1" style="display: flex; gap: 6px; align-items: flex-start; flex: 1 1 auto; min-width: 0; flex-wrap: wrap;">'
+            + this._filterGroupFieldSelectHtml(entityId, fieldId)
+            + '<span data-wf-dash-group-value-slot="1" style="display: flex; gap: 6px; align-items: flex-start; flex: 1 1 auto; min-width: 0; flex-wrap: wrap;">'
+            + this._filterGroupConditionValueSlotHtml(entityId, fieldId, condition)
+            + '</span></span>'
+            + '<button type="button" data-wf-dash-group-cond-remove="1" title="Remove condition" aria-label="Remove condition" style="flex: 0 0 auto; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>';
+        return wrap;
+    },
+
+    _buildFilterGroupEl(opts) {
+        const entityId = (opts && opts.entity) || 'card';
+        const conditions = (opts && Array.isArray(opts.conditions) && opts.conditions.length)
+            ? opts.conditions
+            : [{ field: (this._filterGroupFieldOptions(entityId)[0] || {}).id, values: [] }];
+        const card = document.createElement('div');
+        card.setAttribute('data-wf-dash-filter-group', '1');
+        card.style.cssText = 'display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--card, #fff); min-width: 0; max-width: 100%; box-sizing: border-box;';
+        const header = document.createElement('div');
+        header.style.cssText = 'display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; max-width: 100%;';
+        header.innerHTML = '<span style="font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); flex-shrink: 0;">Look at</span>'
+            + this._filterGroupEntitySelectHtml(entityId)
+            + '<button type="button" data-wf-dash-group-remove="1" title="Remove group" aria-label="Remove group" style="flex: 0 0 auto; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>';
+        const conds = document.createElement('div');
+        conds.setAttribute('data-wf-dash-group-conditions', '1');
+        conds.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+        for (const cond of conditions) {
+            conds.appendChild(this._buildFilterGroupConditionEl(entityId, cond));
+        }
+        const addCond = document.createElement('button');
+        addCond.type = 'button';
+        addCond.setAttribute('data-wf-dash-group-cond-add', '1');
+        addCond.className = this._dashBtnClass('basic', 'nav');
+        addCond.style.padding = '4px 8px';
+        addCond.textContent = '+ Add condition';
+        card.appendChild(header);
+        card.appendChild(conds);
+        card.appendChild(addCond);
+        return card;
+    },
+
     _buildManualFilterRow(opts) {
         const rowsEl = this._q('#wf-dash-manual-rows');
         if (!rowsEl) return;
-        const inputStyle = this._inputStyle() + ' padding: 4px 8px; font-size: 11px;';
-        const selectStyle = inputStyle;
-        const row = document.createElement('div');
-        row.innerHTML = this._numericFilterRowHtml({
-            fields: dashManualFilterFields(),
-            field: opts && opts.field,
-            comparator: opts && opts.comparator,
-            value: opts && opts.value,
-            selectStyle,
-            inputStyle,
-            removeBtnStyle: ''
-        });
-        const rowEl = row.firstElementChild;
-        if (rowEl) rowsEl.appendChild(rowEl);
-        Logger.debug('search-output: manual filter row added');
+        const group = opts && opts.entity
+            ? opts
+            : { entity: 'card', conditions: opts ? [opts] : [] };
+        rowsEl.appendChild(this._buildFilterGroupEl(group));
+        Logger.debug('search-output: filter group added');
     },
 
     _resetManualFilters() {
@@ -721,9 +857,64 @@ const searchOutputLeftPaneMethods = {
         if (rowsEl) rowsEl.innerHTML = '';
         const andOrToggle = this._q('#wf-dash-manual-andor');
         if (andOrToggle) andOrToggle.checked = false;
-        for (const row of dashDefaultManualFilterStageRows()) {
-            this._buildManualFilterRow(row);
+        const lib = dashLib();
+        const defaults = lib && typeof lib.defaultFilterGroups === 'function'
+            ? lib.defaultFilterGroups()
+            : [{ entity: 'card', conditions: [] }];
+        for (const group of defaults) this._buildManualFilterRow(group);
+    },
+
+    _refreshFilterGroupValueOptions() {
+        const rowsEl = this._q('#wf-dash-manual-rows');
+        if (!rowsEl) return;
+        rowsEl.querySelectorAll('[data-wf-dash-filter-group]').forEach((groupEl) => {
+            const entityEl = groupEl.querySelector('[data-wf-dash-group-entity]');
+            const entityId = entityEl ? entityEl.value : 'card';
+            groupEl.querySelectorAll('[data-wf-dash-group-cond]').forEach((condEl) => {
+                const fieldEl = condEl.querySelector('[data-wf-dash-group-field]');
+                const fieldId = fieldEl ? fieldEl.value : '';
+                const slot = condEl.querySelector('[data-wf-dash-group-value-slot]');
+                if (!slot) return;
+                const prev = this._readFilterGroupCondition(condEl, entityId);
+                slot.innerHTML = this._filterGroupConditionValueSlotHtml(entityId, fieldId, prev);
+            });
+        });
+    },
+
+    _readFilterGroupCondition(condEl, entityId) {
+        const lib = dashLib();
+        const fieldEl = condEl.querySelector('[data-wf-dash-group-field]');
+        const fieldId = fieldEl ? fieldEl.value : '';
+        const field = lib && typeof lib.groupConditionField === 'function'
+            ? lib.groupConditionField(fieldId, entityId)
+            : null;
+        if (!field) return { field: fieldId, values: [] };
+        if (field.type === 'number' || field.type === 'date') {
+            const compEl = condEl.querySelector('[data-wf-dash-group-comparator]');
+            const valueEl = condEl.querySelector('[data-wf-dash-group-number]');
+            const comparator = compEl ? compEl.value : 'gte';
+            const raw = valueEl ? valueEl.value.trim() : '';
+            if (field.type === 'date') {
+                const iso = raw && lib && typeof lib.dateLocalToIso === 'function'
+                    ? lib.dateLocalToIso(raw, 'after')
+                    : '';
+                const value = iso ? Date.parse(iso) : NaN;
+                return {
+                    field: fieldId,
+                    comparator,
+                    value: Number.isFinite(value) ? value : '',
+                    valueType: 'date',
+                    dateLocal: raw
+                };
+            }
+            const value = raw === '' ? '' : Number(raw);
+            return { field: fieldId, comparator, value, valueType: 'number' };
         }
+        const values = [];
+        condEl.querySelectorAll('[data-wf-dash-group-value]').forEach((cb) => {
+            if (cb.checked) values.push(cb.value);
+        });
+        return { field: fieldId, values };
     },
 
     _readSearchOutputManualFilters() {
@@ -732,29 +923,14 @@ const searchOutputLeftPaneMethods = {
         const andOr = andOrToggle && andOrToggle.checked ? 'or' : 'and';
         const rows = [];
         if (!rowsEl) return { rows, andOr };
-        const lib = dashLib();
-        rowsEl.querySelectorAll('[data-wf-dash-manual-row]').forEach((rowEl) => {
-            const fieldEl = rowEl.querySelector('[data-wf-dash-manual-field]');
-            const compEl = rowEl.querySelector('[data-wf-dash-manual-comparator]');
-            const valueEl = rowEl.querySelector('[data-wf-dash-manual-value]');
-            const field = fieldEl ? fieldEl.value : '';
-            const comparator = compEl ? compEl.value : '';
-            const raw = valueEl ? valueEl.value.trim() : '';
-            if (!field || !comparator || raw === '') return;
-            const fieldMeta = dashManualFilterFields().find((f) => f.id === field);
-            const isDate = fieldMeta && fieldMeta.type === 'date';
-            let value;
-            if (isDate) {
-                const iso = lib.dateLocalToIso(raw, 'after');
-                if (!iso) return;
-                value = Date.parse(iso);
-                if (!Number.isFinite(value)) return;
-                rows.push({ field, comparator, value, valueType: 'date', dateLocal: raw });
-            } else {
-                value = Number(raw);
-                if (!Number.isFinite(value)) return;
-                rows.push({ field, comparator, value, valueType: 'number' });
-            }
+        rowsEl.querySelectorAll('[data-wf-dash-filter-group]').forEach((groupEl) => {
+            const entityEl = groupEl.querySelector('[data-wf-dash-group-entity]');
+            const entity = entityEl ? entityEl.value : 'card';
+            const conditions = [];
+            groupEl.querySelectorAll('[data-wf-dash-group-cond]').forEach((condEl) => {
+                conditions.push(this._readFilterGroupCondition(condEl, entity));
+            });
+            rows.push({ entity, conditions });
         });
         return { rows, andOr };
     },
@@ -1553,6 +1729,9 @@ const searchOutputLeftPaneMethods = {
             this._endFilterMsDropdownRefresh(openFilterKeys);
         }
         this._state.filterListBoundsPrev = listBounds;
+        if (typeof this._refreshFilterGroupValueOptions === 'function') {
+            this._refreshFilterGroupValueOptions();
+        }
         this._updateApplyFiltersUi();
         this._repositionOpenFlyouts();
         Logger.debug('dashboard: filter lists rendered');
@@ -2171,6 +2350,7 @@ const searchOutputLeftPaneMethods = {
             ? ('Retrieving task 1 of ' + parsed.length + '…')
             : 'Retrieving task…';
         this._state.committed = retrieveCommitted;
+        this._state.statsSmartBindings = {};
         this._setRetrieveButtonLoading(true);
         this._setSearchButtonLoading(false);
         this._updateResultsKindTabsUi();
@@ -2360,6 +2540,7 @@ const searchOutputLeftPaneMethods = {
                 ].filter(Boolean)
             };
             this._state.committed = searchCommitted;
+            this._state.statsSmartBindings = {};
             this._state.ratingsFromResults = false;
             this._beginResultsLoad();
             this._state.searchStopRequested = false;
@@ -2550,9 +2731,12 @@ const searchOutputLeftPaneMethods = {
         for (const { draftKey } of dashFilterScopes()) {
             if (!this._isDimensionUnrestricted(applied[draftKey] || [], bounds[draftKey] || [])) return true;
         }
+        const manualActive = lib && typeof lib.normalizeFilterGroups === 'function'
+            ? lib.normalizeFilterGroups(applied.manualFilters).length > 0
+            : ((applied.manualFilters || []).length > 0);
         return (applied.regex && lib.isRegexQueryActive(applied.promptText))
             || (!applied.regex && !lib.isQueryEmpty(applied.promptText, applied.caseSensitive))
-            || ((applied.manualFilters || []).length > 0);
+            || manualActive;
     },
 
     _applyFiltersAndRender() {
@@ -2661,7 +2845,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '5.18',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
