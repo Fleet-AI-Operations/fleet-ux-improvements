@@ -53,6 +53,11 @@
       "file": "user-story-collapse.js",
       "name": "User Story Collapse",
       "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
+    },
+    {
+      "file": "toggle-main-panels.js",
+      "name": "Toggle Main Panels",
+      "description": "Hide or unhide either main pane (task detail or environment); the other pane expands to full width"
     }
   ],
   "archetypes/comp-use-task-creation/main": [
@@ -90,6 +95,11 @@
       "file": "user-story-collapse.js",
       "name": "User Story Collapse",
       "description": "Adds Hide/Show on the User Story row to collapse the story body below the label"
+    },
+    {
+      "file": "toggle-main-panels.js",
+      "name": "Toggle Main Panels",
+      "description": "Hide or unhide either main pane (task detail or environment); the other pane expands to full width"
     }
   ],
   "archetypes/dashboard/main": [

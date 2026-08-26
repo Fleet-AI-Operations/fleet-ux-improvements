@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.441",
+  "archetypesVersion": "14.442",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -108,8 +108,8 @@
     },
     {
       "name": "fos-iframe-autoconnect.js",
-      "version": "1.1",
-      "hash": "sha256-febaf9f3aeb018f567f184e4cbaf76fc66548ba23e7159d759c92dc581bef565",
+      "version": "1.2",
+      "hash": "sha256-ad3b70a082fa2e3ddf5ca934ab86cb13c6aeed02e6f138643e46ee491361b0fa",
       "log": false
     },
     {
@@ -146,6 +146,12 @@
       "name": "top-nav-horizontal-scroll.js",
       "version": "3.2",
       "hash": "sha256-3a83b51180ecac0c1437d3bb7c398b9934d658e5557a727eff608100678731d1",
+      "log": false
+    },
+    {
+      "name": "toggle-main-panels.js",
+      "version": "1.11",
+      "hash": "sha256-ce63fa0133b40c17d6eaf1f6297983fd64b02f64864e67fe1b4c6d572a98c6c7",
       "log": false
     },
     {
@@ -557,7 +563,8 @@
         "fos-iframe-autoconnect.js",
         "prompt-text-counter.js",
         "user-story-markdown.js",
-        "user-story-collapse.js"
+        "user-story-collapse.js",
+        "toggle-main-panels.js"
       ],
       "plugins": [
         {
@@ -580,8 +587,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.1",
-          "hash": "sha256-a2d9843e984e5bb9f59d1ae37ec531cb9fac349bbf164e0cb83b7654e6dc7103",
+          "version": "1.2",
+          "hash": "sha256-7ae4d81165d55305d48d9e3051e4d1b0ab40e3ef60234cd72e890f11d872d775",
           "log": false
         },
         {
@@ -619,6 +626,12 @@
           "version": "1.0",
           "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
           "log": false
+        },
+        {
+          "name": "toggle-main-panels.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"
         }
       ]
     },
@@ -636,7 +649,8 @@
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
         "user-story-markdown.js",
-        "user-story-collapse.js"
+        "user-story-collapse.js",
+        "toggle-main-panels.js"
       ],
       "plugins": [
         {
@@ -659,8 +673,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.1",
-          "hash": "sha256-7ae0c747ecae9196dff1d8878537a333362d3d10f20d663e674849834f4da8bf",
+          "version": "1.2",
+          "hash": "sha256-a9540416f8f6b1f9f4b9750957705033f90ad4d620569e72798cb43b1f411be8",
           "log": false
         },
         {
@@ -686,6 +700,12 @@
           "version": "1.0",
           "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
           "log": false
+        },
+        {
+          "name": "toggle-main-panels.js",
+          "version": "1.0",
+          "log": false,
+          "hash": "sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"
         }
       ]
     },
@@ -816,7 +836,8 @@
         "screenshot-upload-improvement.js",
         "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
-        "user-story-collapse.js"
+        "user-story-collapse.js",
+        "toggle-main-panels.js"
       ],
       "plugins": [
         {
@@ -863,8 +884,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.1",
-          "hash": "sha256-5589efe8ee5758e14a0b4707105f8caab82da49f33423f314700a3a27bf1cf2d",
+          "version": "1.2",
+          "hash": "sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052",
           "log": false
         },
         {
@@ -893,9 +914,9 @@
         },
         {
           "name": "toggle-main-panels.js",
-          "version": "1.10",
+          "version": "1.11",
           "log": false,
-          "hash": "sha256-1e9aaac738759fe4ecb92bd72c661444e5a302eb44dff26646cb67df286ac5f3"
+          "hash": "sha256-57e883d0db1eaaf784343de7a4ece06eaff54d108860971027692f8e5b6ab201"
         },
         {
           "name": "user-story-markdown.js",
@@ -1016,8 +1037,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.1",
-          "hash": "sha256-984c3ab6639460b716f71e6c399f0ac107af368a96353f0ca8c4a33d7f11a4aa",
+          "version": "1.2",
+          "hash": "sha256-662ca9bd9c4883de4250fb87deb48291a4f15b5740a081421cf4e7f2d0dd7db2",
           "log": false
         },
         {
