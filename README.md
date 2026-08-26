@@ -118,7 +118,8 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
-- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change
 
 ### Computer Use Task Revision Page
 - **Prompt Text Counter**: Shows a live word and character count below the prompt
@@ -127,7 +128,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
-- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 
 ### QA Tool Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
@@ -153,7 +154,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Collapse**: Adds Hide/Show on the User Story row to collapse the story body below the label
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
-- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Dispute Review Page
 - **Dispute List Collapse**: Hijacks the native expand control for a full collapse that hides everything except the status/time/#id header row; remembers closed dispute numbers across reloads
@@ -170,7 +171,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)
-- **FOS Autoconnect**: Auto-connects the embedded FOS instance and the open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 
 ### Session Trace Review Page
 - **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)

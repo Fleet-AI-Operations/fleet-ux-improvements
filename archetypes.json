@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.436",
+  "archetypesVersion": "14.441",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -54,8 +54,8 @@
     },
     {
       "name": "action-counter.js",
-      "version": "3.6",
-      "hash": "sha256-49c00218b929f28486523c00f574c65a4190ea04c1cb57a71eafd1885b003df3",
+      "version": "3.7",
+      "hash": "sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35",
       "log": false
     },
     {
@@ -102,14 +102,14 @@
     },
     {
       "name": "fos-vm-clipboard-bar.js",
-      "version": "1.7",
-      "hash": "sha256-3bbdb07880f30ada510b57c95108339e5239519ea2d785837ec95197dfe7d40c",
+      "version": "1.8",
+      "hash": "sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c",
       "log": false
     },
     {
       "name": "fos-iframe-autoconnect.js",
-      "version": "1.0",
-      "hash": "sha256-4bad186e468b548d890d3afa0b3aef87c564d547a57ffde5d36895d7b41b687d",
+      "version": "1.1",
+      "hash": "sha256-febaf9f3aeb018f567f184e4cbaf76fc66548ba23e7159d759c92dc581bef565",
       "log": false
     },
     {
@@ -317,7 +317,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.38"
+      "version": "1.40"
     }
   ],
   "archetypes": [
@@ -562,9 +562,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "3.1",
+          "version": "3.2",
           "log": false,
-          "hash": "sha256-dcfe3905c653f8200076d99e11906257ebc74344a00bbd46855f1e90eddf0de1"
+          "hash": "sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -580,8 +580,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-7fc60017878a0ae5a8d49c92fa33885f179c81aed1f96a153dc2fa23f1685940",
+          "version": "1.1",
+          "hash": "sha256-a2d9843e984e5bb9f59d1ae37ec531cb9fac349bbf164e0cb83b7654e6dc7103",
           "log": false
         },
         {
@@ -601,6 +601,12 @@
           "version": "1.0",
           "hash": "sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c",
           "log": false
+        },
+        {
+          "name": "time-remaining-chip.js",
+          "version": "1.1",
+          "log": false,
+          "hash": "sha256-9bf256bfd88311f612c9a3cfe11c6ea6ef2aff39a6165e71fabf7b66cffa166a"
         },
         {
           "name": "user-story-markdown.js",
@@ -635,9 +641,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "3.0",
+          "version": "3.1",
           "log": false,
-          "hash": "sha256-8599187730b91e79e06c647d0bbc6f4d5ea4d42eb6a76ed7806bf031a28895a9"
+          "hash": "sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -653,8 +659,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-600bf2baa926b0881bbcb5eb2c51cb3c17a7c75236cbdfc2e09b5a608b679265",
+          "version": "1.1",
+          "hash": "sha256-7ae0c747ecae9196dff1d8878537a333362d3d10f20d663e674849834f4da8bf",
           "log": false
         },
         {
@@ -857,8 +863,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-6fc5facc97878303aa1e7be038eda3917eb61d32454c6d1aefaa0ca38911f413",
+          "version": "1.1",
+          "hash": "sha256-5589efe8ee5758e14a0b4707105f8caab82da49f33423f314700a3a27bf1cf2d",
           "log": false
         },
         {
@@ -1010,8 +1016,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.0",
-          "hash": "sha256-69c4c11b03d832d9378de13a3d206b3a7a7aa95eb614c242a0d0a77a74872bf1",
+          "version": "1.1",
+          "hash": "sha256-984c3ab6639460b716f71e6c399f0ac107af368a96353f0ca8c4a33d7f11a4aa",
           "log": false
         },
         {

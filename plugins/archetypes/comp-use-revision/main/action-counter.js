@@ -5,8 +5,8 @@ const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description:
-        'Persistent +/- counter in the page header (right-aligned); click the number to type a value',
-    _version: '3.0',
+        'Persistent +/- counter in the page header; click the number to type a value',
+    _version: '3.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {

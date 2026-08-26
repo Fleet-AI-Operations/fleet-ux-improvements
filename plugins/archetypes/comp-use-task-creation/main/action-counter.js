@@ -5,15 +5,16 @@ const plugin = {
     id: 'compUseActionCounter',
     name: 'Action Counter',
     description:
-        'Persistent +/- counter in the page header (right-aligned); click the number to type a value',
-    _version: '3.1',
+        'Persistent +/- counter in the page header; click the number to type a value',
+    _version: '3.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         headerMissingLogged: false,
         activationLogged: false,
         hadHeader: false,
-        migratedLegacy: false
+        migratedLegacy: false,
+        stepsHiddenLogged: false
     },
 
     isPageHeaderRow(el) {
@@ -95,6 +96,54 @@ const plugin = {
         return headerRow;
     },
 
+    hideCreationStepLabels(headerRow, state) {
+        if (!headerRow) return;
+        if (headerRow.getAttribute('data-fleet-hide-creation-steps') === '1') return;
+
+        let left = null;
+        for (const child of headerRow.children) {
+            if (child.tagName !== 'DIV') continue;
+            const cls = child.className || '';
+            if (typeof cls === 'string' && cls.includes('ml-auto')) continue;
+            const text = (child.textContent || '').toLowerCase();
+            if (text.includes('create problem') && text.includes('create demonstration')) {
+                left = child;
+                break;
+            }
+        }
+        if (!left) return;
+
+        const kids = Array.from(left.children);
+        const stepSpans = kids.filter((el) => {
+            if (el.tagName !== 'SPAN') return false;
+            const t = (el.textContent || '').toLowerCase();
+            return /create problem|create demonstration/.test(t);
+        });
+        if (!stepSpans.length) return;
+
+        for (const span of stepSpans) {
+            span.style.display = 'none';
+        }
+
+        if (stepSpans.length >= 2) {
+            const start = kids.indexOf(stepSpans[0]);
+            const end = kids.indexOf(stepSpans[stepSpans.length - 1]);
+            for (let i = start + 1; i < end; i++) {
+                const el = kids[i];
+                if (!el || typeof el.tagName !== 'string') continue;
+                if (el.tagName.toLowerCase() === 'svg') {
+                    el.style.display = 'none';
+                }
+            }
+        }
+
+        headerRow.setAttribute('data-fleet-hide-creation-steps', '1');
+        if (!state.stepsHiddenLogged) {
+            Logger.log('step labels hidden');
+            state.stepsHiddenLogged = true;
+        }
+    },
+
     onMutation(state) {
         const api = Context.actionCounter;
         if (!api || typeof api.run !== 'function') return;
@@ -106,6 +155,7 @@ const plugin = {
                 Logger.debug(`page header left DOM — counter inactive`);
                 state.hadHeader = false;
                 state.activationLogged = false;
+                state.stepsHiddenLogged = false;
             }
             if (!state.headerMissingLogged) {
                 Logger.debug(`page header not found yet`);
@@ -116,6 +166,7 @@ const plugin = {
 
         state.headerMissingLogged = false;
         state.hadHeader = true;
+        this.hideCreationStepLabels(headerRow, state);
 
         const host = this.findRightHost(headerRow);
         if (!host) return;
