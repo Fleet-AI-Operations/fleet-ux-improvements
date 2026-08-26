@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.436",
+  "archetypesVersion": "14.437",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -102,8 +102,8 @@
     },
     {
       "name": "fos-vm-clipboard-bar.js",
-      "version": "1.7",
-      "hash": "sha256-3bbdb07880f30ada510b57c95108339e5239519ea2d785837ec95197dfe7d40c",
+      "version": "1.8",
+      "hash": "sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c",
       "log": false
     },
     {
@@ -562,9 +562,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "3.1",
+          "version": "3.2",
           "log": false,
-          "hash": "sha256-dcfe3905c653f8200076d99e11906257ebc74344a00bbd46855f1e90eddf0de1"
+          "hash": "sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"
         },
         {
           "name": "embedded-urlbar-fit.js",
@@ -635,9 +635,9 @@
       "plugins": [
         {
           "name": "action-counter.js",
-          "version": "3.0",
+          "version": "3.1",
           "log": false,
-          "hash": "sha256-8599187730b91e79e06c647d0bbc6f4d5ea4d42eb6a76ed7806bf031a28895a9"
+          "hash": "sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"
         },
         {
           "name": "embedded-urlbar-fit.js",

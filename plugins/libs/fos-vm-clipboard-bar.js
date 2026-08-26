@@ -109,6 +109,42 @@ const FosVmClipboardBarApi = {
         });
     },
 
+    _trayArrowIcon(direction) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('width', '16');
+        svg.setAttribute('height', '16');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+        svg.setAttribute('aria-hidden', 'true');
+
+        const tray = document.createElementNS(ns, 'path');
+        tray.setAttribute('d', 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4');
+        svg.appendChild(tray);
+
+        const poly = document.createElementNS(ns, 'polyline');
+        const line = document.createElementNS(ns, 'line');
+        if (direction === 'up') {
+            poly.setAttribute('points', '17 8 12 3 7 8');
+            line.setAttribute('x1', '12');
+            line.setAttribute('y1', '3');
+            line.setAttribute('x2', '12');
+            line.setAttribute('y2', '15');
+        } else {
+            poly.setAttribute('points', '7 10 12 15 17 10');
+            line.setAttribute('x1', '12');
+            line.setAttribute('y1', '15');
+            line.setAttribute('x2', '12');
+            line.setAttribute('y2', '3');
+        }
+        svg.append(poly, line);
+        return svg;
+    },
+
     _syncVisibility(state, logTag) {
         const root =
             (state.groupEl && state.groupEl.isConnected && state.groupEl) ||
@@ -156,18 +192,22 @@ const FosVmClipboardBarApi = {
 
         const btnClass =
             Context.uiLib && typeof Context.uiLib.btnClass === 'function'
-                ? (variant) => Context.uiLib.btnClass(variant, 'compact')
+                ? (variant) => Context.uiLib.btnClass(variant, 'icon')
                 : () => '';
 
         const bExtract = document.createElement('button');
         bExtract.type = 'button';
-        bExtract.textContent = 'Extract';
+        bExtract.title = 'Extract';
+        bExtract.setAttribute('aria-label', 'Extract');
         bExtract.className = btnClass('secondary');
+        bExtract.appendChild(this._trayArrowIcon('up'));
 
         const bOverwrite = document.createElement('button');
         bOverwrite.type = 'button';
-        bOverwrite.textContent = 'Overwrite';
+        bOverwrite.title = 'Overwrite';
+        bOverwrite.setAttribute('aria-label', 'Overwrite');
         bOverwrite.className = btnClass('secondary');
+        bOverwrite.appendChild(this._trayArrowIcon('down'));
 
         bExtract.addEventListener('click', () => {
             const api = Context.fosEmbedded;
@@ -218,7 +258,7 @@ const plugin = {
     name: 'FOS VM Clipboard Bar (library)',
     description:
         'Shared VM Clipboard Extract/Overwrite bar',
-    _version: '1.7',
+    _version: '1.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
