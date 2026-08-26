@@ -8,7 +8,7 @@ const plugin = {
     name: 'Time Remaining Chip',
     description:
         'Keeps the Time remaining countdown from shifting the header as digits change',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -32,13 +32,14 @@ const plugin = {
         if (label.getAttribute(CHIP_MARK) === '1') return false;
         label.style.display = 'inline-block';
         label.style.fontVariantNumeric = 'tabular-nums';
-        label.style.minWidth = '26ch';
+        label.style.textAlign = 'center';
         label.style.boxSizing = 'content-box';
+        label.style.paddingLeft = '5px';
+        label.style.paddingRight = '5px';
         label.setAttribute(CHIP_MARK, '1');
         const chip = label.parentElement;
         if (chip) {
-            chip.style.paddingLeft = '12px';
-            chip.style.paddingRight = '12px';
+            chip.style.justifyContent = 'center';
         }
         return true;
     },
