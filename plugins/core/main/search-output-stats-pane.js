@@ -1389,13 +1389,19 @@ const searchOutputStatsPaneMethods = {
 
     _statsSmartBuilderHtml(draft) {
         const roles = this._statsSmartRoles();
-        const selected = new Set(((draft && draft.smartFilters) || []).map((s) => s.role));
-        return '<div><div style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 6px;">Smart Insertions</div>'
+        const selected = ((draft && draft.smartFilters) || [])[0];
+        const selectedRole = selected && selected.role ? selected.role : '';
+        return '<div><div style="font-size: 11px; font-weight: 600; color: var(--foreground, #0f172a); margin-bottom: 6px;">Smart Insertion</div>'
             + '<div style="display: flex; flex-direction: column; gap: 6px;">'
+            + '<label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">'
+            + '<input type="radio" name="wf-dash-stats-smart-role" data-wf-dash-stats-smart-role="" value=""'
+            + (selectedRole ? '' : ' checked') + '>'
+            + '<span>None</span></label>'
             + roles.map((role) => {
-                const checked = selected.has(role.id) ? ' checked' : '';
+                const checked = role.id === selectedRole ? ' checked' : '';
                 return '<label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">'
-                    + '<input type="checkbox" data-wf-dash-stats-smart-role="' + dashEscHtml(role.id) + '"' + checked + '>'
+                    + '<input type="radio" name="wf-dash-stats-smart-role" data-wf-dash-stats-smart-role="'
+                    + dashEscHtml(role.id) + '" value="' + dashEscHtml(role.id) + '"' + checked + '>'
                     + '<span>' + dashEscHtml(role.label) + '</span></label>';
             }).join('')
             + '</div></div>';
@@ -4228,12 +4234,9 @@ const searchOutputStatsPaneMethods = {
         } else {
             delete draft.allowHorizontalStack;
         }
-        const smartRoles = [];
-        this._modal.querySelectorAll('[data-wf-dash-stats-smart-role]').forEach((cb) => {
-            if (cb.checked && cb.getAttribute('data-wf-dash-stats-smart-role')) {
-                smartRoles.push({ role: cb.getAttribute('data-wf-dash-stats-smart-role') });
-            }
-        });
+        const smartChecked = this._modal.querySelector('[name="wf-dash-stats-smart-role"]:checked');
+        const smartRole = smartChecked && smartChecked.value ? smartChecked.value : '';
+        const smartRoles = smartRole ? [{ role: smartRole }] : [];
         draft.smartFilters = Context.statsEngine && typeof Context.statsEngine.normalizeSmartFilters === 'function'
             ? Context.statsEngine.normalizeSmartFilters(smartRoles)
             : smartRoles;
@@ -6579,7 +6582,7 @@ const plugin = {
     id: 'search-output-stats-pane',
     name: 'Search Output stats pane',
     description: 'Worker Output Search tab — stats pane (Ratings)',
-    _version: '15.0',
+    _version: '15.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

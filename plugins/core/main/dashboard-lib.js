@@ -188,16 +188,16 @@ const DASH_LIB_GROUP_CONDITION_FIELDS = [
     { id: 'taskCreatedWeek', entity: 'card', type: 'set', label: 'Task Created Week', optionsKey: 'taskCreatedWeek' },
     { id: 'taskCreatedDay', entity: 'card', type: 'set', label: 'Task Created Day', optionsKey: 'taskCreatedDay' },
     { id: 'v1CreationTimeMinutes', entity: 'card', type: 'set', label: 'V1 Creation Time Minutes', optionsKey: 'v1CreationTimeMinutes' },
-    { id: 'v1_creation_time_minutes', entity: 'card', type: 'number', label: 'V1 Creation Time Minutes', hydrateHint: true },
-    { id: 'prompt_word_count', entity: 'card', type: 'number', label: 'Prompt Length (words)' },
-    { id: 'prompt_version_count', entity: 'card', type: 'number', label: 'Unique Task Versions', hydrateHint: true },
-    { id: 'rejection_issue_count', entity: 'card', type: 'number', label: 'Unique Task Issues' },
-    { id: 'qa_rounds_count', entity: 'card', type: 'number', label: 'Number of QA Rounds', hydrateHint: true },
+    { id: 'v1_creation_time_minutes', entity: 'card', type: 'number', label: 'V1 Creation Time Minutes *', hydrateHint: true },
+    { id: 'prompt_word_count', entity: 'card', type: 'number', label: 'Prompt Length (words) *' },
+    { id: 'prompt_version_count', entity: 'card', type: 'number', label: 'Unique Task Versions *', hydrateHint: true },
+    { id: 'rejection_issue_count', entity: 'card', type: 'number', label: 'Unique Task Issues *' },
+    { id: 'qa_rounds_count', entity: 'card', type: 'number', label: 'Number of QA Rounds *', hydrateHint: true },
     { id: 'authorIds', entity: 'card', type: 'person', label: 'Task Writer', personRole: 'tw' },
 
     { id: 'reviewerIds', entity: 'qa_round', type: 'person', label: 'QA Reviewer', personRole: 'qa' },
     { id: 'qaTimeMinutes', entity: 'qa_round', type: 'set', label: 'QA Time Minutes', optionsKey: 'qaTimeMinutes', hydrateHint: true },
-    { id: 'qa_time_minutes', entity: 'qa_round', type: 'number', label: 'QA Time Minutes', hydrateHint: true },
+    { id: 'qa_time_minutes', entity: 'qa_round', type: 'number', label: 'QA Time Minutes *', hydrateHint: true },
     { id: 'promptRatings', entity: 'qa_round', type: 'set', label: 'Prompt Rating', optionsKey: 'promptRatings' },
     { id: 'taskIssues', entity: 'qa_round', type: 'set', label: 'Task Issues', optionsKey: 'taskIssues' },
     { id: 'returnTypes', entity: 'qa_round', type: 'set', label: 'Issue Areas', optionsKey: 'returnTypes' },
@@ -206,11 +206,11 @@ const DASH_LIB_GROUP_CONDITION_FIELDS = [
     { id: 'linkedDisputeExists', entity: 'qa_round', type: 'set', label: 'Linked Dispute', staticOptions: DASH_LIB_YES_NO_OPTIONS },
     { id: 'linkedDisputeOutcomes', entity: 'qa_round', type: 'set', label: 'Linked Dispute Outcome', optionsKey: 'disputeOutcomes' },
     { id: 'linkedDisputeResolutionTimeMinutes', entity: 'qa_round', type: 'set', label: 'Linked Dispute Resolution Time', optionsKey: 'disputeResolutionTimeMinutes', hydrateHint: true },
-    { id: 'linked_dispute_resolution_time_minutes', entity: 'qa_round', type: 'number', label: 'Linked Dispute Resolution Time Minutes', hydrateHint: true },
+    { id: 'linked_dispute_resolution_time_minutes', entity: 'qa_round', type: 'number', label: 'Linked Dispute Resolution Time Minutes *', hydrateHint: true },
 
     { id: 'disputeOutcomes', entity: 'dispute', type: 'set', label: 'Dispute Outcome', optionsKey: 'disputeOutcomes' },
     { id: 'disputeResolutionTimeMinutes', entity: 'dispute', type: 'set', label: 'Dispute Resolution Time Minutes', optionsKey: 'disputeResolutionTimeMinutes', hydrateHint: true },
-    { id: 'dispute_resolution_time_minutes', entity: 'dispute', type: 'number', label: 'Dispute Resolution Time Minutes', hydrateHint: true },
+    { id: 'dispute_resolution_time_minutes', entity: 'dispute', type: 'number', label: 'Dispute Resolution Time Minutes *', hydrateHint: true },
     { id: 'resolverIds', entity: 'dispute', type: 'person', label: 'Dispute Resolver', personRole: 'dispute_resolver' },
     { id: 'linkedQaReviewerIds', entity: 'dispute', type: 'person', label: 'Linked QA Reviewer', personRole: 'qa' },
     { id: 'linkedQaPromptRatings', entity: 'dispute', type: 'set', label: 'Linked QA Prompt Rating', optionsKey: 'promptRatings' },
@@ -411,15 +411,12 @@ function dashLibSmartSearchAutoFill(committed) {
 
 function dashLibNormalizeSmartFilters(raw) {
     if (!Array.isArray(raw)) return [];
-    const seen = new Set();
-    const out = [];
     for (const slot of raw) {
         const role = slot && slot.role != null ? String(slot.role) : '';
-        if (!dashLibSmartRoleById(role) || seen.has(role)) continue;
-        seen.add(role);
-        out.push({ role });
+        if (!dashLibSmartRoleById(role)) continue;
+        return [{ role }];
     }
-    return out;
+    return [];
 }
 
 function dashLibSmartGroupsFromBindings(smartFilters, bindings) {
@@ -1072,7 +1069,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
-    _version: '9.0',
+    _version: '9.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

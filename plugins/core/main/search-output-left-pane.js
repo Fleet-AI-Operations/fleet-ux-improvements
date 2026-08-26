@@ -501,7 +501,7 @@ const searchOutputLeftPaneMethods = {
                                             <span>Match any (OR)</span>
                                         </label>
                                     </div>
-                                    <div ${el('manual-rows')} style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px;"></div>
+                                    <div ${el('manual-rows')} style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; min-width: 0; max-width: 100%; overflow-x: hidden;"></div>
                                     <button type="button" ${el('manual-add')} class="${this._dashBtnClass('basic', 'nav')} wf-dash-btn--full" style="padding: 6px 10px;">+ Add group</button>
                                 </div>
                             </div>
@@ -725,7 +725,7 @@ const searchOutputLeftPaneMethods = {
         const entities = (lib && lib.filterEntities) || [];
         const sel = selectedId || 'card';
         return '<select data-wf-dash-group-entity="1" aria-label="Look at" style="'
-            + this._inputStyle() + ' padding: 4px 8px; font-size: 11px; flex: 1; min-width: 120px;">'
+            + this._inputStyle() + ' padding: 4px 8px; font-size: 11px; flex: 1 1 0%; min-width: 0; max-width: 100%; overflow: hidden;">'
             + entities.map((e) => {
                 const selected = e.id === sel ? ' selected' : '';
                 return '<option value="' + dashEscHtml(e.id) + '"' + selected + '>'
@@ -738,7 +738,7 @@ const searchOutputLeftPaneMethods = {
         const fields = this._filterGroupFieldOptions(entityId);
         const sel = selectedId || (fields[0] && fields[0].id) || '';
         return '<select data-wf-dash-group-field="1" aria-label="Condition field" style="'
-            + this._inputStyle() + ' padding: 4px 8px; font-size: 11px; flex: 1; min-width: 120px;">'
+            + this._inputStyle() + ' padding: 4px 8px; font-size: 11px; flex: 1 1 0%; min-width: 0; max-width: 100%; overflow: hidden;">'
             + fields.map((f) => {
                 const selected = f.id === sel ? ' selected' : '';
                 return '<option value="' + dashEscHtml(f.id) + '"' + selected + '>'
@@ -755,7 +755,7 @@ const searchOutputLeftPaneMethods = {
         if (!options.length) {
             return '<span data-wf-dash-group-values="1" style="font-size: 10px; color: var(--muted-foreground, #64748b);">No options in scope</span>';
         }
-        return '<details data-wf-dash-group-values="1" style="flex: 1; min-width: 120px;">'
+        return '<details data-wf-dash-group-values="1" style="flex: 1 1 auto; min-width: 0; max-width: 100%;">'
             + '<summary style="font-size: 11px; cursor: pointer; user-select: none; color: var(--foreground, #0f172a);">'
             + dashEscHtml(summary) + '</summary>'
             + '<div style="display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow: auto; margin-top: 6px; padding: 6px; border: 1px solid var(--border, #e2e8f0); border-radius: 6px; background: var(--card, #fff);">'
@@ -801,12 +801,13 @@ const searchOutputLeftPaneMethods = {
         const fieldId = (condition && condition.field) || (fields[0] && fields[0].id) || '';
         const wrap = document.createElement('div');
         wrap.setAttribute('data-wf-dash-group-cond', '1');
-        wrap.style.cssText = 'display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap;';
-        wrap.innerHTML = this._filterGroupFieldSelectHtml(entityId, fieldId)
-            + '<span data-wf-dash-group-value-slot="1" style="display: flex; gap: 6px; align-items: flex-start; flex: 1; min-width: 140px; flex-wrap: wrap;">'
+        wrap.style.cssText = 'display: flex; gap: 6px; align-items: flex-start; flex-wrap: nowrap; min-width: 0; max-width: 100%;';
+        wrap.innerHTML = '<span data-wf-dash-group-cond-main="1" style="display: flex; gap: 6px; align-items: flex-start; flex: 1 1 auto; min-width: 0; flex-wrap: wrap;">'
+            + this._filterGroupFieldSelectHtml(entityId, fieldId)
+            + '<span data-wf-dash-group-value-slot="1" style="display: flex; gap: 6px; align-items: flex-start; flex: 1 1 auto; min-width: 0; flex-wrap: wrap;">'
             + this._filterGroupConditionValueSlotHtml(entityId, fieldId, condition)
-            + '</span>'
-            + '<button type="button" data-wf-dash-group-cond-remove="1" title="Remove condition" aria-label="Remove condition" style="flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>';
+            + '</span></span>'
+            + '<button type="button" data-wf-dash-group-cond-remove="1" title="Remove condition" aria-label="Remove condition" style="flex: 0 0 auto; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>';
         return wrap;
     },
 
@@ -817,12 +818,12 @@ const searchOutputLeftPaneMethods = {
             : [{ field: (this._filterGroupFieldOptions(entityId)[0] || {}).id, values: [] }];
         const card = document.createElement('div');
         card.setAttribute('data-wf-dash-filter-group', '1');
-        card.style.cssText = 'display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--card, #fff);';
+        card.style.cssText = 'display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; background: var(--card, #fff); min-width: 0; max-width: 100%; box-sizing: border-box;';
         const header = document.createElement('div');
-        header.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+        header.style.cssText = 'display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; min-width: 0; max-width: 100%;';
         header.innerHTML = '<span style="font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); flex-shrink: 0;">Look at</span>'
             + this._filterGroupEntitySelectHtml(entityId)
-            + '<button type="button" data-wf-dash-group-remove="1" title="Remove group" aria-label="Remove group" style="flex-shrink: 0; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>';
+            + '<button type="button" data-wf-dash-group-remove="1" title="Remove group" aria-label="Remove group" style="flex: 0 0 auto; padding: 4px 8px; font-size: 14px; line-height: 1; color: var(--muted-foreground, #64748b); background: transparent; border: 1px solid var(--border, #e2e8f0); border-radius: 4px; cursor: pointer;">×</button>';
         const conds = document.createElement('div');
         conds.setAttribute('data-wf-dash-group-conditions', '1');
         conds.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
@@ -2844,7 +2845,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '6.0',
+    _version: '6.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
