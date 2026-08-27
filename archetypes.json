@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.442",
+  "archetypesVersion": "14.443",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -1213,6 +1213,21 @@
           "name": "grade-question-pasted-text.js",
           "version": "1.9",
           "hash": "sha256-b9f3a7c0490a304290b06ad76934e3ec4570d5bb9ee46f87719a1d73cc8604b8",
+          "log": false
+        }
+      ]
+    },
+    {
+      "id": "guidelines",
+      "name": "Guidelines",
+      "description": "Guidelines list and editor",
+      "urlPattern": "work/guidelines",
+      "disambiguationSelectors": [],
+      "plugins": [
+        {
+          "name": "export-markdown.js",
+          "version": "1.0",
+          "hash": "sha256-3c740d6e2dcb70c7663da7f16a5b1862e01e12278787f9dfe743fb6e47f8c3d9",
           "log": false
         }
       ]

@@ -477,5 +477,12 @@
       "name": "Expert Feedback Tooltip Fix",
       "description": "Fixes Recent Feedback tooltip text color and enables scrolling for long feedback on expert profile pages"
     }
+  ],
+  "archetypes/guidelines/main": [
+    {
+      "file": "export-markdown.js",
+      "name": "Export Guideline Markdown",
+      "description": "Download the open guideline as a Markdown file from the edit toolbar"
+    }
   ]
 }
