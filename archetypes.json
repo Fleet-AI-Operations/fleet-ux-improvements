@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.443",
+  "archetypesVersion": "14.444",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -1228,6 +1228,12 @@
           "name": "export-markdown.js",
           "version": "1.0",
           "hash": "sha256-3c740d6e2dcb70c7663da7f16a5b1862e01e12278787f9dfe743fb6e47f8c3d9",
+          "log": false
+        },
+        {
+          "name": "theme-presets.js",
+          "version": "1.0",
+          "hash": "sha256-04adcb559469e6b68b1ec8229c951af04b4804c2914d23762d8023f7035a6065",
           "log": false
         }
       ]

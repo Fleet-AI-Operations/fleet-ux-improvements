@@ -483,6 +483,11 @@
       "file": "export-markdown.js",
       "name": "Export Guideline Markdown",
       "description": "Download the open guideline as a Markdown file from the edit toolbar"
+    },
+    {
+      "file": "theme-presets.js",
+      "name": "Guideline Theme Presets",
+      "description": "Apply named text themes from the edit toolbar"
     }
   ]
 }

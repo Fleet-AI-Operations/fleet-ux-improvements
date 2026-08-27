@@ -178,6 +178,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Guidelines
 - **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar
+- **Guideline Theme Presets**: Apply named text themes from the edit toolbar
 
 ### Task View
 *No production plugins are configured for this archetype.*
