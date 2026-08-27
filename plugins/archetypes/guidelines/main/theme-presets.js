@@ -30,12 +30,15 @@ const plugin = {
     id: 'guidelinesThemePresets',
     name: 'Guideline Theme Presets',
     description: 'Apply named text themes from the edit toolbar',
-    _version: '1.1',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
         activationLogged: false,
-        savedSel: null
+        savedSel: null,
+        onSel: null,
+        boundEditor: null,
+        tiptap: null
     },
 
     findEditor() {
@@ -77,6 +80,241 @@ const plugin = {
             }
         }
         return null;
+    },
+
+    rgbToHex(r, g, b) {
+        const to = (n) => {
+            const v = Math.max(0, Math.min(255, Number(n) || 0));
+            return v.toString(16).padStart(2, '0');
+        };
+        return '#' + to(r) + to(g) + to(b);
+    },
+
+    normalizeColor(value) {
+        if (!value) {
+            return '';
+        }
+        const s = String(value).trim().toLowerCase();
+        const rgb = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+        if (rgb) {
+            return this.rgbToHex(rgb[1], rgb[2], rgb[3]);
+        }
+        if (s.charAt(0) === '#') {
+            if (s.length === 4) {
+                return '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+            }
+            if (s.length >= 7) {
+                return s.slice(0, 7);
+            }
+        }
+        return '';
+    },
+
+    colorsEqual(a, b) {
+        const left = this.normalizeColor(a);
+        const right = this.normalizeColor(b);
+        return !!(left && right && left === right);
+    },
+
+    markByName(marks, name) {
+        if (!marks || !marks.length) {
+            return null;
+        }
+        for (const mark of marks) {
+            if (mark && mark.type && mark.type.name === name) {
+                return mark;
+            }
+        }
+        return null;
+    },
+
+    snapshotFromView(view) {
+        if (!this.isPmView(view)) {
+            return null;
+        }
+        const sel = view.state.selection;
+        const $from = sel.$from;
+        const marks = sel.empty
+            ? (view.state.storedMarks || $from.marks())
+            : $from.marks();
+        const textStyle = this.markByName(marks, 'textStyle') || this.markByName(marks, 'color');
+        const highlight = this.markByName(marks, 'highlight');
+        return {
+            heading: this.headingLevel(view),
+            toggle: this.inDetails(view),
+            color: textStyle && textStyle.attrs ? textStyle.attrs.color || '' : '',
+            highlight: highlight && highlight.attrs
+                ? highlight.attrs.color || highlight.attrs.backgroundColor || ''
+                : '',
+            underline: !!this.markByName(marks, 'underline'),
+            bold: !!this.markByName(marks, 'bold'),
+            italic: !!this.markByName(marks, 'italic')
+        };
+    },
+
+    snapshotFromDom(editorEl) {
+        const sel = window.getSelection();
+        if (!sel || !sel.anchorNode) {
+            return null;
+        }
+        let el = sel.anchorNode;
+        if (el.nodeType !== Node.ELEMENT_NODE) {
+            el = el.parentElement;
+        }
+        if (!el || !editorEl.contains(el)) {
+            return null;
+        }
+        const headingEl = el.closest('h1, h2, h3, h4, h5, h6');
+        const heading = headingEl ? parseInt(headingEl.tagName.charAt(1), 10) || 0 : 0;
+        const mark = el.closest('mark');
+        let color = '';
+        let node = el;
+        while (node && editorEl.contains(node)) {
+            if (node.style && node.style.color) {
+                color = node.style.color;
+                break;
+            }
+            node = node.parentElement;
+        }
+        return {
+            heading,
+            toggle: !!el.closest('details'),
+            color,
+            highlight: mark
+                ? mark.getAttribute('data-color') || (mark.style && mark.style.backgroundColor) || ''
+                : '',
+            underline: !!(el.closest('u') || /underline/.test(
+                (el.style && el.style.textDecoration) || ''
+            )),
+            bold: !!el.closest('strong, b'),
+            italic: !!el.closest('em, i')
+        };
+    },
+
+    snapshotAtCaret(editorEl) {
+        const api = this.findEditorApi(editorEl);
+        return this.snapshotFromView(api.view) || this.snapshotFromDom(editorEl);
+    },
+
+    scorePreset(preset, snap) {
+        if (!preset || !snap) {
+            return -1;
+        }
+        if (preset.heading && snap.heading !== preset.heading) {
+            return -1;
+        }
+        if (preset.toggle && !snap.toggle) {
+            return -1;
+        }
+        if (preset.color && !this.colorsEqual(snap.color, preset.color)) {
+            return -1;
+        }
+        if (preset.highlight && !this.colorsEqual(snap.highlight, preset.highlight)) {
+            return -1;
+        }
+        if (preset.underline && !snap.underline) {
+            return -1;
+        }
+        if (preset.bold && !snap.bold) {
+            return -1;
+        }
+        if (preset.italic && !snap.italic) {
+            return -1;
+        }
+        let score = 0;
+        if (preset.heading) {
+            score += 10;
+        }
+        if (preset.toggle) {
+            score += 10;
+        }
+        if (preset.highlight) {
+            score += 8;
+        }
+        if (preset.color) {
+            score += 4;
+        }
+        if (preset.underline) {
+            score += 2;
+        }
+        if (preset.bold) {
+            score += 2;
+        }
+        if (preset.italic) {
+            score += 2;
+        }
+        return score;
+    },
+
+    matchTheme(editorEl) {
+        const snap = this.snapshotAtCaret(editorEl);
+        if (!snap) {
+            return '';
+        }
+        let best = null;
+        let bestScore = 0;
+        for (const preset of PRESETS) {
+            const score = this.scorePreset(preset, snap);
+            if (score > bestScore) {
+                bestScore = score;
+                best = preset;
+            }
+        }
+        return best ? best.name : '';
+    },
+
+    syncThemeDisplay(editorEl, input) {
+        if (!editorEl || !input || input === document.activeElement) {
+            return;
+        }
+        const sel = window.getSelection();
+        if (sel && sel.anchorNode && !editorEl.contains(sel.anchorNode)) {
+            return;
+        }
+        const name = this.matchTheme(editorEl);
+        if (input.value !== name) {
+            input.value = name;
+        }
+    },
+
+    unbindCaret(state) {
+        if (state && state.onSel) {
+            document.removeEventListener('selectionchange', state.onSel);
+            if (state.boundEditor) {
+                state.boundEditor.removeEventListener('keyup', state.onSel);
+                state.boundEditor.removeEventListener('mouseup', state.onSel);
+            }
+            if (state.tiptap && typeof state.tiptap.off === 'function') {
+                state.tiptap.off('selectionUpdate', state.onSel);
+            }
+        }
+        if (state) {
+            state.onSel = null;
+            state.boundEditor = null;
+            state.tiptap = null;
+        }
+    },
+
+    bindCaret(state, editorEl, input) {
+        if (!editorEl || !input) {
+            return;
+        }
+        if (state.boundEditor === editorEl && state.onSel) {
+            return;
+        }
+        this.unbindCaret(state);
+        const onSel = () => this.syncThemeDisplay(editorEl, input);
+        document.addEventListener('selectionchange', onSel);
+        editorEl.addEventListener('keyup', onSel);
+        editorEl.addEventListener('mouseup', onSel);
+        const api = this.findEditorApi(editorEl);
+        if (api.editor && typeof api.editor.on === 'function') {
+            api.editor.on('selectionUpdate', onSel);
+            state.tiptap = api.editor;
+        }
+        state.onSel = onSel;
+        state.boundEditor = editorEl;
+        onSel();
     },
 
     isTiptapEditor(obj) {
@@ -571,7 +809,7 @@ const plugin = {
             if (marked) {
                 this.flash(input, true);
                 Logger.log('applied ' + preset.name);
-                input.value = '';
+                input.value = preset.name;
             } else {
                 this.flash(input, false);
                 Logger.warn('theme apply failed — marks not set');
@@ -644,7 +882,7 @@ const plugin = {
         }
         this.flash(input, true);
         Logger.log('applied ' + preset.name);
-        input.value = '';
+        input.value = preset.name;
     },
 
     injectPicker(state, toolbar, editor) {
@@ -701,6 +939,7 @@ const plugin = {
         });
 
         wrap.append(input, list);
+        this.bindCaret(state, editor, input);
         const exportBtn = toolbar.querySelector(`[${EXPORT_MARKER}="1"]`);
         if (exportBtn) {
             toolbar.insertBefore(wrap, exportBtn);
@@ -725,16 +964,23 @@ const plugin = {
                 Logger.debug('theme presets removed (editor closed)');
                 state.activationLogged = false;
             }
+            this.unbindCaret(state);
             return;
         }
         const injected = this.injectPicker(state, toolbar, editor);
-        if ((injected || toolbar.querySelector(`[${WRAP_MARKER}="1"]`)) && !state.activationLogged) {
+        const wrap = toolbar.querySelector(`[${WRAP_MARKER}="1"]`);
+        const input = wrap ? wrap.querySelector('input') : null;
+        if (input) {
+            this.bindCaret(state, editor, input);
+        }
+        if ((injected || wrap) && !state.activationLogged) {
             Logger.log('theme presets added');
             state.activationLogged = true;
         }
     },
 
     destroy(state) {
+        this.unbindCaret(state);
         const wrap = document.querySelector(`[${WRAP_MARKER}="1"]`);
         if (wrap) {
             wrap.remove();
