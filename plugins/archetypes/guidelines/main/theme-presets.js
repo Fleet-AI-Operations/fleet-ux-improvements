@@ -8,29 +8,29 @@ const DATALIST_ID = 'fleet-guidelines-theme-list';
 const EXPORT_MARKER = 'data-fleet-guidelines-export';
 
 const PRESETS = [
-    { name: 'Title', heading: 1, color: 'rgb(219, 39, 119)', underline: true },
-    { name: 'Section', heading: 2, color: 'rgb(107, 114, 128)' },
-    { name: 'Subsection', heading: 3, color: 'rgb(56, 125, 201)', bold: true },
-    { name: 'FAQ', toggle: true, color: 'rgb(159, 118, 90)' },
-    { name: 'Step', color: 'rgb(56, 125, 201)', bold: true },
-    { name: 'Allowed', color: 'rgb(80, 148, 110)' },
-    { name: 'Forbidden', color: 'rgb(207, 81, 72)' },
-    { name: 'Term', color: 'rgb(203, 148, 52)', bold: true },
-    { name: 'Qualifier', color: 'rgb(203, 148, 52)', italic: true },
-    { name: 'Caution', color: 'rgb(217, 119, 6)' },
-    { name: 'Link', color: 'rgb(13, 148, 136)' },
+    { name: 'Title', heading: 1, color: '#db2777', underline: true },
+    { name: 'Section', heading: 2, color: '#6b7280' },
+    { name: 'Subsection', heading: 3, color: '#387dc9', bold: true },
+    { name: 'FAQ', toggle: true, color: '#9f765a' },
+    { name: 'Step', color: '#387dc9', bold: true },
+    { name: 'Allowed', color: '#50946e' },
+    { name: 'Forbidden', color: '#cf5148' },
+    { name: 'Term', color: '#cb9434', bold: true },
+    { name: 'Qualifier', color: '#cb9434', italic: true },
+    { name: 'Caution', color: '#d97706' },
+    { name: 'Link', color: '#0d9488' },
     { name: 'Ban', highlight: '#fbcfe8' },
     { name: 'Must', highlight: '#fef08a' },
     { name: 'Ok', highlight: '#bbf7d0' }
 ];
 
-const THEME_MARKS = ['textStyle', 'underline', 'bold', 'italic', 'highlight'];
+const THEME_MARKS = ['textStyle', 'color', 'underline', 'bold', 'italic', 'highlight'];
 
 const plugin = {
     id: 'guidelinesThemePresets',
     name: 'Guideline Theme Presets',
     description: 'Apply named text themes from the edit toolbar',
-    _version: '1.0',
+    _version: '1.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -79,40 +79,59 @@ const plugin = {
         return null;
     },
 
-    findPmView(editor) {
-        if (!editor) {
-            return null;
-        }
-        const fromDesc = (el) => {
-            if (!el || !el.pmViewDesc) {
-                return null;
-            }
-            let desc = el.pmViewDesc;
-            while (desc.parent) {
-                desc = desc.parent;
-            }
-            const view = desc.view || desc.editorView || null;
-            if (view && view.state && view.state.schema) {
-                return view;
-            }
-            return null;
-        };
-        let view = fromDesc(editor);
-        if (view) {
-            return view;
-        }
-        let node = editor.parentElement;
-        for (let i = 0; i < 6 && node; i++) {
-            view = fromDesc(node);
-            if (view) {
-                return view;
-            }
-            node = node.parentElement;
-        }
-        return this.findViewViaFiber(editor);
+    isTiptapEditor(obj) {
+        return !!(
+            obj &&
+            typeof obj === 'object' &&
+            typeof obj.chain === 'function' &&
+            obj.view &&
+            obj.view.state &&
+            obj.view.state.schema
+        );
     },
 
-    findViewViaFiber(el) {
+    isPmView(obj) {
+        return !!(obj && obj.state && obj.state.schema && typeof obj.dispatch === 'function');
+    },
+
+    viewFromUnknown(obj) {
+        if (!obj || typeof obj !== 'object') {
+            return null;
+        }
+        if (this.isTiptapEditor(obj)) {
+            return { editor: obj, view: obj.view };
+        }
+        if (this.isTiptapEditor(obj.editor)) {
+            return { editor: obj.editor, view: obj.editor.view };
+        }
+        if (this.isPmView(obj)) {
+            const editor = this.isTiptapEditor(obj.editor) ? obj.editor : null;
+            return { editor, view: obj };
+        }
+        if (this.isPmView(obj.view)) {
+            const editor = this.isTiptapEditor(obj.view.editor) ? obj.view.editor : null;
+            return { editor, view: obj.view };
+        }
+        return null;
+    },
+
+    fromDesc(el) {
+        if (!el || !el.pmViewDesc) {
+            return null;
+        }
+        let desc = el.pmViewDesc;
+        while (desc.parent) {
+            desc = desc.parent;
+        }
+        const view = desc.view || desc.editorView || null;
+        if (!this.isPmView(view)) {
+            return null;
+        }
+        const editor = this.isTiptapEditor(view.editor) ? view.editor : null;
+        return { editor, view };
+    },
+
+    fiberSearch(el) {
         if (!el) {
             return null;
         }
@@ -127,14 +146,15 @@ const plugin = {
             return null;
         }
         let fiber = el[fiberKey];
-        for (let i = 0; i < 50 && fiber; i++) {
+        for (let i = 0; i < 60 && fiber; i++) {
             const props = fiber.memoizedProps || fiber.pendingProps;
-            const fromProps = this.viewFromUnknown(props && props.editor) || this.viewFromUnknown(props);
+            const fromProps =
+                this.viewFromUnknown(props && props.editor) || this.viewFromUnknown(props);
             if (fromProps) {
                 return fromProps;
             }
             let hook = fiber.memoizedState;
-            for (let j = 0; j < 30 && hook; j++) {
+            for (let j = 0; j < 40 && hook; j++) {
                 const fromHook = this.viewFromUnknown(hook.memoizedState);
                 if (fromHook) {
                     return fromHook;
@@ -146,26 +166,35 @@ const plugin = {
         return null;
     },
 
-    viewFromUnknown(obj) {
-        if (!obj || typeof obj !== 'object') {
-            return null;
+    findEditorApi(dom) {
+        if (!dom) {
+            return { editor: null, view: null };
         }
-        if (obj.state && obj.state.schema && typeof obj.dispatch === 'function') {
-            return obj;
+        let found = this.fromDesc(dom);
+        if (found) {
+            if (!found.editor) {
+                const viaFiber = this.fiberSearch(dom);
+                if (viaFiber && viaFiber.editor) {
+                    found.editor = viaFiber.editor;
+                }
+            }
+            return found;
         }
-        if (obj.view && obj.view.state && obj.view.state.schema) {
-            return obj.view;
+        let node = dom;
+        for (let i = 0; i < 12 && node; i++) {
+            found = this.fromDesc(node) || this.fiberSearch(node);
+            if (found) {
+                return found;
+            }
+            node = node.parentElement;
         }
-        if (obj.editor && obj.editor.view && obj.editor.view.state) {
-            return obj.editor.view;
-        }
-        return null;
+        return { editor: null, view: null };
     },
 
-    captureSelection(state, editor) {
-        const view = this.findPmView(editor);
-        if (view && view.state && view.state.selection) {
-            const sel = view.state.selection;
+    captureSelection(state, editorEl) {
+        const api = this.findEditorApi(editorEl);
+        if (api.view && api.view.state && api.view.state.selection) {
+            const sel = api.view.state.selection;
             state.savedSel = { from: sel.from, to: sel.to, empty: sel.empty, kind: 'pm' };
             return;
         }
@@ -202,7 +231,7 @@ const plugin = {
         view.focus();
     },
 
-    blockRange(view) {
+    expandToBlock(view) {
         const sel = view.state.selection;
         if (!sel.empty) {
             return { from: sel.from, to: sel.to };
@@ -214,6 +243,17 @@ const plugin = {
             return { from: start, to: end };
         }
         return { from: sel.from, to: sel.to, stored: true };
+    },
+
+    pmBlockRange(view) {
+        const sel = view.state.selection;
+        if (typeof sel.$from.blockRange === 'function') {
+            const br = sel.$from.blockRange(sel.$to);
+            if (br) {
+                return br;
+            }
+        }
+        return null;
     },
 
     headingLevel(view) {
@@ -238,6 +278,27 @@ const plugin = {
         return false;
     },
 
+    selectSummaryContent(view) {
+        const $from = view.state.selection.$from;
+        for (let d = $from.depth; d > 0; d--) {
+            const name = $from.node(d).type && $from.node(d).type.name;
+            if (name === 'detailsSummary') {
+                const from = $from.start(d);
+                const to = $from.end(d);
+                try {
+                    const Ctor = view.state.selection.constructor;
+                    view.dispatch(
+                        view.state.tr.setSelection(Ctor.create(view.state.doc, from, to))
+                    );
+                } catch (err) {
+                    return false;
+                }
+                return true;
+            }
+        }
+        return false;
+    },
+
     clickToolbar(toolbar, title) {
         if (!toolbar) {
             return false;
@@ -252,23 +313,149 @@ const plugin = {
         return false;
     },
 
+    hasCmd(editor, name) {
+        return !!(editor && editor.commands && typeof editor.commands[name] === 'function');
+    },
+
+    queueCmd(chain, editor, name, arg) {
+        if (!this.hasCmd(editor, name) || typeof chain[name] !== 'function') {
+            return chain;
+        }
+        if (arg === undefined) {
+            return chain[name]();
+        }
+        return chain[name](arg);
+    },
+
+    tiptapCanApply(editor, preset) {
+        if (!this.isTiptapEditor(editor)) {
+            return false;
+        }
+        if (preset.heading && !this.hasCmd(editor, 'setHeading')) {
+            return false;
+        }
+        if (preset.toggle && !this.hasCmd(editor, 'setDetails') && !this.inDetails(editor.view)) {
+            return false;
+        }
+        if (preset.color && !this.hasCmd(editor, 'setColor')) {
+            return false;
+        }
+        if (preset.underline && !this.hasCmd(editor, 'setUnderline')) {
+            return false;
+        }
+        if (preset.bold && !this.hasCmd(editor, 'setBold')) {
+            return false;
+        }
+        if (preset.italic && !this.hasCmd(editor, 'setItalic')) {
+            return false;
+        }
+        if (preset.highlight && !this.hasCmd(editor, 'setHighlight')) {
+            return false;
+        }
+        return true;
+    },
+
+    applyViaTiptap(editor, preset, saved) {
+        if (!this.tiptapCanApply(editor, preset)) {
+            return false;
+        }
+        if (saved && saved.kind === 'pm') {
+            this.restorePmSelection(editor.view, saved);
+        } else {
+            editor.view.focus();
+        }
+        const range = this.expandToBlock(editor.view);
+        let chain = editor.chain().focus();
+        if (!range.stored) {
+            chain = this.queueCmd(chain, editor, 'setTextSelection', {
+                from: range.from,
+                to: range.to
+            });
+        }
+        if (preset.heading) {
+            chain = this.queueCmd(chain, editor, 'setHeading', { level: preset.heading });
+        }
+        if (preset.toggle && !this.inDetails(editor.view)) {
+            chain = this.queueCmd(chain, editor, 'setDetails');
+        }
+        chain = this.queueCmd(chain, editor, 'unsetHighlight');
+        chain = this.queueCmd(chain, editor, 'unsetColor');
+        chain = this.queueCmd(chain, editor, 'unsetUnderline');
+        chain = this.queueCmd(chain, editor, 'unsetBold');
+        chain = this.queueCmd(chain, editor, 'unsetItalic');
+        if (preset.color) {
+            chain = this.queueCmd(chain, editor, 'setColor', preset.color);
+        }
+        if (preset.underline) {
+            chain = this.queueCmd(chain, editor, 'setUnderline');
+        }
+        if (preset.bold) {
+            chain = this.queueCmd(chain, editor, 'setBold');
+        }
+        if (preset.italic) {
+            chain = this.queueCmd(chain, editor, 'setItalic');
+        }
+        if (preset.highlight) {
+            chain = this.queueCmd(chain, editor, 'setHighlight', { color: preset.highlight });
+        }
+        const ok = chain.run();
+        if (!ok) {
+            return false;
+        }
+        if (preset.toggle) {
+            this.selectSummaryContent(editor.view);
+            if (preset.color && this.hasCmd(editor, 'setColor')) {
+                editor.chain().focus().setColor(preset.color).run();
+            }
+        }
+        return true;
+    },
+
     schemaMark(schema, name) {
         return schema && schema.marks && schema.marks[name] ? schema.marks[name] : null;
     },
 
-    clearThemeMarks(tr, from, to, schema) {
-        for (const name of THEME_MARKS) {
-            const mt = this.schemaMark(schema, name);
-            if (mt) {
-                tr = tr.removeMark(from, to, mt);
-            }
-        }
-        return tr;
+    colorMarkType(schema) {
+        return this.schemaMark(schema, 'textStyle') || this.schemaMark(schema, 'color');
     },
 
-    addPresetMarks(tr, from, to, schema, preset, stored) {
+    pmCanApply(view, preset) {
+        if (!this.isPmView(view)) {
+            return false;
+        }
+        const schema = view.state.schema;
+        if (preset.heading && !(schema.nodes && schema.nodes.heading)) {
+            return false;
+        }
+        if (preset.color && !this.colorMarkType(schema)) {
+            return false;
+        }
+        if (preset.underline && !this.schemaMark(schema, 'underline')) {
+            return false;
+        }
+        if (preset.bold && !this.schemaMark(schema, 'bold')) {
+            return false;
+        }
+        if (preset.italic && !this.schemaMark(schema, 'italic')) {
+            return false;
+        }
+        if (preset.highlight && !this.schemaMark(schema, 'highlight')) {
+            return false;
+        }
+        return true;
+    },
+
+    applyMarksPm(tr, from, to, schema, preset, stored) {
+        if (!stored) {
+            for (const name of THEME_MARKS) {
+                const mt = this.schemaMark(schema, name);
+                if (mt) {
+                    tr = tr.removeMark(from, to, mt);
+                }
+            }
+        }
         const marks = [];
-        const textStyle = this.schemaMark(schema, 'textStyle');
+        const textStyle = this.colorMarkType(schema);
         const underline = this.schemaMark(schema, 'underline');
         const bold = this.schemaMark(schema, 'bold');
         const italic = this.schemaMark(schema, 'italic');
@@ -297,220 +484,104 @@ const plugin = {
         return tr;
     },
 
-    applyViaPm(view, toolbar, preset) {
-        if (!view || !view.state || !view.dispatch) {
+    applyViaPm(view, preset) {
+        if (!this.pmCanApply(view, preset)) {
             return false;
         }
+        if (preset.toggle) {
+            if (!this.inDetails(view)) {
+                return false;
+            }
+            this.selectSummaryContent(view);
+        }
         const schema = view.state.schema;
-        if (preset.heading) {
+        let tr = view.state.tr;
+        if (preset.heading && schema.nodes && schema.nodes.heading) {
             const current = this.headingLevel(view);
             if (current !== preset.heading) {
-                const heading = schema.nodes && schema.nodes.heading;
-                if (heading) {
-                    const range = this.blockRange(view);
-                    try {
-                        view.dispatch(
-                            view.state.tr.setBlockType(range.from, range.to, heading, {
-                                level: preset.heading
-                            })
-                        );
-                    } catch (err) {
-                        this.clickToolbar(toolbar, 'Heading ' + preset.heading);
-                    }
-                } else {
-                    this.clickToolbar(toolbar, 'Heading ' + preset.heading);
+                const br = this.pmBlockRange(view);
+                if (!br) {
+                    return false;
+                }
+                try {
+                    tr = tr.setBlockType(br.start, br.end, schema.nodes.heading, {
+                        level: preset.heading
+                    });
+                } catch (err) {
+                    Logger.debug('setBlockType failed');
+                    return false;
                 }
             }
         }
-        if (preset.toggle && !this.inDetails(view)) {
-            this.clickToolbar(toolbar, 'Toggle Block');
-        }
-        const range = this.blockRange(view);
-        let tr = view.state.tr;
-        if (!range.stored) {
-            tr = this.clearThemeMarks(tr, range.from, range.to, schema);
-        }
-        tr = this.addPresetMarks(tr, range.from, range.to, schema, preset, !!range.stored);
+        const sel = tr.selection;
+        const $from = sel.$from;
+        const from = sel.empty ? $from.start() : sel.from;
+        const to = sel.empty ? $from.end() : sel.to;
+        const stored = from >= to;
+        tr = this.applyMarksPm(tr, from, to, schema, preset, stored);
         view.dispatch(tr);
         view.focus();
         return true;
     },
 
-    closestBlock(node, editor) {
-        let el = node;
-        if (el && el.nodeType !== Node.ELEMENT_NODE) {
-            el = el.parentElement;
+    applyMarksOnly(api, preset) {
+        if (preset.toggle && api.view) {
+            this.selectSummaryContent(api.view);
         }
-        if (!el) {
-            return null;
+        const markPreset = Object.assign({}, preset);
+        delete markPreset.heading;
+        delete markPreset.toggle;
+        if (api.editor && this.tiptapCanApply(api.editor, markPreset)) {
+            return this.applyViaTiptap(api.editor, markPreset, null);
         }
-        const found = el.closest('h1, h2, h3, h4, h5, h6, p, summary, li');
-        if (found && editor.contains(found)) {
-            return found;
+        if (api.view && this.pmCanApply(api.view, markPreset)) {
+            return this.applyViaPm(api.view, markPreset);
         }
-        return editor.contains(el) ? el : null;
+        return false;
     },
 
-    targetRange(editor, saved) {
-        if (saved && saved.kind === 'dom' && saved.range) {
-            const range = saved.range;
-            if (range.collapsed) {
-                const block = this.closestBlock(range.startContainer, editor);
-                if (block) {
-                    const next = document.createRange();
-                    next.selectNodeContents(block);
-                    return { range: next, block };
+    applyAfterClick(editorEl, toolbar, preset, input) {
+        const api0 = this.findEditorApi(editorEl);
+        let clicked = false;
+        if (preset.heading) {
+            const already = api0.view && this.headingLevel(api0.view) === preset.heading;
+            if (!already) {
+                if (!this.clickToolbar(toolbar, 'Heading ' + preset.heading)) {
+                    this.flash(input, false);
+                    Logger.warn('theme apply failed — marks not set');
+                    return;
                 }
-            }
-            return { range, block: this.closestBlock(range.commonAncestorContainer, editor) };
-        }
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0) {
-            return null;
-        }
-        const range = sel.getRangeAt(0);
-        if (!editor.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== editor) {
-            return null;
-        }
-        if (range.collapsed) {
-            const block = this.closestBlock(range.startContainer, editor);
-            if (!block) {
-                return null;
-            }
-            const next = document.createRange();
-            next.selectNodeContents(block);
-            return { range: next, block };
-        }
-        return { range, block: this.closestBlock(range.commonAncestorContainer, editor) };
-    },
-
-    refreshBlock(editor, fallback) {
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-            const block = this.closestBlock(sel.getRangeAt(0).startContainer, editor);
-            if (block) {
-                return block;
+                clicked = true;
             }
         }
-        if (fallback && fallback.parentNode) {
-            return fallback;
-        }
-        return fallback;
-    },
-
-    replaceTag(el, tagName) {
-        if (!el || el.tagName.toLowerCase() === tagName) {
-            return el;
-        }
-        const next = document.createElement(tagName);
-        while (el.firstChild) {
-            next.appendChild(el.firstChild);
-        }
-        if (el.parentNode) {
-            el.parentNode.replaceChild(next, el);
-        }
-        return next;
-    },
-
-    wrapRange(range, tagName, attrs) {
-        const el = document.createElement(tagName);
-        if (attrs) {
-            for (const key of Object.keys(attrs)) {
-                el.setAttribute(key, attrs[key]);
-            }
-        }
-        try {
-            range.surroundContents(el);
-        } catch (err) {
-            const frag = range.extractContents();
-            el.appendChild(frag);
-            range.insertNode(el);
-        }
-        return el;
-    },
-
-    applyViaDom(editor, toolbar, preset, saved) {
-        const target = this.targetRange(editor, saved);
-        if (!target) {
-            return false;
-        }
-        let block = target.block;
-        let range = target.range;
-        if (preset.heading && block) {
-            const want = 'H' + preset.heading;
-            if (block.tagName !== want) {
-                this.clickToolbar(toolbar, 'Heading ' + preset.heading);
-                block = this.refreshBlock(editor, block);
-                if (block && block.parentNode && block.tagName !== want) {
-                    block = this.replaceTag(block, 'h' + preset.heading);
+        if (preset.toggle) {
+            const already = api0.view && this.inDetails(api0.view);
+            if (!already) {
+                if (!this.clickToolbar(toolbar, 'Toggle Block')) {
+                    this.flash(input, false);
+                    Logger.warn('theme apply failed — marks not set');
+                    return;
                 }
-                if (block) {
-                    range = document.createRange();
-                    range.selectNodeContents(block);
-                }
+                clicked = true;
             }
         }
-        if (preset.toggle && block && block.tagName !== 'SUMMARY' && !block.closest('details')) {
-            this.clickToolbar(toolbar, 'Toggle Block');
-            const after = this.refreshBlock(editor, block);
-            if (after && (after.tagName === 'SUMMARY' || after.closest('details'))) {
-                block = after.tagName === 'SUMMARY' ? after : after.closest('details').querySelector('summary') || after;
-                range = document.createRange();
-                range.selectNodeContents(block);
+        const finish = () => {
+            const api = this.findEditorApi(editorEl);
+            const marked = this.applyMarksOnly(api, preset);
+            if (marked) {
+                this.flash(input, true);
+                Logger.log('applied ' + preset.name);
+                input.value = '';
             } else {
-                const details = document.createElement('details');
-                const summary = document.createElement('summary');
-                while (block.firstChild) {
-                    summary.appendChild(block.firstChild);
-                }
-                details.appendChild(summary);
-                const content = document.createElement('div');
-                content.setAttribute('data-details-content', '');
-                const p = document.createElement('p');
-                p.appendChild(document.createElement('br'));
-                content.appendChild(p);
-                details.appendChild(content);
-                if (block.parentNode) {
-                    block.parentNode.replaceChild(details, block);
-                }
-                block = summary;
-                range = document.createRange();
-                range.selectNodeContents(summary);
+                this.flash(input, false);
+                Logger.warn('theme apply failed — marks not set');
             }
+        };
+        if (clicked) {
+            window.requestAnimationFrame(finish);
+        } else {
+            finish();
         }
-        if (preset.highlight) {
-            this.wrapRange(range, 'mark', {
-                'data-color': preset.highlight,
-                style: 'background-color: ' + preset.highlight + '; color: inherit;'
-            });
-            return true;
-        }
-        let inner = range;
-        if (preset.underline) {
-            this.wrapRange(inner, 'u', null);
-            inner = document.createRange();
-            if (block) {
-                inner.selectNodeContents(block);
-            }
-        }
-        if (preset.bold) {
-            this.wrapRange(inner, 'strong', null);
-            inner = document.createRange();
-            if (block) {
-                inner.selectNodeContents(block);
-            }
-        }
-        if (preset.italic) {
-            this.wrapRange(inner, 'em', null);
-            inner = document.createRange();
-            if (block) {
-                inner.selectNodeContents(block);
-            }
-        }
-        if (preset.color) {
-            this.wrapRange(inner, 'span', { style: 'color: ' + preset.color });
-        }
-        return true;
     },
 
     flash(el, ok) {
@@ -526,14 +597,16 @@ const plugin = {
     },
 
     applyPreset(state, preset, input) {
-        const editor = this.findEditor();
-        const toolbar = this.findToolbar(editor);
-        if (!editor || !preset) {
+        const editorEl = this.findEditor();
+        const toolbar = this.findToolbar(editorEl);
+        if (!editorEl || !preset) {
             this.flash(input, false);
             Logger.warn('theme apply failed — editor not found');
             return;
         }
-        const view = this.findPmView(editor);
+        const api = this.findEditorApi(editorEl);
+        const view = api.view;
+        const tiptap = api.editor;
         if (view && state.savedSel && state.savedSel.kind === 'pm') {
             this.restorePmSelection(view, state.savedSel);
         } else if (state.savedSel && state.savedSel.kind === 'dom' && state.savedSel.range) {
@@ -542,17 +615,22 @@ const plugin = {
                 sel.removeAllRanges();
                 sel.addRange(state.savedSel.range);
             }
-            editor.focus();
+            editorEl.focus();
         } else {
-            editor.focus();
+            editorEl.focus();
         }
+
         let ok = false;
         try {
-            if (view) {
-                ok = this.applyViaPm(view, toolbar, preset);
+            if (tiptap) {
+                ok = this.applyViaTiptap(tiptap, preset, state.savedSel);
             }
-            if (!ok) {
-                ok = this.applyViaDom(editor, toolbar, preset, state.savedSel);
+            if (!ok && view) {
+                ok = this.applyViaPm(view, preset);
+            }
+            if (!ok && toolbar && (preset.heading || preset.toggle)) {
+                this.applyAfterClick(editorEl, toolbar, preset, input);
+                return;
             }
         } catch (err) {
             this.flash(input, false);
@@ -561,7 +639,7 @@ const plugin = {
         }
         if (!ok) {
             this.flash(input, false);
-            Logger.warn('theme apply failed — no selection target');
+            Logger.warn('theme apply failed — no editor view');
             return;
         }
         this.flash(input, true);

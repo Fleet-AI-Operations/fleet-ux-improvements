@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.444",
+  "archetypesVersion": "14.445",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -1232,8 +1232,8 @@
         },
         {
           "name": "theme-presets.js",
-          "version": "1.0",
-          "hash": "sha256-04adcb559469e6b68b1ec8229c951af04b4804c2914d23762d8023f7035a6065",
+          "version": "1.1",
+          "hash": "sha256-98d77a3457b7d0a7ffac073e6206d8b15a4192fd96b8ef1ca2b6d84367b7b988",
           "log": false
         }
       ]
