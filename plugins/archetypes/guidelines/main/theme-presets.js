@@ -4,8 +4,8 @@
 
 const EDITOR_SEL = '[data-guidelines-editor="true"]';
 const WRAP_MARKER = 'data-fleet-guidelines-themes';
-const DATALIST_ID = 'fleet-guidelines-theme-list';
 const EXPORT_MARKER = 'data-fleet-guidelines-export';
+const MENU_MARKER = 'data-fleet-guidelines-theme-menu';
 
 const PRESETS = [
     { name: 'Title', heading: 1, color: '#db2777', underline: true },
@@ -30,7 +30,7 @@ const plugin = {
     id: 'guidelinesThemePresets',
     name: 'Guideline Theme Presets',
     description: 'Apply named text themes from the edit toolbar',
-    _version: '1.2',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -38,7 +38,10 @@ const plugin = {
         savedSel: null,
         onSel: null,
         boundEditor: null,
-        tiptap: null
+        tiptap: null,
+        menuEl: null,
+        onDocPointer: null,
+        onMenuKey: null
     },
 
     findEditor() {
@@ -778,7 +781,7 @@ const plugin = {
         return false;
     },
 
-    applyAfterClick(editorEl, toolbar, preset, input) {
+    applyAfterClick(state, editorEl, toolbar, preset, input) {
         const api0 = this.findEditorApi(editorEl);
         let clicked = false;
         if (preset.heading) {
@@ -787,6 +790,7 @@ const plugin = {
                 if (!this.clickToolbar(toolbar, 'Heading ' + preset.heading)) {
                     this.flash(input, false);
                     Logger.warn('theme apply failed — marks not set');
+                    this.closeMenu(state);
                     return;
                 }
                 clicked = true;
@@ -798,6 +802,7 @@ const plugin = {
                 if (!this.clickToolbar(toolbar, 'Toggle Block')) {
                     this.flash(input, false);
                     Logger.warn('theme apply failed — marks not set');
+                    this.closeMenu(state);
                     return;
                 }
                 clicked = true;
@@ -814,6 +819,7 @@ const plugin = {
                 this.flash(input, false);
                 Logger.warn('theme apply failed — marks not set');
             }
+            this.closeMenu(state);
         };
         if (clicked) {
             window.requestAnimationFrame(finish);
@@ -840,6 +846,7 @@ const plugin = {
         if (!editorEl || !preset) {
             this.flash(input, false);
             Logger.warn('theme apply failed — editor not found');
+            this.closeMenu(state);
             return;
         }
         const api = this.findEditorApi(editorEl);
@@ -867,22 +874,129 @@ const plugin = {
                 ok = this.applyViaPm(view, preset);
             }
             if (!ok && toolbar && (preset.heading || preset.toggle)) {
-                this.applyAfterClick(editorEl, toolbar, preset, input);
+                this.applyAfterClick(state, editorEl, toolbar, preset, input);
                 return;
             }
         } catch (err) {
             this.flash(input, false);
             Logger.error('theme apply threw', err);
+            this.closeMenu(state);
             return;
         }
         if (!ok) {
             this.flash(input, false);
             Logger.warn('theme apply failed — no editor view');
+            this.closeMenu(state);
             return;
         }
         this.flash(input, true);
         Logger.log('applied ' + preset.name);
         input.value = preset.name;
+        this.closeMenu(state);
+    },
+
+    keepEditorSelection(state, editorEl) {
+        const api = this.findEditorApi(editorEl);
+        if (api.view && state.savedSel && state.savedSel.kind === 'pm') {
+            this.restorePmSelection(api.view, state.savedSel);
+            return;
+        }
+        if (state.savedSel && state.savedSel.kind === 'dom' && state.savedSel.range) {
+            const sel = window.getSelection();
+            if (sel) {
+                sel.removeAllRanges();
+                sel.addRange(state.savedSel.range);
+            }
+        }
+        if (editorEl) {
+            editorEl.focus();
+        }
+    },
+
+    closeMenu(state) {
+        if (!state) {
+            return;
+        }
+        if (state.menuEl && state.menuEl.parentNode) {
+            state.menuEl.remove();
+        }
+        state.menuEl = null;
+        if (state.onDocPointer) {
+            document.removeEventListener('pointerdown', state.onDocPointer, true);
+            state.onDocPointer = null;
+        }
+        if (state.onMenuKey) {
+            document.removeEventListener('keydown', state.onMenuKey, true);
+            state.onMenuKey = null;
+        }
+        const wrap = document.querySelector(`[${WRAP_MARKER}="1"]`);
+        const input = wrap ? wrap.querySelector('input') : null;
+        if (input) {
+            input.setAttribute('aria-expanded', 'false');
+        }
+    },
+
+    openMenu(state, wrap, input, editorEl) {
+        this.closeMenu(state);
+        const ui = Context.uiLib;
+        if (ui && typeof ui.ensurePanelStyles === 'function') {
+            ui.ensurePanelStyles(`[${WRAP_MARKER}="1"]`);
+        }
+        const pc = (ui && ui.PANEL_CLASSES) || {};
+        const menu = document.createElement('div');
+        menu.setAttribute(MENU_MARKER, '1');
+        menu.className = pc.root || '';
+        menu.setAttribute('role', 'listbox');
+        menu.style.cssText =
+            'position:absolute;top:100%;left:0;z-index:50;min-width:100%;max-height:16rem;overflow-y:auto;margin-top:2px;';
+        const current = String(input.value || '').trim().toLowerCase();
+        for (const preset of PRESETS) {
+            const opt = document.createElement('button');
+            opt.type = 'button';
+            opt.setAttribute('role', 'option');
+            opt.setAttribute('aria-selected', preset.name.toLowerCase() === current ? 'true' : 'false');
+            opt.className = pc.ghostBtn || '';
+            opt.textContent = preset.name;
+            opt.style.cssText = 'display:block;width:100%;text-align:left;box-sizing:border-box;';
+            opt.addEventListener('pointerdown', (evt) => {
+                evt.preventDefault();
+                this.captureSelection(state, editorEl);
+            });
+            opt.addEventListener('click', (evt) => {
+                evt.preventDefault();
+                this.keepEditorSelection(state, editorEl);
+                this.applyPreset(state, preset, input);
+            });
+            menu.appendChild(opt);
+        }
+        wrap.appendChild(menu);
+        state.menuEl = menu;
+        input.setAttribute('aria-expanded', 'true');
+        state.onDocPointer = (evt) => {
+            if (wrap.contains(evt.target)) {
+                return;
+            }
+            this.closeMenu(state);
+        };
+        document.addEventListener('pointerdown', state.onDocPointer, true);
+        state.onMenuKey = (evt) => {
+            if (evt.key !== 'Escape') {
+                return;
+            }
+            this.closeMenu(state);
+            this.keepEditorSelection(state, editorEl);
+        };
+        document.addEventListener('keydown', state.onMenuKey, true);
+        this.keepEditorSelection(state, editorEl);
+    },
+
+    toggleMenu(state, wrap, input, editorEl) {
+        if (state.menuEl) {
+            this.closeMenu(state);
+            this.keepEditorSelection(state, editorEl);
+            return;
+        }
+        this.openMenu(state, wrap, input, editorEl);
     },
 
     injectPicker(state, toolbar, editor) {
@@ -891,29 +1005,30 @@ const plugin = {
         }
         const wrap = document.createElement('span');
         wrap.setAttribute(WRAP_MARKER, '1');
-        wrap.style.cssText = 'display:inline-flex;align-items:center;margin-left:4px;';
+        wrap.style.cssText = 'display:inline-flex;align-items:center;margin-left:4px;position:relative;';
 
         const input = document.createElement('input');
         input.type = 'text';
-        input.setAttribute('list', DATALIST_ID);
         input.placeholder = 'Theme';
         input.title = 'Theme';
         input.setAttribute('aria-label', 'Theme');
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-expanded', 'false');
+        input.setAttribute('aria-haspopup', 'listbox');
         input.autocomplete = 'off';
         input.className =
             'h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground';
         input.style.width = '7.5rem';
 
-        const list = document.createElement('datalist');
-        list.id = DATALIST_ID;
-        for (const preset of PRESETS) {
-            const opt = document.createElement('option');
-            opt.value = preset.name;
-            list.appendChild(opt);
-        }
-
         const saveSel = () => this.captureSelection(state, editor);
-        input.addEventListener('pointerdown', saveSel, true);
+        input.addEventListener('pointerdown', (evt) => {
+            if (evt.button !== 0) {
+                return;
+            }
+            saveSel();
+            evt.preventDefault();
+            this.toggleMenu(state, wrap, input, editor);
+        }, true);
         input.addEventListener('focus', saveSel);
 
         const tryApply = () => {
@@ -925,6 +1040,12 @@ const plugin = {
         };
         input.addEventListener('change', tryApply);
         input.addEventListener('keydown', (evt) => {
+            if (evt.key === 'ArrowDown' && !state.menuEl) {
+                evt.preventDefault();
+                saveSel();
+                this.openMenu(state, wrap, input, editor);
+                return;
+            }
             if (evt.key !== 'Enter') {
                 return;
             }
@@ -938,7 +1059,7 @@ const plugin = {
             this.applyPreset(state, preset, input);
         });
 
-        wrap.append(input, list);
+        wrap.appendChild(input);
         this.bindCaret(state, editor, input);
         const exportBtn = toolbar.querySelector(`[${EXPORT_MARKER}="1"]`);
         if (exportBtn) {
@@ -964,6 +1085,7 @@ const plugin = {
                 Logger.debug('theme presets removed (editor closed)');
                 state.activationLogged = false;
             }
+            this.closeMenu(state);
             this.unbindCaret(state);
             return;
         }
@@ -980,6 +1102,7 @@ const plugin = {
     },
 
     destroy(state) {
+        this.closeMenu(state);
         this.unbindCaret(state);
         const wrap = document.querySelector(`[${WRAP_MARKER}="1"]`);
         if (wrap) {
