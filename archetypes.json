@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.448",
+  "archetypesVersion": "14.449",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -801,20 +801,11 @@
       "description": "Page for reviewing session traces",
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
-      "libraries": [
-        "top-nav-horizontal-scroll.js"
-      ],
       "plugins": [
         {
           "name": "auto-expand-verifier-section.js",
           "version": "1.3",
           "hash": "sha256-08f201bc87f3c63a8182ba504af603d46499b72ea97a1fcae3d9fcb54ad9df85",
-          "log": false
-        },
-        {
-          "name": "top-nav-horizontal-scroll.js",
-          "version": "2.2",
-          "hash": "sha256-0a61a1e2b543345ea199d697e08166fc457bda0373094a603dd6b38644b95d42",
           "log": false
         }
       ]
