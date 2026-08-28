@@ -4960,11 +4960,12 @@ const searchOutputResultsPaneMethods = {
         const overlayBottomVp = Math.max(leftRect.bottom, rightRect.bottom);
         const overlayLeftVp = Math.min(leftRect.left, rightRect.left);
         const overlayRightVp = Math.max(leftRect.right, rightRect.right);
-        const outset = SO_ROLLING_OVERLAY_OUTSET;
-        let outLeftVp = overlayLeftVp - outset;
-        let outTopVp = overlayTopVp - outset;
-        let outRightVp = overlayRightVp + outset;
-        let outBottomVp = overlayBottomVp + outset;
+        const outsetY = SO_ROLLING_OVERLAY_OUTSET;
+        const outsetX = SO_ROLLING_OVERLAY_OUTSET - 1;
+        let outLeftVp = overlayLeftVp - outsetX;
+        let outTopVp = overlayTopVp - outsetY;
+        let outRightVp = overlayRightVp + outsetX;
+        let outBottomVp = overlayBottomVp + outsetY;
         outLeftVp = Math.max(padRect.left, outLeftVp);
         outTopVp = Math.max(padRect.top, outTopVp);
         outRightVp = Math.min(padRect.right, outRightVp);
@@ -8209,7 +8210,7 @@ const searchOutputResultsPaneMethods = {
         const bodyHtml = `
                 ${this._supplementalControlsHtml(itemId)}
                 ${this._supplementalPanelsHtml(itemId)}
-                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 7px; font-size: 12px;">
                     ${versionsInnerHtml}
                 </div>`;
 
@@ -8259,7 +8260,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.6',
+    _version: '12.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
