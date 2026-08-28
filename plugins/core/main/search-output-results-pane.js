@@ -4446,24 +4446,26 @@ const searchOutputResultsPaneMethods = {
     },
 
     _entityResolutionChipHtml(kind, display) {
-        if (kind === 'flag') {
-            if (display && display.resolutionAt) {
-                const resolutionKind = display.isConfirmed ? 'confirmed' : (display.isDismissed ? 'dismissed' : 'other');
-                const statusText = display.isConfirmed
-                    ? 'Confirmed'
-                    : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
-                return this._resolutionStatusBadgeHtml(resolutionKind, statusText);
-            }
-            return this._resolutionStatusBadgeHtml('other', 'Pending Resolution');
-        }
-        if (display && display.resolutionAt) {
-            const resolutionKind = display.isApproved ? 'approved' : (display.isRejected ? 'rejected' : 'other');
-            const statusText = display.isApproved
+        let resolutionKind = 'other';
+        let statusText = 'Pending Resolution';
+        let underlay = DASH_TASK_CARD_BG;
+        if (kind === 'flag' && display && display.resolutionAt) {
+            resolutionKind = display.isConfirmed ? 'confirmed' : (display.isDismissed ? 'dismissed' : 'other');
+            statusText = display.isConfirmed
+                ? 'Confirmed'
+                : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
+            underlay = this._resolutionBlockColors(resolutionKind).background;
+        } else if (kind !== 'flag' && display && display.resolutionAt) {
+            resolutionKind = display.isApproved ? 'approved' : (display.isRejected ? 'rejected' : 'other');
+            statusText = display.isApproved
                 ? 'Approved'
                 : (display.isRejected ? 'Rejected' : (display.status || 'Resolved'));
-            return this._resolutionStatusBadgeHtml(resolutionKind, statusText);
+            underlay = this._resolutionBlockColors(resolutionKind).background;
         }
-        return this._resolutionStatusBadgeHtml('other', 'Pending Resolution');
+        const chip = this._resolutionStatusBadgeHtml(resolutionKind, statusText);
+        return '<span style="display: inline-flex; align-items: center; border-radius: 6px; background: ' + underlay + ';">'
+            + chip
+            + '</span>';
     },
 
     _resolutionBlockColors(kind) {
@@ -8257,7 +8259,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.5',
+    _version: '12.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
