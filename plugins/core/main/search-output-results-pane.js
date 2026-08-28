@@ -4806,12 +4806,12 @@ const searchOutputResultsPaneMethods = {
             '}',
             '#wf-dash-modal [data-wf-dash-version-band="1"] {',
             '  border-radius: 8px;',
-            '  padding: 10px 12px;',
+            '  padding: 5px 6px;',
             '  box-sizing: border-box;',
-            '  background: color-mix(in srgb, #000 6%, var(--dash-task-card, var(--card, #fff)));',
+            '  background: color-mix(in srgb, #000 4%, var(--dash-task-card, var(--card, #fff)));',
             '}',
             'html[data-fleet-ux-theme="dark"] #wf-dash-modal [data-wf-dash-version-band="1"] {',
-            '  background: color-mix(in srgb, #fff 6%, var(--dash-task-card, var(--card, #18181b)));',
+            '  background: color-mix(in srgb, #fff 4%, var(--dash-task-card, var(--card, #18181b)));',
             '}'
         ].join('\n');
     },
@@ -8154,7 +8154,7 @@ const searchOutputResultsPaneMethods = {
             : '';
 
         const versionsInnerHtml = hasTimeline && totalVersions >= 2
-            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 16px;">${versionSections}</div>`
+            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 8px;">${versionSections}</div>`
             : versionSections;
 
         const stickyChromeHtml = `
@@ -8215,7 +8215,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.2',
+    _version: '12.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
