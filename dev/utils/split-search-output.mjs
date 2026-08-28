@@ -88,7 +88,7 @@ const RESULTS_METHODS = new Set([
     '_disputeResolutionPanelHtml', '_patchDisputeResolutionPanel',
     '_handleDisputeResolutionInput', '_handleDisputeResolutionStatusChange', '_handleDisputeBugCategoryChange',
     '_handleDisputeRelease', '_handleDisputeResolve', '_claimDispute',
-    '_getActionBlockCollapseUi', '_actionBlockBodyHiddenStyle', '_actionBlockHeaderRowHtml', '_actionBlockShellHtml', '_patchActionBlock', '_toggleActionBlockCollapse',
+    '_getActionBlockCollapseUi', '_ensureActionBlockCollapseStyles', '_actionBlockBodyHiddenStyle', '_actionBlockHeaderRowHtml', '_actionBlockShellHtml', '_patchActionBlock', '_toggleActionBlockCollapse',
     '_patchTaskCard', '_patchCardsForDisputeId',
     '_resultsKindTabsMeta', '_itemHasOutputKind', '_countItemsByResultsKindTab', '_kindsWithResults',
     '_isResultsKindTabDisabled', '_firstEnabledResultsKindTab', '_ensureValidResultsKindTab', '_filterItemsByResultsKindTab',

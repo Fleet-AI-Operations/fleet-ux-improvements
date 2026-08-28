@@ -4773,6 +4773,41 @@ const searchOutputResultsPaneMethods = {
         ].join('\n');
     },
 
+    _ensureActionBlockCollapseStyles() {
+        if (!this._modal) return;
+        let style = this._modal.querySelector('#wf-dash-action-block-collapse-styles');
+        if (!style) {
+            style = this._pageWindow().document.createElement('style');
+            style.id = 'wf-dash-action-block-collapse-styles';
+            this._modal.appendChild(style);
+        }
+        style.textContent = [
+            '#wf-dash-modal [data-wf-dash-action-block-body] {',
+            '  display: grid;',
+            '  grid-template-rows: 1fr;',
+            '  min-height: 0;',
+            '  margin-top: 0;',
+            '  transition: grid-template-rows 160ms ease-out, margin-top 160ms ease-out;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-action-block-body][data-collapsed="1"] {',
+            '  grid-template-rows: 0fr;',
+            '  margin-top: calc(-1 * var(--so-collapse-gap, 0px));',
+            '}',
+            '#wf-dash-modal [data-wf-dash-action-block-body] > [data-wf-dash-action-block-body-inner] {',
+            '  overflow: hidden;',
+            '  min-height: 0;',
+            '  display: flex;',
+            '  flex-direction: column;',
+            '  gap: 8px;',
+            '}',
+            '@media (prefers-reduced-motion: reduce) {',
+            '  #wf-dash-modal [data-wf-dash-action-block-body] {',
+            '    transition: none;',
+            '  }',
+            '}'
+        ].join('\n');
+    },
+
     _detachCardRollingListeners(cardEl) {
         if (!cardEl || !cardEl._soRollingCleanup) return;
         cardEl._soRollingCleanup();
@@ -5047,7 +5082,7 @@ const searchOutputResultsPaneMethods = {
                 && versionIdx >= rollingUi.rollingLeft
                 && versionIdx <= rollingUi.rollingLeft + 1;
             block.classList.toggle('so-rolling-diff-on', inActivePair);
-            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > p');
+            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > [data-wf-dash-action-block-body-inner] > p');
             if (promptP) {
                 promptP.innerHTML = this._rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi);
             }
@@ -5563,7 +5598,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _actionBlockBodyHiddenStyle(blockId) {
-        return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
+        return this._getActionBlockCollapseUi(blockId).collapsed ? '1' : '0';
     },
 
     _collapseCaretHtml(blockId) {
@@ -5604,14 +5639,19 @@ const searchOutputResultsPaneMethods = {
     },
 
     _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml, blockExtraAttrs, shellClass) {
-        const bodyHidden = this._actionBlockBodyHiddenStyle(blockId);
+        this._ensureActionBlockCollapseStyles();
+        const collapsed = this._actionBlockBodyHiddenStyle(blockId);
+        const gapMatch = /(?:^|;)\s*gap:\s*([^;]+)/i.exec(shellStyle || '');
+        const gap = (gapMatch && gapMatch[1].trim()) || '0px';
         const escBlockId = dashEscHtml(blockId);
         const itemAttr = itemId ? ` data-wf-dash-item-id="${dashEscHtml(itemId)}"` : '';
         const extra = blockExtraAttrs || '';
         const classAttr = shellClass ? ` class="${dashEscHtml(shellClass.trim())}"` : '';
         return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr}${extra}${classAttr} style="${shellStyle}">`
             + headerRowHtml
-            + `<div data-wf-dash-action-block-body="1" style="display: flex; flex-direction: column; gap: 8px; ${bodyHidden}">${bodyHtml}</div>`
+            + `<div data-wf-dash-action-block-body="1" data-collapsed="${collapsed}" style="--so-collapse-gap: ${dashEscHtml(gap)};">`
+            + `<div data-wf-dash-action-block-body-inner="1">${bodyHtml}</div>`
+            + `</div>`
             + `</div>`;
     },
 
@@ -5623,8 +5663,9 @@ const searchOutputResultsPaneMethods = {
         if (!block) return false;
         const body = block.querySelector(':scope > [data-wf-dash-action-block-body]');
         if (!body) return false;
+        this._ensureActionBlockCollapseStyles();
         const collapsed = this._getActionBlockCollapseUi(id).collapsed;
-        body.style.display = collapsed ? 'none' : 'flex';
+        body.setAttribute('data-collapsed', collapsed ? '1' : '0');
         this._syncActionBlockCaret(block, collapsed);
         for (const el of block.querySelectorAll(':scope > [data-wf-dash-qa-collapse-swap], :scope > [data-wf-dash-action-block-header] [data-wf-dash-qa-collapse-swap]')) {
             const mode = el.getAttribute('data-wf-dash-qa-collapse-swap');
@@ -8168,7 +8209,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.0',
+    _version: '12.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
