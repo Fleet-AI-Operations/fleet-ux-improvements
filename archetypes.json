@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.450",
+  "archetypesVersion": "14.451",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -1422,14 +1422,7 @@
       "description": "Page for reviewing session traces",
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "view-eval-task-link.js",
-          "version": "1.1",
-          "hash": "sha256-30b7fc2d487da58bcdb09377ced67994e98f83a1e77355d3b14444b6b73b77a8",
-          "log": false
-        }
-      ]
+      "plugins": []
     }
   ]
 }
