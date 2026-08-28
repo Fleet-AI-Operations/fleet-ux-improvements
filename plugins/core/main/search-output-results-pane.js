@@ -4445,6 +4445,27 @@ const searchOutputResultsPaneMethods = {
         return '<span style="' + style + '">' + dashEscHtml(label) + '</span>';
     },
 
+    _entityResolutionChipHtml(kind, display) {
+        if (kind === 'flag') {
+            if (display && display.resolutionAt) {
+                const resolutionKind = display.isConfirmed ? 'confirmed' : (display.isDismissed ? 'dismissed' : 'other');
+                const statusText = display.isConfirmed
+                    ? 'Confirmed'
+                    : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
+                return this._resolutionStatusBadgeHtml(resolutionKind, statusText);
+            }
+            return this._resolutionStatusBadgeHtml('other', 'Pending Resolution');
+        }
+        if (display && display.resolutionAt) {
+            const resolutionKind = display.isApproved ? 'approved' : (display.isRejected ? 'rejected' : 'other');
+            const statusText = display.isApproved
+                ? 'Approved'
+                : (display.isRejected ? 'Rejected' : (display.status || 'Resolved'));
+            return this._resolutionStatusBadgeHtml(resolutionKind, statusText);
+        }
+        return this._resolutionStatusBadgeHtml('other', 'Pending Resolution');
+    },
+
     _resolutionBlockColors(kind) {
         const k = String(kind || '').toLowerCase();
         if (k === 'approved' || k === 'confirmed') {
@@ -5632,7 +5653,10 @@ const searchOutputResultsPaneMethods = {
 
     _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
         const forceRight = opts && opts.forceRightSection;
-        const copyHtml = (opts && opts.copyHtml) || '';
+        const collapsed = this._isActionBlockCollapsed(blockId);
+        const copyHtml = (opts && opts.copyHtml)
+            ? this._qaCollapseSwapHtml('expanded', collapsed, opts.copyHtml)
+            : '';
         const rightSection = (rightHtml || forceRight)
             ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 0 auto; flex-shrink: 0;">${rightHtml || ''}</div>`
             : '';
@@ -7538,6 +7562,7 @@ const searchOutputResultsPaneMethods = {
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
         this._ensureActionBlockCollapseDefault(blockId, true);
+        const collapsed = this._isActionBlockCollapsed(blockId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
             + submittedHtml;
         const filerHtml = (display.filerId || display.filerName || display.filerEmail)
@@ -7552,8 +7577,13 @@ const searchOutputResultsPaneMethods = {
                 )
             )
             : '';
-        const disputeRightHtml = (categoryHtml || claimControlHtml || filerHtml)
-            ? `${filerHtml}${categoryHtml}${claimControlHtml}`
+        const resolutionChip = this._qaCollapseSwapHtml(
+            'collapsed',
+            collapsed,
+            this._entityResolutionChipHtml('dispute', display)
+        );
+        const disputeRightHtml = (categoryHtml || claimControlHtml || filerHtml || resolutionChip)
+            ? `${filerHtml}${categoryHtml}${claimControlHtml}${resolutionChip}`
             : '';
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml, {
             copyHtml: this._liveSectionCopyIconHtml('dispute', display.id, itemId)
@@ -7640,9 +7670,16 @@ const searchOutputResultsPaneMethods = {
             : '';
         const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
         this._ensureActionBlockCollapseDefault(blockId, true);
+        const collapsed = this._isActionBlockCollapsed(blockId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
             + submittedHtml;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`, {
+        const flaggedChip = `<span style="${alertBadge}">Flagged for Review</span>`;
+        const resolutionChip = this._qaCollapseSwapHtml(
+            'collapsed',
+            collapsed,
+            this._entityResolutionChipHtml('flag', display)
+        );
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, flaggedChip + resolutionChip, {
             copyHtml: this._liveSectionCopyIconHtml('flag', display.id, itemId)
         });
         const bodyHtml = `${flaggerHtml}
@@ -8220,7 +8257,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.4',
+    _version: '12.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
