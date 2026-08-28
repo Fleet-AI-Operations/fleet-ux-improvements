@@ -2369,6 +2369,7 @@ const searchOutputResultsPaneMethods = {
         const versions = this._promptVersionsForItem(item);
         const expandAll = this._isVersionModeAll();
         const no = Number(displayNo);
+        let patchedAll = true;
         for (const v of versions) {
             const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
             if (!blockId) continue;
@@ -2378,6 +2379,25 @@ const searchOutputResultsPaneMethods = {
             } else {
                 ui.collapsed = v.displayVersionNo !== no;
             }
+            if (!this._patchActionBlock(blockId)) patchedAll = false;
+        }
+        if (!patchedAll) this._patchTaskCard(itemId);
+        else this._syncReviewerBadgeHighlight(itemId, displayNo);
+    },
+
+    _syncReviewerBadgeHighlight(itemId, displayNo) {
+        const wrap = this._q('#wf-dash-results');
+        const card = wrap && this._findResultsCardEl(wrap, itemId);
+        if (!card) return;
+        const highlight = !this._isVersionModeAll();
+        const c = typeof this._dashThemeColors === 'function' ? this._dashThemeColors() : null;
+        const idle = '1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)');
+        const active = '1px solid var(--brand, var(--primary, #2563eb))';
+        for (const badge of card.querySelectorAll('[data-wf-dash-reviewer-badge]')) {
+            const no = parseInt(badge.getAttribute('data-display-no'), 10);
+            const on = highlight && Number.isFinite(no) && no === Number(displayNo);
+            badge.style.border = on ? active : idle;
+            badge.style.background = 'transparent';
         }
     },
 
@@ -8260,7 +8280,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.7',
+    _version: '12.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

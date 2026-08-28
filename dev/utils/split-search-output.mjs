@@ -50,6 +50,7 @@ const RESULTS_METHODS = new Set([
     '_dropIncludedResults', '_dropExcludedResults', '_dropResultFromSearch',
     '_syncResultsListDerivedUi', '_resultsToolbarReady', '_onResultsKindTabChanged',
     '_applySortAndRender', '_applyVersionModeChange', '_contributorMatchDisplayNo',
+    '_focusCardVersion', '_syncReviewerBadgeHighlight',
     '_shouldShowHelpfulness', '_helpfulnessFeedbackIdInFilter', '_getHelpfulnessUi', '_helpfulnessThumbSvg', '_helpfulnessThumbBtnStyle',
     '_helpfulnessBlockHtml', '_patchHelpfulnessBlock', '_helpfulnessUpsertBody',
     '_handleQaReviewInput', '_handleQaReviewRemovePrompt', '_handleQaReviewRemoveCancel',

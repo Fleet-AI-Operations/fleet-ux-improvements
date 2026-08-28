@@ -6305,7 +6305,6 @@ function attachSearchOutputListeners(modal, dash) {
                 const ui = dash._getCardUi(taskId);
                 ui.selectedDisplayNo = displayNo;
                 dash._focusCardVersion(itemId, displayNo);
-                dash._patchTaskCard(itemId);
                 Logger.log('search-output: focused version ' + displayNo);
                 return;
             }
@@ -6775,7 +6774,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.2',
+    _version: '10.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
