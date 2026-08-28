@@ -178,6 +178,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 
 ### Session Trace Review Page
 - **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)
+- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits
 
 ### Guidelines
 - **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar

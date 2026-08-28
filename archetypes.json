@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.449",
+  "archetypesVersion": "14.450",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -323,7 +323,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.41"
+      "version": "1.42"
     }
   ],
   "archetypes": [
@@ -806,6 +806,12 @@
           "name": "auto-expand-verifier-section.js",
           "version": "1.3",
           "hash": "sha256-08f201bc87f3c63a8182ba504af603d46499b72ea97a1fcae3d9fcb54ad9df85",
+          "log": false
+        },
+        {
+          "name": "remember-layout-proportions.js",
+          "version": "2.0",
+          "hash": "sha256-3ce4cec12191a19d636044fe869de12c16dbe9b5dc5aecd6b4078acda640ce6a",
           "log": false
         }
       ]
