@@ -36,7 +36,7 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     sessions: 'Sessions'
 };
 const DASH_LIB_PROMPT_HISTORY_ORDER = [
-    'accepted', 'returned', 'received_system_feedback', 'notes_to_qa', 'qa_edited', 'disputed',
+    'accepted', 'returned', 'received_system_feedback', 'notes_to_qa', 'scratchpad', 'qa_edited', 'disputed',
     'flagged', 'senior_review_flagged', 'escalated', 'session_qa_performed', 'screenshots'
 ];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
@@ -44,6 +44,7 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     returned: 'Returned',
     received_system_feedback: 'Received system feedback',
     notes_to_qa: 'Submitted with Notes to QA',
+    scratchpad: 'Submitted with Scratchpad',
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
     flagged: 'Flagged as bugged',
@@ -1069,7 +1070,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
-    _version: '9.2',
+    _version: '9.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -2004,6 +2005,10 @@ const plugin = {
         return (task.promptVersions || []).some((v) => String(v.resubmissionNotes || '').trim());
     },
 
+    _taskHasScratchpad(task) {
+        return (task.promptVersions || []).some((v) => String(v.scratchpad || '').trim());
+    },
+
     _itemHasAssociatedScreenshots(item) {
         if (!item) return false;
         const task = item.task;
@@ -2045,6 +2050,7 @@ const plugin = {
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
         if (this._taskHasNotesToQa(item.task)) flags.add('notes_to_qa');
+        if (this._taskHasScratchpad(item.task)) flags.add('scratchpad');
         if (this._itemSessionQaReviews(item, sessionQaUi).length > 0) flags.add('session_qa_performed');
         if (this._itemHasAssociatedScreenshots(item)) flags.add('screenshots');
         return [...flags];

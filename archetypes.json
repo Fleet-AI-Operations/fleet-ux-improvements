@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.449",
+  "archetypesVersion": "14.450",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -194,8 +194,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "9.2",
-      "hash": "sha256-b2e097c513f72ff42673ad1de171f7b3845c95bace1ac32c721b69c4d4bb4440",
+      "version": "9.3",
+      "hash": "sha256-87b15e5e896f1253e7c3c6521b094a97c3e675dbd14cb1db37b4d0405b93a603",
       "log": false
     },
     {
