@@ -3284,6 +3284,7 @@ const searchOutputResultsPaneMethods = {
             </div>`
             : '';
         const blockId = 'session-qa:' + review.id;
+        this._ensureActionBlockCollapseDefault(blockId, true);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Session QA</span>`
             + submittedHtml
             + difficultyHtml
@@ -7035,6 +7036,7 @@ const searchOutputResultsPaneMethods = {
                 + this._quotedFieldBlockHtml(label, body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
                 + '</div>';
         }
+        this._ensureActionBlockCollapseDefault(blockId, true);
         const headerRow = this._actionBlockHeaderRowHtml(blockId, this._labelSpan(label), '');
         const bodyHtml = '<p style="' + this._mutedQuotedFieldBodyStyle() + '">' + body + '</p>';
         return this._actionBlockShellHtml(
@@ -7395,6 +7397,7 @@ const searchOutputResultsPaneMethods = {
         const blockId = feedbackId
             ? ('qa:' + feedbackId)
             : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        this._ensureActionBlockCollapseDefault(blockId, false);
         const collapsed = this._isActionBlockCollapsed(blockId);
         const headerHelpfulness = this._qaCollapseSwapHtml('expanded', collapsed, helpfulnessActions);
         const headerReviewer = this._qaCollapseSwapHtml(
@@ -7534,6 +7537,7 @@ const searchOutputResultsPaneMethods = {
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
+        this._ensureActionBlockCollapseDefault(blockId, true);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
             + submittedHtml;
         const filerHtml = (display.filerId || display.filerName || display.filerEmail)
@@ -7635,6 +7639,7 @@ const searchOutputResultsPaneMethods = {
             )
             : '';
         const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
+        this._ensureActionBlockCollapseDefault(blockId, true);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
             + submittedHtml;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`, {
@@ -8215,7 +8220,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.3',
+    _version: '12.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
