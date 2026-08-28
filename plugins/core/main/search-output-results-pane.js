@@ -3259,7 +3259,6 @@ const searchOutputResultsPaneMethods = {
     _sessionQaReviewBlockHtml(review, itemId) {
         if (!review || !review.id) return '';
         const meta = this._sessionQaVerdictMeta(review.verdict);
-        const border = meta.blockStyle.border;
         const bg = meta.blockStyle.background;
         const statusLabel = `<span style="${meta.badgeStyle}">${dashEscHtml(meta.label)}</span>`;
         const submittedHtml = review.createdAt
@@ -3296,7 +3295,7 @@ const searchOutputResultsPaneMethods = {
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 12px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -3365,7 +3364,7 @@ const searchOutputResultsPaneMethods = {
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 12px; padding: 10px 12px; border: ' + blockStyle.border + '; border-radius: 8px; background: ' + blockStyle.background + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 12px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + blockStyle.background + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -4495,7 +4494,7 @@ const searchOutputResultsPaneMethods = {
             this._actionBlockShellHtml(
                 blockId,
                 itemId,
-                'padding: 8px 10px; border: 1px solid ' + colors.border + '; border-radius: 6px; background: ' + colors.background + '; display: flex; flex-direction: column; gap: 6px;',
+                'padding: 8px 10px; border: none; border-radius: 6px; background: ' + colors.background + '; display: flex; flex-direction: column; gap: 6px;',
                 resHeaderRow,
                 resBodyHtml
             )
@@ -4804,6 +4803,15 @@ const searchOutputResultsPaneMethods = {
             '  #wf-dash-modal [data-wf-dash-action-block-body] {',
             '    transition: none;',
             '  }',
+            '}',
+            '#wf-dash-modal [data-wf-dash-version-band="1"] {',
+            '  border-radius: 8px;',
+            '  padding: 10px 12px;',
+            '  box-sizing: border-box;',
+            '  background: color-mix(in srgb, #000 6%, var(--dash-task-card, var(--card, #fff)));',
+            '}',
+            'html[data-fleet-ux-theme="dark"] #wf-dash-modal [data-wf-dash-version-band="1"] {',
+            '  background: color-mix(in srgb, #fff 6%, var(--dash-task-card, var(--card, #18181b)));',
             '}'
         ].join('\n');
     },
@@ -7336,7 +7344,6 @@ const searchOutputResultsPaneMethods = {
         } else {
             blockStyle = this._qaOtherBlockStyle();
         }
-        const border = blockStyle.border;
         const bg = blockStyle.background;
         const alertBadge = this._qaAlertBadgeStyle();
         const statusLabel = isVerifierFailure
@@ -7413,7 +7420,7 @@ const searchOutputResultsPaneMethods = {
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 12px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow + panelWrap,
             bodyHtml
         );
@@ -7489,7 +7496,6 @@ const searchOutputResultsPaneMethods = {
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
         const purple = this._disputeBlockStyle();
-        const border = purple.border;
         const bg = purple.background;
         const reasonBody = display.reason
             ? this._dashQuotedHighlightedHtml(display.reason, hq, cs, fz, rx)
@@ -7561,7 +7567,7 @@ const searchOutputResultsPaneMethods = {
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 8px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -7579,7 +7585,6 @@ const searchOutputResultsPaneMethods = {
         const blockStyle = this._qaOtherBlockStyle();
         const alertBadge = this._qaAlertBadgeStyle();
         const issueBadgeStyle = this._qaAlertIssueBadgeStyle();
-        const border = blockStyle.border;
         const bg = blockStyle.background;
         const submittedHtml = display.createdAt
             ? this._plainTimestampHtml(display.createdAt)
@@ -7643,7 +7648,7 @@ const searchOutputResultsPaneMethods = {
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 8px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -7947,6 +7952,7 @@ const searchOutputResultsPaneMethods = {
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
             : '';
+        const versionBandAttr = ' data-wf-dash-version-band="1"';
         const shellClass = inActivePair ? 'so-rolling-diff-on' : '';
         return this._actionBlockShellHtml(
             blockId,
@@ -7954,7 +7960,7 @@ const searchOutputResultsPaneMethods = {
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml,
-            versionIdxAttr,
+            versionIdxAttr + versionBandAttr,
             shellClass
         );
     },
@@ -8148,7 +8154,7 @@ const searchOutputResultsPaneMethods = {
             : '';
 
         const versionsInnerHtml = hasTimeline && totalVersions >= 2
-            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 12px;">${versionSections}</div>`
+            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 16px;">${versionSections}</div>`
             : versionSections;
 
         const stickyChromeHtml = `
@@ -8209,7 +8215,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.1',
+    _version: '12.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
