@@ -246,7 +246,7 @@ const DASH_LIB_RESULTS_MODE_HINTS = {
     clear: 'Clears previous results and replaces with new search results.',
     add: 'Adds new search results to previous ones (deduplicated).'
 };
-const DASH_LIB_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
+const DASH_LIB_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, notes to QA, scratchpad, QA feedback, and dispute text.';
 const DASH_LIB_NONE_SELECTED_HINT = 'None selected = all.';
 
 function dashLibDefaultManualFilterStageRows() {
@@ -1070,7 +1070,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
-    _version: '9.3',
+    _version: '9.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1936,6 +1936,8 @@ const plugin = {
         const defaultNo = this._defaultDisplayNoForItem(item);
         const versionMatches = (version) => {
             if (lib.textMatchesQuery(version.prompt, query, fuzzy, caseSensitive, regex)) return true;
+            if (lib.textMatchesQuery(version.resubmissionNotes, query, fuzzy, caseSensitive, regex)) return true;
+            if (lib.textMatchesQuery(version.scratchpad, query, fuzzy, caseSensitive, regex)) return true;
             if (this._feedbackTextForVersion(item, version.displayVersionNo)
                 .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive, regex))) return true;
             return this._disputeTextForItem(item)
