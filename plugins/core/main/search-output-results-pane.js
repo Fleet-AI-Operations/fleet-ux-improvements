@@ -5494,7 +5494,7 @@ const searchOutputResultsPaneMethods = {
         const collapsed = this._isActionBlockCollapsed(id);
         const rot = collapsed ? '0deg' : '90deg';
         return `<button type="button" data-wf-dash-action-block-toggle="${dashEscHtml(id)}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="Expand or collapse" title="Expand or collapse" class="${this._dashBtnClass('basic', 'icon')}" style="line-height: 0;">`
-            + `<svg data-wf-dash-collapse-caret="1" width="26" height="26" viewBox="0 0 16 16" aria-hidden="true" focusable="false" style="display: block; flex-shrink: 0; color: var(--muted-foreground, #64748b); transform: rotate(${rot}); transform-origin: center; transition: transform 120ms ease;">`
+            + `<svg data-wf-dash-collapse-caret="1" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" focusable="false" style="display: block; flex-shrink: 0; color: var(--muted-foreground, #64748b); transform: rotate(${rot}); transform-origin: center; transition: transform 120ms ease;">`
             + `<polygon fill="currentColor" points="5 2 14 8 5 14"/>`
             + `</svg>`
             + `</button>`;
@@ -8134,7 +8134,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '11.2',
+    _version: '11.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
