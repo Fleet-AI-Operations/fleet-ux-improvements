@@ -1,4 +1,4 @@
-1.40
+1.41
 
 ## Features
 
@@ -41,6 +41,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 - **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change
+- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
 
 ### Computer Use Task Revision Page
 - **Prompt Text Counter**: Shows a live word and character count below the prompt
@@ -49,6 +50,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
 
 ### QA Tool Use Review Page
 - **"Accept Task" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb
@@ -71,6 +73,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
 
 ### Dispute Detail Page
 - **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text
@@ -84,6 +87,10 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+
+### Guidelines
+- **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar
+- **Guideline Theme Presets**: Apply named text themes from the edit toolbar
 
 ### Task View
 *No production plugins are configured for this archetype.*

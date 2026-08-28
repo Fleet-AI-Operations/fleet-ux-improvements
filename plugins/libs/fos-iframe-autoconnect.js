@@ -30,6 +30,7 @@ const FosIframeAutoconnectApi = {
                 state.patchedLogged = false;
                 state.waitingFosLogged = false;
                 state.waitingIframeLogged = false;
+                state.pendingFocusReconnect = false;
             } else if (!state.waitingIframeLogged) {
                 state.waitingIframeLogged = true;
                 Logger.debug('waiting for env iframe');
@@ -54,6 +55,9 @@ const FosIframeAutoconnectApi = {
         state.waitingFosLogged = false;
         this._patchIframeSrc(state, iframe);
         this._replaceOpenTabButton(state, iframe);
+        if (state.pendingFocusReconnect && !this._isEnvPanelCollapsed(iframe)) {
+            this._reconnectIframe(state);
+        }
     },
 
     _ensureDesktopSubscription(state) {
@@ -195,11 +199,21 @@ const FosIframeAutoconnectApi = {
         }
     },
 
+    _isEnvPanelCollapsed(iframe) {
+        return !!(iframe && iframe.closest('[data-panel][data-fleet-collapsed="true"]'));
+    },
+
     _reconnectIframe(state) {
         const iframe = this._findEnvIframe();
         if (!iframe || !iframe.isConnected) {
             return;
         }
+        if (this._isEnvPanelCollapsed(iframe)) {
+            state.pendingFocusReconnect = true;
+            Logger.debug('skipped FOS iframe reconnect; environment pane collapsed');
+            return;
+        }
+        state.pendingFocusReconnect = false;
         const instanceId = this._instanceIdFromIframe(iframe);
         if (!instanceId || !this._isFosDesktop(instanceId)) {
             return;
@@ -346,8 +360,8 @@ const plugin = {
     id: 'fosIframeAutoconnectLib',
     name: 'FOS Viewport Resize (library)',
     description:
-        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs; reconnects on tab focus',
-    _version: '1.1',
+        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs; reconnects on tab focus unless the environment pane is hidden',
+    _version: '1.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

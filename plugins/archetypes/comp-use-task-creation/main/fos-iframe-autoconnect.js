@@ -5,8 +5,8 @@ const plugin = {
     id: 'compUseTaskCreationFosIframeAutoconnect',
     name: 'FOS Viewport Resize',
     description:
-        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again',
-    _version: '1.1',
+        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again unless the environment pane is hidden',
+    _version: '1.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -20,7 +20,8 @@ const plugin = {
         visibilityInstalled: false,
         wasHidden: false,
         desktopUnsub: null,
-        reloadTimer: null
+        reloadTimer: null,
+        pendingFocusReconnect: false
     },
 
     onMutation(state) {

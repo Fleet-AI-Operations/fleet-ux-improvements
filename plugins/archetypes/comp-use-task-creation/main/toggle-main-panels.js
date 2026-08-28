@@ -5,7 +5,7 @@ const plugin = {
     id: 'toggleMainPanels',
     name: 'Toggle Main Panels',
     description: 'Hide or unhide either main pane (task detail or environment); the other pane expands to full width',
-    _version: '1.11',
+    _version: '1.0',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
