@@ -1069,7 +1069,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
-    _version: '9.1',
+    _version: '9.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1269,9 +1269,15 @@ const plugin = {
         const result = [];
         let prevPrompt = null;
         let displayNo = 0;
+        const mergeText = (target, key, next) => {
+            if (!next) return;
+            if (!target[key]) target[key] = next;
+            else if (target[key] !== next) target[key] += '\n\n' + next;
+        };
         for (const v of sorted) {
             const prompt = String(v.prompt ?? '');
             const notes = String(v.resubmission_notes ?? '').trim();
+            const scratchpad = String(v.scratchpad ?? '').trim();
             const verifierId = v.verifier_id ? String(v.verifier_id) : '';
             const verifierVersionId = v.verifier_version_id ? String(v.verifier_version_id) : '';
             if (prompt !== prevPrompt) {
@@ -1284,19 +1290,15 @@ const plugin = {
                     envKey: String(v.env_key ?? ''),
                     createdAt: String(v.created_at ?? ''),
                     resubmissionNotes: notes,
+                    scratchpad,
                     verifierId,
                     verifierVersionId
                 });
                 prevPrompt = prompt;
             } else if (result.length) {
                 const last = result[result.length - 1];
-                if (notes) {
-                    if (!last.resubmissionNotes) {
-                        last.resubmissionNotes = notes;
-                    } else if (last.resubmissionNotes !== notes) {
-                        last.resubmissionNotes += '\n\n' + notes;
-                    }
-                }
+                mergeText(last, 'resubmissionNotes', notes);
+                mergeText(last, 'scratchpad', scratchpad);
                 // Prefer latest non-null verifier pin when same-prompt rows collapse
                 if (verifierVersionId) {
                     last.verifierVersionId = verifierVersionId;

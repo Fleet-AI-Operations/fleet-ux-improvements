@@ -6473,6 +6473,10 @@ const searchOutputResultsPaneMethods = {
         if (notes && !opts.omitNotesToQa) {
             sections.push('Notes to QA:\n' + notes);
         }
+        const scratchpad = this._dashQuotedText(version && version.scratchpad);
+        if (scratchpad) {
+            sections.push('Scratchpad:\n' + scratchpad);
+        }
         return this._joinPlainSections(sections);
     },
 
@@ -6894,13 +6898,28 @@ const searchOutputResultsPaneMethods = {
         return `<div style="${groupStyle}">${labelHtml}<span style="${valueStyle}">${valueHtml}</span></div>`;
     },
 
-    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+    _quotedNotesSectionHtml(label, notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, dataAttr) {
         const text = this._dashQuotedText(notes);
         if (!text) return '';
         const body = this._dashQuotedHighlightedHtml(notes, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
-        return '<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0;">'
-            + this._quotedFieldBlockHtml('Notes to QA', body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
+        const attr = dataAttr ? ' ' + dataAttr : '';
+        return '<div' + attr + ' style="margin: 8px 0 0 0;">'
+            + this._quotedFieldBlockHtml(label, body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
             + '</div>';
+    },
+
+    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+        return this._quotedNotesSectionHtml(
+            'Notes to QA', notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex,
+            'data-wf-dash-notes-to-qa="1"'
+        );
+    },
+
+    _scratchpadSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+        return this._quotedNotesSectionHtml(
+            'Scratchpad', notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex,
+            'data-wf-dash-scratchpad="1"'
+        );
     },
 
     _plainTimestampHtml(iso, prefixLabel, opts) {
@@ -7764,9 +7783,13 @@ const searchOutputResultsPaneMethods = {
         const notesToQaHtml = diffMode
             ? ''
             : this._notesToQaSectionHtml(version.resubmissionNotes, hq, cs, fz, rx);
+        const scratchpadHtml = diffMode
+            ? ''
+            : this._scratchpadSectionHtml(version.scratchpad, hq, cs, fz, rx);
         const taskActionsPart = diffMode ? '' : taskActionsHtml;
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
             + notesToQaHtml
+            + scratchpadHtml
             + taskActionsPart;
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
@@ -8046,7 +8069,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.7',
+    _version: '10.8',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

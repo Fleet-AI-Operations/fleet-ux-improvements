@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.448",
+  "archetypesVersion": "14.449",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -194,8 +194,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "9.1",
-      "hash": "sha256-3b4080030e4cdd003260ad1ea92a8245f48c2f873ec24a35d70d7a859bc56fb2",
+      "version": "9.2",
+      "hash": "sha256-b2e097c513f72ff42673ad1de171f7b3845c95bace1ac32c721b69c4d4bb4440",
       "log": false
     },
     {
@@ -242,8 +242,8 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "10.7",
-      "hash": "sha256-ce7246ad809d501bb14283e8ec3e6850c1e04d27b3e0143ed49baff2c13efb1e",
+      "version": "10.8",
+      "hash": "sha256-1e89f51443c55a14e6d831d901a4f4a8fc78fc8de2584e1b051c90b06ec5c8cf",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "search-output-chat.js",
-      "version": "7.5",
-      "hash": "sha256-2a87b70c8bbd46ad03fce21f47332ee416c6710e6613028f6ef938151bf3a9db",
+      "version": "7.6",
+      "hash": "sha256-ef0b5b2c3127f6253010faf6ab44a3214545189760cadd32548b1c9a1decac87",
       "log": false
     },
     {
