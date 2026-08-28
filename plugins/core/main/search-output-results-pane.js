@@ -5483,14 +5483,33 @@ const searchOutputResultsPaneMethods = {
         return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
     },
 
+    _collapseCaretHtml(blockId) {
+        const id = String(blockId || '').trim();
+        const collapsed = this._isActionBlockCollapsed(id);
+        const rot = collapsed ? '0deg' : '90deg';
+        return `<button type="button" data-wf-dash-action-block-toggle="${dashEscHtml(id)}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="Expand or collapse" title="Expand or collapse" class="${this._dashBtnClass('basic', 'icon')}">`
+            + `<span data-wf-dash-collapse-caret="1" style="display: inline-block; color: var(--muted-foreground, #64748b); transform: rotate(${rot}); transition: transform 120ms ease;">▸</span>`
+            + `</button>`;
+    },
+
+    _syncActionBlockCaret(block, collapsed) {
+        const header = block && block.querySelector(':scope > [data-wf-dash-action-block-header]');
+        const toggle = header && header.querySelector('[data-wf-dash-action-block-toggle]');
+        if (!toggle) return;
+        toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        const caret = toggle.querySelector('[data-wf-dash-collapse-caret]');
+        if (caret) caret.style.transform = collapsed ? 'rotate(0deg)' : 'rotate(90deg)';
+    },
+
     _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
         const forceRight = opts && opts.forceRightSection;
         const rightSection = (rightHtml || forceRight)
             ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 0 auto; flex-shrink: 0;">${rightHtml || ''}</div>`
             : '';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
+            + this._collapseCaretHtml(blockId)
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; flex: 0 1 auto; max-width: 100%;">${leftHtml}</div>`
-            + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" title="Expand or collapse" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch; cursor: pointer;"></div>`
+            + `<div style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
             + rightSection
             + `</div>`;
     },
@@ -5513,11 +5532,12 @@ const searchOutputResultsPaneMethods = {
         const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
         const block = this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
         if (!block) return false;
-        const body = block.querySelector('[data-wf-dash-action-block-body]');
+        const body = block.querySelector(':scope > [data-wf-dash-action-block-body]');
         if (!body) return false;
         const collapsed = this._getActionBlockCollapseUi(id).collapsed;
         body.style.display = collapsed ? 'none' : 'flex';
-        for (const el of block.querySelectorAll('[data-wf-dash-qa-collapse-swap]')) {
+        this._syncActionBlockCaret(block, collapsed);
+        for (const el of block.querySelectorAll(':scope > [data-wf-dash-qa-collapse-swap], :scope > [data-wf-dash-action-block-header] [data-wf-dash-qa-collapse-swap]')) {
             const mode = el.getAttribute('data-wf-dash-qa-collapse-swap');
             const show = collapsed ? mode === 'collapsed' : mode === 'expanded';
             el.style.display = show ? (el.getAttribute('data-wf-dash-qa-collapse-display') || 'inline-flex') : 'none';
@@ -5530,6 +5550,7 @@ const searchOutputResultsPaneMethods = {
         if (!id) return;
         const ui = this._getActionBlockCollapseUi(id);
         ui.collapsed = !ui.collapsed;
+        Logger.log('search-output: ' + (ui.collapsed ? 'collapsed' : 'expanded') + ' ' + id);
         if (!this._patchActionBlock(id)) {
             const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
             const block = this._modal && this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
@@ -6898,27 +6919,53 @@ const searchOutputResultsPaneMethods = {
         return `<div style="${groupStyle}">${labelHtml}<span style="${valueStyle}">${valueHtml}</span></div>`;
     },
 
-    _quotedNotesSectionHtml(label, notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, dataAttr) {
+    _quotedNotesSectionHtml(label, notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, dataAttr, blockId, itemId) {
         const text = this._dashQuotedText(notes);
         if (!text) return '';
         const body = this._dashQuotedHighlightedHtml(notes, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
-        const attr = dataAttr ? ' ' + dataAttr : '';
-        return '<div' + attr + ' style="margin: 8px 0 0 0;">'
-            + this._quotedFieldBlockHtml(label, body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
-            + '</div>';
-    },
-
-    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
-        return this._quotedNotesSectionHtml(
-            'Notes to QA', notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex,
-            'data-wf-dash-notes-to-qa="1"'
+        const extraAttrs = dataAttr ? ' ' + dataAttr : '';
+        if (!blockId) {
+            return '<div' + extraAttrs + ' style="margin: 8px 0 0 0;">'
+                + this._quotedFieldBlockHtml(label, body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
+                + '</div>';
+        }
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, this._labelSpan(label), '');
+        const bodyHtml = '<p style="' + this._mutedQuotedFieldBodyStyle() + '">' + body + '</p>';
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin: 8px 0 0 0; display: flex; flex-direction: column; gap: 0;',
+            headerRow,
+            bodyHtml,
+            extraAttrs
         );
     },
 
-    _scratchpadSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
+    _notesToQaActionBlockId(itemId, displayVersionNo) {
+        if (!itemId || displayVersionNo == null) return '';
+        return 'notes-to-qa:' + itemId + ':' + displayVersionNo;
+    },
+
+    _scratchpadActionBlockId(itemId, displayVersionNo) {
+        if (!itemId || displayVersionNo == null) return '';
+        return 'scratchpad:' + itemId + ':' + displayVersionNo;
+    },
+
+    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, itemId, displayVersionNo) {
+        return this._quotedNotesSectionHtml(
+            'Notes to QA', notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex,
+            'data-wf-dash-notes-to-qa="1"',
+            this._notesToQaActionBlockId(itemId, displayVersionNo),
+            itemId
+        );
+    },
+
+    _scratchpadSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, itemId, displayVersionNo) {
         return this._quotedNotesSectionHtml(
             'Scratchpad', notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex,
-            'data-wf-dash-scratchpad="1"'
+            'data-wf-dash-scratchpad="1"',
+            this._scratchpadActionBlockId(itemId, displayVersionNo),
+            itemId
         );
     },
 
@@ -7782,10 +7829,10 @@ const searchOutputResultsPaneMethods = {
         const promptColor = 'color: var(--foreground, #0f172a);';
         const notesToQaHtml = diffMode
             ? ''
-            : this._notesToQaSectionHtml(version.resubmissionNotes, hq, cs, fz, rx);
+            : this._notesToQaSectionHtml(version.resubmissionNotes, hq, cs, fz, rx, itemId, version.displayVersionNo);
         const scratchpadHtml = diffMode
             ? ''
-            : this._scratchpadSectionHtml(version.scratchpad, hq, cs, fz, rx);
+            : this._scratchpadSectionHtml(version.scratchpad, hq, cs, fz, rx, itemId, version.displayVersionNo);
         const taskActionsPart = diffMode ? '' : taskActionsHtml;
         const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
             + notesToQaHtml
@@ -8069,7 +8116,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.8',
+    _version: '11.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

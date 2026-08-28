@@ -6277,7 +6277,8 @@ function attachSearchOutputListeners(modal, dash) {
                 return;
             }
             const actionBlockToggle = e.target.closest('[data-wf-dash-action-block-toggle]');
-            if (actionBlockToggle && modal.contains(actionBlockToggle) && e.target === actionBlockToggle) {
+            if (actionBlockToggle && modal.contains(actionBlockToggle)) {
+                e.preventDefault();
                 const blockId = actionBlockToggle.getAttribute('data-wf-dash-action-block-toggle');
                 if (blockId) dash._toggleActionBlockCollapse(blockId);
                 return;
@@ -6806,7 +6807,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.0',
+    _version: '10.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
