@@ -355,6 +355,9 @@ const searchOutputResultsPaneMethods = {
         const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
             ? Context.uiLib.devBtnAttr()
             : 'data-fleet-dev="1"';
+        const clipboardIcon = (Context.uiLib && typeof Context.uiLib.clipboardIconSvg === 'function')
+            ? Context.uiLib.clipboardIconSvg()
+            : '';
         return `
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}" data-wf-dash-output-ws="${dashEscHtml(wsId)}">
                     <div style="${this._resultsHeaderBarStyle()}">
@@ -368,13 +371,13 @@ const searchOutputResultsPaneMethods = {
                                 <div ${el('results-hydrate-banner')} style="display: none; flex-shrink: 0;"></div>
                                 <div ${el('results-prefetch-banner')} style="display: none; flex-shrink: 0;"></div>
                                 <button type="button" ${el('bulk-hydrate')} class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
-                                <button type="button" ${el('diff-included')} title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
+                                <button type="button" ${el('diff-included')} title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff</button>
                                 <button type="button" ${el('drop-included')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
                                 <button type="button" ${el('drop-excluded')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
-                                <button type="button" ${el('export-tasks-json')} ${devBtnAttr} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
-                                <button type="button" ${el('export-user-stories')} ${devBtnAttr} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
-                                <button type="button" ${el('results-retrieve-clipboard')} title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;${options.hideRetrieveClipboard ? ' display: none;' : ''}">Retrieve Clipboard</button>
-                                <button type="button" ${el('clear-results')} class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
+                                <button type="button" ${el('export-tasks-json')} ${devBtnAttr} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">JSON</button>
+                                <button type="button" ${el('export-user-stories')} ${devBtnAttr} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">User Stories</button>
+                                <button type="button" ${el('results-retrieve-clipboard')} title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0; gap: 4px;${options.hideRetrieveClipboard ? ' display: none;' : ''}">Fetch ${clipboardIcon}</button>
+                                <button type="button" ${el('clear-results')} class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                                 </div>
                             </div>
@@ -384,10 +387,10 @@ const searchOutputResultsPaneMethods = {
                                 <div ${el('results-pager')} style="${this._resultsPagerStyle()}">
                                     <label ${el('version-mode-wrap')} style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Version</span>
-                                        <select ${el('version-mode')} style="${input} width: auto; min-width: 8.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('version-mode')} style="${input} width: auto; min-width: 4.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="contributor_match">Contributor match</option>
-                                            <option value="all_v1">All v1s</option>
-                                            <option value="all_final">All final versions</option>
+                                            <option value="all_v1">v1s</option>
+                                            <option value="all_final">Final</option>
                                         </select>
                                     </label>
                                     <div ${el('review-status-wrap')} style="display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;"></div>
@@ -1507,9 +1510,9 @@ const searchOutputResultsPaneMethods = {
                 storiesBtn.disabled = true;
                 storiesBtn.removeAttribute('aria-busy');
                 if (storiesBtn.getAttribute('data-idle-label') == null) {
-                    storiesBtn.setAttribute('data-idle-label', 'Export User Stories');
+                    storiesBtn.setAttribute('data-idle-label', 'User Stories');
                 }
-                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'Export User Stories';
+                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'User Stories';
             }
             return;
         }
@@ -1525,7 +1528,7 @@ const searchOutputResultsPaneMethods = {
         }
         if (storiesBtn) {
             if (storiesBtn.getAttribute('data-idle-label') == null) {
-                storiesBtn.setAttribute('data-idle-label', 'Export User Stories');
+                storiesBtn.setAttribute('data-idle-label', 'User Stories');
             }
             const exporting = Boolean(this._state.userStoryExportRunning);
             storiesBtn.style.display = show || exporting ? '' : 'none';
@@ -1534,7 +1537,7 @@ const searchOutputResultsPaneMethods = {
                 storiesBtn.setAttribute('aria-busy', 'true');
             } else {
                 storiesBtn.removeAttribute('aria-busy');
-                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'Export User Stories';
+                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'User Stories';
             }
         }
     },
@@ -1543,7 +1546,7 @@ const searchOutputResultsPaneMethods = {
         const btn = this._q('#wf-dash-export-user-stories');
         if (!btn) return;
         if (btn.getAttribute('data-idle-label') == null) {
-            btn.setAttribute('data-idle-label', 'Export User Stories');
+            btn.setAttribute('data-idle-label', 'User Stories');
         }
         if (total > 0) {
             btn.textContent = 'Exporting… ' + done + '/' + total;
@@ -1920,8 +1923,8 @@ const searchOutputResultsPaneMethods = {
         if (includeContributorMatch) {
             html += `<option value="${DASH_VERSION_MODE_CONTRIBUTOR}"${selected === DASH_VERSION_MODE_CONTRIBUTOR ? ' selected' : ''}>Contributor match</option>`;
         }
-        html += `<option value="${DASH_VERSION_MODE_V1}"${selected === DASH_VERSION_MODE_V1 ? ' selected' : ''}>All v1s</option>`;
-        html += `<option value="${DASH_VERSION_MODE_FINAL}"${selected === DASH_VERSION_MODE_FINAL ? ' selected' : ''}>All final versions</option>`;
+        html += `<option value="${DASH_VERSION_MODE_V1}"${selected === DASH_VERSION_MODE_V1 ? ' selected' : ''}>v1s</option>`;
+        html += `<option value="${DASH_VERSION_MODE_FINAL}"${selected === DASH_VERSION_MODE_FINAL ? ' selected' : ''}>Final</option>`;
         return html;
     },
 
@@ -3217,11 +3220,12 @@ const searchOutputResultsPaneMethods = {
             : '';
         const blockId = 'session-qa:' + review.id;
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Session QA</span>`
-            + this._copyIconHtml(this._serializeSessionQaPlainText(review))
             + submittedHtml
             + difficultyHtml
             + sessionLink;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel, {
+            copyHtml: this._copyIconHtml(this._serializeSessionQaPlainText(review))
+        });
         const bodyHtml = reviewerHtml + notesHtml;
         return this._actionBlockShellHtml(
             blockId,
@@ -3284,12 +3288,13 @@ const searchOutputResultsPaneMethods = {
         const blockId = 'verifier-output:' + execution.id;
         this._ensureActionBlockCollapseDefault(blockId, true);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
-            + this._copyIconHtml(this._serializeVerifierOutputPlainText(execution))
             + submittedHtml
             + scoreHtml
             + timingHtml
             + sessionLink;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel, {
+            copyHtml: this._copyIconHtml(this._serializeVerifierOutputPlainText(execution))
+        });
         const bodyHtml = stdoutHtml;
         return this._actionBlockShellHtml(
             blockId,
@@ -4415,9 +4420,10 @@ const searchOutputResultsPaneMethods = {
         const colors = this._resolutionBlockColors(kind);
         const statusBadge = this._resolutionStatusBadgeHtml(kind, statusLabel);
         const resLeftHeader = '<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>'
-            + (options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : '')
             + leftHeaderExtra;
-        const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge);
+        const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge, {
+            copyHtml: options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : ''
+        });
         const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
         return this._actionInsetBackdropWrapHtml(
             this._actionBlockShellHtml(
@@ -5505,11 +5511,15 @@ const searchOutputResultsPaneMethods = {
 
     _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
         const forceRight = opts && opts.forceRightSection;
+        const copyHtml = (opts && opts.copyHtml) || '';
         const rightSection = (rightHtml || forceRight)
             ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 0 auto; flex-shrink: 0;">${rightHtml || ''}</div>`
             : '';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
+            + `<div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;">`
             + this._collapseCaretHtml(blockId)
+            + copyHtml
+            + `</div>`
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; flex: 0 1 auto; max-width: 100%;">${leftHtml}</div>`
             + `<div style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
             + rightSection
@@ -7300,12 +7310,13 @@ const searchOutputResultsPaneMethods = {
             this._qaCollapsedReviewerHeaderHtml(qa)
         );
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>`
-            + this._copyIconHtml(this._serializeQaFeedbackPlainText(qa))
             + submittedHtml
             + promptRatingHtml
             + headerHelpfulness
             + headerReviewer;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '');
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '', {
+            copyHtml: this._copyIconHtml(this._serializeQaFeedbackPlainText(qa))
+        });
         const bodyHtml = `${reviewerHtml}`
             + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
             + blocks
@@ -7432,7 +7443,6 @@ const searchOutputResultsPaneMethods = {
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
         const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
-            + this._liveSectionCopyIconHtml('dispute', display.id, itemId)
             + submittedHtml;
         const filerHtml = (display.filerId || display.filerName || display.filerEmail)
             ? this._fieldGroupHtml(
@@ -7449,7 +7459,9 @@ const searchOutputResultsPaneMethods = {
         const disputeRightHtml = (categoryHtml || claimControlHtml || filerHtml)
             ? `${filerHtml}${categoryHtml}${claimControlHtml}`
             : '';
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml, {
+            copyHtml: this._liveSectionCopyIconHtml('dispute', display.id, itemId)
+        });
         const resolutionPanelHtml = !display.resolutionAt
             ? this._disputeResolutionPanelHtml(display, itemId)
             : '';
@@ -7533,9 +7545,10 @@ const searchOutputResultsPaneMethods = {
             : '';
         const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
-            + this._liveSectionCopyIconHtml('flag', display.id, itemId)
             + submittedHtml;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`, {
+            copyHtml: this._liveSectionCopyIconHtml('flag', display.id, itemId)
+        });
         const bodyHtml = `${flaggerHtml}
                 ${issuesHtml}
                 ${reviewerNoteHtml}
@@ -7812,7 +7825,7 @@ const searchOutputResultsPaneMethods = {
         )}</span>`;
         const verifierBtnHtml = this._versionVerifierButtonHtml(itemId, version);
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
-        const leftHeader = `${promptLabel}${this._copyIconHtml(promptCopyText)}${submittedHtml}${verifierBtnHtml}`;
+        const leftHeader = `${promptLabel}${submittedHtml}${verifierBtnHtml}`;
         let rightHeader = '';
         if (inActivePair) {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
@@ -7826,7 +7839,8 @@ const searchOutputResultsPaneMethods = {
         }
         if (!diffMode && versionActionBadge) rightHeader += versionActionBadge;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
-            forceRightSection: !!(rollingOpts && rollingOpts.active)
+            forceRightSection: !!(rollingOpts && rollingOpts.active),
+            copyHtml: this._copyIconHtml(promptCopyText)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
         const notesToQaHtml = diffMode
@@ -7874,12 +7888,14 @@ const searchOutputResultsPaneMethods = {
             : '—';
         const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
         const blockId = 'version:' + itemId + ':quick';
-        const leftHeader = `${this._labelSpan('Prompt')}${this._copyIconHtml(this._serializePromptVersionPlainText(
-            { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
-            { showVersionLabel: false, statusLabel: '' }
-        ))}`;
+        const leftHeader = `${this._labelSpan('Prompt')}`;
         const rightHeader = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt));
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
+            copyHtml: this._copyIconHtml(this._serializePromptVersionPlainText(
+                { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
+                { showVersionLabel: false, statusLabel: '' }
+            ))
+        });
         let promptSectionHtml = this._actionBlockShellHtml(
             blockId,
             itemId,
@@ -8118,7 +8134,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '11.1',
+    _version: '11.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

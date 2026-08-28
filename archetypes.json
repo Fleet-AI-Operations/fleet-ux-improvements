@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.453",
+  "archetypesVersion": "14.454",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.23",
-      "hash": "sha256-faf1f4139a207946d6bd79dc8e5c33f86079adb2456bdf435255280bc7dc60b9",
+      "version": "3.24",
+      "hash": "sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053",
       "log": false
     },
     {
@@ -242,8 +242,8 @@
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "11.1",
-      "hash": "sha256-f37765bca4cbf64749e8ec1072ae7e5feee06ac8eecf3d68248e5abe87bb594e",
+      "version": "11.2",
+      "hash": "sha256-c6e10fe53466ab63d5092711b6bd78f86cf43f388987527f45f61061b36e125d",
       "log": false
     },
     {
