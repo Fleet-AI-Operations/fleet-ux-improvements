@@ -149,6 +149,7 @@ const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 const DASH_VERSION_MODE_CONTRIBUTOR = 'contributor_match';
 const DASH_VERSION_MODE_V1 = 'all_v1';
 const DASH_VERSION_MODE_FINAL = 'all_final';
+const DASH_VERSION_MODE_ALL = 'all_versions';
 
 function dashFilterScopes() {
     const lib = Context.dashboardLib;
@@ -2845,7 +2846,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '6.1',
+    _version: '6.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

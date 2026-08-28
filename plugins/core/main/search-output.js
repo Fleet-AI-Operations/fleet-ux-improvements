@@ -151,6 +151,7 @@ const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 const DASH_VERSION_MODE_CONTRIBUTOR = 'contributor_match';
 const DASH_VERSION_MODE_V1 = 'all_v1';
 const DASH_VERSION_MODE_FINAL = 'all_final';
+const DASH_VERSION_MODE_ALL = 'all_versions';
 
 function dashFilterScopes() {
     const lib = Context.dashboardLib;
@@ -6302,34 +6303,10 @@ function attachSearchOutputListeners(modal, dash) {
                 const taskId = reviewerBadge.getAttribute('data-task-id');
                 const displayNo = parseInt(reviewerBadge.getAttribute('data-display-no'), 10);
                 const ui = dash._getCardUi(taskId);
-                ui.expanded = false;
                 ui.selectedDisplayNo = displayNo;
+                dash._focusCardVersion(itemId, displayNo);
                 dash._patchTaskCard(itemId);
-                return;
-            }
-            const showAllBtn = e.target.closest('[data-wf-dash-card-show-all]');
-            if (showAllBtn && modal.contains(showAllBtn)) {
-                const itemId = showAllBtn.getAttribute('data-item-id');
-                const taskId = showAllBtn.getAttribute('data-task-id');
-                const ui = dash._getCardUi(taskId);
-                ui.expanded = true;
-                const item = dash._findCachedItem(itemId) || dash._findResultItem(itemId);
-                const versionCount = item && item.task && item.task.promptVersions
-                    ? item.task.promptVersions.length
-                    : 0;
-                dash._ensureRollingUiOnExpand(taskId, versionCount);
-                dash._patchTaskCard(itemId);
-                return;
-            }
-            const collapseBtn = e.target.closest('[data-wf-dash-card-collapse]');
-            if (collapseBtn && modal.contains(collapseBtn)) {
-                const itemId = collapseBtn.getAttribute('data-item-id');
-                const taskId = collapseBtn.getAttribute('data-task-id');
-                const displayNo = parseInt(collapseBtn.getAttribute('data-display-no'), 10);
-                const ui = dash._getCardUi(taskId);
-                ui.expanded = false;
-                ui.selectedDisplayNo = Number.isFinite(displayNo) ? displayNo : ui.selectedDisplayNo;
-                dash._patchTaskCard(itemId);
+                Logger.log('search-output: focused version ' + displayNo);
                 return;
             }
             const timelineToggle = e.target.closest('[data-wf-dash-timeline-order]');
@@ -6713,15 +6690,6 @@ function attachSearchOutputListeners(modal, dash) {
                 }
                 return;
             }
-            const sel = e.target;
-            if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
-            const itemId = sel.getAttribute('data-item-id');
-            const taskId = sel.getAttribute('data-task-id');
-            const displayNo = parseInt(sel.value, 10);
-            const ui = dash._getCardUi(taskId);
-            ui.expanded = false;
-            ui.selectedDisplayNo = displayNo;
-            dash._patchTaskCard(itemId);
         });
         modal.addEventListener('input', (e) => {
             const ratingsNameFilter = e.target.closest('[data-wf-dash-ratings-name-filter]');
@@ -6807,7 +6775,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.1',
+    _version: '10.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

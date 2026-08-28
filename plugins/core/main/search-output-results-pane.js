@@ -151,6 +151,7 @@ const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 const DASH_VERSION_MODE_CONTRIBUTOR = 'contributor_match';
 const DASH_VERSION_MODE_V1 = 'all_v1';
 const DASH_VERSION_MODE_FINAL = 'all_final';
+const DASH_VERSION_MODE_ALL = 'all_versions';
 
 function dashFilterScopes() {
     const lib = Context.dashboardLib;
@@ -391,6 +392,7 @@ const searchOutputResultsPaneMethods = {
                                             <option value="contributor_match">Contributor match</option>
                                             <option value="all_v1">v1s</option>
                                             <option value="all_final">Final</option>
+                                            <option value="all_versions">All</option>
                                         </select>
                                     </label>
                                     <div ${el('review-status-wrap')} style="display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;"></div>
@@ -1873,6 +1875,7 @@ const searchOutputResultsPaneMethods = {
         if (this._state.resultsReviewStatus === next) return;
         this._state.resultsReviewStatus = next;
         this._state.resultsPage = 0;
+        this._applyVersionBlockCollapseToCachedItems();
         Logger.log('search-output: review status → ' + next);
         this._syncReviewStatusToggleUi();
         const wsId = typeof this._resolveActiveOutputWsId === 'function'
@@ -1925,6 +1928,7 @@ const searchOutputResultsPaneMethods = {
         }
         html += `<option value="${DASH_VERSION_MODE_V1}"${selected === DASH_VERSION_MODE_V1 ? ' selected' : ''}>v1s</option>`;
         html += `<option value="${DASH_VERSION_MODE_FINAL}"${selected === DASH_VERSION_MODE_FINAL ? ' selected' : ''}>Final</option>`;
+        html += `<option value="${DASH_VERSION_MODE_ALL}"${selected === DASH_VERSION_MODE_ALL ? ' selected' : ''}>All</option>`;
         return html;
     },
 
@@ -2105,6 +2109,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _onResultsKindTabChanged() {
+        this._applyVersionBlockCollapseToCachedItems();
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'tab-reset' });
     },
 
@@ -2253,8 +2258,9 @@ const searchOutputResultsPaneMethods = {
         if (this._state.versionMode === next) return;
         this._state.versionMode = next;
         for (const ui of Object.values(this._state.cardUi || {})) {
-            if (!ui.expanded) ui.selectedDisplayNo = null;
+            ui.selectedDisplayNo = null;
         }
+        this._applyVersionBlockCollapseToCachedItems();
         this._renderResults();
         Logger.log('search-output: version mode → ' + next);
     },
@@ -2313,6 +2319,66 @@ const searchOutputResultsPaneMethods = {
             ? defaultDisplayNo
             : (ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo);
         return { defaultDisplayNo, selectedDisplayNo, ui, reviewKind };
+    },
+
+    _isVersionModeAll() {
+        return this._state.versionMode === DASH_VERSION_MODE_ALL && !this._activeReviewStatusKind();
+    },
+
+    _promptVersionsForItem(item) {
+        const task = item && item.task;
+        if (!task) return [];
+        if (task.promptVersions && task.promptVersions.length) return task.promptVersions;
+        return [{
+            id: '',
+            displayVersionNo: 1,
+            prompt: task.prompt,
+            envKey: task.envKey,
+            createdAt: task.createdAt
+        }];
+    },
+
+    _syncItemVersionBlockCollapse(item, opts) {
+        if (!item || item.hydrated === false || !item.task) return;
+        const versions = this._promptVersionsForItem(item);
+        if (!versions.length) return;
+        const { selectedDisplayNo } = this._resolveCardSelectedDisplayNo(item, versions);
+        const expandAll = this._isVersionModeAll();
+        const force = !!(opts && opts.force);
+        for (const v of versions) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            const collapsed = expandAll ? false : v.displayVersionNo !== selectedDisplayNo;
+            if (force) {
+                if (!this._state.actionBlockUi) this._state.actionBlockUi = {};
+                this._state.actionBlockUi[blockId] = { collapsed: !!collapsed };
+            } else {
+                this._ensureActionBlockCollapseDefault(blockId, collapsed);
+            }
+        }
+    },
+
+    _applyVersionBlockCollapseToCachedItems() {
+        const items = this._state.cachedItems || [];
+        for (const item of items) this._syncItemVersionBlockCollapse(item, { force: true });
+    },
+
+    _focusCardVersion(itemId, displayNo) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item || !item.task) return;
+        const versions = this._promptVersionsForItem(item);
+        const expandAll = this._isVersionModeAll();
+        const no = Number(displayNo);
+        for (const v of versions) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            const ui = this._getActionBlockCollapseUi(blockId);
+            if (expandAll) {
+                if (v.displayVersionNo === no) ui.collapsed = false;
+            } else {
+                ui.collapsed = v.displayVersionNo !== no;
+            }
+        }
     },
 
     _getUserStoryUi(itemId) {
@@ -4510,7 +4576,7 @@ const searchOutputResultsPaneMethods = {
         this._clampCardRollingLeft(rollingUi, versionCount);
         if (versionCount >= 2 && !rollingUi.activationLogged) {
             rollingUi.activationLogged = true;
-            Logger.log('search-output: all versions expanded for task ' + taskId);
+            Logger.log('search-output: rolling version chrome for task ' + taskId);
         }
     },
 
@@ -4901,6 +4967,17 @@ const searchOutputResultsPaneMethods = {
         };
 
         this._scheduleRollingOverlaysFlush();
+    },
+
+    _attachRollingListenersForPageItems(wrap, items) {
+        if (!wrap) return;
+        for (const item of items || []) {
+            if (!item || !item.task || item.hydrated === false) continue;
+            const versionCount = (item.task.promptVersions && item.task.promptVersions.length) || 0;
+            if (versionCount < 2) continue;
+            const cardEl = this._findResultsCardEl(wrap, item.id);
+            if (cardEl) this._attachCardRollingListeners(cardEl, item.id, item.task.id);
+        }
     },
 
     _renderedVersionsForItem(item) {
@@ -5755,9 +5832,8 @@ const searchOutputResultsPaneMethods = {
             }
             const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
             if (item2) {
-                const ui = this._getCardUi(item2.task.id);
                 const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
-                if (ui.expanded && versionCount >= 2) {
+                if (versionCount >= 2) {
                     this._attachCardRollingListeners(newCard, itemId, item2.task.id);
                 } else {
                     this._detachCardRollingListeners(newCard);
@@ -6222,6 +6298,7 @@ const searchOutputResultsPaneMethods = {
             const pageItems = this._getPaginatedViewItems();
             this._clearAllRollingOverlayListeners();
             wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
+            this._attachRollingListenersForPageItems(wrap, pageItems);
             this._syncResultsToolbarDerivedUi();
             this._animateSeededSessionQaPanels(pageItems);
             this._schedulePageHydrate();
@@ -6676,9 +6753,7 @@ const searchOutputResultsPaneMethods = {
             : [{ id: '', displayVersionNo: 1, prompt: task.prompt, envKey: task.envKey, createdAt: task.createdAt }];
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
-        const { selectedDisplayNo, ui } = this._resolveCardSelectedDisplayNo(item, versions);
-        const expanded = ui.expanded;
-        const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
+        const { ui } = this._resolveCardSelectedDisplayNo(item, versions);
         const feedbackByDisplayNo = new Map();
         const disputes = item.disputes || [];
         const attachedDisputeIds = new Set();
@@ -6696,25 +6771,13 @@ const searchOutputResultsPaneMethods = {
         );
         const orphanFlagsByDisplayNo = this._orphanFlagsByDisplayNo(item.flags || [], task.promptVersions || versions);
 
-        let renderedVersions;
-        if (expanded) {
-            renderedVersions = [...versions].sort((a, b) => (
-                ui.timelineNewestFirst
-                    ? b.displayVersionNo - a.displayVersionNo
-                    : a.displayVersionNo - b.displayVersionNo
-            ));
-        } else {
-            const extras = [...new Set(item.extraVisibleVersionNos || [])]
-                .filter((n) => n !== selectedDisplayNo)
-                .sort((a, b) => b - a);
-            renderedVersions = [selectedDisplayNo, ...extras]
-                .map((n) => versionByDisplayNo.get(n))
-                .filter(Boolean);
-        }
+        const renderedVersions = [...versions].sort((a, b) => (
+            ui.timelineNewestFirst
+                ? b.displayVersionNo - a.displayVersionNo
+                : a.displayVersionNo - b.displayVersionNo
+        ));
 
         const headerLines = [];
-        // serialize path keeps reviewKind unused except selection — silence via void
-        void reviewKind;
         const key = String(task.key || '').trim();
         if (key) headerLines.push('`' + key + '`');
         const statusMeta = this._statusDisplayMeta(task.status);
@@ -6889,24 +6952,6 @@ const searchOutputResultsPaneMethods = {
     _promptVersionCountHtml(versionNo, totalVersions) {
         const labelStyle = this._labelStyle();
         return `<span style="${labelStyle}">${dashEscHtml(' ' + versionNo + ' of ' + totalVersions)}</span>`;
-    },
-
-    _collapsedVersionPickerHtml(itemId, taskId, versions, selectedDisplayNo, totalVersions) {
-        const versionOptions = [...versions]
-            .sort((a, b) => a.displayVersionNo - b.displayVersionNo)
-            .map((v) => `<option value="${v.displayVersionNo}"${v.displayVersionNo === selectedDisplayNo ? ' selected' : ''}>v${v.displayVersionNo} of ${totalVersions}</option>`)
-            .join('');
-        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <select data-wf-dash-card-version-select="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>
-            <button type="button" data-wf-dash-card-show-all="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Show All</button>
-        </span>`;
-    },
-
-    _expandedVersionHeaderHtml(itemId, taskId, displayVersionNo, totalVersions) {
-        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            ${this._promptVersionCountHtml(displayVersionNo, totalVersions)}
-            <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${displayVersionNo}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
-        </span>`;
     },
 
     _fieldGroupHtml(label, valueHtml, opts) {
@@ -7671,13 +7716,6 @@ const searchOutputResultsPaneMethods = {
         return fallback;
     },
 
-    _collapsedReviewVersionControlsHtml(itemId, taskId, selectedDisplayNo, totalVersions) {
-        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            ${this._promptVersionCountHtml(selectedDisplayNo, totalVersions)}
-            <button type="button" data-wf-dash-card-show-all="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Show All</button>
-        </span>`;
-    },
-
     _feedbackEntryAt(entry) {
         return String(entry.feedbackAt || (entry.display && entry.display.feedbackAt) || '');
     },
@@ -7825,6 +7863,17 @@ const searchOutputResultsPaneMethods = {
         )}</span>`;
         const verifierBtnHtml = this._versionVerifierButtonHtml(itemId, version);
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
+        const itemForCollapse = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (itemForCollapse) {
+            const { selectedDisplayNo } = this._resolveCardSelectedDisplayNo(
+                itemForCollapse,
+                this._promptVersionsForItem(itemForCollapse)
+            );
+            this._ensureActionBlockCollapseDefault(
+                blockId,
+                this._isVersionModeAll() ? false : version.displayVersionNo !== selectedDisplayNo
+            );
+        }
         const leftHeader = `${promptLabel}${submittedHtml}${verifierBtnHtml}`;
         let rightHeader = '';
         if (inActivePair) {
@@ -7965,7 +8014,6 @@ const searchOutputResultsPaneMethods = {
         const caseSensitive = Boolean(item.highlightCaseSensitive);
         const highlightFuzzy = Boolean(item.highlightFuzzy);
         const highlightRegex = Boolean(item.highlightRegex);
-        const extraVisibleVersionNos = item.extraVisibleVersionNos || [];
 
         let versions = task.promptVersions && task.promptVersions.length
             ? task.promptVersions
@@ -7973,10 +8021,10 @@ const searchOutputResultsPaneMethods = {
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
 
-        const { selectedDisplayNo, ui, reviewKind } = this._resolveCardSelectedDisplayNo(item, versions);
-        const expanded = ui.expanded;
+        const { selectedDisplayNo, ui } = this._resolveCardSelectedDisplayNo(item, versions);
+        this._syncItemVersionBlockCollapse(item);
+        if (hasTimeline && totalVersions >= 2) this._ensureRollingUiOnExpand(task.id, totalVersions);
 
-        const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
         const disputes = item.disputes || [];
         const attachedDisputeIds = new Set();
@@ -7994,40 +8042,31 @@ const searchOutputResultsPaneMethods = {
         );
         const orphanFlagsByDisplayNo = this._orphanFlagsByDisplayNo(item.flags || [], task.promptVersions || versions);
 
-        let renderedVersions;
-        if (expanded) {
-            renderedVersions = [...versions].sort((a, b) => (
-                ui.timelineNewestFirst
-                    ? b.displayVersionNo - a.displayVersionNo
-                    : a.displayVersionNo - b.displayVersionNo
-            ));
-        } else {
-            const extras = [...new Set(extraVisibleVersionNos)]
-                .filter((n) => n !== selectedDisplayNo)
-                .sort((a, b) => b - a);
-            const nos = [selectedDisplayNo, ...extras];
-            renderedVersions = nos.map((n) => versionByDisplayNo.get(n)).filter(Boolean);
-        }
+        const renderedVersions = [...versions].sort((a, b) => (
+            ui.timelineNewestFirst
+                ? b.displayVersionNo - a.displayVersionNo
+                : a.displayVersionNo - b.displayVersionNo
+        ));
 
+        const highlightFocusedReviewer = !this._isVersionModeAll();
         const reviewerBadges = allFeedback.length > 0
             ? this._fieldGroupHtml(
                 'Reviewers',
-                [...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join(''),
+                [...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, highlightFocusedReviewer && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join(''),
                 { labelColumn: true }
             )
             : '';
 
-        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
+        const rollingUi = hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
         const diffMode = rollingUi && rollingUi.showHighlights;
 
         let row3Html = '';
-        if (expanded) {
-            const rollingActive = hasTimeline && totalVersions >= 2;
-            if (rollingActive && rollingUi) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
-            const feedbackBtn = rollingActive && rollingUi
+        if (hasTimeline && totalVersions >= 2) {
+            if (rollingUi) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
+            const feedbackBtn = rollingUi
                 ? this._expandedRollingFeedbackBtnHtml(itemId, task.id, rollingUi)
                 : '';
-            const diffToolbar = rollingActive && rollingUi
+            const diffToolbar = rollingUi
                 ? this._expandedRollingDiffToolbarHtml(rollingUi)
                 : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
@@ -8046,14 +8085,9 @@ const searchOutputResultsPaneMethods = {
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
             const orphanFlagsForVersion = orphanFlagsByDisplayNo.get(version.displayVersionNo) || [];
             const hasSubsequentVersions = hasTimeline && version.displayVersionNo < maxDisplayVersionNo;
-            let versionHeaderControls = '';
-            if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
-                versionHeaderControls = reviewKind
-                    ? this._collapsedReviewVersionControlsHtml(itemId, task.id, selectedDisplayNo, totalVersions)
-                    : this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
-            } else if (hasTimeline && expanded) {
-                versionHeaderControls = this._expandedVersionHeaderHtml(itemId, task.id, version.displayVersionNo, totalVersions);
-            }
+            const versionHeaderControls = hasTimeline
+                ? this._promptVersionCountHtml(version.displayVersionNo, totalVersions)
+                : '';
             const rollingOpts = rollingUi
                 ? { active: true, versionIdx, renderedVersions, rollingUi }
                 : null;
@@ -8072,7 +8106,7 @@ const searchOutputResultsPaneMethods = {
                 </div>`
             : '';
 
-        const versionsInnerHtml = expanded && hasTimeline && totalVersions >= 2
+        const versionsInnerHtml = hasTimeline && totalVersions >= 2
             ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 12px;">${versionSections}</div>`
             : versionSections;
 
@@ -8134,7 +8168,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '11.3',
+    _version: '12.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
