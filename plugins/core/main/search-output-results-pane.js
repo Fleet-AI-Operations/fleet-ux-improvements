@@ -2799,21 +2799,73 @@ const searchOutputResultsPaneMethods = {
         return `<p class="wf-dash-user-story-empty">${dashEscHtml(text)}</p>`;
     },
 
+    _userStoryReady(ui) {
+        return (ui.status === 'loaded' || ui.status === 'error') && this._userStoryHasContent(ui);
+    },
+
+    _userStoryActionBlockId(itemId) {
+        return itemId ? ('user-story:' + itemId) : '';
+    },
+
+    _userStoryTitle(ui) {
+        return this._dashQuotedText(ui && ui.scenarioTitle) || 'User Story';
+    },
+
+    _userStoryBodyPortions(ui, itemId) {
+        return this._userStoryPortions(ui, itemId).filter((p) => p && p.kind !== 'scenario');
+    },
+
     _userStoryPanelBodyHtml(ui, itemId) {
         const html = this._quotedPortionsHtml({
             itemId,
             highlight: this._quotedHighlightForItemId(itemId),
-            portions: this._userStoryPortions(ui, itemId)
+            ancestorBlockIds: [this._userStoryActionBlockId(itemId)],
+            portions: this._userStoryBodyPortions(ui, itemId)
         });
-        if (!html) return this._userStoryEmptyHtml(ui);
-        return '<div class="wf-dash-user-story-block">' + html + '</div>';
+        if (!html) return '';
+        return '<div class="wf-dash-user-story-block" style="margin-top: 0;">' + html + '</div>';
+    },
+
+    _userStoryBlockHtml(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (!this._userStoryReady(ui)) return '';
+        const blockId = this._userStoryActionBlockId(itemId);
+        if (ui.animateOpen) {
+            this._getActionBlockCollapseUi(blockId).collapsed = true;
+        } else {
+            this._ensureActionBlockCollapseDefault(blockId, false);
+        }
+        const highlight = this._quotedHighlightForItemId(itemId);
+        this._expandBlockForHighlight(
+            blockId,
+            [ui.scenarioTitle, ui.humanAnnotatorInstructions, ui.userStory],
+            highlight
+        );
+        const titleHtml = this._dashQuotedHighlightedHtml(
+            this._userStoryTitle(ui),
+            highlight.query,
+            highlight.caseSensitive,
+            highlight.fuzzy,
+            highlight.regex
+        );
+        const headerRow = this._actionBlockHeaderRowHtml(
+            blockId,
+            '<span style="font-weight: 600; color: var(--foreground, #0f172a);">' + titleHtml + '</span>',
+            '',
+            { copyHtml: this._liveSectionCopyIconHtml('user-story', itemId, itemId) }
+        );
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 4px; padding: 0; border: none; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            this._userStoryPanelBodyHtml(ui, itemId),
+            ' data-wf-dash-user-story-block="1"'
+        );
     },
 
     _userStoryBtnLabel(ui) {
         if (ui.status === 'loading') return 'Fetching user story…';
-        if (ui.status === 'loaded' || ui.status === 'error') {
-            return ui.visible ? 'Hide User Story' : 'Show User Story';
-        }
         return 'Fetch User Story';
     },
 
@@ -2904,6 +2956,7 @@ const searchOutputResultsPaneMethods = {
 
     _userStoryControlsHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
+        if (this._userStoryReady(ui)) return '';
         const btnLabel = this._userStoryIsAbsent(ui) ? 'Fetch User Story' : this._userStoryBtnLabel(ui);
         const btnDisabled = ui.status === 'loading';
         return `<div data-wf-dash-user-story-controls="1">`
@@ -2930,13 +2983,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _userStoryPanelHtml(itemId) {
-        const ui = this._getUserStoryUi(itemId);
-        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
-        if (!hasPanel) return '';
-        const panelOpen = ui.visible && !ui.animateOpen;
-        return `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
-            + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui, itemId)}</div>`
-            + '</div>';
+        return this._userStoryBlockHtml(itemId);
     },
 
     _verifierOutputPanelHtml(itemId) {
@@ -3029,11 +3076,17 @@ const searchOutputResultsPaneMethods = {
     },
 
     _animateUserStoryOpen(itemId) {
-        this._animateSupplementalPanelOpen(
-            itemId,
-            '[data-wf-dash-user-story-panel]',
-            () => this._getUserStoryUi(itemId).visible
-        );
+        const blockId = this._userStoryActionBlockId(itemId);
+        if (!blockId) return;
+        this._getActionBlockCollapseUi(blockId).collapsed = true;
+        if (!this._patchActionBlock(blockId)) return;
+        const win = this._pageWindow();
+        win.requestAnimationFrame(() => {
+            win.requestAnimationFrame(() => {
+                this._getActionBlockCollapseUi(blockId).collapsed = false;
+                if (!this._patchActionBlock(blockId)) this._patchTaskCard(itemId);
+            });
+        });
     },
 
     _animateSessionQaOpen(itemId) {
@@ -3073,10 +3126,13 @@ const searchOutputResultsPaneMethods = {
     },
 
     _patchUserStoryVisibility(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (this._userStoryReady(ui)) {
+            return this._patchActionBlock(this._userStoryActionBlockId(itemId));
+        }
         this._ensureUserStoryStyles();
         const section = this._findSupplementalSection(itemId);
         if (!section) return false;
-        const ui = this._getUserStoryUi(itemId);
         const btn = section.querySelector('[data-wf-dash-user-story]');
         if (btn) btn.textContent = this._userStoryBtnLabel(ui);
         this._syncUserStoryPanelOpen(itemId, ui.visible);
@@ -3110,6 +3166,10 @@ const searchOutputResultsPaneMethods = {
         let controls = section.querySelector('[data-wf-dash-user-story-controls]');
         const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls-btns]')
             || section.querySelector('[data-wf-dash-supplemental-controls]');
+        if (this._userStoryReady(ui)) {
+            if (controls) controls.remove();
+            return;
+        }
         if (!controlsParent) return;
         if (!controls) {
             controlsParent.insertAdjacentHTML('afterbegin', this._userStoryControlsHtml(itemId));
@@ -3190,28 +3250,29 @@ const searchOutputResultsPaneMethods = {
 
     _patchUserStoryPanel(section, itemId) {
         const ui = this._getUserStoryUi(itemId);
-        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
-        let panel = section.querySelector('[data-wf-dash-user-story-panel]');
+        const hasPanel = this._userStoryReady(ui);
+        let panel = section.querySelector('[data-wf-dash-user-story-block]');
         if (!hasPanel) {
             if (panel) panel.remove();
             return;
         }
-        const bodyHtml = this._userStoryPanelBodyHtml(ui, itemId);
+        const html = this._userStoryBlockHtml(itemId);
+        if (!html) {
+            if (panel) panel.remove();
+            return;
+        }
         if (!panel) {
             const verifierPanel = section.querySelector('[data-wf-dash-verifier-output-panel]');
             const sessionPanel = section.querySelector('[data-wf-dash-session-qa-panel]');
             const insertBefore = verifierPanel || sessionPanel;
-            const panelMarkup = `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
-                + `<div data-wf-dash-user-story-inner">${bodyHtml}</div>`
-                + '</div>';
-            if (insertBefore) insertBefore.insertAdjacentHTML('beforebegin', panelMarkup);
-            else section.insertAdjacentHTML('beforeend', panelMarkup);
-            panel = section.querySelector('[data-wf-dash-user-story-panel]');
-        } else {
-            const inner = panel.querySelector('[data-wf-dash-user-story-inner]');
-            if (inner) inner.innerHTML = bodyHtml;
+            if (insertBefore) insertBefore.insertAdjacentHTML('beforebegin', html);
+            else section.insertAdjacentHTML('beforeend', html);
+            return;
         }
-        if (panel) this._syncUserStoryPanelOpen(itemId, ui.visible);
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        const next = tmp.firstElementChild;
+        if (next) panel.replaceWith(next);
     },
 
     _patchVerifierOutputPanel(section, itemId) {
@@ -3682,13 +3743,8 @@ const searchOutputResultsPaneMethods = {
         if (!item || !item.task) return;
         const ui = this._getUserStoryUi(id);
 
-        if ((ui.status === 'loaded' || ui.status === 'error') && this._userStoryHasContent(ui)) {
-            ui.visible = !ui.visible;
-            delete ui.animateOpen;
-            Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
-            if (!this._patchUserStoryVisibility(id)) {
-                this._patchTaskCard(id);
-            }
+        if (this._userStoryReady(ui)) {
+            this._toggleActionBlockCollapse(this._userStoryActionBlockId(id));
             return;
         }
         if (ui.status === 'loading') {
@@ -3758,12 +3814,13 @@ const searchOutputResultsPaneMethods = {
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
         if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
-        if (ui.animateOpen && ui.visible) {
+        if (ui.animateOpen && this._userStoryReady(ui)) {
             delete ui.animateOpen;
-            this._animateUserStoryOpen(id);
+            if (this._isActionBlockCollapsed(this._userStoryActionBlockId(id))) {
+                this._animateUserStoryOpen(id);
+            }
         } else {
             delete ui.animateOpen;
-            this._syncUserStoryPanelOpen(id, ui.visible);
         }
     },
 
@@ -6965,6 +7022,9 @@ const searchOutputResultsPaneMethods = {
             const exec = (ui.executions || []).find((e) => String(e.id) === String(entityId));
             return this._serializeVerifierOutputPlainText(exec);
         }
+        if (kind === 'user-story') {
+            return this._serializeUserStoryPlainText(this._getUserStoryUi(itemId), itemId);
+        }
         return '';
     },
 
@@ -7199,23 +7259,10 @@ const searchOutputResultsPaneMethods = {
 
     _serializeUserStoryPlainText(ui, itemId) {
         if (!ui || ui.status !== 'loaded') return '';
-        const lines = ['User Story'];
-        const portions = this._userStoryPortions(ui, itemId);
-        const filled = this._quotedFilledPortions(portions);
-        const hasCarets = filled.length >= 2;
-        const parts = [];
-        for (const p of filled) {
-            if (p.kind === 'scenario') {
-                if (hasCarets && p.blockId && this._isActionBlockCollapsed(p.blockId)) {
-                    parts.push(this._omittedSectionPlainText(p.label));
-                } else {
-                    lines.push('Scenario: ' + this._dashQuotedText(p.text));
-                }
-            } else {
-                parts.push(this._quotedPortionPlainText(p, hasCarets));
-            }
-        }
-        return this._joinPlainSections([lines.join('\n'), ...parts]);
+        const scenario = this._dashQuotedText(ui.scenarioTitle);
+        const head = scenario ? ('User Story: ' + scenario) : 'User Story';
+        const parts = this._quotedPortionsPlainText(this._userStoryBodyPortions(ui, itemId));
+        return this._joinPlainSections([head, ...parts]);
     },
 
     _serializeVersionTaskActionsPlainText(feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags, itemId) {
@@ -7447,9 +7494,13 @@ const searchOutputResultsPaneMethods = {
         }
 
         const userStoryUi = this._getUserStoryUi(iid);
-        if (userStoryUi && userStoryUi.visible) {
-            const us = this._serializeUserStoryPlainText(userStoryUi, iid);
-            if (us) out.push(us);
+        if (this._userStoryReady(userStoryUi)) {
+            const t = this._collapsedSectionOr(
+                this._userStoryActionBlockId(iid),
+                this._userStoryTitle(userStoryUi),
+                this._serializeUserStoryPlainText(userStoryUi, iid)
+            );
+            if (t) out.push(t);
         }
         const sessionUi = this._getSessionQaUi(iid);
         if (sessionUi && sessionUi.visible) {
@@ -8763,7 +8814,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.20',
+    _version: '13.0',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
