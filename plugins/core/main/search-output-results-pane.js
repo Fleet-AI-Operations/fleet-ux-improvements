@@ -3310,7 +3310,7 @@ const searchOutputResultsPaneMethods = {
             + difficultyHtml
             + sessionLink;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel, {
-            copyHtml: this._copyIconHtml(this._serializeSessionQaPlainText(review))
+            copyHtml: this._liveSectionCopyIconHtml('session-qa', review.id, itemId)
         });
         const bodyHtml = reviewerHtml + notesHtml;
         return this._actionBlockShellHtml(
@@ -3379,7 +3379,7 @@ const searchOutputResultsPaneMethods = {
             + timingHtml
             + sessionLink;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel, {
-            copyHtml: this._copyIconHtml(this._serializeVerifierOutputPlainText(execution))
+            copyHtml: this._liveSectionCopyIconHtml('verifier', execution.id, itemId)
         });
         const bodyHtml = stdoutHtml;
         return this._actionBlockShellHtml(
@@ -4531,7 +4531,9 @@ const searchOutputResultsPaneMethods = {
         const resLeftHeader = '<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>'
             + leftHeaderExtra;
         const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge, {
-            copyHtml: options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : ''
+            copyHtml: options.copySection
+                ? this._liveSectionCopyIconHtml(options.copySection, options.copyEntityId, options.itemId)
+                : (options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : '')
         });
         const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
         return this._actionInsetBackdropWrapHtml(
@@ -5612,6 +5614,43 @@ const searchOutputResultsPaneMethods = {
         return '';
     },
 
+    _qaTextBlockId(feedbackId, itemId, index) {
+        const i = String(index);
+        if (feedbackId) return 'qa-text:' + String(feedbackId) + ':' + i;
+        if (itemId) return 'qa-text:fallback:' + String(itemId) + ':' + i;
+        return '';
+    },
+
+    _qaFeedbackBlockTitle(qa) {
+        return (qa && qa.isSystemFeedback) ? 'System Feedback' : 'QA Feedback';
+    },
+
+    _qaFeedbackOmittedLabel(qa) {
+        const title = this._qaFeedbackBlockTitle(qa);
+        const status = this._qaFeedbackStatusPlainText(qa);
+        return status ? (title + ': ' + status) : title;
+    },
+
+    _qaFeedbackTextBlockLabel(qa, block) {
+        const isSystem = Boolean(qa && qa.isSystemFeedback);
+        const isVerifierFailure = Boolean(qa && qa.isVerifierFailure);
+        if (isSystem || isVerifierFailure) return String(block && block.label || '').trim();
+        return dashQaTextBlockLabel(block && block.label, qa && qa.isPositive);
+    },
+
+    _omittedSectionPlainText(label) {
+        const l = String(label || '').trim();
+        if (!l) return '[omitted]';
+        return l + '\n[omitted]';
+    },
+
+    _collapsedSectionOr(blockId, label, expandedText) {
+        if (blockId && this._isActionBlockCollapsed(blockId)) {
+            return this._omittedSectionPlainText(label);
+        }
+        return expandedText == null ? '' : String(expandedText);
+    },
+
     _disputeActionBlockId(display, itemId) {
         if (display && display.id) return 'dispute:' + display.id;
         if (itemId) return 'dispute:unknown:' + itemId;
@@ -6495,6 +6534,61 @@ const searchOutputResultsPaneMethods = {
         return (item.flags || []).find((f) => String(f.id) === id) || null;
     },
 
+    _findItemQaDisplay(itemId, feedbackId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item) return { qa: null, feedbackId: null };
+        const id = String(feedbackId || '').trim();
+        const allFeedback = (item.task && item.task.allFeedback) || [];
+        if (id) {
+            const entry = allFeedback.find((e) => String(e.id) === id);
+            if (entry && entry.display) return { qa: entry.display, feedbackId: entry.id };
+        }
+        if (item.qaFeedback) {
+            return { qa: item.qaFeedback, feedbackId: item.selectedFeedbackId || null };
+        }
+        return { qa: null, feedbackId: null };
+    },
+
+    _promptVersionStatusLabel(item, version, versions) {
+        const list = versions || [];
+        const hasTimeline = list.length > 1;
+        const maxDisplayVersionNo = hasTimeline
+            ? Math.max(...list.map((v) => v.displayVersionNo))
+            : 0;
+        const allFeedback = (item && item.task && item.task.allFeedback) || [];
+        const feedbackEntries = allFeedback.filter((e) => e.linkedDisplayVersionNo === version.displayVersionNo);
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
+        let statusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
+        if (!statusLabel && hasTimeline && version.displayVersionNo < maxDisplayVersionNo) {
+            statusLabel = 'QA Edited';
+        }
+        if (statusLabel === 'Returned') statusLabel = 'Returned for Revision';
+        if (statusLabel === 'Escalated') statusLabel = 'Escalated for Fleet Review';
+        if (statusLabel === 'Flagged') statusLabel = 'Flagged as Bugged';
+        return statusLabel;
+    },
+
+    _resolvePromptVersionCopyText(itemId, entityId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item || !item.task) return '';
+        if (String(entityId) === 'quick' || item.hydrated === false) {
+            return this._serializePromptVersionPlainText(
+                { displayVersionNo: 1, prompt: item.task.prompt, createdAt: item.task.createdAt },
+                { showVersionLabel: false, statusLabel: '', itemId, displayVersionNo: 'quick' }
+            );
+        }
+        const versions = this._promptVersionsForItem(item);
+        const no = Number(entityId);
+        const version = versions.find((v) => v.displayVersionNo === no);
+        if (!version) return '';
+        return this._serializePromptVersionPlainText(version, {
+            showVersionLabel: versions.length > 1,
+            statusLabel: this._promptVersionStatusLabel(item, version, versions),
+            itemId
+        });
+    },
+
     _resolveLiveSectionCopyText(section, entityId, itemId) {
         const kind = String(section || '').trim();
         if (kind === 'dispute') {
@@ -6502,6 +6596,32 @@ const searchOutputResultsPaneMethods = {
         }
         if (kind === 'flag') {
             return this._serializeFlagPlainText(this._findItemFlagDisplay(itemId, entityId), { itemId });
+        }
+        if (kind === 'dispute-res') {
+            return this._serializeDisputeResolutionPlainText(this._findItemDisputeDisplay(itemId, entityId));
+        }
+        if (kind === 'flag-res') {
+            return this._serializeFlagResolutionPlainText(this._findItemFlagDisplay(itemId, entityId));
+        }
+        if (kind === 'qa') {
+            const found = this._findItemQaDisplay(itemId, entityId);
+            return this._serializeQaFeedbackPlainText(found.qa, {
+                feedbackId: found.feedbackId,
+                itemId
+            });
+        }
+        if (kind === 'prompt') {
+            return this._resolvePromptVersionCopyText(itemId, entityId);
+        }
+        if (kind === 'session-qa') {
+            const ui = this._getSessionQaUi(itemId);
+            const review = (ui.reviews || []).find((r) => String(r.id) === String(entityId));
+            return this._serializeSessionQaPlainText(review);
+        }
+        if (kind === 'verifier') {
+            const ui = this._getVerifierOutputUi(itemId);
+            const exec = (ui.executions || []).find((e) => String(e.id) === String(entityId));
+            return this._serializeVerifierOutputPlainText(exec);
         }
         return '';
     },
@@ -6551,11 +6671,13 @@ const searchOutputResultsPaneMethods = {
             .join('\n\n');
     },
 
-    _serializeQaFeedbackPlainText(qa) {
+    _serializeQaFeedbackPlainText(qa, options) {
         if (!qa) return '';
+        const opts = options || {};
+        const itemId = opts.itemId;
+        const feedbackId = opts.feedbackId;
         const isSystem = Boolean(qa.isSystemFeedback);
-        const isVerifierFailure = Boolean(qa.isVerifierFailure);
-        const title = isSystem ? 'System Feedback' : 'QA Feedback';
+        const title = this._qaFeedbackBlockTitle(qa);
         const status = this._qaFeedbackStatusPlainText(qa);
         const lines = [];
         lines.push(status ? (title + ': ' + status) : title);
@@ -6571,14 +6693,17 @@ const searchOutputResultsPaneMethods = {
         const issues = (qa.rejectionBadges || []).map((l) => String(l || '').trim()).filter(Boolean);
         if (issues.length) lines.push('Issues: ' + issues.join(', '));
         const blocks = [];
-        for (const b of qa.textBlocks || []) {
-            const label = (isSystem || isVerifierFailure)
-                ? String(b.label || '').trim()
-                : dashQaTextBlockLabel(b.label, qa.isPositive);
+        (qa.textBlocks || []).forEach((b, i) => {
+            const label = this._qaFeedbackTextBlockLabel(qa, b);
             const body = this._dashQuotedText(b.text);
-            if (!label && !body) continue;
+            if (!label && !body) return;
+            const fieldId = this._qaTextBlockId(feedbackId, itemId, i);
+            if (fieldId && this._isActionBlockCollapsed(fieldId)) {
+                blocks.push(this._omittedSectionPlainText(label || 'Text'));
+                return;
+            }
             blocks.push((label ? label + ':\n' : '') + (body || '—'));
-        }
+        });
         return this._joinPlainSections([lines.join('\n'), ...blocks]);
     },
 
@@ -6610,12 +6735,13 @@ const searchOutputResultsPaneMethods = {
         const reason = this._dashQuotedText(display.reason);
         if (reason) parts.push('Reason:\n' + reason);
         const resBlockId = this._disputeResolutionBlockId(display, itemId);
-        const skipResolution = opts.respectCollapse !== false
-            && resBlockId
-            && this._isActionBlockCollapsed(resBlockId);
-        if (!skipResolution) {
-            const resolution = this._serializeDisputeResolutionPlainText(display);
-            if (resolution) parts.push(resolution);
+        if (display.resolutionAt) {
+            if (opts.respectCollapse !== false && resBlockId && this._isActionBlockCollapsed(resBlockId)) {
+                parts.push(this._omittedSectionPlainText('Resolution'));
+            } else {
+                const resolution = this._serializeDisputeResolutionPlainText(display);
+                if (resolution) parts.push(resolution);
+            }
         }
         return this._joinPlainSections(parts);
     },
@@ -6652,17 +6778,18 @@ const searchOutputResultsPaneMethods = {
         if (note) parts.push('Reviewer Note:\n' + note);
         else parts.push('Reviewer Note:\nNONE PROVIDED');
         const resBlockId = this._flagResolutionBlockId(display, itemId);
-        const skipResolution = opts.respectCollapse !== false
-            && resBlockId
-            && this._isActionBlockCollapsed(resBlockId);
-        if (!skipResolution) {
-            const resolution = this._serializeFlagResolutionPlainText(display);
-            if (resolution) parts.push(resolution);
+        if (display.resolutionAt) {
+            if (opts.respectCollapse !== false && resBlockId && this._isActionBlockCollapsed(resBlockId)) {
+                parts.push(this._omittedSectionPlainText('Resolution'));
+            } else {
+                const resolution = this._serializeFlagResolutionPlainText(display);
+                if (resolution) parts.push(resolution);
+            }
         }
         return this._joinPlainSections(parts);
     },
 
-    _serializePromptVersionPlainText(version, options) {
+    _promptVersionHeadLine(version, options) {
         const opts = options || {};
         const partsHead = [];
         if (opts.showVersionLabel !== false && version && version.displayVersionNo != null) {
@@ -6674,15 +6801,27 @@ const searchOutputResultsPaneMethods = {
         if (status) partsHead.push(status);
         let head = 'Prompt';
         if (partsHead.length) head += ': ' + partsHead.join(', ');
+        return head;
+    },
+
+    _serializePromptVersionPlainText(version, options) {
+        const opts = options || {};
+        const itemId = opts.itemId;
+        const displayNo = opts.displayVersionNo != null
+            ? opts.displayVersionNo
+            : (version && version.displayVersionNo);
+        const head = this._promptVersionHeadLine(version, opts);
         const body = this._dashQuotedText(version && version.prompt) || '—';
         const sections = [head + '\n' + body];
         const notes = this._dashQuotedText(version && version.resubmissionNotes);
         if (notes && !opts.omitNotesToQa) {
-            sections.push('Notes to QA:\n' + notes);
+            const notesId = this._notesToQaActionBlockId(itemId, displayNo);
+            sections.push(this._collapsedSectionOr(notesId, 'Notes to QA', 'Notes to QA:\n' + notes));
         }
         const scratchpad = this._dashQuotedText(version && version.scratchpad);
         if (scratchpad) {
-            sections.push('Scratchpad:\n' + scratchpad);
+            const scratchId = this._scratchpadActionBlockId(itemId, displayNo);
+            sections.push(this._collapsedSectionOr(scratchId, 'Scratchpad', 'Scratchpad:\n' + scratchpad));
         }
         return this._joinPlainSections(sections);
     },
@@ -6744,45 +6883,58 @@ const searchOutputResultsPaneMethods = {
         for (const entry of orderedFeedback) {
             if (entry.display) {
                 const qaBlockId = this._qaActionBlockId(entry.id, iid);
-                if (!qaBlockId || !this._isActionBlockCollapsed(qaBlockId)) {
-                    blocks.push({
-                        sortAt: this._feedbackEntryAt(entry),
-                        text: this._serializeQaFeedbackPlainText(entry.display)
-                    });
-                }
+                blocks.push({
+                    sortAt: this._feedbackEntryAt(entry),
+                    text: this._collapsedSectionOr(
+                        qaBlockId,
+                        this._qaFeedbackOmittedLabel(entry.display),
+                        this._serializeQaFeedbackPlainText(entry.display, { feedbackId: entry.id, itemId: iid })
+                    )
+                });
             }
             for (const dispute of entry.disputes || []) {
                 const disputeBlockId = this._disputeActionBlockId(dispute, iid);
-                if (disputeBlockId && this._isActionBlockCollapsed(disputeBlockId)) continue;
                 blocks.push({
                     sortAt: String(dispute.submittedAt || ''),
-                    text: this._serializeDisputePlainText(dispute, { itemId: iid })
+                    text: this._collapsedSectionOr(
+                        disputeBlockId,
+                        'Dispute',
+                        this._serializeDisputePlainText(dispute, { itemId: iid })
+                    )
                 });
             }
         }
         if (fallbackFeedback) {
             const qaBlockId = this._qaActionBlockId(null, iid);
-            if (!qaBlockId || !this._isActionBlockCollapsed(qaBlockId)) {
-                blocks.push({
-                    sortAt: String(fallbackFeedback.feedbackAt || ''),
-                    text: this._serializeQaFeedbackPlainText(fallbackFeedback)
-                });
-            }
+            blocks.push({
+                sortAt: String(fallbackFeedback.feedbackAt || ''),
+                text: this._collapsedSectionOr(
+                    qaBlockId,
+                    this._qaFeedbackOmittedLabel(fallbackFeedback),
+                    this._serializeQaFeedbackPlainText(fallbackFeedback, { feedbackId: null, itemId: iid })
+                )
+            });
         }
         for (const dispute of orphanDisputes || []) {
             const disputeBlockId = this._disputeActionBlockId(dispute, iid);
-            if (disputeBlockId && this._isActionBlockCollapsed(disputeBlockId)) continue;
             blocks.push({
                 sortAt: String(dispute.submittedAt || ''),
-                text: this._serializeDisputePlainText(dispute, { itemId: iid })
+                text: this._collapsedSectionOr(
+                    disputeBlockId,
+                    'Dispute',
+                    this._serializeDisputePlainText(dispute, { itemId: iid })
+                )
             });
         }
         for (const flag of orphanFlags || []) {
             const flagBlockId = this._flagActionBlockId(flag, iid);
-            if (flagBlockId && this._isActionBlockCollapsed(flagBlockId)) continue;
             blocks.push({
                 sortAt: String(flag.createdAt || ''),
-                text: this._serializeFlagPlainText(flag, { itemId: iid })
+                text: this._collapsedSectionOr(
+                    flagBlockId,
+                    'Senior Review Flag',
+                    this._serializeFlagPlainText(flag, { itemId: iid })
+                )
             });
         }
         return this._sortTaskActionBlocksByDate(blocks)
@@ -6821,25 +6973,39 @@ const searchOutputResultsPaneMethods = {
             if (metaLines.length) sections.push(metaLines.join('\n'));
             const quickParts = [sections.join('\n')];
             const quickVersionId = this._versionActionBlockId(iid, 'quick');
-            if (task.prompt && (!quickVersionId || !this._isActionBlockCollapsed(quickVersionId))) {
-                quickParts.push(this._serializePromptVersionPlainText(
+            if (task.prompt) {
+                const promptText = this._serializePromptVersionPlainText(
                     { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
-                    { showVersionLabel: false, statusLabel: '' }
-                ));
+                    { showVersionLabel: false, statusLabel: '', itemId: iid, displayVersionNo: 'quick' }
+                );
+                quickParts.push(this._collapsedSectionOr(quickVersionId, 'Prompt', promptText));
             }
-            const qaBlockId = this._qaActionBlockId(item.selectedFeedbackId || null, iid);
-            if (item.qaFeedback && (!qaBlockId || !this._isActionBlockCollapsed(qaBlockId))) {
-                quickParts.push(this._serializeQaFeedbackPlainText(item.qaFeedback));
+            if (item.qaFeedback) {
+                const qaBlockId = this._qaActionBlockId(item.selectedFeedbackId || null, iid);
+                quickParts.push(this._collapsedSectionOr(
+                    qaBlockId,
+                    this._qaFeedbackOmittedLabel(item.qaFeedback),
+                    this._serializeQaFeedbackPlainText(item.qaFeedback, {
+                        feedbackId: item.selectedFeedbackId || null,
+                        itemId: iid
+                    })
+                ));
             }
             for (const d of item.disputes || []) {
                 const disputeBlockId = this._disputeActionBlockId(d, iid);
-                if (disputeBlockId && this._isActionBlockCollapsed(disputeBlockId)) continue;
-                quickParts.push(this._serializeDisputePlainText(d, { itemId: iid }));
+                quickParts.push(this._collapsedSectionOr(
+                    disputeBlockId,
+                    'Dispute',
+                    this._serializeDisputePlainText(d, { itemId: iid })
+                ));
             }
             for (const f of item.flags || []) {
                 const flagBlockId = this._flagActionBlockId(f, iid);
-                if (flagBlockId && this._isActionBlockCollapsed(flagBlockId)) continue;
-                quickParts.push(this._serializeFlagPlainText(f, { itemId: iid }));
+                quickParts.push(this._collapsedSectionOr(
+                    flagBlockId,
+                    'Senior Review Flag',
+                    this._serializeFlagPlainText(f, { itemId: iid })
+                ));
             }
             return quickParts.filter(Boolean).join('\n\n---\n\n');
         }
@@ -6912,28 +7078,25 @@ const searchOutputResultsPaneMethods = {
         }
 
         const out = [this._joinPlainSections(headerParts)];
-        const maxDisplayVersionNo = hasTimeline
-            ? Math.max(...versions.map((v) => v.displayVersionNo))
-            : 0;
         for (const version of renderedVersions) {
             const versionBlockId = this._versionActionBlockId(iid, version.displayVersionNo);
-            if (versionBlockId && this._isActionBlockCollapsed(versionBlockId)) continue;
+            const statusLabel = this._promptVersionStatusLabel(item, version, versions);
+            const head = this._promptVersionHeadLine(version, {
+                showVersionLabel: hasTimeline,
+                statusLabel
+            });
+            if (versionBlockId && this._isActionBlockCollapsed(versionBlockId)) {
+                out.push(this._omittedSectionPlainText(head));
+                continue;
+            }
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
             const orphanFlagsForVersion = orphanFlagsByDisplayNo.get(version.displayVersionNo) || [];
-            const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
-            const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
-            let statusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
-            if (!statusLabel && hasTimeline && version.displayVersionNo < maxDisplayVersionNo) {
-                statusLabel = 'QA Edited';
-            }
-            if (statusLabel === 'Returned') statusLabel = 'Returned for Revision';
-            if (statusLabel === 'Escalated') statusLabel = 'Escalated for Fleet Review';
-            if (statusLabel === 'Flagged') statusLabel = 'Flagged as Bugged';
             out.push(this._serializePromptVersionPlainText(version, {
                 showVersionLabel: hasTimeline,
-                statusLabel
+                statusLabel,
+                itemId: iid
             }));
             const actionTexts = this._serializeVersionTaskActionsPlainText(
                 feedbackEntries, fallback, orphanDisputes, orphanFlagsForVersion, iid
@@ -6950,8 +7113,11 @@ const searchOutputResultsPaneMethods = {
         if (sessionUi && sessionUi.visible) {
             for (const review of sessionUi.reviews || []) {
                 const sessionBlockId = review && review.id ? ('session-qa:' + review.id) : '';
-                if (sessionBlockId && this._isActionBlockCollapsed(sessionBlockId)) continue;
-                const t = this._serializeSessionQaPlainText(review);
+                const t = this._collapsedSectionOr(
+                    sessionBlockId,
+                    'Session QA',
+                    this._serializeSessionQaPlainText(review)
+                );
                 if (t) out.push(t);
             }
         }
@@ -6959,8 +7125,11 @@ const searchOutputResultsPaneMethods = {
         if (verifierUi && verifierUi.visible) {
             for (const exec of verifierUi.executions || []) {
                 const verifierBlockId = exec && exec.id ? ('verifier-output:' + exec.id) : '';
-                if (verifierBlockId && this._isActionBlockCollapsed(verifierBlockId)) continue;
-                const t = this._serializeVerifierOutputPlainText(exec);
+                const t = this._collapsedSectionOr(
+                    verifierBlockId,
+                    'Verifier Output',
+                    this._serializeVerifierOutputPlainText(exec)
+                );
                 if (t) out.push(t);
             }
         }
@@ -7413,17 +7582,29 @@ const searchOutputResultsPaneMethods = {
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
-        const blocks = (qa.textBlocks || []).map((b) => {
-            const blockLabel = (isSystem || isVerifierFailure) ? b.label : dashQaTextBlockLabel(b.label, positive);
+        const blocks = (qa.textBlocks || []).map((b, i) => {
+            const blockLabel = this._qaFeedbackTextBlockLabel(qa, b);
             const quotedText = this._dashQuotedText(b.text);
             const body = quotedText
                 ? this._dashQuotedHighlightedHtml(b.text, hq, cs, fz, rx)
                 : '—';
-            return `
-            <div>
-                ${this._labelSpan(blockLabel)}
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>
-            </div>`;
+            const fieldId = this._qaTextBlockId(feedbackId, itemId, i);
+            if (!fieldId) {
+                return '<div>'
+                    + this._labelSpan(blockLabel)
+                    + `<p style="${this._quotedFieldBodyLayoutStyle()} color: var(--foreground, #0f172a);">${body}</p>`
+                    + '</div>';
+            }
+            this._ensureActionBlockCollapseDefault(fieldId, false);
+            const fieldHeader = this._actionBlockHeaderRowHtml(fieldId, this._labelSpan(blockLabel), '');
+            const fieldBody = `<p style="${this._quotedFieldBodyLayoutStyle()} color: var(--foreground, #0f172a);">${body}</p>`;
+            return this._actionBlockShellHtml(
+                fieldId,
+                itemId,
+                'display: flex; flex-direction: column; gap: 0;',
+                fieldHeader,
+                fieldBody
+            );
         }).join('');
         const submittedHtml = qa.feedbackAt
             ? dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds)
@@ -7458,7 +7639,7 @@ const searchOutputResultsPaneMethods = {
             + headerHelpfulness
             + headerReviewer;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '', {
-            copyHtml: this._copyIconHtml(this._serializeQaFeedbackPlainText(qa))
+            copyHtml: this._liveSectionCopyIconHtml('qa', feedbackId || '', itemId)
         });
         const bodyHtml = `${reviewerHtml}`
             + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
@@ -7579,7 +7760,8 @@ const searchOutputResultsPaneMethods = {
                 noteLabel: 'Reason',
                 noteBodyHtml: resolutionBody,
                 copyText: this._dashQuotedText(display.resolutionText),
-                blockCopyText: this._serializeDisputeResolutionPlainText(display)
+                copySection: 'dispute-res',
+                copyEntityId: display.id
             });
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
@@ -7681,7 +7863,8 @@ const searchOutputResultsPaneMethods = {
                 noteLabel: 'Resolution Note',
                 noteBodyHtml: resolutionBody,
                 copyText: this._dashQuotedText(display.resolutionNote),
-                blockCopyText: this._serializeFlagResolutionPlainText(display)
+                copySection: 'flag-res',
+                copyEntityId: display.id
             });
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
@@ -7949,16 +8132,6 @@ const searchOutputResultsPaneMethods = {
         if (!versionActionBadge && hasSubsequentVersions) {
             versionActionBadge = this._qaEditedBadgeHtml();
         }
-        let promptStatusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
-        if (!promptStatusLabel && hasSubsequentVersions) promptStatusLabel = 'QA Edited';
-        if (promptStatusLabel === 'Returned') promptStatusLabel = 'Returned for Revision';
-        if (promptStatusLabel === 'Escalated') promptStatusLabel = 'Escalated for Fleet Review';
-        if (promptStatusLabel === 'Flagged') promptStatusLabel = 'Flagged as Bugged';
-        const promptCopyText = this._serializePromptVersionPlainText(version, {
-            showVersionLabel: showVersionLabel || Boolean(versionHeaderControls),
-            statusLabel: promptStatusLabel,
-            omitNotesToQa: false
-        });
         const taskActionsHtml = this._versionTaskActionsHtml(
             feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags,
             hq, cs, fz, rx, itemId
@@ -8000,7 +8173,7 @@ const searchOutputResultsPaneMethods = {
         if (!diffMode && versionActionBadge) rightHeader += versionActionBadge;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
             forceRightSection: !!(rollingOpts && rollingOpts.active),
-            copyHtml: this._copyIconHtml(promptCopyText)
+            copyHtml: this._liveSectionCopyIconHtml('prompt', String(version.displayVersionNo), itemId)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
         const notesToQaHtml = diffMode
@@ -8052,10 +8225,7 @@ const searchOutputResultsPaneMethods = {
         const leftHeader = `${this._labelSpan('Prompt')}`;
         const rightHeader = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt));
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
-            copyHtml: this._copyIconHtml(this._serializePromptVersionPlainText(
-                { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
-                { showVersionLabel: false, statusLabel: '' }
-            ))
+            copyHtml: this._liveSectionCopyIconHtml('prompt', 'quick', itemId)
         });
         let promptSectionHtml = this._actionBlockShellHtml(
             blockId,
@@ -8280,7 +8450,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.8',
+    _version: '12.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
