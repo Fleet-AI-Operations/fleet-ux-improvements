@@ -7672,7 +7672,7 @@ const searchOutputResultsPaneMethods = {
             ? dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds)
             : '';
         const promptRatingHtml = (!isSystem && qa.qualityRating)
-            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Rating')}<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span></div>`
+            ? `<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span>`
             : '';
         const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
@@ -8514,7 +8514,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.10',
+    _version: '12.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
