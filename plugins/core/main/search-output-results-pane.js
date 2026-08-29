@@ -2345,7 +2345,8 @@ const searchOutputResultsPaneMethods = {
         const versions = this._promptVersionsForItem(item);
         if (!versions.length) return;
         const { selectedDisplayNo } = this._resolveCardSelectedDisplayNo(item, versions);
-        const expandAll = this._isVersionModeAll();
+        const rollingUi = this._getRollingUi(item.task.id);
+        const expandAll = this._isVersionModeAll() || !!(rollingUi && rollingUi.showHighlights);
         const force = !!(opts && opts.force);
         for (const v of versions) {
             const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
@@ -2365,11 +2366,60 @@ const searchOutputResultsPaneMethods = {
         for (const item of items) this._syncItemVersionBlockCollapse(item, { force: true });
     },
 
+    _snapshotItemVersionCollapse(item) {
+        if (!item || !item.task) return;
+        const rollingUi = this._getRollingUi(item.task.id);
+        if (rollingUi.versionCollapseSnapshot) return;
+        const snap = {};
+        for (const v of this._promptVersionsForItem(item)) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            snap[blockId] = this._isActionBlockCollapsed(blockId);
+        }
+        rollingUi.versionCollapseSnapshot = snap;
+    },
+
+    _expandAllItemVersionBlocks(item) {
+        if (!item || !item.task) return;
+        for (const v of this._promptVersionsForItem(item)) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            this._getActionBlockCollapseUi(blockId).collapsed = false;
+        }
+    },
+
+    _restoreItemVersionCollapse(item) {
+        if (!item || !item.task) return;
+        const rollingUi = this._getRollingUi(item.task.id);
+        const snap = rollingUi.versionCollapseSnapshot;
+        if (snap && typeof snap === 'object') {
+            for (const blockId of Object.keys(snap)) {
+                this._getActionBlockCollapseUi(blockId).collapsed = !!snap[blockId];
+            }
+        }
+        rollingUi.versionCollapseSnapshot = null;
+    },
+
+    _setDiffViewerHighlights(item, on) {
+        if (!item || !item.task) return;
+        const rollingUi = this._getRollingUi(item.task.id);
+        const next = !!on;
+        if (next === !!rollingUi.showHighlights) return;
+        if (next) {
+            this._snapshotItemVersionCollapse(item);
+            this._expandAllItemVersionBlocks(item);
+        } else {
+            this._restoreItemVersionCollapse(item);
+        }
+        rollingUi.showHighlights = next;
+    },
+
     _focusCardVersion(itemId, displayNo) {
         const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
         if (!item || !item.task) return;
         const versions = this._promptVersionsForItem(item);
-        const expandAll = this._isVersionModeAll();
+        const rollingUi = this._getRollingUi(item.task.id);
+        const expandAll = this._isVersionModeAll() || !!(rollingUi && rollingUi.showHighlights);
         const no = Number(displayNo);
         let patchedAll = true;
         for (const v of versions) {
@@ -4840,6 +4890,7 @@ const searchOutputResultsPaneMethods = {
                     showHighlights: false,
                     highlightModality: 'differences',
                     feedbackBulkCollapsed: false,
+                    versionCollapseSnapshot: null,
                     activationLogged: false,
                     initialized: false
                 }
@@ -4851,6 +4902,7 @@ const searchOutputResultsPaneMethods = {
                 showHighlights: false,
                 highlightModality: 'differences',
                 feedbackBulkCollapsed: false,
+                versionCollapseSnapshot: null,
                 activationLogged: false,
                 initialized: false
             };
@@ -8399,7 +8451,9 @@ const searchOutputResultsPaneMethods = {
             );
             this._ensureActionBlockCollapseDefault(
                 blockId,
-                this._isVersionModeAll() ? false : version.displayVersionNo !== selectedDisplayNo
+                (this._isVersionModeAll() || (itemForCollapse.task && this._getRollingUi(itemForCollapse.task.id).showHighlights))
+                    ? false
+                    : version.displayVersionNo !== selectedDisplayNo
             );
         }
         this._expandBlockForHighlight(
@@ -8709,7 +8763,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.19',
+    _version: '12.20',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

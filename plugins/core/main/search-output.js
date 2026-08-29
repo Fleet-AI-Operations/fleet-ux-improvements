@@ -6361,7 +6361,7 @@ function attachSearchOutputListeners(modal, dash) {
                 const item = itemId ? (dash._findCachedItem(itemId) || dash._findResultItem(itemId)) : null;
                 if (item) {
                     const val = rollingHighlightsBtn.getAttribute('data-wf-dash-rolling-highlights');
-                    dash._getRollingUi(item.task.id).showHighlights = val === 'on';
+                    dash._setDiffViewerHighlights(item, val === 'on');
                     dash._patchTaskCard(itemId);
                 }
                 return;
@@ -6784,7 +6784,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.5',
+    _version: '10.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
