@@ -151,6 +151,7 @@ const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 const DASH_VERSION_MODE_CONTRIBUTOR = 'contributor_match';
 const DASH_VERSION_MODE_V1 = 'all_v1';
 const DASH_VERSION_MODE_FINAL = 'all_final';
+const DASH_VERSION_MODE_ALL = 'all_versions';
 
 function dashFilterScopes() {
     const lib = Context.dashboardLib;
@@ -286,27 +287,82 @@ function dashFormatCreatedAt(iso) {
 function dashProblemCreationDurationText(seconds) {
     const total = Math.round(Number(seconds));
     if (!Number.isFinite(total) || total < 0) return '';
-    const h = Math.floor(total / 3600);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
     const m = Math.floor((total % 3600) / 60);
     const parts = [];
-    if (h > 0) parts.push(h + (h === 1 ? ' hr' : ' hrs'));
-    if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
-    if (parts.length === 0 && total > 0) return '< 1 min';
+    if (d > 0) parts.push(d + 'd');
+    if (h > 0) parts.push(h + 'h');
+    if (m > 0) parts.push(m + 'm');
+    if (parts.length === 0 && total > 0) return '< 1m';
     return parts.join(', ');
 }
 
-function dashTimestampWithDurationParts(iso, durationSeconds) {
+/** Hours / minutes / seconds, highest two units only (e.g. 1h, 5m or 5m, 12s). */
+function dashCompactHmsDurationText(seconds) {
+    const raw = Number(seconds);
+    if (!Number.isFinite(raw) || raw < 0) return '';
+    const total = Math.round(raw);
+    if (total === 0) return raw > 0 ? '< 1s' : '';
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) {
+        const parts = [h + 'h'];
+        if (m > 0) parts.push(m + 'm');
+        return parts.join(', ');
+    }
+    if (m > 0) {
+        const parts = [m + 'm'];
+        if (s > 0) parts.push(s + 's');
+        return parts.join(', ');
+    }
+    return s + 's';
+}
+
+function dashVerifierDurationSeconds(executionTimeMs) {
+    if (executionTimeMs == null) return null;
+    const ms = Number(executionTimeMs);
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    return ms / 1000;
+}
+
+function dashVerifierTimestampHtml(iso, executionTimeMs) {
+    const durationSec = dashVerifierDurationSeconds(executionTimeMs);
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(
+        iso,
+        durationSec,
+        dashCompactHmsDurationText
+    );
+    const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+    const regular = 'color: var(--foreground, #0f172a);';
+    const parts = [];
+    if (iso) parts.push(`<span style="${regular}">${dashEscHtml(formatted)}</span>`);
+    if (durationText) {
+        parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
+    }
+    if (iso && ago) {
+        parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
+    }
+    if (!parts.length) return '';
+    return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">${parts.join('')}</span>`;
+}
+
+function dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn) {
     const formatted = dashFormatCreatedAt(iso);
     const ago = dashLib().relativeAgo(iso, { style: 'compact' });
     const durationSec = durationSeconds != null ? Number(durationSeconds) : NaN;
+    const formatDuration = typeof durationTextFn === 'function'
+        ? durationTextFn
+        : dashProblemCreationDurationText;
     const durationText = Number.isFinite(durationSec) && durationSec >= 0
-        ? dashProblemCreationDurationText(durationSec)
+        ? formatDuration(durationSec)
         : '';
     return { formatted, ago, durationText };
 }
 
-function dashTimestampWithDurationHtml(iso, durationSeconds) {
-    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+function dashTimestampWithDurationHtml(iso, durationSeconds, durationTextFn) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn);
     const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
     const regular = 'color: var(--foreground, #0f172a);';
     const parts = [`<span style="${regular}">${dashEscHtml(formatted)}</span>`];
@@ -319,8 +375,8 @@ function dashTimestampWithDurationHtml(iso, durationSeconds) {
     return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">${parts.join('')}</span>`;
 }
 
-function dashLabeledTimestampWithDurationPlainText(label, iso, durationSeconds) {
-    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+function dashLabeledTimestampWithDurationPlainText(label, iso, durationSeconds, durationTextFn) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn);
     let text = String(label || '').trim();
     if (text) text += ' ';
     text += formatted;
@@ -355,6 +411,9 @@ const searchOutputResultsPaneMethods = {
         const devBtnAttr = (Context.uiLib && typeof Context.uiLib.devBtnAttr === 'function')
             ? Context.uiLib.devBtnAttr()
             : 'data-fleet-dev="1"';
+        const clipboardIcon = (Context.uiLib && typeof Context.uiLib.clipboardIconSvg === 'function')
+            ? Context.uiLib.clipboardIconSvg()
+            : '';
         return `
                 <div style="flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; ${box}" data-wf-dash-output-ws="${dashEscHtml(wsId)}">
                     <div style="${this._resultsHeaderBarStyle()}">
@@ -368,13 +427,13 @@ const searchOutputResultsPaneMethods = {
                                 <div ${el('results-hydrate-banner')} style="display: none; flex-shrink: 0;"></div>
                                 <div ${el('results-prefetch-banner')} style="display: none; flex-shrink: 0;"></div>
                                 <button type="button" ${el('bulk-hydrate')} class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Hydrate results</button>
-                                <button type="button" ${el('diff-included')} title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff Included Results</button>
+                                <button type="button" ${el('diff-included')} title="Add included results to Diff Viewer in view order (up to stash limit)" class="${this._dashBtnClass('secondary', 'nav')}" style="display: none; flex-shrink: 0;">Diff</button>
                                 <button type="button" ${el('drop-included')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Included Results</button>
                                 <button type="button" ${el('drop-excluded')} title="May be helpful for performance" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Drop Excluded Results</button>
-                                <button type="button" ${el('export-tasks-json')} ${devBtnAttr} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export JSON</button>
-                                <button type="button" ${el('export-user-stories')} ${devBtnAttr} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">Export User Stories</button>
-                                <button type="button" ${el('results-retrieve-clipboard')} title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;${options.hideRetrieveClipboard ? ' display: none;' : ''}">Retrieve Clipboard</button>
-                                <button type="button" ${el('clear-results')} class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear Results</button>
+                                <button type="button" ${el('export-tasks-json')} ${devBtnAttr} title="Export filtered task cards as JSON" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">JSON</button>
+                                <button type="button" ${el('export-user-stories')} ${devBtnAttr} title="Export unique user stories for filtered results" class="${this._dashBtnClass('basic', 'nav')}" style="display: none; flex-shrink: 0;">User Stories</button>
+                                <button type="button" ${el('results-retrieve-clipboard')} title="Read task IDs from the clipboard and retrieve" class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0; gap: 4px;${options.hideRetrieveClipboard ? ' display: none;' : ''}">Fetch ${clipboardIcon}</button>
+                                <button type="button" ${el('clear-results')} class="${this._dashBtnClass('basic', 'nav')}" style="flex-shrink: 0;">Clear</button>
                                 <div data-wf-dash-results-header-actions style="display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;"></div>
                                 </div>
                             </div>
@@ -384,10 +443,11 @@ const searchOutputResultsPaneMethods = {
                                 <div ${el('results-pager')} style="${this._resultsPagerStyle()}">
                                     <label ${el('version-mode-wrap')} style="${label} display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;">
                                         <span>Version</span>
-                                        <select ${el('version-mode')} style="${input} width: auto; min-width: 8.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
+                                        <select ${el('version-mode')} style="${input} width: auto; min-width: 4.5rem; max-width: none; padding: 4px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;">
                                             <option value="contributor_match">Contributor match</option>
-                                            <option value="all_v1">All v1s</option>
-                                            <option value="all_final">All final versions</option>
+                                            <option value="all_v1">v1s</option>
+                                            <option value="all_final">Final</option>
+                                            <option value="all_versions">All</option>
                                         </select>
                                     </label>
                                     <div ${el('review-status-wrap')} style="display: none; align-items: center; gap: 6px; margin: 0; flex-shrink: 0; white-space: nowrap;"></div>
@@ -1507,9 +1567,9 @@ const searchOutputResultsPaneMethods = {
                 storiesBtn.disabled = true;
                 storiesBtn.removeAttribute('aria-busy');
                 if (storiesBtn.getAttribute('data-idle-label') == null) {
-                    storiesBtn.setAttribute('data-idle-label', 'Export User Stories');
+                    storiesBtn.setAttribute('data-idle-label', 'User Stories');
                 }
-                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'Export User Stories';
+                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'User Stories';
             }
             return;
         }
@@ -1525,7 +1585,7 @@ const searchOutputResultsPaneMethods = {
         }
         if (storiesBtn) {
             if (storiesBtn.getAttribute('data-idle-label') == null) {
-                storiesBtn.setAttribute('data-idle-label', 'Export User Stories');
+                storiesBtn.setAttribute('data-idle-label', 'User Stories');
             }
             const exporting = Boolean(this._state.userStoryExportRunning);
             storiesBtn.style.display = show || exporting ? '' : 'none';
@@ -1534,7 +1594,7 @@ const searchOutputResultsPaneMethods = {
                 storiesBtn.setAttribute('aria-busy', 'true');
             } else {
                 storiesBtn.removeAttribute('aria-busy');
-                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'Export User Stories';
+                storiesBtn.textContent = storiesBtn.getAttribute('data-idle-label') || 'User Stories';
             }
         }
     },
@@ -1543,7 +1603,7 @@ const searchOutputResultsPaneMethods = {
         const btn = this._q('#wf-dash-export-user-stories');
         if (!btn) return;
         if (btn.getAttribute('data-idle-label') == null) {
-            btn.setAttribute('data-idle-label', 'Export User Stories');
+            btn.setAttribute('data-idle-label', 'User Stories');
         }
         if (total > 0) {
             btn.textContent = 'Exporting… ' + done + '/' + total;
@@ -1870,6 +1930,7 @@ const searchOutputResultsPaneMethods = {
         if (this._state.resultsReviewStatus === next) return;
         this._state.resultsReviewStatus = next;
         this._state.resultsPage = 0;
+        this._applyVersionBlockCollapseToCachedItems();
         Logger.log('search-output: review status → ' + next);
         this._syncReviewStatusToggleUi();
         const wsId = typeof this._resolveActiveOutputWsId === 'function'
@@ -1920,8 +1981,9 @@ const searchOutputResultsPaneMethods = {
         if (includeContributorMatch) {
             html += `<option value="${DASH_VERSION_MODE_CONTRIBUTOR}"${selected === DASH_VERSION_MODE_CONTRIBUTOR ? ' selected' : ''}>Contributor match</option>`;
         }
-        html += `<option value="${DASH_VERSION_MODE_V1}"${selected === DASH_VERSION_MODE_V1 ? ' selected' : ''}>All v1s</option>`;
-        html += `<option value="${DASH_VERSION_MODE_FINAL}"${selected === DASH_VERSION_MODE_FINAL ? ' selected' : ''}>All final versions</option>`;
+        html += `<option value="${DASH_VERSION_MODE_V1}"${selected === DASH_VERSION_MODE_V1 ? ' selected' : ''}>v1s</option>`;
+        html += `<option value="${DASH_VERSION_MODE_FINAL}"${selected === DASH_VERSION_MODE_FINAL ? ' selected' : ''}>Final</option>`;
+        html += `<option value="${DASH_VERSION_MODE_ALL}"${selected === DASH_VERSION_MODE_ALL ? ' selected' : ''}>All</option>`;
         return html;
     },
 
@@ -2102,6 +2164,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _onResultsKindTabChanged() {
+        this._applyVersionBlockCollapseToCachedItems();
         this._refreshResultsView({ resetPage: true, reindexFilters: true, filterSource: 'tab-reset' });
     },
 
@@ -2250,8 +2313,9 @@ const searchOutputResultsPaneMethods = {
         if (this._state.versionMode === next) return;
         this._state.versionMode = next;
         for (const ui of Object.values(this._state.cardUi || {})) {
-            if (!ui.expanded) ui.selectedDisplayNo = null;
+            ui.selectedDisplayNo = null;
         }
+        this._applyVersionBlockCollapseToCachedItems();
         this._renderResults();
         Logger.log('search-output: version mode → ' + next);
     },
@@ -2310,6 +2374,136 @@ const searchOutputResultsPaneMethods = {
             ? defaultDisplayNo
             : (ui.selectedDisplayNo != null ? ui.selectedDisplayNo : defaultDisplayNo);
         return { defaultDisplayNo, selectedDisplayNo, ui, reviewKind };
+    },
+
+    _isVersionModeAll() {
+        return this._state.versionMode === DASH_VERSION_MODE_ALL && !this._activeReviewStatusKind();
+    },
+
+    _promptVersionsForItem(item) {
+        const task = item && item.task;
+        if (!task) return [];
+        if (task.promptVersions && task.promptVersions.length) return task.promptVersions;
+        return [{
+            id: '',
+            displayVersionNo: 1,
+            prompt: task.prompt,
+            envKey: task.envKey,
+            createdAt: task.createdAt
+        }];
+    },
+
+    _syncItemVersionBlockCollapse(item, opts) {
+        if (!item || item.hydrated === false || !item.task) return;
+        const versions = this._promptVersionsForItem(item);
+        if (!versions.length) return;
+        const { selectedDisplayNo } = this._resolveCardSelectedDisplayNo(item, versions);
+        const rollingUi = this._getRollingUi(item.task.id);
+        const expandAll = this._isVersionModeAll() || !!(rollingUi && rollingUi.showHighlights);
+        const force = !!(opts && opts.force);
+        for (const v of versions) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            const collapsed = expandAll ? false : v.displayVersionNo !== selectedDisplayNo;
+            if (force) {
+                if (!this._state.actionBlockUi) this._state.actionBlockUi = {};
+                this._state.actionBlockUi[blockId] = { collapsed: !!collapsed };
+            } else {
+                this._ensureActionBlockCollapseDefault(blockId, collapsed);
+            }
+        }
+    },
+
+    _applyVersionBlockCollapseToCachedItems() {
+        const items = this._state.cachedItems || [];
+        for (const item of items) this._syncItemVersionBlockCollapse(item, { force: true });
+    },
+
+    _snapshotItemVersionCollapse(item) {
+        if (!item || !item.task) return;
+        const rollingUi = this._getRollingUi(item.task.id);
+        if (rollingUi.versionCollapseSnapshot) return;
+        const snap = {};
+        for (const v of this._promptVersionsForItem(item)) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            snap[blockId] = this._isActionBlockCollapsed(blockId);
+        }
+        rollingUi.versionCollapseSnapshot = snap;
+    },
+
+    _expandAllItemVersionBlocks(item) {
+        if (!item || !item.task) return;
+        for (const v of this._promptVersionsForItem(item)) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            this._getActionBlockCollapseUi(blockId).collapsed = false;
+        }
+    },
+
+    _restoreItemVersionCollapse(item) {
+        if (!item || !item.task) return;
+        const rollingUi = this._getRollingUi(item.task.id);
+        const snap = rollingUi.versionCollapseSnapshot;
+        if (snap && typeof snap === 'object') {
+            for (const blockId of Object.keys(snap)) {
+                this._getActionBlockCollapseUi(blockId).collapsed = !!snap[blockId];
+            }
+        }
+        rollingUi.versionCollapseSnapshot = null;
+    },
+
+    _setDiffViewerHighlights(item, on) {
+        if (!item || !item.task) return;
+        const rollingUi = this._getRollingUi(item.task.id);
+        const next = !!on;
+        if (next === !!rollingUi.showHighlights) return;
+        if (next) {
+            this._snapshotItemVersionCollapse(item);
+            this._expandAllItemVersionBlocks(item);
+        } else {
+            this._restoreItemVersionCollapse(item);
+        }
+        rollingUi.showHighlights = next;
+    },
+
+    _focusCardVersion(itemId, displayNo) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item || !item.task) return;
+        const versions = this._promptVersionsForItem(item);
+        const rollingUi = this._getRollingUi(item.task.id);
+        const expandAll = this._isVersionModeAll() || !!(rollingUi && rollingUi.showHighlights);
+        const no = Number(displayNo);
+        let patchedAll = true;
+        for (const v of versions) {
+            const blockId = this._versionActionBlockId(item.id, v.displayVersionNo);
+            if (!blockId) continue;
+            const ui = this._getActionBlockCollapseUi(blockId);
+            if (expandAll) {
+                if (v.displayVersionNo === no) ui.collapsed = false;
+            } else {
+                ui.collapsed = v.displayVersionNo !== no;
+            }
+            if (!this._patchActionBlock(blockId)) patchedAll = false;
+        }
+        if (!patchedAll) this._patchTaskCard(itemId);
+        else this._syncReviewerBadgeHighlight(itemId, displayNo);
+    },
+
+    _syncReviewerBadgeHighlight(itemId, displayNo) {
+        const wrap = this._q('#wf-dash-results');
+        const card = wrap && this._findResultsCardEl(wrap, itemId);
+        if (!card) return;
+        const highlight = !this._isVersionModeAll();
+        const c = typeof this._dashThemeColors === 'function' ? this._dashThemeColors() : null;
+        const idle = '1px solid ' + (c ? c.border : 'var(--border, #e2e8f0)');
+        const active = '1px solid var(--brand, var(--primary, #2563eb))';
+        for (const badge of card.querySelectorAll('[data-wf-dash-reviewer-badge]')) {
+            const no = parseInt(badge.getAttribute('data-display-no'), 10);
+            const on = highlight && Number.isFinite(no) && no === Number(displayNo);
+            badge.style.border = on ? active : idle;
+            badge.style.background = 'transparent';
+        }
     },
 
     _getUserStoryUi(itemId) {
@@ -2658,38 +2852,86 @@ const searchOutputResultsPaneMethods = {
         return `<p class="wf-dash-user-story-empty">${dashEscHtml(text)}</p>`;
     },
 
-    _userStoryPanelBodyHtml(ui) {
-        const fields = [
-            { key: 'scenarioTitle', label: 'Scenario Title' },
-            { key: 'humanAnnotatorInstructions', label: 'Annotator Instructions' },
-            { key: 'userStory', label: 'User Story' }
-        ];
-        const parts = [];
-        for (const { key, label } of fields) {
-            const text = this._dashQuotedText(ui[key]);
-            if (!text) continue;
-            parts.push(this._quotedFieldBlockHtml(label, dashEscHtml(text), text, {
-                shellClass: 'wf-dash-user-story-field',
-                headerClass: 'wf-dash-user-story-field-header',
-                bodyClass: 'wf-dash-user-story-field-body'
-            }));
+    _userStoryReady(ui) {
+        return (ui.status === 'loaded' || ui.status === 'error') && this._userStoryHasContent(ui);
+    },
+
+    _userStoryActionBlockId(itemId) {
+        return itemId ? ('user-story:' + itemId) : '';
+    },
+
+    _userStoryTitle(ui) {
+        return this._dashQuotedText(ui && ui.scenarioTitle) || 'User Story';
+    },
+
+    _userStoryBodyPortions(ui, itemId) {
+        return this._userStoryPortions(ui, itemId).filter((p) => p && p.kind !== 'scenario');
+    },
+
+    _userStoryPanelBodyHtml(ui, itemId) {
+        const html = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightForItemId(itemId),
+            ancestorBlockIds: [this._userStoryActionBlockId(itemId)],
+            portions: this._userStoryBodyPortions(ui, itemId)
+        });
+        if (!html) return '';
+        return '<div class="wf-dash-user-story-block" style="margin-top: 0;">' + html + '</div>';
+    },
+
+    _userStoryBlockHtml(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (!this._userStoryReady(ui)) return '';
+        const blockId = this._userStoryActionBlockId(itemId);
+        if (ui.animateOpen) {
+            this._getActionBlockCollapseUi(blockId).collapsed = true;
+        } else {
+            this._ensureActionBlockCollapseDefault(blockId, false);
         }
-        if (parts.length === 0) {
-            return this._userStoryEmptyHtml(ui);
-        }
-        return '<div class="wf-dash-user-story-block">' + parts.join('') + '</div>';
+        const highlight = this._quotedHighlightForItemId(itemId);
+        this._expandBlockForHighlight(
+            blockId,
+            [ui.scenarioTitle, ui.humanAnnotatorInstructions, ui.userStory],
+            highlight
+        );
+        const titleHtml = this._dashQuotedHighlightedHtml(
+            this._userStoryTitle(ui),
+            highlight.query,
+            highlight.caseSensitive,
+            highlight.fuzzy,
+            highlight.regex
+        );
+        const headerRow = this._actionBlockHeaderRowHtml(
+            blockId,
+            '<span style="font-weight: 600; color: var(--foreground, #0f172a);">' + titleHtml + '</span>',
+            '',
+            { copyHtml: this._liveSectionCopyIconHtml('user-story', itemId, itemId) }
+        );
+        return this._actionBlockShellHtml(
+            blockId,
+            itemId,
+            'margin-top: 4px; padding: 0; border: none; display: flex; flex-direction: column; gap: 8px;',
+            headerRow,
+            this._userStoryPanelBodyHtml(ui, itemId),
+            ' data-wf-dash-user-story-block="1"'
+        );
     },
 
     _userStoryBtnLabel(ui) {
         if (ui.status === 'loading') return 'Fetching user story…';
-        if (ui.status === 'loaded' || ui.status === 'error') {
-            return ui.visible ? 'Hide User Story' : 'Show User Story';
-        }
         return 'Fetch User Story';
     },
 
     _sessionQaHasReviews(ui) {
         return Array.isArray(ui.reviews) && ui.reviews.length > 0;
+    },
+
+    _sessionQaIsAbsent(ui) {
+        return ui.status === 'loaded' && !this._sessionQaHasReviews(ui);
+    },
+
+    _sessionQaBtnDisabled(ui) {
+        return ui.status === 'loading' || this._sessionQaIsAbsent(ui);
     },
 
     _sessionQaBtnLabel(ui) {
@@ -2702,6 +2944,14 @@ const searchOutputResultsPaneMethods = {
 
     _verifierOutputHasExecutions(ui) {
         return Array.isArray(ui.executions) && ui.executions.length > 0;
+    },
+
+    _verifierOutputIsAbsent(ui) {
+        return ui.status === 'loaded' && !this._verifierOutputHasExecutions(ui);
+    },
+
+    _verifierOutputBtnDisabled(ui) {
+        return ui.status === 'loading' || this._verifierOutputIsAbsent(ui);
     },
 
     _verifierOutputBtnLabel(ui) {
@@ -2775,6 +3025,7 @@ const searchOutputResultsPaneMethods = {
 
     _userStoryControlsHtml(itemId) {
         const ui = this._getUserStoryUi(itemId);
+        if (this._userStoryReady(ui)) return '';
         const btnLabel = this._userStoryIsAbsent(ui) ? 'Fetch User Story' : this._userStoryBtnLabel(ui);
         const btnDisabled = ui.status === 'loading';
         return `<div data-wf-dash-user-story-controls="1">`
@@ -2785,29 +3036,25 @@ const searchOutputResultsPaneMethods = {
     _sessionQaControlsHtml(itemId) {
         const ui = this._getSessionQaUi(itemId);
         const btnLabel = this._sessionQaBtnLabel(ui);
-        const btnDisabled = ui.status === 'loading';
+        const btnDisabled = this._sessionQaBtnDisabled(ui);
+        const busy = ui.status === 'loading';
         return `<div data-wf-dash-session-qa-controls="1">`
-            + `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
+            + `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled' : ''}${busy ? ' aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
             + `</div>`;
     },
 
     _verifierOutputControlsHtml(itemId) {
         const ui = this._getVerifierOutputUi(itemId);
         const btnLabel = this._verifierOutputBtnLabel(ui);
-        const btnDisabled = ui.status === 'loading';
+        const btnDisabled = this._verifierOutputBtnDisabled(ui);
+        const busy = ui.status === 'loading';
         return `<div data-wf-dash-verifier-output-controls="1">`
-            + `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
+            + `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled' : ''}${busy ? ' aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
             + `</div>`;
     },
 
     _userStoryPanelHtml(itemId) {
-        const ui = this._getUserStoryUi(itemId);
-        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
-        if (!hasPanel) return '';
-        const panelOpen = ui.visible && !ui.animateOpen;
-        return `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
-            + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui)}</div>`
-            + '</div>';
+        return this._userStoryBlockHtml(itemId);
     },
 
     _verifierOutputPanelHtml(itemId) {
@@ -2900,11 +3147,17 @@ const searchOutputResultsPaneMethods = {
     },
 
     _animateUserStoryOpen(itemId) {
-        this._animateSupplementalPanelOpen(
-            itemId,
-            '[data-wf-dash-user-story-panel]',
-            () => this._getUserStoryUi(itemId).visible
-        );
+        const blockId = this._userStoryActionBlockId(itemId);
+        if (!blockId) return;
+        this._getActionBlockCollapseUi(blockId).collapsed = true;
+        if (!this._patchActionBlock(blockId)) return;
+        const win = this._pageWindow();
+        win.requestAnimationFrame(() => {
+            win.requestAnimationFrame(() => {
+                this._getActionBlockCollapseUi(blockId).collapsed = false;
+                if (!this._patchActionBlock(blockId)) this._patchTaskCard(itemId);
+            });
+        });
     },
 
     _animateSessionQaOpen(itemId) {
@@ -2944,10 +3197,13 @@ const searchOutputResultsPaneMethods = {
     },
 
     _patchUserStoryVisibility(itemId) {
+        const ui = this._getUserStoryUi(itemId);
+        if (this._userStoryReady(ui)) {
+            return this._patchActionBlock(this._userStoryActionBlockId(itemId));
+        }
         this._ensureUserStoryStyles();
         const section = this._findSupplementalSection(itemId);
         if (!section) return false;
-        const ui = this._getUserStoryUi(itemId);
         const btn = section.querySelector('[data-wf-dash-user-story]');
         if (btn) btn.textContent = this._userStoryBtnLabel(ui);
         this._syncUserStoryPanelOpen(itemId, ui.visible);
@@ -2981,6 +3237,10 @@ const searchOutputResultsPaneMethods = {
         let controls = section.querySelector('[data-wf-dash-user-story-controls]');
         const controlsParent = section.querySelector('[data-wf-dash-supplemental-controls-btns]')
             || section.querySelector('[data-wf-dash-supplemental-controls]');
+        if (this._userStoryReady(ui)) {
+            if (controls) controls.remove();
+            return;
+        }
         if (!controlsParent) return;
         if (!controls) {
             controlsParent.insertAdjacentHTML('afterbegin', this._userStoryControlsHtml(itemId));
@@ -3023,13 +3283,9 @@ const searchOutputResultsPaneMethods = {
         }
         if (!btn) return;
         btn.textContent = this._sessionQaBtnLabel(ui);
-        if (ui.status === 'loading') {
-            btn.disabled = true;
-            btn.setAttribute('aria-busy', 'true');
-        } else {
-            btn.disabled = false;
-            btn.removeAttribute('aria-busy');
-        }
+        btn.disabled = this._sessionQaBtnDisabled(ui);
+        if (ui.status === 'loading') btn.setAttribute('aria-busy', 'true');
+        else btn.removeAttribute('aria-busy');
     },
 
     _patchVerifierOutputControls(section, itemId) {
@@ -3050,39 +3306,36 @@ const searchOutputResultsPaneMethods = {
         }
         if (!btn) return;
         btn.textContent = this._verifierOutputBtnLabel(ui);
-        if (ui.status === 'loading') {
-            btn.disabled = true;
-            btn.setAttribute('aria-busy', 'true');
-        } else {
-            btn.disabled = false;
-            btn.removeAttribute('aria-busy');
-        }
+        btn.disabled = this._verifierOutputBtnDisabled(ui);
+        if (ui.status === 'loading') btn.setAttribute('aria-busy', 'true');
+        else btn.removeAttribute('aria-busy');
     },
 
     _patchUserStoryPanel(section, itemId) {
         const ui = this._getUserStoryUi(itemId);
-        const hasPanel = this._userStoryHasContent(ui) && (ui.status === 'loaded' || ui.status === 'error');
-        let panel = section.querySelector('[data-wf-dash-user-story-panel]');
+        const hasPanel = this._userStoryReady(ui);
+        let panel = section.querySelector('[data-wf-dash-user-story-block]');
         if (!hasPanel) {
             if (panel) panel.remove();
             return;
         }
-        const bodyHtml = this._userStoryPanelBodyHtml(ui);
+        const html = this._userStoryBlockHtml(itemId);
+        if (!html) {
+            if (panel) panel.remove();
+            return;
+        }
         if (!panel) {
             const verifierPanel = section.querySelector('[data-wf-dash-verifier-output-panel]');
             const sessionPanel = section.querySelector('[data-wf-dash-session-qa-panel]');
             const insertBefore = verifierPanel || sessionPanel;
-            const panelMarkup = `<div data-wf-dash-user-story-panel data-open="0" aria-hidden="true">`
-                + `<div data-wf-dash-user-story-inner">${bodyHtml}</div>`
-                + '</div>';
-            if (insertBefore) insertBefore.insertAdjacentHTML('beforebegin', panelMarkup);
-            else section.insertAdjacentHTML('beforeend', panelMarkup);
-            panel = section.querySelector('[data-wf-dash-user-story-panel]');
-        } else {
-            const inner = panel.querySelector('[data-wf-dash-user-story-inner]');
-            if (inner) inner.innerHTML = bodyHtml;
+            if (insertBefore) insertBefore.insertAdjacentHTML('beforebegin', html);
+            else section.insertAdjacentHTML('beforeend', html);
+            return;
         }
-        if (panel) this._syncUserStoryPanelOpen(itemId, ui.visible);
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        const next = tmp.firstElementChild;
+        if (next) panel.replaceWith(next);
     },
 
     _patchVerifierOutputPanel(section, itemId) {
@@ -3190,7 +3443,6 @@ const searchOutputResultsPaneMethods = {
     _sessionQaReviewBlockHtml(review, itemId) {
         if (!review || !review.id) return '';
         const meta = this._sessionQaVerdictMeta(review.verdict);
-        const border = meta.blockStyle.border;
         const bg = meta.blockStyle.background;
         const statusLabel = `<span style="${meta.badgeStyle}">${dashEscHtml(meta.label)}</span>`;
         const submittedHtml = review.createdAt
@@ -3208,25 +3460,30 @@ const searchOutputResultsPaneMethods = {
         const sessionLink = sessionUrl
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Session')}${this._extLinkHtml(sessionUrl, 'Open QA session in Fleet')}</div>`
             : '';
-        const notesText = this._dashQuotedText(review.notes);
-        const notesHtml = notesText
-            ? `<div>
-                ${this._labelSpan('Notes')}
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(notesText)}</p>
-            </div>`
-            : '';
         const blockId = 'session-qa:' + review.id;
+        this._ensureActionBlockCollapseDefault(blockId, true);
+        const notesHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightForItemId(itemId),
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: review.id ? ('session-qa-notes:' + review.id) : '',
+                label: 'Notes',
+                text: review.notes
+            }]
+        });
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Session QA</span>`
-            + this._copyIconHtml(this._serializeSessionQaPlainText(review))
             + submittedHtml
             + difficultyHtml
             + sessionLink;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel, {
+            copyHtml: this._liveSectionCopyIconHtml('session-qa', review.id, itemId)
+        });
         const bodyHtml = reviewerHtml + notesHtml;
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 12px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -3255,46 +3512,46 @@ const searchOutputResultsPaneMethods = {
         const blockStyle = passed ? this._qaAcceptedBlockStyle() : this._qaReturnedBlockStyle();
         const badgeStyle = passed ? this._qaAcceptedBadgeStyle() : this._qaReturnedBadgeStyle();
         const statusLabel = `<span style="${badgeStyle}">${passed ? 'Pass' : 'Fail'}</span>`;
-        const submittedHtml = execution.createdAt
-            ? dashTimestampWithDurationHtml(execution.createdAt, null)
-            : '';
+        const submittedHtml = dashVerifierTimestampHtml(execution.createdAt, execution.executionTimeMs);
         const scoreText = execution.score != null && execution.score !== ''
             ? String(execution.score)
             : '';
         const scoreHtml = scoreText
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Score')}<span>${dashEscHtml(scoreText)}</span></div>`
             : '';
-        const timingText = execution.executionTimeMs != null && Number.isFinite(Number(execution.executionTimeMs))
-            ? String(Math.round(Number(execution.executionTimeMs))) + ' ms'
-            : '';
-        const timingHtml = timingText
-            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Time')}<span>${dashEscHtml(timingText)}</span></div>`
-            : '';
         const sessionUrl = dashFleetQaSessionUrl(execution.sessionId);
         const sessionLink = sessionUrl
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Session')}${this._extLinkHtml(sessionUrl, 'Open session in Fleet')}</div>`
             : '';
-        const formatted = this._formatVerifierStdoutText(execution.stdout);
-        const stdoutHtml = formatted
-            ? `<div>
-                ${this._labelSpan('Stdout')}
-                <pre style="margin: 4px 0 0 0; padding: 8px 10px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.45; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</pre>
-            </div>`
-            : '';
         const blockId = 'verifier-output:' + execution.id;
         this._ensureActionBlockCollapseDefault(blockId, true);
+        const stdoutHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightForItemId(itemId),
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: execution.id ? ('verifier-stdout:' + execution.id) : '',
+                label: 'Stdout',
+                text: this._formatVerifierStdoutText(execution.stdout),
+                bodyTag: 'pre',
+                bodyStyle: this._quotedFieldBodyLayoutStyle()
+                    + ' padding: 8px 0 2px 0; line-height: 1.45; font-size: 11px;'
+                    + ' font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;'
+                    + ' color: var(--foreground, #0f172a);'
+            }]
+        });
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
-            + this._copyIconHtml(this._serializeVerifierOutputPlainText(execution))
             + submittedHtml
             + scoreHtml
-            + timingHtml
             + sessionLink;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel, {
+            copyHtml: this._liveSectionCopyIconHtml('verifier', execution.id, itemId)
+        });
         const bodyHtml = stdoutHtml;
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 12px; padding: 10px 12px; border: ' + blockStyle.border + '; border-radius: 8px; background: ' + blockStyle.background + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 12px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + blockStyle.background + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -3540,13 +3797,8 @@ const searchOutputResultsPaneMethods = {
         if (!item || !item.task) return;
         const ui = this._getUserStoryUi(id);
 
-        if ((ui.status === 'loaded' || ui.status === 'error') && this._userStoryHasContent(ui)) {
-            ui.visible = !ui.visible;
-            delete ui.animateOpen;
-            Logger.log('dashboard: user story ' + (ui.visible ? 'shown' : 'hidden') + ' — ' + id);
-            if (!this._patchUserStoryVisibility(id)) {
-                this._patchTaskCard(id);
-            }
+        if (this._userStoryReady(ui)) {
+            this._toggleActionBlockCollapse(this._userStoryActionBlockId(id));
             return;
         }
         if (ui.status === 'loading') {
@@ -3616,12 +3868,13 @@ const searchOutputResultsPaneMethods = {
             Logger.warn('dashboard: user story fetch failed — ' + id, err);
         }
         if (!this._patchUserStorySection(id)) this._patchTaskCard(id);
-        if (ui.animateOpen && ui.visible) {
+        if (ui.animateOpen && this._userStoryReady(ui)) {
             delete ui.animateOpen;
-            this._animateUserStoryOpen(id);
+            if (this._isActionBlockCollapsed(this._userStoryActionBlockId(id))) {
+                this._animateUserStoryOpen(id);
+            }
         } else {
             delete ui.animateOpen;
-            this._syncUserStoryPanelOpen(id, ui.visible);
         }
     },
 
@@ -3641,6 +3894,10 @@ const searchOutputResultsPaneMethods = {
             }
             return;
         }
+        if (this._sessionQaIsAbsent(ui)) {
+            this._logDashApiSkip('session-qa-fetch', 'already empty', id);
+            return;
+        }
         if (ui.status === 'loading') {
             this._logDashApiSkip('session-qa-fetch', 'already loading', id);
             return;
@@ -3648,7 +3905,7 @@ const searchOutputResultsPaneMethods = {
 
         const taskId = String(item.task.id || '').trim();
         if (!taskId) {
-            ui.status = 'error';
+            ui.status = 'loaded';
             ui.reviews = [];
             ui.message = 'No sessions found for this task.';
             ui.visible = false;
@@ -3716,6 +3973,10 @@ const searchOutputResultsPaneMethods = {
             }
             return;
         }
+        if (this._verifierOutputIsAbsent(ui)) {
+            this._logDashApiSkip('verifier-output-fetch', 'already empty', id);
+            return;
+        }
         if (ui.status === 'loading') {
             this._logDashApiSkip('verifier-output-fetch', 'already loading', id);
             return;
@@ -3723,7 +3984,7 @@ const searchOutputResultsPaneMethods = {
 
         const taskId = String(item.task.id || '').trim();
         if (!taskId) {
-            ui.status = 'error';
+            ui.status = 'loaded';
             ui.executions = [];
             ui.message = 'No sessions found for this task.';
             ui.visible = false;
@@ -4334,31 +4595,269 @@ const searchOutputResultsPaneMethods = {
     },
 
     _quotedFieldBodyLayoutStyle() {
-        return 'margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5;';
+        return 'margin: 0; padding: 6px 0 2px 0; white-space: pre-wrap; line-height: 1.5; min-width: 0; flex: 1 1 auto;';
     },
 
     _mutedQuotedFieldBodyStyle() {
         return this._quotedFieldBodyLayoutStyle() + ' color: var(--muted-foreground, #64748b);';
     },
 
+    _quotedBarButtonHtml() {
+        return '<button type="button" data-wf-dash-quoted-bar="1" aria-label="Collapse" title="Collapse"></button>';
+    },
+
+    _quotedBarWrapHtml(innerHtml, options) {
+        this._ensureActionBlockCollapseStyles();
+        const opts = options || {};
+        const bodyTag = opts.bodyTag || 'p';
+        const bodyClass = opts.bodyClass ? ' class="' + dashEscHtml(opts.bodyClass) + '"' : '';
+        const layout = this._quotedFieldBodyLayoutStyle();
+        const bodyStyle = opts.bodyStyle != null
+            ? opts.bodyStyle
+            : (layout + ' color: var(--foreground, #0f172a);');
+        const styleAttr = bodyStyle ? ' style="' + bodyStyle + '"' : '';
+        const alignAttr = opts.alignToCaret ? ' data-wf-dash-quoted-align="caret"' : '';
+        return '<div data-wf-dash-quoted-wrap="1"' + alignAttr + '>'
+            + this._quotedBarButtonHtml()
+            + '<' + bodyTag + bodyClass + styleAttr + '>' + innerHtml + '</' + bodyTag + '>'
+            + '</div>';
+    },
+
     _quotedFieldBlockHtml(label, bodyHtml, _copyText, options) {
         const opts = options || {};
         const shellClass = opts.shellClass ? ' class="' + dashEscHtml(opts.shellClass) + '"' : '';
         const headerClass = opts.headerClass ? ' class="' + dashEscHtml(opts.headerClass) + '"' : '';
-        const bodyClass = opts.bodyClass ? ' class="' + dashEscHtml(opts.bodyClass) + '"' : '';
         const headerInner = opts.headerInner || this._labelSpan(label);
-        const bodyTag = opts.bodyTag || 'p';
         const layout = this._quotedFieldBodyLayoutStyle();
         const bodyStyle = opts.bodyStyle != null
             ? opts.bodyStyle
-            : (opts.bodyClass
-                ? layout
-                : layout + ' color: var(--foreground, #0f172a);');
-        const styleAttr = bodyStyle ? ' style="' + bodyStyle + '"' : '';
+            : (opts.bodyClass ? layout : layout + ' color: var(--foreground, #0f172a);');
         return '<div' + shellClass + '>'
             + '<div' + headerClass + '>' + headerInner + '</div>'
-            + '<' + bodyTag + bodyClass + styleAttr + '>' + bodyHtml + '</' + bodyTag + '>'
+            + this._quotedBarWrapHtml(bodyHtml, {
+                bodyTag: opts.bodyTag || 'p',
+                bodyClass: opts.bodyClass,
+                bodyStyle,
+                alignToCaret: opts.alignToCaret
+            })
             + '</div>';
+    },
+
+    _quotedHighlightFromItem(item) {
+        return {
+            query: (item && item.highlightQuery) || '',
+            caseSensitive: Boolean(item && item.highlightCaseSensitive),
+            fuzzy: Boolean(item && item.highlightFuzzy),
+            regex: Boolean(item && item.highlightRegex)
+        };
+    },
+
+    _quotedHighlightForItemId(itemId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        return this._quotedHighlightFromItem(item);
+    },
+
+    _quotedHighlightPack(query, caseSensitive, fuzzy, regex) {
+        return {
+            query: query || '',
+            caseSensitive: Boolean(caseSensitive),
+            fuzzy: Boolean(fuzzy),
+            regex: Boolean(regex)
+        };
+    },
+
+    _quotedTextMatches(text, highlight) {
+        const h = highlight || {};
+        const query = h.query;
+        if (query == null || String(query) === '') return false;
+        const lib = typeof dashLib === 'function' ? dashLib() : (Context.dashboardLib || null);
+        if (!lib || typeof lib.textMatchesQuery !== 'function') return false;
+        return !!lib.textMatchesQuery(text, query, Boolean(h.fuzzy), Boolean(h.caseSensitive), Boolean(h.regex));
+    },
+
+    _expandBlockForHighlight(blockId, texts, highlight, ancestorBlockIds) {
+        const list = Array.isArray(texts) ? texts : (texts == null ? [] : [texts]);
+        let hit = false;
+        for (let i = 0; i < list.length; i++) {
+            if (this._quotedTextMatches(list[i], highlight)) {
+                hit = true;
+                break;
+            }
+        }
+        if (!hit) return false;
+        const expand = (id) => {
+            const key = String(id || '').trim();
+            if (!key) return;
+            this._getActionBlockCollapseUi(key).collapsed = false;
+        };
+        expand(blockId);
+        const ancestors = ancestorBlockIds || [];
+        for (let i = 0; i < ancestors.length; i++) expand(ancestors[i]);
+        return true;
+    },
+
+    _quotedFilledPortions(portions) {
+        return (portions || []).filter((p) => p && this._dashQuotedText(p.text));
+    },
+
+    _quotedPortionPlainText(portion, hasCarets) {
+        const label = (portion && portion.label) || 'Text';
+        const body = this._dashQuotedText(portion && portion.text);
+        if (hasCarets && portion && portion.blockId && this._isActionBlockCollapsed(portion.blockId)) {
+            return this._omittedSectionPlainText(label);
+        }
+        return (portion && portion.label ? portion.label + ':\n' : '') + (body || '—');
+    },
+
+    _quotedPortionsPlainText(portions) {
+        const filled = this._quotedFilledPortions(portions);
+        const hasCarets = filled.length >= 2;
+        return filled.map((p) => this._quotedPortionPlainText(p, hasCarets));
+    },
+
+    _quotedPortionsHtml(opts) {
+        const options = opts || {};
+        const itemId = options.itemId;
+        const highlight = options.highlight || {};
+        const ancestorBlockIds = options.ancestorBlockIds || [];
+        const filled = this._quotedFilledPortions(options.portions);
+        if (!filled.length) return '';
+        const useCarets = filled.length >= 2;
+        return filled.map((p) => {
+            const text = this._dashQuotedText(p.text);
+            const body = this._dashQuotedHighlightedHtml(
+                p.text,
+                highlight.query || '',
+                Boolean(highlight.caseSensitive),
+                Boolean(highlight.fuzzy),
+                Boolean(highlight.regex)
+            );
+            const extraAttrs = p.extraAttrs || '';
+            if (useCarets && p.blockId) {
+                this._ensureActionBlockCollapseDefault(p.blockId, Boolean(p.defaultCollapsed));
+                this._expandBlockForHighlight(p.blockId, text, highlight, ancestorBlockIds);
+                const headerInner = p.headerInner || this._labelSpan(p.label || '');
+                const fieldHeader = this._actionBlockHeaderRowHtml(p.blockId, headerInner, '');
+                const fieldBody = this._quotedBarWrapHtml(body, {
+                    bodyStyle: p.bodyStyle,
+                    bodyTag: p.bodyTag,
+                    bodyClass: p.bodyClass,
+                    alignToCaret: true
+                });
+                return this._actionBlockShellHtml(
+                    p.blockId,
+                    itemId,
+                    p.shellStyle || 'display: flex; flex-direction: column; gap: 0;',
+                    fieldHeader,
+                    fieldBody,
+                    extraAttrs,
+                    p.shellClass || ''
+                );
+            }
+            this._expandBlockForHighlight('', text, highlight, ancestorBlockIds);
+            const alignToCaret = Boolean(p.alignToCaret);
+            if (p.skipPlainLabel || !p.label) {
+                const inner = this._quotedBarWrapHtml(body, {
+                    bodyStyle: p.bodyStyle,
+                    bodyTag: p.bodyTag,
+                    bodyClass: p.bodyClass,
+                    alignToCaret
+                });
+                return extraAttrs ? ('<div' + extraAttrs + '>' + inner + '</div>') : inner;
+            }
+            const fieldHtml = this._quotedFieldBlockHtml(p.label, body, text, {
+                shellClass: p.shellClass,
+                headerClass: p.headerClass,
+                bodyClass: p.bodyClass,
+                bodyStyle: p.bodyStyle,
+                bodyTag: p.bodyTag,
+                alignToCaret
+            });
+            return extraAttrs ? ('<div' + extraAttrs + '>' + fieldHtml + '</div>') : fieldHtml;
+        }).join('');
+    },
+
+    _qaFeedbackPortions(qa, feedbackId, itemId) {
+        return (qa && qa.textBlocks || []).map((b, i) => ({
+            blockId: this._qaTextBlockId(feedbackId, itemId, i),
+            label: this._qaFeedbackTextBlockLabel(qa, b),
+            text: b && b.text,
+            defaultCollapsed: false
+        }));
+    },
+
+    _userStoryPortionBlockId(itemId, key) {
+        if (!itemId || !key) return '';
+        return 'user-story:' + itemId + ':' + key;
+    },
+
+    _userStoryPortions(ui, itemId) {
+        return [
+            {
+                kind: 'scenario',
+                blockId: this._userStoryPortionBlockId(itemId, 'scenarioTitle'),
+                label: 'Scenario Title',
+                text: ui && ui.scenarioTitle,
+                shellClass: 'wf-dash-user-story-field',
+                headerClass: 'wf-dash-user-story-field-header',
+                bodyClass: 'wf-dash-user-story-field-body'
+            },
+            {
+                kind: 'annotator',
+                blockId: this._userStoryPortionBlockId(itemId, 'humanAnnotatorInstructions'),
+                label: 'Annotator Instructions',
+                text: ui && ui.humanAnnotatorInstructions,
+                shellClass: 'wf-dash-user-story-field',
+                headerClass: 'wf-dash-user-story-field-header',
+                bodyClass: 'wf-dash-user-story-field-body'
+            },
+            {
+                kind: 'story',
+                blockId: this._userStoryPortionBlockId(itemId, 'userStory'),
+                label: 'User Story',
+                text: ui && ui.userStory,
+                shellClass: 'wf-dash-user-story-field',
+                headerClass: 'wf-dash-user-story-field-header',
+                bodyClass: 'wf-dash-user-story-field-body'
+            }
+        ];
+    },
+
+    _promptTextActionBlockId(itemId, displayVersionNo) {
+        if (!itemId || displayVersionNo == null) return '';
+        return 'prompt-text:' + itemId + ':' + displayVersionNo;
+    },
+
+    _versionBodyPortions(version, itemId, displayVersionNo) {
+        return [
+            {
+                kind: 'prompt',
+                blockId: this._promptTextActionBlockId(itemId, displayVersionNo),
+                label: 'Prompt',
+                text: version && version.prompt,
+                skipPlainLabel: true,
+                alignToCaret: true,
+                bodyStyle: this._quotedFieldBodyLayoutStyle() + ' color: var(--foreground, #0f172a);'
+            },
+            {
+                kind: 'notes',
+                blockId: this._notesToQaActionBlockId(itemId, displayVersionNo),
+                label: 'Notes to QA',
+                text: version && version.resubmissionNotes,
+                defaultCollapsed: true,
+                bodyStyle: this._mutedQuotedFieldBodyStyle(),
+                extraAttrs: ' data-wf-dash-notes-to-qa="1"'
+            },
+            {
+                kind: 'scratchpad',
+                blockId: this._scratchpadActionBlockId(itemId, displayVersionNo),
+                label: 'Scratchpad',
+                text: version && version.scratchpad,
+                defaultCollapsed: true,
+                bodyStyle: this._mutedQuotedFieldBodyStyle(),
+                extraAttrs: ' data-wf-dash-scratchpad="1"'
+            }
+        ];
     },
 
     _resolutionStatusBadgeHtml(kind, label) {
@@ -4372,6 +4871,29 @@ const searchOutputResultsPaneMethods = {
             style = 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: var(--muted-foreground, #64748b); background: color-mix(in srgb, var(--muted-foreground, #64748b) 12%, transparent);';
         }
         return '<span style="' + style + '">' + dashEscHtml(label) + '</span>';
+    },
+
+    _entityResolutionChipHtml(kind, display) {
+        let resolutionKind = 'other';
+        let statusText = 'Pending Resolution';
+        let underlay = DASH_TASK_CARD_BG;
+        if (kind === 'flag' && display && display.resolutionAt) {
+            resolutionKind = display.isConfirmed ? 'confirmed' : (display.isDismissed ? 'dismissed' : 'other');
+            statusText = display.isConfirmed
+                ? 'Confirmed'
+                : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
+            underlay = this._resolutionBlockColors(resolutionKind).background;
+        } else if (kind !== 'flag' && display && display.resolutionAt) {
+            resolutionKind = display.isApproved ? 'approved' : (display.isRejected ? 'rejected' : 'other');
+            statusText = display.isApproved
+                ? 'Approved'
+                : (display.isRejected ? 'Rejected' : (display.status || 'Resolved'));
+            underlay = this._resolutionBlockColors(resolutionKind).background;
+        }
+        const chip = this._resolutionStatusBadgeHtml(resolutionKind, statusText);
+        return '<span style="display: inline-flex; align-items: center; border-radius: 6px; background: ' + underlay + ';">'
+            + chip
+            + '</span>';
     },
 
     _resolutionBlockColors(kind) {
@@ -4410,20 +4932,34 @@ const searchOutputResultsPaneMethods = {
         const leftHeaderExtra = options.leftHeaderExtra || '';
         const resolverHtml = options.resolverHtml || '';
         const noteLabel = options.noteLabel || 'Reason';
-        const noteBodyHtml = options.noteBodyHtml || '—';
         const copyText = options.copyText;
         const colors = this._resolutionBlockColors(kind);
         const statusBadge = this._resolutionStatusBadgeHtml(kind, statusLabel);
         const resLeftHeader = '<span style="font-weight: 600; color: var(--foreground, #0f172a);">Resolution</span>'
-            + (options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : '')
             + leftHeaderExtra;
-        const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge);
-        const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
+        const resHeaderRow = this._actionBlockHeaderRowHtml(blockId, resLeftHeader, statusBadge, {
+            copyHtml: options.copySection
+                ? this._liveSectionCopyIconHtml(options.copySection, options.copyEntityId, options.itemId)
+                : (options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : '')
+        });
+        const highlight = options.highlight || {};
+        const noteText = options.noteText != null ? options.noteText : copyText;
+        const notePortionsHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight,
+            ancestorBlockIds: [blockId].concat(options.ancestorBlockIds || []),
+            portions: [{
+                blockId: blockId ? (blockId + ':note') : '',
+                label: noteLabel,
+                text: noteText
+            }]
+        });
+        const resBodyHtml = resolverHtml + notePortionsHtml;
         return this._actionInsetBackdropWrapHtml(
             this._actionBlockShellHtml(
                 blockId,
                 itemId,
-                'padding: 8px 10px; border: 1px solid ' + colors.border + '; border-radius: 6px; background: ' + colors.background + '; display: flex; flex-direction: column; gap: 6px;',
+                'padding: 8px 10px; border: none; border-radius: 6px; background: ' + colors.background + '; display: flex; flex-direction: column; gap: 6px;',
                 resHeaderRow,
                 resBodyHtml
             )
@@ -4473,6 +5009,7 @@ const searchOutputResultsPaneMethods = {
                     showHighlights: false,
                     highlightModality: 'differences',
                     feedbackBulkCollapsed: false,
+                    versionCollapseSnapshot: null,
                     activationLogged: false,
                     initialized: false
                 }
@@ -4484,6 +5021,7 @@ const searchOutputResultsPaneMethods = {
                 showHighlights: false,
                 highlightModality: 'differences',
                 feedbackBulkCollapsed: false,
+                versionCollapseSnapshot: null,
                 activationLogged: false,
                 initialized: false
             };
@@ -4504,7 +5042,7 @@ const searchOutputResultsPaneMethods = {
         this._clampCardRollingLeft(rollingUi, versionCount);
         if (versionCount >= 2 && !rollingUi.activationLogged) {
             rollingUi.activationLogged = true;
-            Logger.log('search-output: all versions expanded for task ' + taskId);
+            Logger.log('search-output: rolling version chrome for task ' + taskId);
         }
     },
 
@@ -4701,6 +5239,90 @@ const searchOutputResultsPaneMethods = {
         ].join('\n');
     },
 
+    _ensureActionBlockCollapseStyles() {
+        if (!this._modal) return;
+        let style = this._modal.querySelector('#wf-dash-action-block-collapse-styles');
+        if (!style) {
+            style = this._pageWindow().document.createElement('style');
+            style.id = 'wf-dash-action-block-collapse-styles';
+            this._modal.appendChild(style);
+        }
+        style.textContent = [
+            '#wf-dash-modal [data-wf-dash-action-block-body] {',
+            '  display: grid;',
+            '  grid-template-rows: 1fr;',
+            '  min-height: 0;',
+            '  margin-top: 0;',
+            '  transition: grid-template-rows 160ms ease-out, margin-top 160ms ease-out;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-action-block-body][data-collapsed="1"] {',
+            '  grid-template-rows: 0fr;',
+            '  margin-top: calc(-1 * var(--so-collapse-gap, 0px));',
+            '}',
+            '#wf-dash-modal [data-wf-dash-action-block-body] > [data-wf-dash-action-block-body-inner] {',
+            '  overflow: hidden;',
+            '  min-height: 0;',
+            '  display: flex;',
+            '  flex-direction: column;',
+            '  gap: 8px;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-wrap] {',
+            '  display: flex;',
+            '  align-items: stretch;',
+            '  margin: 4px 0 0 0;',
+            '  min-width: 0;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-wrap][data-wf-dash-quoted-align="caret"] {',
+            '  margin-left: 11px;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-bar] {',
+            '  box-sizing: border-box;',
+            '  flex: 0 0 15px;',
+            '  width: 15px;',
+            '  min-height: 1.5em;',
+            '  margin: 0;',
+            '  padding: 0;',
+            '  border: none;',
+            '  background: transparent;',
+            '  cursor: pointer;',
+            '  position: relative;',
+            '  align-self: stretch;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-bar]::before {',
+            '  content: "";',
+            '  position: absolute;',
+            '  left: 0;',
+            '  top: 0;',
+            '  bottom: 0;',
+            '  width: 3px;',
+            '  border-radius: 1px;',
+            '  background: var(--border, #e2e8f0);',
+            '  transition: background 120ms ease;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-bar]:hover::before,',
+            '#wf-dash-modal [data-wf-dash-quoted-bar]:focus-visible::before {',
+            '  background: var(--foreground, #0f172a);',
+            '}',
+            '@media (prefers-reduced-motion: reduce) {',
+            '  #wf-dash-modal [data-wf-dash-action-block-body] {',
+            '    transition: none;',
+            '  }',
+            '  #wf-dash-modal [data-wf-dash-quoted-bar]::before {',
+            '    transition: none;',
+            '  }',
+            '}',
+            '#wf-dash-modal [data-wf-dash-version-band="1"] {',
+            '  border-radius: 8px;',
+            '  padding: 5px 6px;',
+            '  box-sizing: border-box;',
+            '  background: color-mix(in srgb, #000 4%, var(--dash-task-card, var(--card, #fff)));',
+            '}',
+            'html[data-fleet-ux-theme="dark"] #wf-dash-modal [data-wf-dash-version-band="1"] {',
+            '  background: color-mix(in srgb, #fff 4%, var(--dash-task-card, var(--card, #18181b)));',
+            '}'
+        ].join('\n');
+    },
+
     _detachCardRollingListeners(cardEl) {
         if (!cardEl || !cardEl._soRollingCleanup) return;
         cardEl._soRollingCleanup();
@@ -4821,11 +5443,12 @@ const searchOutputResultsPaneMethods = {
         const overlayBottomVp = Math.max(leftRect.bottom, rightRect.bottom);
         const overlayLeftVp = Math.min(leftRect.left, rightRect.left);
         const overlayRightVp = Math.max(leftRect.right, rightRect.right);
-        const outset = SO_ROLLING_OVERLAY_OUTSET;
-        let outLeftVp = overlayLeftVp - outset;
-        let outTopVp = overlayTopVp - outset;
-        let outRightVp = overlayRightVp + outset;
-        let outBottomVp = overlayBottomVp + outset;
+        const outsetY = SO_ROLLING_OVERLAY_OUTSET;
+        const outsetX = SO_ROLLING_OVERLAY_OUTSET - 1;
+        let outLeftVp = overlayLeftVp - outsetX;
+        let outTopVp = overlayTopVp - outsetY;
+        let outRightVp = overlayRightVp + outsetX;
+        let outBottomVp = overlayBottomVp + outsetY;
         outLeftVp = Math.max(padRect.left, outLeftVp);
         outTopVp = Math.max(padRect.top, outTopVp);
         outRightVp = Math.min(padRect.right, outRightVp);
@@ -4897,6 +5520,17 @@ const searchOutputResultsPaneMethods = {
         this._scheduleRollingOverlaysFlush();
     },
 
+    _attachRollingListenersForPageItems(wrap, items) {
+        if (!wrap) return;
+        for (const item of items || []) {
+            if (!item || !item.task || item.hydrated === false) continue;
+            const versionCount = (item.task.promptVersions && item.task.promptVersions.length) || 0;
+            if (versionCount < 2) continue;
+            const cardEl = this._findResultsCardEl(wrap, item.id);
+            if (cardEl) this._attachCardRollingListeners(cardEl, item.id, item.task.id);
+        }
+    },
+
     _renderedVersionsForItem(item) {
         const task = item.task;
         const ui = this._getCardUi(task.id);
@@ -4964,7 +5598,7 @@ const searchOutputResultsPaneMethods = {
                 && versionIdx >= rollingUi.rollingLeft
                 && versionIdx <= rollingUi.rollingLeft + 1;
             block.classList.toggle('so-rolling-diff-on', inActivePair);
-            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > p');
+            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > [data-wf-dash-action-block-body-inner] [data-wf-dash-quoted-wrap] > p');
             if (promptP) {
                 promptP.innerHTML = this._rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi);
             }
@@ -5441,6 +6075,43 @@ const searchOutputResultsPaneMethods = {
         return '';
     },
 
+    _qaTextBlockId(feedbackId, itemId, index) {
+        const i = String(index);
+        if (feedbackId) return 'qa-text:' + String(feedbackId) + ':' + i;
+        if (itemId) return 'qa-text:fallback:' + String(itemId) + ':' + i;
+        return '';
+    },
+
+    _qaFeedbackBlockTitle(qa) {
+        return (qa && qa.isSystemFeedback) ? 'System Feedback' : 'Feedback';
+    },
+
+    _qaFeedbackOmittedLabel(qa) {
+        const title = this._qaFeedbackBlockTitle(qa);
+        const status = this._qaFeedbackStatusPlainText(qa);
+        return status ? (title + ': ' + status) : title;
+    },
+
+    _qaFeedbackTextBlockLabel(qa, block) {
+        const isSystem = Boolean(qa && qa.isSystemFeedback);
+        const isVerifierFailure = Boolean(qa && qa.isVerifierFailure);
+        if (isSystem || isVerifierFailure) return String(block && block.label || '').trim();
+        return dashQaTextBlockLabel(block && block.label, qa && qa.isPositive);
+    },
+
+    _omittedSectionPlainText(label) {
+        const l = String(label || '').trim();
+        if (!l) return '[omitted]';
+        return l + '\n[omitted]';
+    },
+
+    _collapsedSectionOr(blockId, label, expandedText) {
+        if (blockId && this._isActionBlockCollapsed(blockId)) {
+            return this._omittedSectionPlainText(label);
+        }
+        return expandedText == null ? '' : String(expandedText);
+    },
+
     _disputeActionBlockId(display, itemId) {
         if (display && display.id) return 'dispute:' + display.id;
         if (itemId) return 'dispute:unknown:' + itemId;
@@ -5480,30 +6151,63 @@ const searchOutputResultsPaneMethods = {
     },
 
     _actionBlockBodyHiddenStyle(blockId) {
-        return this._getActionBlockCollapseUi(blockId).collapsed ? 'display: none;' : '';
+        return this._getActionBlockCollapseUi(blockId).collapsed ? '1' : '0';
+    },
+
+    _collapseCaretHtml(blockId) {
+        const id = String(blockId || '').trim();
+        const collapsed = this._isActionBlockCollapsed(id);
+        const rot = collapsed ? '0deg' : '90deg';
+        return `<button type="button" data-wf-dash-action-block-toggle="${dashEscHtml(id)}" aria-expanded="${collapsed ? 'false' : 'true'}" aria-label="Expand or collapse" title="Expand or collapse" class="${this._dashBtnClass('basic', 'icon')}" style="line-height: 0;">`
+            + `<svg data-wf-dash-collapse-caret="1" width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" focusable="false" style="display: block; flex-shrink: 0; color: var(--muted-foreground, #64748b); transform: rotate(${rot}); transform-origin: center; transition: transform 120ms ease;">`
+            + `<polygon fill="currentColor" points="5 2 14 8 5 14"/>`
+            + `</svg>`
+            + `</button>`;
+    },
+
+    _syncActionBlockCaret(block, collapsed) {
+        const header = block && block.querySelector(':scope > [data-wf-dash-action-block-header]');
+        const toggle = header && header.querySelector('[data-wf-dash-action-block-toggle]');
+        if (!toggle) return;
+        toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        const caret = toggle.querySelector('[data-wf-dash-collapse-caret]');
+        if (caret) caret.style.transform = collapsed ? 'rotate(0deg)' : 'rotate(90deg)';
     },
 
     _actionBlockHeaderRowHtml(blockId, leftHtml, rightHtml, opts) {
         const forceRight = opts && opts.forceRightSection;
+        const collapsed = this._isActionBlockCollapsed(blockId);
+        const copyHtml = (opts && opts.copyHtml)
+            ? this._qaCollapseSwapHtml('expanded', collapsed, opts.copyHtml)
+            : '';
         const rightSection = (rightHtml || forceRight)
             ? `<div${forceRight ? ' data-wf-dash-version-header-right="1"' : ''} style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 0 0 auto; flex-shrink: 0;">${rightHtml || ''}</div>`
             : '';
         return `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 24px; width: 100%;" data-wf-dash-action-block-header="1">`
+            + `<div style="display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0;">`
+            + this._collapseCaretHtml(blockId)
+            + copyHtml
+            + `</div>`
             + `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; flex: 0 1 auto; max-width: 100%;">${leftHtml}</div>`
-            + `<div data-wf-dash-action-block-toggle="${dashEscHtml(blockId)}" title="Expand or collapse" style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch; cursor: pointer;"></div>`
+            + `<div style="flex: 1 1 24px; min-width: 24px; min-height: 24px; align-self: stretch;"></div>`
             + rightSection
             + `</div>`;
     },
 
     _actionBlockShellHtml(blockId, itemId, shellStyle, headerRowHtml, bodyHtml, blockExtraAttrs, shellClass) {
-        const bodyHidden = this._actionBlockBodyHiddenStyle(blockId);
+        this._ensureActionBlockCollapseStyles();
+        const collapsed = this._actionBlockBodyHiddenStyle(blockId);
+        const gapMatch = /(?:^|;)\s*gap:\s*([^;]+)/i.exec(shellStyle || '');
+        const gap = (gapMatch && gapMatch[1].trim()) || '0px';
         const escBlockId = dashEscHtml(blockId);
         const itemAttr = itemId ? ` data-wf-dash-item-id="${dashEscHtml(itemId)}"` : '';
         const extra = blockExtraAttrs || '';
         const classAttr = shellClass ? ` class="${dashEscHtml(shellClass.trim())}"` : '';
         return `<div data-wf-dash-action-block="${escBlockId}"${itemAttr}${extra}${classAttr} style="${shellStyle}">`
             + headerRowHtml
-            + `<div data-wf-dash-action-block-body="1" style="display: flex; flex-direction: column; gap: 8px; ${bodyHidden}">${bodyHtml}</div>`
+            + `<div data-wf-dash-action-block-body="1" data-collapsed="${collapsed}" style="--so-collapse-gap: ${dashEscHtml(gap)};">`
+            + `<div data-wf-dash-action-block-body-inner="1">${bodyHtml}</div>`
+            + `</div>`
             + `</div>`;
     },
 
@@ -5513,11 +6217,13 @@ const searchOutputResultsPaneMethods = {
         const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
         const block = this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
         if (!block) return false;
-        const body = block.querySelector('[data-wf-dash-action-block-body]');
+        const body = block.querySelector(':scope > [data-wf-dash-action-block-body]');
         if (!body) return false;
+        this._ensureActionBlockCollapseStyles();
         const collapsed = this._getActionBlockCollapseUi(id).collapsed;
-        body.style.display = collapsed ? 'none' : 'flex';
-        for (const el of block.querySelectorAll('[data-wf-dash-qa-collapse-swap]')) {
+        body.setAttribute('data-collapsed', collapsed ? '1' : '0');
+        this._syncActionBlockCaret(block, collapsed);
+        for (const el of block.querySelectorAll(':scope > [data-wf-dash-qa-collapse-swap], :scope > [data-wf-dash-action-block-header] [data-wf-dash-qa-collapse-swap]')) {
             const mode = el.getAttribute('data-wf-dash-qa-collapse-swap');
             const show = collapsed ? mode === 'collapsed' : mode === 'expanded';
             el.style.display = show ? (el.getAttribute('data-wf-dash-qa-collapse-display') || 'inline-flex') : 'none';
@@ -5530,6 +6236,7 @@ const searchOutputResultsPaneMethods = {
         if (!id) return;
         const ui = this._getActionBlockCollapseUi(id);
         ui.collapsed = !ui.collapsed;
+        Logger.log('search-output: ' + (ui.collapsed ? 'collapsed' : 'expanded') + ' ' + id);
         if (!this._patchActionBlock(id)) {
             const esc = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
             const block = this._modal && this._modal.querySelector('[data-wf-dash-action-block="' + esc + '"]');
@@ -5722,9 +6429,8 @@ const searchOutputResultsPaneMethods = {
             }
             const item2 = this._findCachedItem(itemId) || this._findResultItem(itemId);
             if (item2) {
-                const ui = this._getCardUi(item2.task.id);
                 const versionCount = (item2.task.promptVersions && item2.task.promptVersions.length) || 0;
-                if (ui.expanded && versionCount >= 2) {
+                if (versionCount >= 2) {
                     this._attachCardRollingListeners(newCard, itemId, item2.task.id);
                 } else {
                     this._detachCardRollingListeners(newCard);
@@ -6189,6 +6895,7 @@ const searchOutputResultsPaneMethods = {
             const pageItems = this._getPaginatedViewItems();
             this._clearAllRollingOverlayListeners();
             wrap.innerHTML = pageItems.map((item) => this._resultCardHtml(item)).join('');
+            this._attachRollingListenersForPageItems(wrap, pageItems);
             this._syncResultsToolbarDerivedUi();
             this._animateSeededSessionQaPanels(pageItems);
             this._schedulePageHydrate();
@@ -6288,6 +6995,61 @@ const searchOutputResultsPaneMethods = {
         return (item.flags || []).find((f) => String(f.id) === id) || null;
     },
 
+    _findItemQaDisplay(itemId, feedbackId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item) return { qa: null, feedbackId: null };
+        const id = String(feedbackId || '').trim();
+        const allFeedback = (item.task && item.task.allFeedback) || [];
+        if (id) {
+            const entry = allFeedback.find((e) => String(e.id) === id);
+            if (entry && entry.display) return { qa: entry.display, feedbackId: entry.id };
+        }
+        if (item.qaFeedback) {
+            return { qa: item.qaFeedback, feedbackId: item.selectedFeedbackId || null };
+        }
+        return { qa: null, feedbackId: null };
+    },
+
+    _promptVersionStatusLabel(item, version, versions) {
+        const list = versions || [];
+        const hasTimeline = list.length > 1;
+        const maxDisplayVersionNo = hasTimeline
+            ? Math.max(...list.map((v) => v.displayVersionNo))
+            : 0;
+        const allFeedback = (item && item.task && item.task.allFeedback) || [];
+        const feedbackEntries = allFeedback.filter((e) => e.linkedDisplayVersionNo === version.displayVersionNo);
+        const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
+        const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
+        let statusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
+        if (!statusLabel && hasTimeline && version.displayVersionNo < maxDisplayVersionNo) {
+            statusLabel = 'QA Edited';
+        }
+        if (statusLabel === 'Returned') statusLabel = 'Returned for Revision';
+        if (statusLabel === 'Escalated') statusLabel = 'Escalated for Fleet Review';
+        if (statusLabel === 'Flagged') statusLabel = 'Flagged as Bugged';
+        return statusLabel;
+    },
+
+    _resolvePromptVersionCopyText(itemId, entityId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (!item || !item.task) return '';
+        if (String(entityId) === 'quick' || item.hydrated === false) {
+            return this._serializePromptVersionPlainText(
+                { displayVersionNo: 1, prompt: item.task.prompt, createdAt: item.task.createdAt },
+                { showVersionLabel: false, statusLabel: '', itemId, displayVersionNo: 'quick' }
+            );
+        }
+        const versions = this._promptVersionsForItem(item);
+        const no = Number(entityId);
+        const version = versions.find((v) => v.displayVersionNo === no);
+        if (!version) return '';
+        return this._serializePromptVersionPlainText(version, {
+            showVersionLabel: versions.length > 1,
+            statusLabel: this._promptVersionStatusLabel(item, version, versions),
+            itemId
+        });
+    },
+
     _resolveLiveSectionCopyText(section, entityId, itemId) {
         const kind = String(section || '').trim();
         if (kind === 'dispute') {
@@ -6295,6 +7057,35 @@ const searchOutputResultsPaneMethods = {
         }
         if (kind === 'flag') {
             return this._serializeFlagPlainText(this._findItemFlagDisplay(itemId, entityId), { itemId });
+        }
+        if (kind === 'dispute-res') {
+            return this._serializeDisputeResolutionPlainText(this._findItemDisputeDisplay(itemId, entityId));
+        }
+        if (kind === 'flag-res') {
+            return this._serializeFlagResolutionPlainText(this._findItemFlagDisplay(itemId, entityId));
+        }
+        if (kind === 'qa') {
+            const found = this._findItemQaDisplay(itemId, entityId);
+            return this._serializeQaFeedbackPlainText(found.qa, {
+                feedbackId: found.feedbackId,
+                itemId
+            });
+        }
+        if (kind === 'prompt') {
+            return this._resolvePromptVersionCopyText(itemId, entityId);
+        }
+        if (kind === 'session-qa') {
+            const ui = this._getSessionQaUi(itemId);
+            const review = (ui.reviews || []).find((r) => String(r.id) === String(entityId));
+            return this._serializeSessionQaPlainText(review);
+        }
+        if (kind === 'verifier') {
+            const ui = this._getVerifierOutputUi(itemId);
+            const exec = (ui.executions || []).find((e) => String(e.id) === String(entityId));
+            return this._serializeVerifierOutputPlainText(exec);
+        }
+        if (kind === 'user-story') {
+            return this._serializeUserStoryPlainText(this._getUserStoryUi(itemId), itemId);
         }
         return '';
     },
@@ -6308,8 +7099,8 @@ const searchOutputResultsPaneMethods = {
         return '';
     },
 
-    _plainTimestampDurationText(iso, durationSeconds) {
-        const { formatted, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+    _plainTimestampDurationText(iso, durationSeconds, durationTextFn) {
+        const { formatted, durationText } = dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn);
         let text = String(formatted || '').trim();
         if (durationText) text += (text ? ' in ' : 'in ') + durationText;
         return text;
@@ -6344,11 +7135,13 @@ const searchOutputResultsPaneMethods = {
             .join('\n\n');
     },
 
-    _serializeQaFeedbackPlainText(qa) {
+    _serializeQaFeedbackPlainText(qa, options) {
         if (!qa) return '';
+        const opts = options || {};
+        const itemId = opts.itemId;
+        const feedbackId = opts.feedbackId;
         const isSystem = Boolean(qa.isSystemFeedback);
-        const isVerifierFailure = Boolean(qa.isVerifierFailure);
-        const title = isSystem ? 'System Feedback' : 'QA Feedback';
+        const title = this._qaFeedbackBlockTitle(qa);
         const status = this._qaFeedbackStatusPlainText(qa);
         const lines = [];
         lines.push(status ? (title + ': ' + status) : title);
@@ -6363,15 +7156,7 @@ const searchOutputResultsPaneMethods = {
         }
         const issues = (qa.rejectionBadges || []).map((l) => String(l || '').trim()).filter(Boolean);
         if (issues.length) lines.push('Issues: ' + issues.join(', '));
-        const blocks = [];
-        for (const b of qa.textBlocks || []) {
-            const label = (isSystem || isVerifierFailure)
-                ? String(b.label || '').trim()
-                : dashQaTextBlockLabel(b.label, qa.isPositive);
-            const body = this._dashQuotedText(b.text);
-            if (!label && !body) continue;
-            blocks.push((label ? label + ':\n' : '') + (body || '—'));
-        }
+        const blocks = this._quotedPortionsPlainText(this._qaFeedbackPortions(qa, feedbackId, itemId));
         return this._joinPlainSections([lines.join('\n'), ...blocks]);
     },
 
@@ -6403,12 +7188,13 @@ const searchOutputResultsPaneMethods = {
         const reason = this._dashQuotedText(display.reason);
         if (reason) parts.push('Reason:\n' + reason);
         const resBlockId = this._disputeResolutionBlockId(display, itemId);
-        const skipResolution = opts.respectCollapse !== false
-            && resBlockId
-            && this._isActionBlockCollapsed(resBlockId);
-        if (!skipResolution) {
-            const resolution = this._serializeDisputeResolutionPlainText(display);
-            if (resolution) parts.push(resolution);
+        if (display.resolutionAt) {
+            if (opts.respectCollapse !== false && resBlockId && this._isActionBlockCollapsed(resBlockId)) {
+                parts.push(this._omittedSectionPlainText('Resolution'));
+            } else {
+                const resolution = this._serializeDisputeResolutionPlainText(display);
+                if (resolution) parts.push(resolution);
+            }
         }
         return this._joinPlainSections(parts);
     },
@@ -6445,17 +7231,18 @@ const searchOutputResultsPaneMethods = {
         if (note) parts.push('Reviewer Note:\n' + note);
         else parts.push('Reviewer Note:\nNONE PROVIDED');
         const resBlockId = this._flagResolutionBlockId(display, itemId);
-        const skipResolution = opts.respectCollapse !== false
-            && resBlockId
-            && this._isActionBlockCollapsed(resBlockId);
-        if (!skipResolution) {
-            const resolution = this._serializeFlagResolutionPlainText(display);
-            if (resolution) parts.push(resolution);
+        if (display.resolutionAt) {
+            if (opts.respectCollapse !== false && resBlockId && this._isActionBlockCollapsed(resBlockId)) {
+                parts.push(this._omittedSectionPlainText('Resolution'));
+            } else {
+                const resolution = this._serializeFlagResolutionPlainText(display);
+                if (resolution) parts.push(resolution);
+            }
         }
         return this._joinPlainSections(parts);
     },
 
-    _serializePromptVersionPlainText(version, options) {
+    _promptVersionHeadLine(version, options) {
         const opts = options || {};
         const partsHead = [];
         if (opts.showVersionLabel !== false && version && version.displayVersionNo != null) {
@@ -6467,11 +7254,29 @@ const searchOutputResultsPaneMethods = {
         if (status) partsHead.push(status);
         let head = 'Prompt';
         if (partsHead.length) head += ': ' + partsHead.join(', ');
-        const body = this._dashQuotedText(version && version.prompt) || '—';
-        const sections = [head + '\n' + body];
-        const notes = this._dashQuotedText(version && version.resubmissionNotes);
-        if (notes && !opts.omitNotesToQa) {
-            sections.push('Notes to QA:\n' + notes);
+        return head;
+    },
+
+    _serializePromptVersionPlainText(version, options) {
+        const opts = options || {};
+        const itemId = opts.itemId;
+        const displayNo = opts.displayVersionNo != null
+            ? opts.displayVersionNo
+            : (version && version.displayVersionNo);
+        const head = this._promptVersionHeadLine(version, opts);
+        const portions = this._versionBodyPortions(version, itemId, displayNo);
+        const filled = this._quotedFilledPortions(portions);
+        const hasCarets = filled.length >= 2;
+        const promptPortion = filled.find((p) => p.kind === 'prompt');
+        let promptBody = this._dashQuotedText(version && version.prompt) || '—';
+        if (hasCarets && promptPortion && promptPortion.blockId && this._isActionBlockCollapsed(promptPortion.blockId)) {
+            promptBody = '[omitted]';
+        }
+        const sections = [head + '\n' + promptBody];
+        for (const p of filled) {
+            if (p.kind === 'prompt') continue;
+            if (p.kind === 'notes' && opts.omitNotesToQa) continue;
+            sections.push(this._quotedPortionPlainText(p, hasCarets));
         }
         return this._joinPlainSections(sections);
     },
@@ -6500,13 +7305,20 @@ const searchOutputResultsPaneMethods = {
         if (!execution) return '';
         const passed = Number(execution.score) === 1;
         const lines = ['Verifier Output: ' + (passed ? 'Pass' : 'Fail')];
-        const when = this._plainTimestampDurationText(execution.createdAt, null);
-        if (when) lines.push(when);
+        const durationSec = dashVerifierDurationSeconds(execution.executionTimeMs);
+        if (execution.createdAt) {
+            const when = this._plainTimestampDurationText(
+                execution.createdAt,
+                durationSec,
+                dashCompactHmsDurationText
+            );
+            if (when) lines.push(when);
+        } else {
+            const durationText = dashCompactHmsDurationText(durationSec);
+            if (durationText) lines.push('in ' + durationText);
+        }
         if (execution.score != null && execution.score !== '') {
             lines.push('Score: ' + String(execution.score));
-        }
-        if (execution.executionTimeMs != null && Number.isFinite(Number(execution.executionTimeMs))) {
-            lines.push('Time: ' + Math.round(Number(execution.executionTimeMs)) + ' ms');
         }
         const parts = [lines.join('\n')];
         const stdout = this._formatVerifierStdoutText(execution.stdout);
@@ -6514,16 +7326,12 @@ const searchOutputResultsPaneMethods = {
         return this._joinPlainSections(parts);
     },
 
-    _serializeUserStoryPlainText(ui) {
+    _serializeUserStoryPlainText(ui, itemId) {
         if (!ui || ui.status !== 'loaded') return '';
-        const lines = ['User Story'];
-        if (ui.scenarioTitle) lines.push('Scenario: ' + String(ui.scenarioTitle).trim());
-        const parts = [lines.join('\n')];
-        if (ui.humanAnnotatorInstructions) {
-            parts.push('Annotator Instructions:\n' + String(ui.humanAnnotatorInstructions).trim());
-        }
-        if (ui.userStory) parts.push('User Story:\n' + String(ui.userStory).trim());
-        return this._joinPlainSections(parts);
+        const scenario = this._dashQuotedText(ui.scenarioTitle);
+        const head = scenario ? ('User Story: ' + scenario) : 'User Story';
+        const parts = this._quotedPortionsPlainText(this._userStoryBodyPortions(ui, itemId));
+        return this._joinPlainSections([head, ...parts]);
     },
 
     _serializeVersionTaskActionsPlainText(feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags, itemId) {
@@ -6533,45 +7341,58 @@ const searchOutputResultsPaneMethods = {
         for (const entry of orderedFeedback) {
             if (entry.display) {
                 const qaBlockId = this._qaActionBlockId(entry.id, iid);
-                if (!qaBlockId || !this._isActionBlockCollapsed(qaBlockId)) {
-                    blocks.push({
-                        sortAt: this._feedbackEntryAt(entry),
-                        text: this._serializeQaFeedbackPlainText(entry.display)
-                    });
-                }
+                blocks.push({
+                    sortAt: this._feedbackEntryAt(entry),
+                    text: this._collapsedSectionOr(
+                        qaBlockId,
+                        this._qaFeedbackOmittedLabel(entry.display),
+                        this._serializeQaFeedbackPlainText(entry.display, { feedbackId: entry.id, itemId: iid })
+                    )
+                });
             }
             for (const dispute of entry.disputes || []) {
                 const disputeBlockId = this._disputeActionBlockId(dispute, iid);
-                if (disputeBlockId && this._isActionBlockCollapsed(disputeBlockId)) continue;
                 blocks.push({
                     sortAt: String(dispute.submittedAt || ''),
-                    text: this._serializeDisputePlainText(dispute, { itemId: iid })
+                    text: this._collapsedSectionOr(
+                        disputeBlockId,
+                        'Dispute',
+                        this._serializeDisputePlainText(dispute, { itemId: iid })
+                    )
                 });
             }
         }
         if (fallbackFeedback) {
             const qaBlockId = this._qaActionBlockId(null, iid);
-            if (!qaBlockId || !this._isActionBlockCollapsed(qaBlockId)) {
-                blocks.push({
-                    sortAt: String(fallbackFeedback.feedbackAt || ''),
-                    text: this._serializeQaFeedbackPlainText(fallbackFeedback)
-                });
-            }
+            blocks.push({
+                sortAt: String(fallbackFeedback.feedbackAt || ''),
+                text: this._collapsedSectionOr(
+                    qaBlockId,
+                    this._qaFeedbackOmittedLabel(fallbackFeedback),
+                    this._serializeQaFeedbackPlainText(fallbackFeedback, { feedbackId: null, itemId: iid })
+                )
+            });
         }
         for (const dispute of orphanDisputes || []) {
             const disputeBlockId = this._disputeActionBlockId(dispute, iid);
-            if (disputeBlockId && this._isActionBlockCollapsed(disputeBlockId)) continue;
             blocks.push({
                 sortAt: String(dispute.submittedAt || ''),
-                text: this._serializeDisputePlainText(dispute, { itemId: iid })
+                text: this._collapsedSectionOr(
+                    disputeBlockId,
+                    'Dispute',
+                    this._serializeDisputePlainText(dispute, { itemId: iid })
+                )
             });
         }
         for (const flag of orphanFlags || []) {
             const flagBlockId = this._flagActionBlockId(flag, iid);
-            if (flagBlockId && this._isActionBlockCollapsed(flagBlockId)) continue;
             blocks.push({
                 sortAt: String(flag.createdAt || ''),
-                text: this._serializeFlagPlainText(flag, { itemId: iid })
+                text: this._collapsedSectionOr(
+                    flagBlockId,
+                    'Senior Review Flag',
+                    this._serializeFlagPlainText(flag, { itemId: iid })
+                )
             });
         }
         return this._sortTaskActionBlocksByDate(blocks)
@@ -6610,25 +7431,39 @@ const searchOutputResultsPaneMethods = {
             if (metaLines.length) sections.push(metaLines.join('\n'));
             const quickParts = [sections.join('\n')];
             const quickVersionId = this._versionActionBlockId(iid, 'quick');
-            if (task.prompt && (!quickVersionId || !this._isActionBlockCollapsed(quickVersionId))) {
-                quickParts.push(this._serializePromptVersionPlainText(
+            if (task.prompt) {
+                const promptText = this._serializePromptVersionPlainText(
                     { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
-                    { showVersionLabel: false, statusLabel: '' }
-                ));
+                    { showVersionLabel: false, statusLabel: '', itemId: iid, displayVersionNo: 'quick' }
+                );
+                quickParts.push(this._collapsedSectionOr(quickVersionId, 'Prompt', promptText));
             }
-            const qaBlockId = this._qaActionBlockId(item.selectedFeedbackId || null, iid);
-            if (item.qaFeedback && (!qaBlockId || !this._isActionBlockCollapsed(qaBlockId))) {
-                quickParts.push(this._serializeQaFeedbackPlainText(item.qaFeedback));
+            if (item.qaFeedback) {
+                const qaBlockId = this._qaActionBlockId(item.selectedFeedbackId || null, iid);
+                quickParts.push(this._collapsedSectionOr(
+                    qaBlockId,
+                    this._qaFeedbackOmittedLabel(item.qaFeedback),
+                    this._serializeQaFeedbackPlainText(item.qaFeedback, {
+                        feedbackId: item.selectedFeedbackId || null,
+                        itemId: iid
+                    })
+                ));
             }
             for (const d of item.disputes || []) {
                 const disputeBlockId = this._disputeActionBlockId(d, iid);
-                if (disputeBlockId && this._isActionBlockCollapsed(disputeBlockId)) continue;
-                quickParts.push(this._serializeDisputePlainText(d, { itemId: iid }));
+                quickParts.push(this._collapsedSectionOr(
+                    disputeBlockId,
+                    'Dispute',
+                    this._serializeDisputePlainText(d, { itemId: iid })
+                ));
             }
             for (const f of item.flags || []) {
                 const flagBlockId = this._flagActionBlockId(f, iid);
-                if (flagBlockId && this._isActionBlockCollapsed(flagBlockId)) continue;
-                quickParts.push(this._serializeFlagPlainText(f, { itemId: iid }));
+                quickParts.push(this._collapsedSectionOr(
+                    flagBlockId,
+                    'Senior Review Flag',
+                    this._serializeFlagPlainText(f, { itemId: iid })
+                ));
             }
             return quickParts.filter(Boolean).join('\n\n---\n\n');
         }
@@ -6639,9 +7474,7 @@ const searchOutputResultsPaneMethods = {
             : [{ id: '', displayVersionNo: 1, prompt: task.prompt, envKey: task.envKey, createdAt: task.createdAt }];
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
-        const { selectedDisplayNo, ui } = this._resolveCardSelectedDisplayNo(item, versions);
-        const expanded = ui.expanded;
-        const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
+        const { ui } = this._resolveCardSelectedDisplayNo(item, versions);
         const feedbackByDisplayNo = new Map();
         const disputes = item.disputes || [];
         const attachedDisputeIds = new Set();
@@ -6659,25 +7492,13 @@ const searchOutputResultsPaneMethods = {
         );
         const orphanFlagsByDisplayNo = this._orphanFlagsByDisplayNo(item.flags || [], task.promptVersions || versions);
 
-        let renderedVersions;
-        if (expanded) {
-            renderedVersions = [...versions].sort((a, b) => (
-                ui.timelineNewestFirst
-                    ? b.displayVersionNo - a.displayVersionNo
-                    : a.displayVersionNo - b.displayVersionNo
-            ));
-        } else {
-            const extras = [...new Set(item.extraVisibleVersionNos || [])]
-                .filter((n) => n !== selectedDisplayNo)
-                .sort((a, b) => b - a);
-            renderedVersions = [selectedDisplayNo, ...extras]
-                .map((n) => versionByDisplayNo.get(n))
-                .filter(Boolean);
-        }
+        const renderedVersions = [...versions].sort((a, b) => (
+            ui.timelineNewestFirst
+                ? b.displayVersionNo - a.displayVersionNo
+                : a.displayVersionNo - b.displayVersionNo
+        ));
 
         const headerLines = [];
-        // serialize path keeps reviewKind unused except selection — silence via void
-        void reviewKind;
         const key = String(task.key || '').trim();
         if (key) headerLines.push('`' + key + '`');
         const statusMeta = this._statusDisplayMeta(task.status);
@@ -6715,28 +7536,25 @@ const searchOutputResultsPaneMethods = {
         }
 
         const out = [this._joinPlainSections(headerParts)];
-        const maxDisplayVersionNo = hasTimeline
-            ? Math.max(...versions.map((v) => v.displayVersionNo))
-            : 0;
         for (const version of renderedVersions) {
             const versionBlockId = this._versionActionBlockId(iid, version.displayVersionNo);
-            if (versionBlockId && this._isActionBlockCollapsed(versionBlockId)) continue;
+            const statusLabel = this._promptVersionStatusLabel(item, version, versions);
+            const head = this._promptVersionHeadLine(version, {
+                showVersionLabel: hasTimeline,
+                statusLabel
+            });
+            if (versionBlockId && this._isActionBlockCollapsed(versionBlockId)) {
+                out.push(this._omittedSectionPlainText(head));
+                continue;
+            }
             const feedbackEntries = feedbackByDisplayNo.get(version.displayVersionNo) || [];
             const fallback = !hasTimeline && allFeedback.length === 0 ? item.qaFeedback : null;
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
             const orphanFlagsForVersion = orphanFlagsByDisplayNo.get(version.displayVersionNo) || [];
-            const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
-            const versionActionEntry = orderedFeedback.length ? orderedFeedback[orderedFeedback.length - 1] : null;
-            let statusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
-            if (!statusLabel && hasTimeline && version.displayVersionNo < maxDisplayVersionNo) {
-                statusLabel = 'QA Edited';
-            }
-            if (statusLabel === 'Returned') statusLabel = 'Returned for Revision';
-            if (statusLabel === 'Escalated') statusLabel = 'Escalated for Fleet Review';
-            if (statusLabel === 'Flagged') statusLabel = 'Flagged as Bugged';
             out.push(this._serializePromptVersionPlainText(version, {
                 showVersionLabel: hasTimeline,
-                statusLabel
+                statusLabel,
+                itemId: iid
             }));
             const actionTexts = this._serializeVersionTaskActionsPlainText(
                 feedbackEntries, fallback, orphanDisputes, orphanFlagsForVersion, iid
@@ -6745,16 +7563,23 @@ const searchOutputResultsPaneMethods = {
         }
 
         const userStoryUi = this._getUserStoryUi(iid);
-        if (userStoryUi && userStoryUi.visible) {
-            const us = this._serializeUserStoryPlainText(userStoryUi);
-            if (us) out.push(us);
+        if (this._userStoryReady(userStoryUi)) {
+            const t = this._collapsedSectionOr(
+                this._userStoryActionBlockId(iid),
+                this._userStoryTitle(userStoryUi),
+                this._serializeUserStoryPlainText(userStoryUi, iid)
+            );
+            if (t) out.push(t);
         }
         const sessionUi = this._getSessionQaUi(iid);
         if (sessionUi && sessionUi.visible) {
             for (const review of sessionUi.reviews || []) {
                 const sessionBlockId = review && review.id ? ('session-qa:' + review.id) : '';
-                if (sessionBlockId && this._isActionBlockCollapsed(sessionBlockId)) continue;
-                const t = this._serializeSessionQaPlainText(review);
+                const t = this._collapsedSectionOr(
+                    sessionBlockId,
+                    'Session QA',
+                    this._serializeSessionQaPlainText(review)
+                );
                 if (t) out.push(t);
             }
         }
@@ -6762,8 +7587,11 @@ const searchOutputResultsPaneMethods = {
         if (verifierUi && verifierUi.visible) {
             for (const exec of verifierUi.executions || []) {
                 const verifierBlockId = exec && exec.id ? ('verifier-output:' + exec.id) : '';
-                if (verifierBlockId && this._isActionBlockCollapsed(verifierBlockId)) continue;
-                const t = this._serializeVerifierOutputPlainText(exec);
+                const t = this._collapsedSectionOr(
+                    verifierBlockId,
+                    'Verifier Output',
+                    this._serializeVerifierOutputPlainText(exec)
+                );
                 if (t) out.push(t);
             }
         }
@@ -6854,24 +7682,6 @@ const searchOutputResultsPaneMethods = {
         return `<span style="${labelStyle}">${dashEscHtml(' ' + versionNo + ' of ' + totalVersions)}</span>`;
     },
 
-    _collapsedVersionPickerHtml(itemId, taskId, versions, selectedDisplayNo, totalVersions) {
-        const versionOptions = [...versions]
-            .sort((a, b) => a.displayVersionNo - b.displayVersionNo)
-            .map((v) => `<option value="${v.displayVersionNo}"${v.displayVersionNo === selectedDisplayNo ? ' selected' : ''}>v${v.displayVersionNo} of ${totalVersions}</option>`)
-            .join('');
-        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <select data-wf-dash-card-version-select="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" style="${this._inputStyle()} width: auto; padding: 2px 8px; font-size: 11px; cursor: pointer;" aria-label="Select prompt version">${versionOptions}</select>
-            <button type="button" data-wf-dash-card-show-all="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Show All</button>
-        </span>`;
-    },
-
-    _expandedVersionHeaderHtml(itemId, taskId, displayVersionNo, totalVersions) {
-        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            ${this._promptVersionCountHtml(displayVersionNo, totalVersions)}
-            <button type="button" data-wf-dash-card-collapse="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" data-display-no="${displayVersionNo}" class="${this._dashBtnClass('basic', 'compact')}">Collapse</button>
-        </span>`;
-    },
-
     _fieldGroupHtml(label, valueHtml, opts) {
         const options = opts || {};
         const nowrap = Boolean(options.nowrap);
@@ -6894,18 +7704,19 @@ const searchOutputResultsPaneMethods = {
         return `<div style="${groupStyle}">${labelHtml}<span style="${valueStyle}">${valueHtml}</span></div>`;
     },
 
-    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex) {
-        const text = this._dashQuotedText(notes);
-        if (!text) return '';
-        const body = this._dashQuotedHighlightedHtml(notes, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
-        return '<div data-wf-dash-notes-to-qa="1" style="margin: 8px 0 0 0;">'
-            + this._quotedFieldBlockHtml('Notes to QA', body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
-            + '</div>';
+    _notesToQaActionBlockId(itemId, displayVersionNo) {
+        if (!itemId || displayVersionNo == null) return '';
+        return 'notes-to-qa:' + itemId + ':' + displayVersionNo;
+    },
+
+    _scratchpadActionBlockId(itemId, displayVersionNo) {
+        if (!itemId || displayVersionNo == null) return '';
+        return 'scratchpad:' + itemId + ':' + displayVersionNo;
     },
 
     _plainTimestampHtml(iso, prefixLabel, opts) {
         const formatted = dashFormatCreatedAt(iso);
-        const ago = dashLib().relativeAgo(iso, { style: 'detailed' });
+        const ago = dashLib().relativeAgo(iso, { style: 'compact' });
         const muted = Boolean(opts && opts.muted);
         const dateColor = muted
             ? 'color: var(--muted-foreground, #64748b);'
@@ -7172,7 +7983,6 @@ const searchOutputResultsPaneMethods = {
         } else {
             blockStyle = this._qaOtherBlockStyle();
         }
-        const border = blockStyle.border;
         const bg = blockStyle.background;
         const alertBadge = this._qaAlertBadgeStyle();
         const statusLabel = isVerifierFailure
@@ -7185,7 +7995,7 @@ const searchOutputResultsPaneMethods = {
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
                         ? `<span style="${alertBadge}">Flagged as Bugged</span>`
-                        : `<span style="${this._qaReturnedBadgeStyle()}">Returned for Revision</span>`))));
+                        : `<span style="${this._qaReturnedBadgeStyle()}">Returned</span>`))));
         const issueBadgeStyle = isOther
             ? this._qaAlertIssueBadgeStyle()
             : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
@@ -7193,25 +8003,22 @@ const searchOutputResultsPaneMethods = {
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
-        const blocks = (qa.textBlocks || []).map((b) => {
-            const blockLabel = (isSystem || isVerifierFailure) ? b.label : dashQaTextBlockLabel(b.label, positive);
-            const quotedText = this._dashQuotedText(b.text);
-            const body = quotedText
-                ? this._dashQuotedHighlightedHtml(b.text, hq, cs, fz, rx)
-                : '—';
-            return `
-            <div>
-                ${this._labelSpan(blockLabel)}
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${body}</p>
-            </div>`;
-        }).join('');
+        const qaParentId = feedbackId
+            ? ('qa:' + feedbackId)
+            : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        const blocks = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightPack(hq, cs, fz, rx),
+            ancestorBlockIds: [qaParentId],
+            portions: this._qaFeedbackPortions(qa, feedbackId, itemId)
+        });
         const submittedHtml = qa.feedbackAt
             ? dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds)
             : '';
         const promptRatingHtml = (!isSystem && qa.qualityRating)
-            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Rating')}<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span></div>`
+            ? `<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span>`
             : '';
-        const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
+        const blockTitle = this._qaFeedbackBlockTitle(qa);
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet', 'qa')}</div>`
             : '';
@@ -7221,9 +8028,8 @@ const searchOutputResultsPaneMethods = {
         const screenshotHtml = feedbackId && qa.screenshotKeys && qa.screenshotKeys.length
             ? this._screenshotBlockHtml('qa', feedbackId, itemId, qa.screenshotKeys)
             : '';
-        const blockId = feedbackId
-            ? ('qa:' + feedbackId)
-            : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        const blockId = qaParentId;
+        this._ensureActionBlockCollapseDefault(blockId, false);
         const collapsed = this._isActionBlockCollapsed(blockId);
         const headerHelpfulness = this._qaCollapseSwapHtml('expanded', collapsed, helpfulnessActions);
         const headerReviewer = this._qaCollapseSwapHtml(
@@ -7232,12 +8038,13 @@ const searchOutputResultsPaneMethods = {
             this._qaCollapsedReviewerHeaderHtml(qa)
         );
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">${dashEscHtml(blockTitle)}</span>`
-            + this._copyIconHtml(this._serializeQaFeedbackPlainText(qa))
             + submittedHtml
             + promptRatingHtml
             + headerHelpfulness
             + headerReviewer;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '');
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel || '', {
+            copyHtml: this._liveSectionCopyIconHtml('qa', feedbackId || '', itemId)
+        });
         const bodyHtml = `${reviewerHtml}`
             + (badges ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">${badges}</div>` : '')
             + blocks
@@ -7248,7 +8055,7 @@ const searchOutputResultsPaneMethods = {
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 12px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 12px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow + panelWrap,
             bodyHtml
         );
@@ -7323,23 +8130,18 @@ const searchOutputResultsPaneMethods = {
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
+        const highlight = this._quotedHighlightPack(hq, cs, fz, rx);
         const purple = this._disputeBlockStyle();
-        const border = purple.border;
         const bg = purple.background;
-        const reasonBody = display.reason
-            ? this._dashQuotedHighlightedHtml(display.reason, hq, cs, fz, rx)
-            : '—';
         const submittedHtml = display.submittedAt
             ? this._plainTimestampHtml(display.submittedAt)
             : '';
         const categoryHtml = display.category ? this._disputeCategoryBadgeHtml(display.category) : '';
+        const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
         let resolutionHtml = '';
         if (display.resolutionAt) {
             const resolutionKind = display.isApproved ? 'approved' : (display.isRejected ? 'rejected' : 'other');
             const statusText = display.isApproved ? 'Approved' : (display.isRejected ? 'Rejected' : (display.status || 'Resolved'));
-            const resolutionBody = display.resolutionText
-                ? this._dashQuotedHighlightedHtml(display.resolutionText, hq, cs, fz, rx)
-                : '—';
             const resolvedHtml = this._fieldGroupHtml(
                 'Resolved',
                 dashTimestampWithDurationHtml(display.resolutionAt, display.reviewDurationSeconds)
@@ -7356,15 +8158,18 @@ const searchOutputResultsPaneMethods = {
                 leftHeaderExtra: resolvedHtml,
                 resolverHtml,
                 noteLabel: 'Reason',
-                noteBodyHtml: resolutionBody,
+                noteText: display.resolutionText,
+                highlight,
+                ancestorBlockIds: [blockId],
                 copyText: this._dashQuotedText(display.resolutionText),
-                blockCopyText: this._serializeDisputeResolutionPlainText(display)
+                copySection: 'dispute-res',
+                copyEntityId: display.id
             });
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
-        const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
+        this._ensureActionBlockCollapseDefault(blockId, true);
+        const collapsed = this._isActionBlockCollapsed(blockId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
-            + this._liveSectionCopyIconHtml('dispute', display.id, itemId)
             + submittedHtml;
         const filerHtml = (display.filerId || display.filerName || display.filerEmail)
             ? this._fieldGroupHtml(
@@ -7378,24 +8183,40 @@ const searchOutputResultsPaneMethods = {
                 )
             )
             : '';
-        const disputeRightHtml = (categoryHtml || claimControlHtml || filerHtml)
-            ? `${filerHtml}${categoryHtml}${claimControlHtml}`
+        const resolutionChip = this._qaCollapseSwapHtml(
+            'collapsed',
+            collapsed,
+            this._entityResolutionChipHtml('dispute', display)
+        );
+        const disputeRightHtml = (categoryHtml || claimControlHtml || filerHtml || resolutionChip)
+            ? `${filerHtml}${categoryHtml}${claimControlHtml}${resolutionChip}`
             : '';
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, disputeRightHtml, {
+            copyHtml: this._liveSectionCopyIconHtml('dispute', display.id, itemId)
+        });
         const resolutionPanelHtml = !display.resolutionAt
             ? this._disputeResolutionPanelHtml(display, itemId)
             : '';
         const screenshotHtml = display.id && display.screenshotKeys && display.screenshotKeys.length
             ? this._screenshotBlockHtml('dispute', display.id, itemId, display.screenshotKeys)
             : '';
-        const reasonHtml = this._quotedFieldBlockHtml('Reason', reasonBody, this._dashQuotedText(display.reason));
+        const reasonHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight,
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: blockId ? (blockId + ':reason') : '',
+                label: 'Reason',
+                text: display.reason
+            }]
+        });
         const bodyHtml = display.resolutionAt
             ? `${reasonHtml}${screenshotHtml}${resolutionHtml}`
             : `${reasonHtml}${screenshotHtml}${resolutionPanelHtml}`;
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 8px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -7410,10 +8231,10 @@ const searchOutputResultsPaneMethods = {
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
+        const highlight = this._quotedHighlightPack(hq, cs, fz, rx);
         const blockStyle = this._qaOtherBlockStyle();
         const alertBadge = this._qaAlertBadgeStyle();
         const issueBadgeStyle = this._qaAlertIssueBadgeStyle();
-        const border = blockStyle.border;
         const bg = blockStyle.background;
         const submittedHtml = display.createdAt
             ? this._plainTimestampHtml(display.createdAt)
@@ -7423,21 +8244,24 @@ const searchOutputResultsPaneMethods = {
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet', 'senior_review')}</div>`
             : '';
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
+        const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
         const noteText = this._dashQuotedText(display.note);
         const reviewerNoteHtml = noteText
-            ? this._quotedFieldBlockHtml(
-                'Reviewer Note',
-                this._dashQuotedHighlightedHtml(display.note, hq, cs, fz, rx),
-                noteText
-            )
+            ? this._quotedPortionsHtml({
+                itemId,
+                highlight,
+                ancestorBlockIds: [blockId],
+                portions: [{
+                    blockId: blockId ? (blockId + ':note') : '',
+                    label: 'Reviewer Note',
+                    text: display.note
+                }]
+            })
             : `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewer Note')}${this._noneProvidedBadgeHtml()}</div>`;
         let resolutionHtml = '';
         if (display.resolutionAt) {
             const resolutionKind = display.isConfirmed ? 'confirmed' : (display.isDismissed ? 'dismissed' : 'other');
             const statusText = display.isConfirmed ? 'Confirmed' : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
-            const resolutionBody = display.resolutionNote
-                ? this._dashQuotedHighlightedHtml(display.resolutionNote, hq, cs, fz, rx)
-                : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'senior_review')}</div>`
@@ -7451,9 +8275,12 @@ const searchOutputResultsPaneMethods = {
                 leftHeaderExtra: resolvedHtml,
                 resolverHtml,
                 noteLabel: 'Resolution Note',
-                noteBodyHtml: resolutionBody,
+                noteText: display.resolutionNote,
+                highlight,
+                ancestorBlockIds: [blockId],
                 copyText: this._dashQuotedText(display.resolutionNote),
-                blockCopyText: this._serializeFlagResolutionPlainText(display)
+                copySection: 'flag-res',
+                copyEntityId: display.id
             });
         }
         const flagResolutionInputHtml = (display.isPending && itemId)
@@ -7463,11 +8290,19 @@ const searchOutputResultsPaneMethods = {
                 </div>`
             )
             : '';
-        const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
+        this._ensureActionBlockCollapseDefault(blockId, true);
+        const collapsed = this._isActionBlockCollapsed(blockId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
-            + this._liveSectionCopyIconHtml('flag', display.id, itemId)
             + submittedHtml;
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, `<span style="${alertBadge}">Flagged for Review</span>`);
+        const flaggedChip = `<span style="${alertBadge}">Flagged for Review</span>`;
+        const resolutionChip = this._qaCollapseSwapHtml(
+            'collapsed',
+            collapsed,
+            this._entityResolutionChipHtml('flag', display)
+        );
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, flaggedChip + resolutionChip, {
+            copyHtml: this._liveSectionCopyIconHtml('flag', display.id, itemId)
+        });
         const bodyHtml = `${flaggerHtml}
                 ${issuesHtml}
                 ${reviewerNoteHtml}
@@ -7476,7 +8311,7 @@ const searchOutputResultsPaneMethods = {
         return this._actionBlockShellHtml(
             blockId,
             itemId,
-            'margin-top: 8px; padding: 10px 12px; border: ' + border + '; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
+            'margin-top: 8px; padding: 10px 12px; border: none; border-radius: 8px; background: ' + bg + '; display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml
         );
@@ -7590,13 +8425,6 @@ const searchOutputResultsPaneMethods = {
         return fallback;
     },
 
-    _collapsedReviewVersionControlsHtml(itemId, taskId, selectedDisplayNo, totalVersions) {
-        return `<span style="display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            ${this._promptVersionCountHtml(selectedDisplayNo, totalVersions)}
-            <button type="button" data-wf-dash-card-show-all="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(taskId)}" class="${this._dashBtnClass('basic', 'compact')}">Show All</button>
-        </span>`;
-    },
-
     _feedbackEntryAt(entry) {
         return String(entry.feedbackAt || (entry.display && entry.display.feedbackAt) || '');
     },
@@ -7692,6 +8520,7 @@ const searchOutputResultsPaneMethods = {
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
+        const highlight = this._quotedHighlightPack(hq, cs, fz, rx);
         const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
         let promptBody;
         if (rollingOpts && rollingOpts.active) {
@@ -7719,16 +8548,6 @@ const searchOutputResultsPaneMethods = {
         if (!versionActionBadge && hasSubsequentVersions) {
             versionActionBadge = this._qaEditedBadgeHtml();
         }
-        let promptStatusLabel = this._feedbackEntryOutcomePlainText(versionActionEntry);
-        if (!promptStatusLabel && hasSubsequentVersions) promptStatusLabel = 'QA Edited';
-        if (promptStatusLabel === 'Returned') promptStatusLabel = 'Returned for Revision';
-        if (promptStatusLabel === 'Escalated') promptStatusLabel = 'Escalated for Fleet Review';
-        if (promptStatusLabel === 'Flagged') promptStatusLabel = 'Flagged as Bugged';
-        const promptCopyText = this._serializePromptVersionPlainText(version, {
-            showVersionLabel: showVersionLabel || Boolean(versionHeaderControls),
-            statusLabel: promptStatusLabel,
-            omitNotesToQa: false
-        });
         const taskActionsHtml = this._versionTaskActionsHtml(
             feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags,
             hq, cs, fz, rx, itemId
@@ -7744,7 +8563,25 @@ const searchOutputResultsPaneMethods = {
         )}</span>`;
         const verifierBtnHtml = this._versionVerifierButtonHtml(itemId, version);
         const blockId = 'version:' + itemId + ':' + version.displayVersionNo;
-        const leftHeader = `${promptLabel}${this._copyIconHtml(promptCopyText)}${submittedHtml}${verifierBtnHtml}`;
+        const itemForCollapse = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        if (itemForCollapse) {
+            const { selectedDisplayNo } = this._resolveCardSelectedDisplayNo(
+                itemForCollapse,
+                this._promptVersionsForItem(itemForCollapse)
+            );
+            this._ensureActionBlockCollapseDefault(
+                blockId,
+                (this._isVersionModeAll() || (itemForCollapse.task && this._getRollingUi(itemForCollapse.task.id).showHighlights))
+                    ? false
+                    : version.displayVersionNo !== selectedDisplayNo
+            );
+        }
+        this._expandBlockForHighlight(
+            blockId,
+            [version.prompt, version.resubmissionNotes, version.scratchpad],
+            highlight
+        );
+        const leftHeader = `${promptLabel}${submittedHtml}${verifierBtnHtml}`;
         let rightHeader = '';
         if (inActivePair) {
             const leftVersion = rollingOpts.renderedVersions[rollingUi.rollingLeft];
@@ -7758,19 +8595,27 @@ const searchOutputResultsPaneMethods = {
         }
         if (!diffMode && versionActionBadge) rightHeader += versionActionBadge;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
-            forceRightSection: !!(rollingOpts && rollingOpts.active)
+            forceRightSection: !!(rollingOpts && rollingOpts.active),
+            copyHtml: this._liveSectionCopyIconHtml('prompt', String(version.displayVersionNo), itemId)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
-        const notesToQaHtml = diffMode
-            ? ''
-            : this._notesToQaSectionHtml(version.resubmissionNotes, hq, cs, fz, rx);
         const taskActionsPart = diffMode ? '' : taskActionsHtml;
-        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
-            + notesToQaHtml
-            + taskActionsPart;
+        const quotedBodyHtml = diffMode
+            ? this._quotedBarWrapHtml(promptBody, {
+                bodyStyle: this._quotedFieldBodyLayoutStyle() + ' ' + promptColor,
+                alignToCaret: true
+            })
+            : this._quotedPortionsHtml({
+                itemId,
+                highlight,
+                ancestorBlockIds: [blockId],
+                portions: this._versionBodyPortions(version, itemId, version.displayVersionNo)
+            });
+        const bodyHtml = quotedBodyHtml + taskActionsPart;
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
             : '';
+        const versionBandAttr = ' data-wf-dash-version-band="1"';
         const shellClass = inActivePair ? 'so-rolling-diff-on' : '';
         return this._actionBlockShellHtml(
             blockId,
@@ -7778,7 +8623,7 @@ const searchOutputResultsPaneMethods = {
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
             bodyHtml,
-            versionIdxAttr,
+            versionIdxAttr + versionBandAttr,
             shellClass
         );
     },
@@ -7792,28 +8637,36 @@ const searchOutputResultsPaneMethods = {
     _quickResultCardHtml(item) {
         const task = item.task;
         const itemId = item.id;
-        const hq = item.highlightQuery || '';
-        const cs = Boolean(item.highlightCaseSensitive);
-        const fz = Boolean(item.highlightFuzzy);
-        const rx = Boolean(item.highlightRegex);
-        const promptText = this._dashQuotedText(task.prompt);
-        const promptBody = promptText
-            ? this._dashQuotedHighlightedHtml(task.prompt, hq, cs, fz, rx)
-            : '—';
+        const highlight = this._quotedHighlightFromItem(item);
+        const hq = highlight.query;
+        const cs = highlight.caseSensitive;
+        const fz = highlight.fuzzy;
+        const rx = highlight.regex;
         const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
         const blockId = 'version:' + itemId + ':quick';
-        const leftHeader = `${this._labelSpan('Prompt')}${this._copyIconHtml(this._serializePromptVersionPlainText(
-            { displayVersionNo: 1, prompt: task.prompt, createdAt: task.createdAt },
-            { showVersionLabel: false, statusLabel: '' }
-        ))}`;
+        const promptHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight,
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: this._promptTextActionBlockId(itemId, 'quick'),
+                label: 'Prompt',
+                text: task.prompt,
+                skipPlainLabel: true,
+                alignToCaret: true
+            }]
+        });
+        const leftHeader = `${this._labelSpan('Prompt')}`;
         const rightHeader = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt));
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader);
+        const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
+            copyHtml: this._liveSectionCopyIconHtml('prompt', 'quick', itemId)
+        });
         let promptSectionHtml = this._actionBlockShellHtml(
             blockId,
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
-            `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
+            promptHtml || this._quotedBarWrapHtml('—', { alignToCaret: true })
         );
         let bodyInner;
         const preferQaOnly = item.kind === 'qa' && item.qaFeedback;
@@ -7877,7 +8730,6 @@ const searchOutputResultsPaneMethods = {
         const caseSensitive = Boolean(item.highlightCaseSensitive);
         const highlightFuzzy = Boolean(item.highlightFuzzy);
         const highlightRegex = Boolean(item.highlightRegex);
-        const extraVisibleVersionNos = item.extraVisibleVersionNos || [];
 
         let versions = task.promptVersions && task.promptVersions.length
             ? task.promptVersions
@@ -7885,10 +8737,10 @@ const searchOutputResultsPaneMethods = {
         const totalVersions = versions.length;
         const hasTimeline = totalVersions > 1;
 
-        const { selectedDisplayNo, ui, reviewKind } = this._resolveCardSelectedDisplayNo(item, versions);
-        const expanded = ui.expanded;
+        const { selectedDisplayNo, ui } = this._resolveCardSelectedDisplayNo(item, versions);
+        this._syncItemVersionBlockCollapse(item);
+        if (hasTimeline && totalVersions >= 2) this._ensureRollingUiOnExpand(task.id, totalVersions);
 
-        const versionByDisplayNo = new Map(versions.map((v) => [v.displayVersionNo, v]));
         const feedbackByDisplayNo = new Map();
         const disputes = item.disputes || [];
         const attachedDisputeIds = new Set();
@@ -7906,40 +8758,30 @@ const searchOutputResultsPaneMethods = {
         );
         const orphanFlagsByDisplayNo = this._orphanFlagsByDisplayNo(item.flags || [], task.promptVersions || versions);
 
-        let renderedVersions;
-        if (expanded) {
-            renderedVersions = [...versions].sort((a, b) => (
-                ui.timelineNewestFirst
-                    ? b.displayVersionNo - a.displayVersionNo
-                    : a.displayVersionNo - b.displayVersionNo
-            ));
-        } else {
-            const extras = [...new Set(extraVisibleVersionNos)]
-                .filter((n) => n !== selectedDisplayNo)
-                .sort((a, b) => b - a);
-            const nos = [selectedDisplayNo, ...extras];
-            renderedVersions = nos.map((n) => versionByDisplayNo.get(n)).filter(Boolean);
-        }
+        const renderedVersions = [...versions].sort((a, b) => (
+            ui.timelineNewestFirst
+                ? b.displayVersionNo - a.displayVersionNo
+                : a.displayVersionNo - b.displayVersionNo
+        ));
 
+        const highlightFocusedReviewer = !this._isVersionModeAll();
         const reviewerBadges = allFeedback.length > 0
             ? this._fieldGroupHtml(
                 'Reviewers',
-                [...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, !expanded && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join(''),
+                [...allFeedback].reverse().map((entry) => this._reviewerBadgeHtml(entry, highlightFocusedReviewer && entry.linkedDisplayVersionNo === selectedDisplayNo, task.id, itemId)).join(''),
                 { labelColumn: true }
             )
             : '';
 
-        const rollingUi = expanded && hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
-        const diffMode = rollingUi && rollingUi.showHighlights;
+        const rollingUi = hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
 
         let row3Html = '';
-        if (expanded) {
-            const rollingActive = hasTimeline && totalVersions >= 2;
-            if (rollingActive && rollingUi) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
-            const feedbackBtn = rollingActive && rollingUi
+        if (hasTimeline && totalVersions >= 2) {
+            if (rollingUi) this._clampCardRollingLeft(rollingUi, renderedVersions.length);
+            const feedbackBtn = rollingUi
                 ? this._expandedRollingFeedbackBtnHtml(itemId, task.id, rollingUi)
                 : '';
-            const diffToolbar = rollingActive && rollingUi
+            const diffToolbar = rollingUi
                 ? this._expandedRollingDiffToolbarHtml(rollingUi)
                 : '';
             row3Html = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 14px; font-size: 12px;">
@@ -7958,14 +8800,9 @@ const searchOutputResultsPaneMethods = {
             const orphanDisputes = orphanDisputesByDisplayNo.get(version.displayVersionNo) || [];
             const orphanFlagsForVersion = orphanFlagsByDisplayNo.get(version.displayVersionNo) || [];
             const hasSubsequentVersions = hasTimeline && version.displayVersionNo < maxDisplayVersionNo;
-            let versionHeaderControls = '';
-            if (hasTimeline && !expanded && version.displayVersionNo === selectedDisplayNo) {
-                versionHeaderControls = reviewKind
-                    ? this._collapsedReviewVersionControlsHtml(itemId, task.id, selectedDisplayNo, totalVersions)
-                    : this._collapsedVersionPickerHtml(itemId, task.id, versions, selectedDisplayNo, totalVersions);
-            } else if (hasTimeline && expanded) {
-                versionHeaderControls = this._expandedVersionHeaderHtml(itemId, task.id, version.displayVersionNo, totalVersions);
-            }
+            const versionHeaderControls = hasTimeline
+                ? this._promptVersionCountHtml(version.displayVersionNo, totalVersions)
+                : '';
             const rollingOpts = rollingUi
                 ? { active: true, versionIdx, renderedVersions, rollingUi }
                 : null;
@@ -7978,14 +8815,14 @@ const searchOutputResultsPaneMethods = {
             );
         }).join('');
 
-        const row2Html = !diffMode && reviewerBadges
+        const row2Html = reviewerBadges
             ? `<div style="display: flex; flex-wrap: wrap; align-items: start; justify-content: flex-start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${reviewerBadges}
                 </div>`
             : '';
 
-        const versionsInnerHtml = expanded && hasTimeline && totalVersions >= 2
-            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 12px;">${versionSections}</div>`
+        const versionsInnerHtml = hasTimeline && totalVersions >= 2
+            ? `<div class="so-versions-rolling-area" data-wf-dash-versions-area="1" data-item-id="${dashEscHtml(itemId)}" data-task-id="${dashEscHtml(task.id)}" style="display: flex; flex-direction: column; gap: 8px;">${versionSections}</div>`
             : versionSections;
 
         const stickyChromeHtml = `
@@ -7996,7 +8833,7 @@ const searchOutputResultsPaneMethods = {
         const bodyHtml = `
                 ${this._supplementalControlsHtml(itemId)}
                 ${this._supplementalPanelsHtml(itemId)}
-                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; font-size: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 12px; padding: 12px 7px; font-size: 12px;">
                     ${versionsInnerHtml}
                 </div>`;
 
@@ -8046,7 +8883,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '10.7',
+    _version: '13.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1399,6 +1399,15 @@ function fleetUiCopyIconSvg(opts) {
         + '</svg>';
 }
 
+function fleetUiClipboardIconSvg(opts) {
+    const raw = opts && opts.size != null ? Number(opts.size) : 13;
+    const size = Number.isFinite(raw) && raw > 0 ? raw : 13;
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;">'
+        + '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>'
+        + '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>'
+        + '</svg>';
+}
+
 function fleetUiAlertTriangleIconSvg(opts) {
     const raw = opts && opts.size != null ? Number(opts.size) : 18;
     const size = Number.isFinite(raw) && raw > 0 ? raw : 18;
@@ -1477,7 +1486,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared buttons, segments, panels, and copy feedback',
-    _version: '3.23',
+    _version: '3.24',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1618,6 +1627,7 @@ const plugin = {
             funnelIconSvg: fleetUiFunnelIconSvg,
             externalLinkIconSvg: fleetUiExternalLinkIconSvg,
             copyIconSvg: fleetUiCopyIconSvg,
+            clipboardIconSvg: fleetUiClipboardIconSvg,
             alertTriangleIconSvg: fleetUiAlertTriangleIconSvg,
 
             segmentBtnClass: fleetUiSegmentBtnClass,

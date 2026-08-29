@@ -36,7 +36,7 @@ const DASH_LIB_OUTPUT_KIND_LABELS = {
     sessions: 'Sessions'
 };
 const DASH_LIB_PROMPT_HISTORY_ORDER = [
-    'accepted', 'returned', 'received_system_feedback', 'notes_to_qa', 'qa_edited', 'disputed',
+    'accepted', 'returned', 'received_system_feedback', 'notes_to_qa', 'scratchpad', 'qa_edited', 'disputed',
     'flagged', 'senior_review_flagged', 'escalated', 'session_qa_performed', 'screenshots'
 ];
 const DASH_LIB_PROMPT_HISTORY_LABELS = {
@@ -44,6 +44,7 @@ const DASH_LIB_PROMPT_HISTORY_LABELS = {
     returned: 'Returned',
     received_system_feedback: 'Received system feedback',
     notes_to_qa: 'Submitted with Notes to QA',
+    scratchpad: 'Submitted with Scratchpad',
     qa_edited: 'QA Edited',
     disputed: 'Disputed',
     flagged: 'Flagged as bugged',
@@ -245,7 +246,7 @@ const DASH_LIB_RESULTS_MODE_HINTS = {
     clear: 'Clears previous results and replaces with new search results.',
     add: 'Adds new search results to previous ones (deduplicated).'
 };
-const DASH_LIB_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, QA feedback, and dispute text.';
+const DASH_LIB_SUBSTRING_FILTER_HELP = 'Matches task key, prompt, notes to QA, scratchpad, QA feedback, and dispute text.';
 const DASH_LIB_NONE_SELECTED_HINT = 'None selected = all.';
 
 function dashLibDefaultManualFilterStageRows() {
@@ -906,21 +907,21 @@ function dashLibRelativeAgo(iso, options) {
     const days = Math.floor(totalHours / 24);
     const hours = totalHours % 24;
 
-    const dayLabel = (n) => n + ' day' + (n === 1 ? '' : 's');
-    const hourLabel = (n) => compact
-        ? n + (n === 1 ? ' hr' : ' hrs')
-        : n + ' hour' + (n === 1 ? '' : 's');
-    const minLabel = (n) => compact
-        ? n + (n === 1 ? ' min' : ' mins')
-        : n + ' minute' + (n === 1 ? '' : 's');
+    const mins = totalMins % 60;
+    const dayLabel = (n) => compact ? n + 'd' : n + ' day' + (n === 1 ? '' : 's');
+    const hourLabel = (n) => compact ? n + 'h' : n + ' hour' + (n === 1 ? '' : 's');
+    const minLabel = (n) => compact ? n + 'm' : n + ' minute' + (n === 1 ? '' : 's');
 
     if (days > 0) {
-        let text = dayLabel(days);
-        if (hours > 0) text += ', ' + hourLabel(hours);
-        return text + ' ago';
+        const parts = [dayLabel(days)];
+        if (hours > 0) parts.push(hourLabel(hours));
+        if (compact && mins > 0) parts.push(minLabel(mins));
+        return parts.join(', ') + ' ago';
     }
     if (hours > 0) {
-        return hourLabel(hours) + ' ago';
+        return compact && mins > 0
+            ? hourLabel(hours) + ', ' + minLabel(mins) + ' ago'
+            : hourLabel(hours) + ' ago';
     }
     return minLabel(Math.max(1, totalMins)) + ' ago';
 }
@@ -1069,7 +1070,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
-    _version: '9.1',
+    _version: '9.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1269,9 +1270,15 @@ const plugin = {
         const result = [];
         let prevPrompt = null;
         let displayNo = 0;
+        const mergeText = (target, key, next) => {
+            if (!next) return;
+            if (!target[key]) target[key] = next;
+            else if (target[key] !== next) target[key] += '\n\n' + next;
+        };
         for (const v of sorted) {
             const prompt = String(v.prompt ?? '');
             const notes = String(v.resubmission_notes ?? '').trim();
+            const scratchpad = String(v.scratchpad ?? '').trim();
             const verifierId = v.verifier_id ? String(v.verifier_id) : '';
             const verifierVersionId = v.verifier_version_id ? String(v.verifier_version_id) : '';
             if (prompt !== prevPrompt) {
@@ -1284,19 +1291,15 @@ const plugin = {
                     envKey: String(v.env_key ?? ''),
                     createdAt: String(v.created_at ?? ''),
                     resubmissionNotes: notes,
+                    scratchpad,
                     verifierId,
                     verifierVersionId
                 });
                 prevPrompt = prompt;
             } else if (result.length) {
                 const last = result[result.length - 1];
-                if (notes) {
-                    if (!last.resubmissionNotes) {
-                        last.resubmissionNotes = notes;
-                    } else if (last.resubmissionNotes !== notes) {
-                        last.resubmissionNotes += '\n\n' + notes;
-                    }
-                }
+                mergeText(last, 'resubmissionNotes', notes);
+                mergeText(last, 'scratchpad', scratchpad);
                 // Prefer latest non-null verifier pin when same-prompt rows collapse
                 if (verifierVersionId) {
                     last.verifierVersionId = verifierVersionId;
@@ -1933,6 +1936,8 @@ const plugin = {
         const defaultNo = this._defaultDisplayNoForItem(item);
         const versionMatches = (version) => {
             if (lib.textMatchesQuery(version.prompt, query, fuzzy, caseSensitive, regex)) return true;
+            if (lib.textMatchesQuery(version.resubmissionNotes, query, fuzzy, caseSensitive, regex)) return true;
+            if (lib.textMatchesQuery(version.scratchpad, query, fuzzy, caseSensitive, regex)) return true;
             if (this._feedbackTextForVersion(item, version.displayVersionNo)
                 .some((text) => lib.textMatchesQuery(text, query, fuzzy, caseSensitive, regex))) return true;
             return this._disputeTextForItem(item)
@@ -2002,6 +2007,10 @@ const plugin = {
         return (task.promptVersions || []).some((v) => String(v.resubmissionNotes || '').trim());
     },
 
+    _taskHasScratchpad(task) {
+        return (task.promptVersions || []).some((v) => String(v.scratchpad || '').trim());
+    },
+
     _itemHasAssociatedScreenshots(item) {
         if (!item) return false;
         const task = item.task;
@@ -2043,6 +2052,7 @@ const plugin = {
         if (item.flags && item.flags.length > 0) flags.add('senior_review_flagged');
         if (this._taskHasQaEditedVersion(item.task)) flags.add('qa_edited');
         if (this._taskHasNotesToQa(item.task)) flags.add('notes_to_qa');
+        if (this._taskHasScratchpad(item.task)) flags.add('scratchpad');
         if (this._itemSessionQaReviews(item, sessionQaUi).length > 0) flags.add('session_qa_performed');
         if (this._itemHasAssociatedScreenshots(item)) flags.add('screenshots');
         return [...flags];

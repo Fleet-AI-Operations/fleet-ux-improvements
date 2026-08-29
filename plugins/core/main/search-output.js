@@ -151,6 +151,7 @@ const DASH_FLAGGED_BG = 'color-mix(in srgb, #ca8a04 14%, transparent)';
 const DASH_VERSION_MODE_CONTRIBUTOR = 'contributor_match';
 const DASH_VERSION_MODE_V1 = 'all_v1';
 const DASH_VERSION_MODE_FINAL = 'all_final';
+const DASH_VERSION_MODE_ALL = 'all_versions';
 
 function dashFilterScopes() {
     const lib = Context.dashboardLib;
@@ -278,12 +279,14 @@ function dashFormatCreatedAt(iso) {
 function dashProblemCreationDurationText(seconds) {
     const total = Math.round(Number(seconds));
     if (!Number.isFinite(total) || total < 0) return '';
-    const h = Math.floor(total / 3600);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
     const m = Math.floor((total % 3600) / 60);
     const parts = [];
-    if (h > 0) parts.push(h + (h === 1 ? ' hr' : ' hrs'));
-    if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
-    if (parts.length === 0 && total > 0) return '< 1 min';
+    if (d > 0) parts.push(d + 'd');
+    if (h > 0) parts.push(h + 'h');
+    if (m > 0) parts.push(m + 'm');
+    if (parts.length === 0 && total > 0) return '< 1m';
     return parts.join(', ');
 }
 
@@ -6277,8 +6280,17 @@ function attachSearchOutputListeners(modal, dash) {
                 return;
             }
             const actionBlockToggle = e.target.closest('[data-wf-dash-action-block-toggle]');
-            if (actionBlockToggle && modal.contains(actionBlockToggle) && e.target === actionBlockToggle) {
+            if (actionBlockToggle && modal.contains(actionBlockToggle)) {
+                e.preventDefault();
                 const blockId = actionBlockToggle.getAttribute('data-wf-dash-action-block-toggle');
+                if (blockId) dash._toggleActionBlockCollapse(blockId);
+                return;
+            }
+            const quotedBar = e.target.closest('[data-wf-dash-quoted-bar]');
+            if (quotedBar && modal.contains(quotedBar)) {
+                e.preventDefault();
+                const block = quotedBar.closest('[data-wf-dash-action-block]');
+                const blockId = block && block.getAttribute('data-wf-dash-action-block');
                 if (blockId) dash._toggleActionBlockCollapse(blockId);
                 return;
             }
@@ -6301,34 +6313,9 @@ function attachSearchOutputListeners(modal, dash) {
                 const taskId = reviewerBadge.getAttribute('data-task-id');
                 const displayNo = parseInt(reviewerBadge.getAttribute('data-display-no'), 10);
                 const ui = dash._getCardUi(taskId);
-                ui.expanded = false;
                 ui.selectedDisplayNo = displayNo;
-                dash._patchTaskCard(itemId);
-                return;
-            }
-            const showAllBtn = e.target.closest('[data-wf-dash-card-show-all]');
-            if (showAllBtn && modal.contains(showAllBtn)) {
-                const itemId = showAllBtn.getAttribute('data-item-id');
-                const taskId = showAllBtn.getAttribute('data-task-id');
-                const ui = dash._getCardUi(taskId);
-                ui.expanded = true;
-                const item = dash._findCachedItem(itemId) || dash._findResultItem(itemId);
-                const versionCount = item && item.task && item.task.promptVersions
-                    ? item.task.promptVersions.length
-                    : 0;
-                dash._ensureRollingUiOnExpand(taskId, versionCount);
-                dash._patchTaskCard(itemId);
-                return;
-            }
-            const collapseBtn = e.target.closest('[data-wf-dash-card-collapse]');
-            if (collapseBtn && modal.contains(collapseBtn)) {
-                const itemId = collapseBtn.getAttribute('data-item-id');
-                const taskId = collapseBtn.getAttribute('data-task-id');
-                const displayNo = parseInt(collapseBtn.getAttribute('data-display-no'), 10);
-                const ui = dash._getCardUi(taskId);
-                ui.expanded = false;
-                ui.selectedDisplayNo = Number.isFinite(displayNo) ? displayNo : ui.selectedDisplayNo;
-                dash._patchTaskCard(itemId);
+                dash._focusCardVersion(itemId, displayNo);
+                Logger.log('search-output: focused version ' + displayNo);
                 return;
             }
             const timelineToggle = e.target.closest('[data-wf-dash-timeline-order]');
@@ -6374,7 +6361,7 @@ function attachSearchOutputListeners(modal, dash) {
                 const item = itemId ? (dash._findCachedItem(itemId) || dash._findResultItem(itemId)) : null;
                 if (item) {
                     const val = rollingHighlightsBtn.getAttribute('data-wf-dash-rolling-highlights');
-                    dash._getRollingUi(item.task.id).showHighlights = val === 'on';
+                    dash._setDiffViewerHighlights(item, val === 'on');
                     dash._patchTaskCard(itemId);
                 }
                 return;
@@ -6712,15 +6699,6 @@ function attachSearchOutputListeners(modal, dash) {
                 }
                 return;
             }
-            const sel = e.target;
-            if (!sel || !sel.matches('[data-wf-dash-card-version-select]')) return;
-            const itemId = sel.getAttribute('data-item-id');
-            const taskId = sel.getAttribute('data-task-id');
-            const displayNo = parseInt(sel.value, 10);
-            const ui = dash._getCardUi(taskId);
-            ui.expanded = false;
-            ui.selectedDisplayNo = displayNo;
-            dash._patchTaskCard(itemId);
         });
         modal.addEventListener('input', (e) => {
             const ratingsNameFilter = e.target.closest('[data-wf-dash-ratings-name-filter]');
@@ -6806,7 +6784,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.0',
+    _version: '10.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

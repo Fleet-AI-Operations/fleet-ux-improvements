@@ -1927,12 +1927,14 @@ function searchChatGetTaskPayload(dash, taskId, sections, settings, options) {
             if (versionNosFilter && !versionNosFilter.has(Number(versionNo))) continue;
             const promptText = String(v.prompt || '');
             const notes = String(v.resubmissionNotes || '');
+            const scratchpad = String(v.scratchpad || '');
             const row = {
                 versionNo,
                 envKey: v.envKey || v.env_key || '',
                 createdAt: v.createdAt || v.created_at || '',
                 promptChars: promptText.length,
                 hasNotes: notes.length > 0,
+                hasScratchpad: scratchpad.length > 0,
             };
             if (includeText) {
                 row.prompt = searchChatTruncate(promptText, maxChars);
@@ -1940,6 +1942,10 @@ function searchChatGetTaskPayload(dash, taskId, sections, settings, options) {
                 if (notes) {
                     row.resubmissionNotes = searchChatTruncate(notes, maxChars);
                     row.notesTruncated = notes.length > maxChars;
+                }
+                if (scratchpad) {
+                    row.scratchpad = searchChatTruncate(scratchpad, maxChars);
+                    row.scratchpadTruncated = scratchpad.length > maxChars;
                 }
             }
             mapped.push(row);
@@ -4527,7 +4533,7 @@ const plugin = {
     id: PLUGIN_ID,
     name: 'Search Output Chat',
     description: 'Chat over search results (OpenRouter)',
-    _version: '7.5',
+    _version: '7.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

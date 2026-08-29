@@ -16,8 +16,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.23",
-      "hash": "sha256-faf1f4139a207946d6bd79dc8e5c33f86079adb2456bdf435255280bc7dc60b9",
+      "version": "3.24",
+      "hash": "sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053",
       "log": false
     },
     {
@@ -194,8 +194,8 @@
   "opsDashboardPlugins": [
     {
       "name": "dashboard-lib.js",
-      "version": "9.1",
-      "hash": "sha256-3b4080030e4cdd003260ad1ea92a8245f48c2f873ec24a35d70d7a859bc56fb2",
+      "version": "9.5",
+      "hash": "sha256-4ae3f6f72fb6806f4d2b2b6d681e1f128a8dea4d31d79c66f878fe5c3c808e79",
       "log": false
     },
     {
@@ -218,8 +218,8 @@
     },
     {
       "name": "dashboard.js",
-      "version": "13.0",
-      "hash": "sha256-108e2af96f41f2bac258b458cbf5c6340d5fc5568882fd558160095f3915a7f8",
+      "version": "13.1",
+      "hash": "sha256-5dfac9969b6cb7f6b4c02f4020dc57980406d0b164b1a814e5a07a2a483ef791",
       "log": false
     },
     {
@@ -236,14 +236,14 @@
     },
     {
       "name": "search-output-left-pane.js",
-      "version": "6.1",
-      "hash": "sha256-7eec953a8f94c1dd9861b6f262a2e26bf583b9536900c397b814326061c94984",
+      "version": "6.3",
+      "hash": "sha256-b19d11f79491113f51998221f47beb6ea669f3c66f89ee298fa1a5385305196f",
       "log": false
     },
     {
       "name": "search-output-results-pane.js",
-      "version": "10.7",
-      "hash": "sha256-ce7246ad809d501bb14283e8ec3e6850c1e04d27b3e0143ed49baff2c13efb1e",
+      "version": "13.2",
+      "hash": "sha256-b8519f8d88567c1b362367bc69f5159021d826bf7a8d04574b13aab837dcc2f8",
       "log": false
     },
     {
@@ -254,8 +254,8 @@
     },
     {
       "name": "search-output-chat.js",
-      "version": "7.5",
-      "hash": "sha256-2a87b70c8bbd46ad03fce21f47332ee416c6710e6613028f6ef938151bf3a9db",
+      "version": "7.6",
+      "hash": "sha256-ef0b5b2c3127f6253010faf6ab44a3214545189760cadd32548b1c9a1decac87",
       "log": false
     },
     {
@@ -266,8 +266,8 @@
     },
     {
       "name": "search-output.js",
-      "version": "10.0",
-      "hash": "sha256-7093f170540c2a384e4182739b805ca26cca9aaaa94fae6a6bffedee116225c8",
+      "version": "10.6",
+      "hash": "sha256-457226c1d0db8ee6a132e4881a4ab3749cad5051f80c1b69e293e55a737f8014",
       "log": false
     },
     {
