@@ -298,18 +298,71 @@ function dashProblemCreationDurationText(seconds) {
     return parts.join(', ');
 }
 
-function dashTimestampWithDurationParts(iso, durationSeconds) {
+/** Hours / minutes / seconds, highest two units only (e.g. 1h, 5m or 5m, 12s). */
+function dashCompactHmsDurationText(seconds) {
+    const raw = Number(seconds);
+    if (!Number.isFinite(raw) || raw < 0) return '';
+    const total = Math.round(raw);
+    if (total === 0) return raw > 0 ? '< 1s' : '';
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h > 0) {
+        const parts = [h + 'h'];
+        if (m > 0) parts.push(m + 'm');
+        return parts.join(', ');
+    }
+    if (m > 0) {
+        const parts = [m + 'm'];
+        if (s > 0) parts.push(s + 's');
+        return parts.join(', ');
+    }
+    return s + 's';
+}
+
+function dashVerifierDurationSeconds(executionTimeMs) {
+    if (executionTimeMs == null) return null;
+    const ms = Number(executionTimeMs);
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    return ms / 1000;
+}
+
+function dashVerifierTimestampHtml(iso, executionTimeMs) {
+    const durationSec = dashVerifierDurationSeconds(executionTimeMs);
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(
+        iso,
+        durationSec,
+        dashCompactHmsDurationText
+    );
+    const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
+    const regular = 'color: var(--foreground, #0f172a);';
+    const parts = [];
+    if (iso) parts.push(`<span style="${regular}">${dashEscHtml(formatted)}</span>`);
+    if (durationText) {
+        parts.push(`<span style="${muted}"> in </span><span style="${regular}">${dashEscHtml(durationText)}</span>`);
+    }
+    if (iso && ago) {
+        parts.push(`<span style="${muted}">(${dashEscHtml(ago)})</span>`);
+    }
+    if (!parts.length) return '';
+    return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">${parts.join('')}</span>`;
+}
+
+function dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn) {
     const formatted = dashFormatCreatedAt(iso);
     const ago = dashLib().relativeAgo(iso, { style: 'compact' });
     const durationSec = durationSeconds != null ? Number(durationSeconds) : NaN;
+    const formatDuration = typeof durationTextFn === 'function'
+        ? durationTextFn
+        : dashProblemCreationDurationText;
     const durationText = Number.isFinite(durationSec) && durationSec >= 0
-        ? dashProblemCreationDurationText(durationSec)
+        ? formatDuration(durationSec)
         : '';
     return { formatted, ago, durationText };
 }
 
-function dashTimestampWithDurationHtml(iso, durationSeconds) {
-    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+function dashTimestampWithDurationHtml(iso, durationSeconds, durationTextFn) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn);
     const muted = 'font-size: 11px; color: var(--muted-foreground, #64748b);';
     const regular = 'color: var(--foreground, #0f172a);';
     const parts = [`<span style="${regular}">${dashEscHtml(formatted)}</span>`];
@@ -322,8 +375,8 @@ function dashTimestampWithDurationHtml(iso, durationSeconds) {
     return `<span style="display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap;">${parts.join('')}</span>`;
 }
 
-function dashLabeledTimestampWithDurationPlainText(label, iso, durationSeconds) {
-    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+function dashLabeledTimestampWithDurationPlainText(label, iso, durationSeconds, durationTextFn) {
+    const { formatted, ago, durationText } = dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn);
     let text = String(label || '').trim();
     if (text) text += ' ';
     text += formatted;
@@ -3459,20 +3512,12 @@ const searchOutputResultsPaneMethods = {
         const blockStyle = passed ? this._qaAcceptedBlockStyle() : this._qaReturnedBlockStyle();
         const badgeStyle = passed ? this._qaAcceptedBadgeStyle() : this._qaReturnedBadgeStyle();
         const statusLabel = `<span style="${badgeStyle}">${passed ? 'Pass' : 'Fail'}</span>`;
-        const submittedHtml = execution.createdAt
-            ? dashTimestampWithDurationHtml(execution.createdAt, null)
-            : '';
+        const submittedHtml = dashVerifierTimestampHtml(execution.createdAt, execution.executionTimeMs);
         const scoreText = execution.score != null && execution.score !== ''
             ? String(execution.score)
             : '';
         const scoreHtml = scoreText
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Score')}<span>${dashEscHtml(scoreText)}</span></div>`
-            : '';
-        const timingText = execution.executionTimeMs != null && Number.isFinite(Number(execution.executionTimeMs))
-            ? String(Math.round(Number(execution.executionTimeMs))) + ' ms'
-            : '';
-        const timingHtml = timingText
-            ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Time')}<span>${dashEscHtml(timingText)}</span></div>`
             : '';
         const sessionUrl = dashFleetQaSessionUrl(execution.sessionId);
         const sessionLink = sessionUrl
@@ -3498,7 +3543,6 @@ const searchOutputResultsPaneMethods = {
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
             + submittedHtml
             + scoreHtml
-            + timingHtml
             + sessionLink;
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, statusLabel, {
             copyHtml: this._liveSectionCopyIconHtml('verifier', execution.id, itemId)
@@ -7055,8 +7099,8 @@ const searchOutputResultsPaneMethods = {
         return '';
     },
 
-    _plainTimestampDurationText(iso, durationSeconds) {
-        const { formatted, durationText } = dashTimestampWithDurationParts(iso, durationSeconds);
+    _plainTimestampDurationText(iso, durationSeconds, durationTextFn) {
+        const { formatted, durationText } = dashTimestampWithDurationParts(iso, durationSeconds, durationTextFn);
         let text = String(formatted || '').trim();
         if (durationText) text += (text ? ' in ' : 'in ') + durationText;
         return text;
@@ -7261,13 +7305,20 @@ const searchOutputResultsPaneMethods = {
         if (!execution) return '';
         const passed = Number(execution.score) === 1;
         const lines = ['Verifier Output: ' + (passed ? 'Pass' : 'Fail')];
-        const when = this._plainTimestampDurationText(execution.createdAt, null);
-        if (when) lines.push(when);
+        const durationSec = dashVerifierDurationSeconds(execution.executionTimeMs);
+        if (execution.createdAt) {
+            const when = this._plainTimestampDurationText(
+                execution.createdAt,
+                durationSec,
+                dashCompactHmsDurationText
+            );
+            if (when) lines.push(when);
+        } else {
+            const durationText = dashCompactHmsDurationText(durationSec);
+            if (durationText) lines.push('in ' + durationText);
+        }
         if (execution.score != null && execution.score !== '') {
             lines.push('Score: ' + String(execution.score));
-        }
-        if (execution.executionTimeMs != null && Number.isFinite(Number(execution.executionTimeMs))) {
-            lines.push('Time: ' + Math.round(Number(execution.executionTimeMs)) + ' ms');
         }
         const parts = [lines.join('\n')];
         const stdout = this._formatVerifierStdoutText(execution.stdout);
@@ -8832,7 +8883,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '13.1',
+    _version: '13.2',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
