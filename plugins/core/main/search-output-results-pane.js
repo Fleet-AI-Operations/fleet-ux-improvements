@@ -2749,26 +2749,14 @@ const searchOutputResultsPaneMethods = {
         return `<p class="wf-dash-user-story-empty">${dashEscHtml(text)}</p>`;
     },
 
-    _userStoryPanelBodyHtml(ui) {
-        const fields = [
-            { key: 'scenarioTitle', label: 'Scenario Title' },
-            { key: 'humanAnnotatorInstructions', label: 'Annotator Instructions' },
-            { key: 'userStory', label: 'User Story' }
-        ];
-        const parts = [];
-        for (const { key, label } of fields) {
-            const text = this._dashQuotedText(ui[key]);
-            if (!text) continue;
-            parts.push(this._quotedFieldBlockHtml(label, dashEscHtml(text), text, {
-                shellClass: 'wf-dash-user-story-field',
-                headerClass: 'wf-dash-user-story-field-header',
-                bodyClass: 'wf-dash-user-story-field-body'
-            }));
-        }
-        if (parts.length === 0) {
-            return this._userStoryEmptyHtml(ui);
-        }
-        return '<div class="wf-dash-user-story-block">' + parts.join('') + '</div>';
+    _userStoryPanelBodyHtml(ui, itemId) {
+        const html = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightForItemId(itemId),
+            portions: this._userStoryPortions(ui, itemId)
+        });
+        if (!html) return this._userStoryEmptyHtml(ui);
+        return '<div class="wf-dash-user-story-block">' + html + '</div>';
     },
 
     _userStoryBtnLabel(ui) {
@@ -2897,7 +2885,7 @@ const searchOutputResultsPaneMethods = {
         if (!hasPanel) return '';
         const panelOpen = ui.visible && !ui.animateOpen;
         return `<div data-wf-dash-user-story-panel data-open="${panelOpen ? '1' : '0'}" aria-hidden="${panelOpen ? 'false' : 'true'}">`
-            + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui)}</div>`
+            + `<div data-wf-dash-user-story-inner">${this._userStoryPanelBodyHtml(ui, itemId)}</div>`
             + '</div>';
     },
 
@@ -3158,7 +3146,7 @@ const searchOutputResultsPaneMethods = {
             if (panel) panel.remove();
             return;
         }
-        const bodyHtml = this._userStoryPanelBodyHtml(ui);
+        const bodyHtml = this._userStoryPanelBodyHtml(ui, itemId);
         if (!panel) {
             const verifierPanel = section.querySelector('[data-wf-dash-verifier-output-panel]');
             const sessionPanel = section.querySelector('[data-wf-dash-session-qa-panel]');
@@ -3298,15 +3286,18 @@ const searchOutputResultsPaneMethods = {
         const sessionLink = sessionUrl
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Session')}${this._extLinkHtml(sessionUrl, 'Open QA session in Fleet')}</div>`
             : '';
-        const notesText = this._dashQuotedText(review.notes);
-        const notesHtml = notesText
-            ? `<div>
-                ${this._labelSpan('Notes')}
-                ${this._quotedBarWrapHtml(dashEscHtml(notesText))}
-            </div>`
-            : '';
         const blockId = 'session-qa:' + review.id;
         this._ensureActionBlockCollapseDefault(blockId, true);
+        const notesHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightForItemId(itemId),
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: review.id ? ('session-qa-notes:' + review.id) : '',
+                label: 'Notes',
+                text: review.notes
+            }]
+        });
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Session QA</span>`
             + submittedHtml
             + difficultyHtml
@@ -3366,21 +3357,23 @@ const searchOutputResultsPaneMethods = {
         const sessionLink = sessionUrl
             ? `<div style="display: inline-flex; align-items: center; gap: 6px;">${this._labelSpan('Session')}${this._extLinkHtml(sessionUrl, 'Open session in Fleet')}</div>`
             : '';
-        const formatted = this._formatVerifierStdoutText(execution.stdout);
-        const stdoutHtml = formatted
-            ? `<div>
-                ${this._labelSpan('Stdout')}
-                ${this._quotedBarWrapHtml(dashEscHtml(formatted), {
-                    bodyTag: 'pre',
-                    bodyStyle: this._quotedFieldBodyLayoutStyle()
-                        + ' padding: 8px 0 2px 0; line-height: 1.45; font-size: 11px;'
-                        + ' font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;'
-                        + ' color: var(--foreground, #0f172a);'
-                })}
-            </div>`
-            : '';
         const blockId = 'verifier-output:' + execution.id;
         this._ensureActionBlockCollapseDefault(blockId, true);
+        const stdoutHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightForItemId(itemId),
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: execution.id ? ('verifier-stdout:' + execution.id) : '',
+                label: 'Stdout',
+                text: this._formatVerifierStdoutText(execution.stdout),
+                bodyTag: 'pre',
+                bodyStyle: this._quotedFieldBodyLayoutStyle()
+                    + ' padding: 8px 0 2px 0; line-height: 1.45; font-size: 11px;'
+                    + ' font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;'
+                    + ' color: var(--foreground, #0f172a);'
+            }]
+        });
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Verifier Output</span>`
             + submittedHtml
             + scoreHtml
@@ -4481,6 +4474,221 @@ const searchOutputResultsPaneMethods = {
             + '</div>';
     },
 
+    _quotedHighlightFromItem(item) {
+        return {
+            query: (item && item.highlightQuery) || '',
+            caseSensitive: Boolean(item && item.highlightCaseSensitive),
+            fuzzy: Boolean(item && item.highlightFuzzy),
+            regex: Boolean(item && item.highlightRegex)
+        };
+    },
+
+    _quotedHighlightForItemId(itemId) {
+        const item = this._findCachedItem(itemId) || this._findResultItem(itemId);
+        return this._quotedHighlightFromItem(item);
+    },
+
+    _quotedHighlightPack(query, caseSensitive, fuzzy, regex) {
+        return {
+            query: query || '',
+            caseSensitive: Boolean(caseSensitive),
+            fuzzy: Boolean(fuzzy),
+            regex: Boolean(regex)
+        };
+    },
+
+    _quotedTextMatches(text, highlight) {
+        const h = highlight || {};
+        const query = h.query;
+        if (query == null || String(query) === '') return false;
+        const lib = typeof dashLib === 'function' ? dashLib() : (Context.dashboardLib || null);
+        if (!lib || typeof lib.textMatchesQuery !== 'function') return false;
+        return !!lib.textMatchesQuery(text, query, Boolean(h.fuzzy), Boolean(h.caseSensitive), Boolean(h.regex));
+    },
+
+    _expandBlockForHighlight(blockId, texts, highlight, ancestorBlockIds) {
+        const list = Array.isArray(texts) ? texts : (texts == null ? [] : [texts]);
+        let hit = false;
+        for (let i = 0; i < list.length; i++) {
+            if (this._quotedTextMatches(list[i], highlight)) {
+                hit = true;
+                break;
+            }
+        }
+        if (!hit) return false;
+        const expand = (id) => {
+            const key = String(id || '').trim();
+            if (!key) return;
+            this._getActionBlockCollapseUi(key).collapsed = false;
+        };
+        expand(blockId);
+        const ancestors = ancestorBlockIds || [];
+        for (let i = 0; i < ancestors.length; i++) expand(ancestors[i]);
+        return true;
+    },
+
+    _quotedFilledPortions(portions) {
+        return (portions || []).filter((p) => p && this._dashQuotedText(p.text));
+    },
+
+    _quotedPortionPlainText(portion, hasCarets) {
+        const label = (portion && portion.label) || 'Text';
+        const body = this._dashQuotedText(portion && portion.text);
+        if (hasCarets && portion && portion.blockId && this._isActionBlockCollapsed(portion.blockId)) {
+            return this._omittedSectionPlainText(label);
+        }
+        return (portion && portion.label ? portion.label + ':\n' : '') + (body || '—');
+    },
+
+    _quotedPortionsPlainText(portions) {
+        const filled = this._quotedFilledPortions(portions);
+        const hasCarets = filled.length >= 2;
+        return filled.map((p) => this._quotedPortionPlainText(p, hasCarets));
+    },
+
+    _quotedPortionsHtml(opts) {
+        const options = opts || {};
+        const itemId = options.itemId;
+        const highlight = options.highlight || {};
+        const ancestorBlockIds = options.ancestorBlockIds || [];
+        const filled = this._quotedFilledPortions(options.portions);
+        if (!filled.length) return '';
+        const useCarets = filled.length >= 2;
+        return filled.map((p) => {
+            const text = this._dashQuotedText(p.text);
+            const body = this._dashQuotedHighlightedHtml(
+                p.text,
+                highlight.query || '',
+                Boolean(highlight.caseSensitive),
+                Boolean(highlight.fuzzy),
+                Boolean(highlight.regex)
+            );
+            const extraAttrs = p.extraAttrs || '';
+            if (useCarets && p.blockId) {
+                this._ensureActionBlockCollapseDefault(p.blockId, Boolean(p.defaultCollapsed));
+                this._expandBlockForHighlight(p.blockId, text, highlight, ancestorBlockIds);
+                const headerInner = p.headerInner || this._labelSpan(p.label || '');
+                const fieldHeader = this._actionBlockHeaderRowHtml(p.blockId, headerInner, '');
+                const fieldBody = this._quotedBarWrapHtml(body, {
+                    bodyStyle: p.bodyStyle,
+                    bodyTag: p.bodyTag,
+                    bodyClass: p.bodyClass,
+                    alignToCaret: true
+                });
+                return this._actionBlockShellHtml(
+                    p.blockId,
+                    itemId,
+                    p.shellStyle || 'display: flex; flex-direction: column; gap: 0;',
+                    fieldHeader,
+                    fieldBody,
+                    extraAttrs,
+                    p.shellClass || ''
+                );
+            }
+            this._expandBlockForHighlight('', text, highlight, ancestorBlockIds);
+            if (p.skipPlainLabel || !p.label) {
+                const inner = this._quotedBarWrapHtml(body, {
+                    bodyStyle: p.bodyStyle,
+                    bodyTag: p.bodyTag,
+                    bodyClass: p.bodyClass,
+                    alignToCaret: false
+                });
+                return extraAttrs ? ('<div' + extraAttrs + '>' + inner + '</div>') : inner;
+            }
+            const fieldHtml = this._quotedFieldBlockHtml(p.label, body, text, {
+                shellClass: p.shellClass,
+                headerClass: p.headerClass,
+                bodyClass: p.bodyClass,
+                bodyStyle: p.bodyStyle,
+                bodyTag: p.bodyTag,
+                alignToCaret: false
+            });
+            return extraAttrs ? ('<div' + extraAttrs + '>' + fieldHtml + '</div>') : fieldHtml;
+        }).join('');
+    },
+
+    _qaFeedbackPortions(qa, feedbackId, itemId) {
+        return (qa && qa.textBlocks || []).map((b, i) => ({
+            blockId: this._qaTextBlockId(feedbackId, itemId, i),
+            label: this._qaFeedbackTextBlockLabel(qa, b),
+            text: b && b.text,
+            defaultCollapsed: false
+        }));
+    },
+
+    _userStoryPortionBlockId(itemId, key) {
+        if (!itemId || !key) return '';
+        return 'user-story:' + itemId + ':' + key;
+    },
+
+    _userStoryPortions(ui, itemId) {
+        return [
+            {
+                kind: 'scenario',
+                blockId: this._userStoryPortionBlockId(itemId, 'scenarioTitle'),
+                label: 'Scenario Title',
+                text: ui && ui.scenarioTitle,
+                shellClass: 'wf-dash-user-story-field',
+                headerClass: 'wf-dash-user-story-field-header',
+                bodyClass: 'wf-dash-user-story-field-body'
+            },
+            {
+                kind: 'annotator',
+                blockId: this._userStoryPortionBlockId(itemId, 'humanAnnotatorInstructions'),
+                label: 'Annotator Instructions',
+                text: ui && ui.humanAnnotatorInstructions,
+                shellClass: 'wf-dash-user-story-field',
+                headerClass: 'wf-dash-user-story-field-header',
+                bodyClass: 'wf-dash-user-story-field-body'
+            },
+            {
+                kind: 'story',
+                blockId: this._userStoryPortionBlockId(itemId, 'userStory'),
+                label: 'User Story',
+                text: ui && ui.userStory,
+                shellClass: 'wf-dash-user-story-field',
+                headerClass: 'wf-dash-user-story-field-header',
+                bodyClass: 'wf-dash-user-story-field-body'
+            }
+        ];
+    },
+
+    _promptTextActionBlockId(itemId, displayVersionNo) {
+        if (!itemId || displayVersionNo == null) return '';
+        return 'prompt-text:' + itemId + ':' + displayVersionNo;
+    },
+
+    _versionBodyPortions(version, itemId, displayVersionNo) {
+        return [
+            {
+                kind: 'prompt',
+                blockId: this._promptTextActionBlockId(itemId, displayVersionNo),
+                label: 'Prompt',
+                text: version && version.prompt,
+                skipPlainLabel: true,
+                bodyStyle: this._quotedFieldBodyLayoutStyle() + ' color: var(--foreground, #0f172a);'
+            },
+            {
+                kind: 'notes',
+                blockId: this._notesToQaActionBlockId(itemId, displayVersionNo),
+                label: 'Notes to QA',
+                text: version && version.resubmissionNotes,
+                defaultCollapsed: true,
+                bodyStyle: this._mutedQuotedFieldBodyStyle(),
+                extraAttrs: ' data-wf-dash-notes-to-qa="1"'
+            },
+            {
+                kind: 'scratchpad',
+                blockId: this._scratchpadActionBlockId(itemId, displayVersionNo),
+                label: 'Scratchpad',
+                text: version && version.scratchpad,
+                defaultCollapsed: true,
+                bodyStyle: this._mutedQuotedFieldBodyStyle(),
+                extraAttrs: ' data-wf-dash-scratchpad="1"'
+            }
+        ];
+    },
+
     _resolutionStatusBadgeHtml(kind, label) {
         const k = String(kind || '').toLowerCase();
         let style;
@@ -4553,7 +4761,6 @@ const searchOutputResultsPaneMethods = {
         const leftHeaderExtra = options.leftHeaderExtra || '';
         const resolverHtml = options.resolverHtml || '';
         const noteLabel = options.noteLabel || 'Reason';
-        const noteBodyHtml = options.noteBodyHtml || '—';
         const copyText = options.copyText;
         const colors = this._resolutionBlockColors(kind);
         const statusBadge = this._resolutionStatusBadgeHtml(kind, statusLabel);
@@ -4564,7 +4771,19 @@ const searchOutputResultsPaneMethods = {
                 ? this._liveSectionCopyIconHtml(options.copySection, options.copyEntityId, options.itemId)
                 : (options.blockCopyText ? this._copyIconHtml(options.blockCopyText) : '')
         });
-        const resBodyHtml = resolverHtml + this._quotedFieldBlockHtml(noteLabel, noteBodyHtml, copyText);
+        const highlight = options.highlight || {};
+        const noteText = options.noteText != null ? options.noteText : copyText;
+        const notePortionsHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight,
+            ancestorBlockIds: [blockId].concat(options.ancestorBlockIds || []),
+            portions: [{
+                blockId: blockId ? (blockId + ':note') : '',
+                label: noteLabel,
+                text: noteText
+            }]
+        });
+        const resBodyHtml = resolverHtml + notePortionsHtml;
         return this._actionInsetBackdropWrapHtml(
             this._actionBlockShellHtml(
                 blockId,
@@ -5707,10 +5926,6 @@ const searchOutputResultsPaneMethods = {
         return dashQaTextBlockLabel(block && block.label, qa && qa.isPositive);
     },
 
-    _qaFeedbackPortionCount(qa) {
-        return (qa && qa.textBlocks || []).filter((b) => !!this._dashQuotedText(b && b.text)).length;
-    },
-
     _omittedSectionPlainText(label) {
         const l = String(label || '').trim();
         if (!l) return '[omitted]';
@@ -6765,19 +6980,7 @@ const searchOutputResultsPaneMethods = {
         }
         const issues = (qa.rejectionBadges || []).map((l) => String(l || '').trim()).filter(Boolean);
         if (issues.length) lines.push('Issues: ' + issues.join(', '));
-        const blocks = [];
-        const allowFieldCollapse = this._qaFeedbackPortionCount(qa) > 1;
-        (qa.textBlocks || []).forEach((b, i) => {
-            const label = this._qaFeedbackTextBlockLabel(qa, b);
-            const body = this._dashQuotedText(b.text);
-            if (!body) return;
-            const fieldId = this._qaTextBlockId(feedbackId, itemId, i);
-            if (allowFieldCollapse && fieldId && this._isActionBlockCollapsed(fieldId)) {
-                blocks.push(this._omittedSectionPlainText(label || 'Text'));
-                return;
-            }
-            blocks.push((label ? label + ':\n' : '') + (body || '—'));
-        });
+        const blocks = this._quotedPortionsPlainText(this._qaFeedbackPortions(qa, feedbackId, itemId));
         return this._joinPlainSections([lines.join('\n'), ...blocks]);
     },
 
@@ -6885,17 +7088,19 @@ const searchOutputResultsPaneMethods = {
             ? opts.displayVersionNo
             : (version && version.displayVersionNo);
         const head = this._promptVersionHeadLine(version, opts);
-        const body = this._dashQuotedText(version && version.prompt) || '—';
-        const sections = [head + '\n' + body];
-        const notes = this._dashQuotedText(version && version.resubmissionNotes);
-        if (notes && !opts.omitNotesToQa) {
-            const notesId = this._notesToQaActionBlockId(itemId, displayNo);
-            sections.push(this._collapsedSectionOr(notesId, 'Notes to QA', 'Notes to QA:\n' + notes));
+        const portions = this._versionBodyPortions(version, itemId, displayNo);
+        const filled = this._quotedFilledPortions(portions);
+        const hasCarets = filled.length >= 2;
+        const promptPortion = filled.find((p) => p.kind === 'prompt');
+        let promptBody = this._dashQuotedText(version && version.prompt) || '—';
+        if (hasCarets && promptPortion && promptPortion.blockId && this._isActionBlockCollapsed(promptPortion.blockId)) {
+            promptBody = '[omitted]';
         }
-        const scratchpad = this._dashQuotedText(version && version.scratchpad);
-        if (scratchpad) {
-            const scratchId = this._scratchpadActionBlockId(itemId, displayNo);
-            sections.push(this._collapsedSectionOr(scratchId, 'Scratchpad', 'Scratchpad:\n' + scratchpad));
+        const sections = [head + '\n' + promptBody];
+        for (const p of filled) {
+            if (p.kind === 'prompt') continue;
+            if (p.kind === 'notes' && opts.omitNotesToQa) continue;
+            sections.push(this._quotedPortionPlainText(p, hasCarets));
         }
         return this._joinPlainSections(sections);
     },
@@ -6938,16 +7143,25 @@ const searchOutputResultsPaneMethods = {
         return this._joinPlainSections(parts);
     },
 
-    _serializeUserStoryPlainText(ui) {
+    _serializeUserStoryPlainText(ui, itemId) {
         if (!ui || ui.status !== 'loaded') return '';
         const lines = ['User Story'];
-        if (ui.scenarioTitle) lines.push('Scenario: ' + String(ui.scenarioTitle).trim());
-        const parts = [lines.join('\n')];
-        if (ui.humanAnnotatorInstructions) {
-            parts.push('Annotator Instructions:\n' + String(ui.humanAnnotatorInstructions).trim());
+        const portions = this._userStoryPortions(ui, itemId);
+        const filled = this._quotedFilledPortions(portions);
+        const hasCarets = filled.length >= 2;
+        const parts = [];
+        for (const p of filled) {
+            if (p.kind === 'scenario') {
+                if (hasCarets && p.blockId && this._isActionBlockCollapsed(p.blockId)) {
+                    parts.push(this._omittedSectionPlainText(p.label));
+                } else {
+                    lines.push('Scenario: ' + this._dashQuotedText(p.text));
+                }
+            } else {
+                parts.push(this._quotedPortionPlainText(p, hasCarets));
+            }
         }
-        if (ui.userStory) parts.push('User Story:\n' + String(ui.userStory).trim());
-        return this._joinPlainSections(parts);
+        return this._joinPlainSections([lines.join('\n'), ...parts]);
     },
 
     _serializeVersionTaskActionsPlainText(feedbackEntries, fallbackFeedback, orphanDisputes, orphanFlags, itemId) {
@@ -7180,7 +7394,7 @@ const searchOutputResultsPaneMethods = {
 
         const userStoryUi = this._getUserStoryUi(iid);
         if (userStoryUi && userStoryUi.visible) {
-            const us = this._serializeUserStoryPlainText(userStoryUi);
+            const us = this._serializeUserStoryPlainText(userStoryUi, iid);
             if (us) out.push(us);
         }
         const sessionUi = this._getSessionQaUi(iid);
@@ -7316,32 +7530,6 @@ const searchOutputResultsPaneMethods = {
         return `<div style="${groupStyle}">${labelHtml}<span style="${valueStyle}">${valueHtml}</span></div>`;
     },
 
-    _quotedNotesSectionHtml(label, notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, dataAttr, blockId, itemId) {
-        const text = this._dashQuotedText(notes);
-        if (!text) return '';
-        const body = this._dashQuotedHighlightedHtml(notes, highlightQuery || '', Boolean(caseSensitive), Boolean(highlightFuzzy), Boolean(highlightRegex));
-        const extraAttrs = dataAttr ? ' ' + dataAttr : '';
-        if (!blockId) {
-            return '<div' + extraAttrs + ' style="margin: 8px 0 0 0;">'
-                + this._quotedFieldBlockHtml(label, body, text, { bodyStyle: this._mutedQuotedFieldBodyStyle() })
-                + '</div>';
-        }
-        this._ensureActionBlockCollapseDefault(blockId, true);
-        const headerRow = this._actionBlockHeaderRowHtml(blockId, this._labelSpan(label), '');
-        const bodyHtml = this._quotedBarWrapHtml(body, {
-            bodyStyle: this._mutedQuotedFieldBodyStyle(),
-            alignToCaret: true
-        });
-        return this._actionBlockShellHtml(
-            blockId,
-            itemId,
-            'margin: 8px 0 0 0; display: flex; flex-direction: column; gap: 0;',
-            headerRow,
-            bodyHtml,
-            extraAttrs
-        );
-    },
-
     _notesToQaActionBlockId(itemId, displayVersionNo) {
         if (!itemId || displayVersionNo == null) return '';
         return 'notes-to-qa:' + itemId + ':' + displayVersionNo;
@@ -7350,24 +7538,6 @@ const searchOutputResultsPaneMethods = {
     _scratchpadActionBlockId(itemId, displayVersionNo) {
         if (!itemId || displayVersionNo == null) return '';
         return 'scratchpad:' + itemId + ':' + displayVersionNo;
-    },
-
-    _notesToQaSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, itemId, displayVersionNo) {
-        return this._quotedNotesSectionHtml(
-            'Notes to QA', notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex,
-            'data-wf-dash-notes-to-qa="1"',
-            this._notesToQaActionBlockId(itemId, displayVersionNo),
-            itemId
-        );
-    },
-
-    _scratchpadSectionHtml(notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex, itemId, displayVersionNo) {
-        return this._quotedNotesSectionHtml(
-            'Scratchpad', notes, highlightQuery, caseSensitive, highlightFuzzy, highlightRegex,
-            'data-wf-dash-scratchpad="1"',
-            this._scratchpadActionBlockId(itemId, displayVersionNo),
-            itemId
-        );
     },
 
     _plainTimestampHtml(iso, prefixLabel, opts) {
@@ -7659,31 +7829,15 @@ const searchOutputResultsPaneMethods = {
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
-        const textBlocks = qa.textBlocks || [];
-        const allowFieldCollapse = this._qaFeedbackPortionCount(qa) > 1;
-        const blocks = textBlocks.map((b, i) => {
-            const blockLabel = this._qaFeedbackTextBlockLabel(qa, b);
-            const quotedText = this._dashQuotedText(b.text);
-            if (!quotedText) return '';
-            const body = this._dashQuotedHighlightedHtml(b.text, hq, cs, fz, rx);
-            const fieldId = this._qaTextBlockId(feedbackId, itemId, i);
-            if (!allowFieldCollapse || !fieldId) {
-                return '<div>'
-                    + this._labelSpan(blockLabel)
-                    + this._quotedBarWrapHtml(body)
-                    + '</div>';
-            }
-            this._ensureActionBlockCollapseDefault(fieldId, false);
-            const fieldHeader = this._actionBlockHeaderRowHtml(fieldId, this._labelSpan(blockLabel), '');
-            const fieldBody = this._quotedBarWrapHtml(body, { alignToCaret: true });
-            return this._actionBlockShellHtml(
-                fieldId,
-                itemId,
-                'display: flex; flex-direction: column; gap: 0;',
-                fieldHeader,
-                fieldBody
-            );
-        }).join('');
+        const qaParentId = feedbackId
+            ? ('qa:' + feedbackId)
+            : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        const blocks = this._quotedPortionsHtml({
+            itemId,
+            highlight: this._quotedHighlightPack(hq, cs, fz, rx),
+            ancestorBlockIds: [qaParentId],
+            portions: this._qaFeedbackPortions(qa, feedbackId, itemId)
+        });
         const submittedHtml = qa.feedbackAt
             ? dashTimestampWithDurationHtml(qa.feedbackAt, qa.reviewDurationSeconds)
             : '';
@@ -7700,9 +7854,7 @@ const searchOutputResultsPaneMethods = {
         const screenshotHtml = feedbackId && qa.screenshotKeys && qa.screenshotKeys.length
             ? this._screenshotBlockHtml('qa', feedbackId, itemId, qa.screenshotKeys)
             : '';
-        const blockId = feedbackId
-            ? ('qa:' + feedbackId)
-            : (itemId ? ('qa:fallback:' + itemId) : 'qa:unknown');
+        const blockId = qaParentId;
         this._ensureActionBlockCollapseDefault(blockId, false);
         const collapsed = this._isActionBlockCollapsed(blockId);
         const headerHelpfulness = this._qaCollapseSwapHtml('expanded', collapsed, helpfulnessActions);
@@ -7804,22 +7956,18 @@ const searchOutputResultsPaneMethods = {
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
+        const highlight = this._quotedHighlightPack(hq, cs, fz, rx);
         const purple = this._disputeBlockStyle();
         const bg = purple.background;
-        const reasonBody = display.reason
-            ? this._dashQuotedHighlightedHtml(display.reason, hq, cs, fz, rx)
-            : '—';
         const submittedHtml = display.submittedAt
             ? this._plainTimestampHtml(display.submittedAt)
             : '';
         const categoryHtml = display.category ? this._disputeCategoryBadgeHtml(display.category) : '';
+        const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
         let resolutionHtml = '';
         if (display.resolutionAt) {
             const resolutionKind = display.isApproved ? 'approved' : (display.isRejected ? 'rejected' : 'other');
             const statusText = display.isApproved ? 'Approved' : (display.isRejected ? 'Rejected' : (display.status || 'Resolved'));
-            const resolutionBody = display.resolutionText
-                ? this._dashQuotedHighlightedHtml(display.resolutionText, hq, cs, fz, rx)
-                : '—';
             const resolvedHtml = this._fieldGroupHtml(
                 'Resolved',
                 dashTimestampWithDurationHtml(display.resolutionAt, display.reviewDurationSeconds)
@@ -7836,14 +7984,15 @@ const searchOutputResultsPaneMethods = {
                 leftHeaderExtra: resolvedHtml,
                 resolverHtml,
                 noteLabel: 'Reason',
-                noteBodyHtml: resolutionBody,
+                noteText: display.resolutionText,
+                highlight,
+                ancestorBlockIds: [blockId],
                 copyText: this._dashQuotedText(display.resolutionText),
                 copySection: 'dispute-res',
                 copyEntityId: display.id
             });
         }
         const claimControlHtml = this._disputeClaimControlHtml(display, itemId);
-        const blockId = display.id ? ('dispute:' + display.id) : ('dispute:unknown:' + itemId);
         this._ensureActionBlockCollapseDefault(blockId, true);
         const collapsed = this._isActionBlockCollapsed(blockId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Dispute</span>`
@@ -7877,7 +8026,16 @@ const searchOutputResultsPaneMethods = {
         const screenshotHtml = display.id && display.screenshotKeys && display.screenshotKeys.length
             ? this._screenshotBlockHtml('dispute', display.id, itemId, display.screenshotKeys)
             : '';
-        const reasonHtml = this._quotedFieldBlockHtml('Reason', reasonBody, this._dashQuotedText(display.reason));
+        const reasonHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight,
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: blockId ? (blockId + ':reason') : '',
+                label: 'Reason',
+                text: display.reason
+            }]
+        });
         const bodyHtml = display.resolutionAt
             ? `${reasonHtml}${screenshotHtml}${resolutionHtml}`
             : `${reasonHtml}${screenshotHtml}${resolutionPanelHtml}`;
@@ -7899,6 +8057,7 @@ const searchOutputResultsPaneMethods = {
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
+        const highlight = this._quotedHighlightPack(hq, cs, fz, rx);
         const blockStyle = this._qaOtherBlockStyle();
         const alertBadge = this._qaAlertBadgeStyle();
         const issueBadgeStyle = this._qaAlertIssueBadgeStyle();
@@ -7911,21 +8070,24 @@ const searchOutputResultsPaneMethods = {
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.flaggerName, display.flaggerEmail, display.flaggerId, 'Open flagger in Fleet', 'senior_review')}</div>`
             : '';
         const issuesHtml = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}<span style="${issueBadgeStyle}">${dashEscHtml(reasonLabel)}</span></div>`;
+        const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
         const noteText = this._dashQuotedText(display.note);
         const reviewerNoteHtml = noteText
-            ? this._quotedFieldBlockHtml(
-                'Reviewer Note',
-                this._dashQuotedHighlightedHtml(display.note, hq, cs, fz, rx),
-                noteText
-            )
+            ? this._quotedPortionsHtml({
+                itemId,
+                highlight,
+                ancestorBlockIds: [blockId],
+                portions: [{
+                    blockId: blockId ? (blockId + ':note') : '',
+                    label: 'Reviewer Note',
+                    text: display.note
+                }]
+            })
             : `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Reviewer Note')}${this._noneProvidedBadgeHtml()}</div>`;
         let resolutionHtml = '';
         if (display.resolutionAt) {
             const resolutionKind = display.isConfirmed ? 'confirmed' : (display.isDismissed ? 'dismissed' : 'other');
             const statusText = display.isConfirmed ? 'Confirmed' : (display.isDismissed ? 'Dismissed' : (display.status || 'Resolved'));
-            const resolutionBody = display.resolutionNote
-                ? this._dashQuotedHighlightedHtml(display.resolutionNote, hq, cs, fz, rx)
-                : '—';
             const resolvedHtml = this._fieldGroupHtml('Resolved', this._plainTimestampHtml(display.resolutionAt));
             const resolverHtml = display.resolverId
                 ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(display.resolverName, display.resolverEmail, display.resolverId, 'Open resolver in Fleet', 'senior_review')}</div>`
@@ -7939,7 +8101,9 @@ const searchOutputResultsPaneMethods = {
                 leftHeaderExtra: resolvedHtml,
                 resolverHtml,
                 noteLabel: 'Resolution Note',
-                noteBodyHtml: resolutionBody,
+                noteText: display.resolutionNote,
+                highlight,
+                ancestorBlockIds: [blockId],
                 copyText: this._dashQuotedText(display.resolutionNote),
                 copySection: 'flag-res',
                 copyEntityId: display.id
@@ -7952,7 +8116,6 @@ const searchOutputResultsPaneMethods = {
                 </div>`
             )
             : '';
-        const blockId = display.id ? ('flag:' + display.id) : ('flag:unknown:' + itemId);
         this._ensureActionBlockCollapseDefault(blockId, true);
         const collapsed = this._isActionBlockCollapsed(blockId);
         const leftHeader = `<span style="font-weight: 600; color: var(--foreground, #0f172a);">Senior Review Flag</span>`
@@ -8183,6 +8346,7 @@ const searchOutputResultsPaneMethods = {
         const cs = Boolean(caseSensitive);
         const fz = Boolean(highlightFuzzy);
         const rx = Boolean(highlightRegex);
+        const highlight = this._quotedHighlightPack(hq, cs, fz, rx);
         const orderedFeedback = this._feedbackEntriesOldestFirst(feedbackEntries);
         let promptBody;
         if (rollingOpts && rollingOpts.active) {
@@ -8236,6 +8400,11 @@ const searchOutputResultsPaneMethods = {
                 this._isVersionModeAll() ? false : version.displayVersionNo !== selectedDisplayNo
             );
         }
+        this._expandBlockForHighlight(
+            blockId,
+            [version.prompt, version.resubmissionNotes, version.scratchpad],
+            highlight
+        );
         const leftHeader = `${promptLabel}${submittedHtml}${verifierBtnHtml}`;
         let rightHeader = '';
         if (inActivePair) {
@@ -8254,19 +8423,18 @@ const searchOutputResultsPaneMethods = {
             copyHtml: this._liveSectionCopyIconHtml('prompt', String(version.displayVersionNo), itemId)
         });
         const promptColor = 'color: var(--foreground, #0f172a);';
-        const notesToQaHtml = diffMode
-            ? ''
-            : this._notesToQaSectionHtml(version.resubmissionNotes, hq, cs, fz, rx, itemId, version.displayVersionNo);
-        const scratchpadHtml = diffMode
-            ? ''
-            : this._scratchpadSectionHtml(version.scratchpad, hq, cs, fz, rx, itemId, version.displayVersionNo);
         const taskActionsPart = diffMode ? '' : taskActionsHtml;
-        const bodyHtml = this._quotedBarWrapHtml(promptBody, {
-            bodyStyle: this._quotedFieldBodyLayoutStyle() + ' ' + promptColor
-        })
-            + notesToQaHtml
-            + scratchpadHtml
-            + taskActionsPart;
+        const quotedBodyHtml = diffMode
+            ? this._quotedBarWrapHtml(promptBody, {
+                bodyStyle: this._quotedFieldBodyLayoutStyle() + ' ' + promptColor
+            })
+            : this._quotedPortionsHtml({
+                itemId,
+                highlight,
+                ancestorBlockIds: [blockId],
+                portions: this._versionBodyPortions(version, itemId, version.displayVersionNo)
+            });
+        const bodyHtml = quotedBodyHtml + taskActionsPart;
         const versionIdxAttr = (rollingOpts && rollingOpts.active)
             ? ` data-wf-dash-version-idx="${rollingOpts.versionIdx}"`
             : '';
@@ -8292,16 +8460,24 @@ const searchOutputResultsPaneMethods = {
     _quickResultCardHtml(item) {
         const task = item.task;
         const itemId = item.id;
-        const hq = item.highlightQuery || '';
-        const cs = Boolean(item.highlightCaseSensitive);
-        const fz = Boolean(item.highlightFuzzy);
-        const rx = Boolean(item.highlightRegex);
-        const promptText = this._dashQuotedText(task.prompt);
-        const promptBody = promptText
-            ? this._dashQuotedHighlightedHtml(task.prompt, hq, cs, fz, rx)
-            : '—';
+        const highlight = this._quotedHighlightFromItem(item);
+        const hq = highlight.query;
+        const cs = highlight.caseSensitive;
+        const fz = highlight.fuzzy;
+        const rx = highlight.regex;
         const taskActionsHtml = this._quickTaskActionsHtml(item, hq, cs, fz, rx);
         const blockId = 'version:' + itemId + ':quick';
+        const promptHtml = this._quotedPortionsHtml({
+            itemId,
+            highlight,
+            ancestorBlockIds: [blockId],
+            portions: [{
+                blockId: this._promptTextActionBlockId(itemId, 'quick'),
+                label: 'Prompt',
+                text: task.prompt,
+                skipPlainLabel: true
+            }]
+        });
         const leftHeader = `${this._labelSpan('Prompt')}`;
         const rightHeader = this._fieldGroupHtml('Submitted', this._plainTimestampHtml(task.createdAt));
         const headerRow = this._actionBlockHeaderRowHtml(blockId, leftHeader, rightHeader, {
@@ -8312,7 +8488,7 @@ const searchOutputResultsPaneMethods = {
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
-            this._quotedBarWrapHtml(promptBody)
+            promptHtml || this._quotedBarWrapHtml('—')
         );
         let bodyInner;
         const preferQaOnly = item.kind === 'qa' && item.qaFeedback;
@@ -8530,7 +8706,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.16',
+    _version: '12.17',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
