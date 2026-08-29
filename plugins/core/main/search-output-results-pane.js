@@ -4454,7 +4454,8 @@ const searchOutputResultsPaneMethods = {
             ? opts.bodyStyle
             : (layout + ' color: var(--foreground, #0f172a);');
         const styleAttr = bodyStyle ? ' style="' + bodyStyle + '"' : '';
-        return '<div data-wf-dash-quoted-wrap="1">'
+        const alignAttr = opts.alignToCaret ? ' data-wf-dash-quoted-align="caret"' : '';
+        return '<div data-wf-dash-quoted-wrap="1"' + alignAttr + '>'
             + this._quotedBarButtonHtml()
             + '<' + bodyTag + bodyClass + styleAttr + '>' + innerHtml + '</' + bodyTag + '>'
             + '</div>';
@@ -4474,7 +4475,8 @@ const searchOutputResultsPaneMethods = {
             + this._quotedBarWrapHtml(bodyHtml, {
                 bodyTag: opts.bodyTag || 'p',
                 bodyClass: opts.bodyClass,
-                bodyStyle
+                bodyStyle,
+                alignToCaret: opts.alignToCaret
             })
             + '</div>';
     },
@@ -4875,8 +4877,11 @@ const searchOutputResultsPaneMethods = {
             '#wf-dash-modal [data-wf-dash-quoted-wrap] {',
             '  display: flex;',
             '  align-items: stretch;',
-            '  margin: 4px 0 0 11px;',
+            '  margin: 4px 0 0 0;',
             '  min-width: 0;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-wrap][data-wf-dash-quoted-align="caret"] {',
+            '  margin-left: 11px;',
             '}',
             '#wf-dash-modal [data-wf-dash-quoted-bar] {',
             '  box-sizing: border-box;',
@@ -5700,6 +5705,10 @@ const searchOutputResultsPaneMethods = {
         const isVerifierFailure = Boolean(qa && qa.isVerifierFailure);
         if (isSystem || isVerifierFailure) return String(block && block.label || '').trim();
         return dashQaTextBlockLabel(block && block.label, qa && qa.isPositive);
+    },
+
+    _qaFeedbackPortionCount(qa) {
+        return (qa && qa.textBlocks || []).filter((b) => !!this._dashQuotedText(b && b.text)).length;
     },
 
     _omittedSectionPlainText(label) {
@@ -6757,12 +6766,13 @@ const searchOutputResultsPaneMethods = {
         const issues = (qa.rejectionBadges || []).map((l) => String(l || '').trim()).filter(Boolean);
         if (issues.length) lines.push('Issues: ' + issues.join(', '));
         const blocks = [];
+        const allowFieldCollapse = this._qaFeedbackPortionCount(qa) > 1;
         (qa.textBlocks || []).forEach((b, i) => {
             const label = this._qaFeedbackTextBlockLabel(qa, b);
             const body = this._dashQuotedText(b.text);
-            if (!label && !body) return;
+            if (!body) return;
             const fieldId = this._qaTextBlockId(feedbackId, itemId, i);
-            if (fieldId && this._isActionBlockCollapsed(fieldId)) {
+            if (allowFieldCollapse && fieldId && this._isActionBlockCollapsed(fieldId)) {
                 blocks.push(this._omittedSectionPlainText(label || 'Text'));
                 return;
             }
@@ -7318,7 +7328,10 @@ const searchOutputResultsPaneMethods = {
         }
         this._ensureActionBlockCollapseDefault(blockId, true);
         const headerRow = this._actionBlockHeaderRowHtml(blockId, this._labelSpan(label), '');
-        const bodyHtml = this._quotedBarWrapHtml(body, { bodyStyle: this._mutedQuotedFieldBodyStyle() });
+        const bodyHtml = this._quotedBarWrapHtml(body, {
+            bodyStyle: this._mutedQuotedFieldBodyStyle(),
+            alignToCaret: true
+        });
         return this._actionBlockShellHtml(
             blockId,
             itemId,
@@ -7646,14 +7659,15 @@ const searchOutputResultsPaneMethods = {
         const badges = rejectionBadges.length > 0
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">${this._labelSpan('Issues')}${rejectionBadges.map((l) => `<span style="${issueBadgeStyle}">${dashEscHtml(l)}</span>`).join('')}</div>`
             : '';
-        const blocks = (qa.textBlocks || []).map((b, i) => {
+        const textBlocks = qa.textBlocks || [];
+        const allowFieldCollapse = this._qaFeedbackPortionCount(qa) > 1;
+        const blocks = textBlocks.map((b, i) => {
             const blockLabel = this._qaFeedbackTextBlockLabel(qa, b);
             const quotedText = this._dashQuotedText(b.text);
-            const body = quotedText
-                ? this._dashQuotedHighlightedHtml(b.text, hq, cs, fz, rx)
-                : '—';
+            if (!quotedText) return '';
+            const body = this._dashQuotedHighlightedHtml(b.text, hq, cs, fz, rx);
             const fieldId = this._qaTextBlockId(feedbackId, itemId, i);
-            if (!fieldId) {
+            if (!allowFieldCollapse || !fieldId) {
                 return '<div>'
                     + this._labelSpan(blockLabel)
                     + this._quotedBarWrapHtml(body)
@@ -7661,7 +7675,7 @@ const searchOutputResultsPaneMethods = {
             }
             this._ensureActionBlockCollapseDefault(fieldId, false);
             const fieldHeader = this._actionBlockHeaderRowHtml(fieldId, this._labelSpan(blockLabel), '');
-            const fieldBody = this._quotedBarWrapHtml(body);
+            const fieldBody = this._quotedBarWrapHtml(body, { alignToCaret: true });
             return this._actionBlockShellHtml(
                 fieldId,
                 itemId,
@@ -8516,7 +8530,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.14',
+    _version: '12.16',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
