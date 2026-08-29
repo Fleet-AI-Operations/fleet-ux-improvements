@@ -2873,6 +2873,14 @@ const searchOutputResultsPaneMethods = {
         return Array.isArray(ui.reviews) && ui.reviews.length > 0;
     },
 
+    _sessionQaIsAbsent(ui) {
+        return ui.status === 'loaded' && !this._sessionQaHasReviews(ui);
+    },
+
+    _sessionQaBtnDisabled(ui) {
+        return ui.status === 'loading' || this._sessionQaIsAbsent(ui);
+    },
+
     _sessionQaBtnLabel(ui) {
         if (ui.status === 'loading') return 'Fetching Session QA…';
         if (this._sessionQaHasReviews(ui) && (ui.status === 'loaded' || ui.status === 'error')) {
@@ -2883,6 +2891,14 @@ const searchOutputResultsPaneMethods = {
 
     _verifierOutputHasExecutions(ui) {
         return Array.isArray(ui.executions) && ui.executions.length > 0;
+    },
+
+    _verifierOutputIsAbsent(ui) {
+        return ui.status === 'loaded' && !this._verifierOutputHasExecutions(ui);
+    },
+
+    _verifierOutputBtnDisabled(ui) {
+        return ui.status === 'loading' || this._verifierOutputIsAbsent(ui);
     },
 
     _verifierOutputBtnLabel(ui) {
@@ -2967,18 +2983,20 @@ const searchOutputResultsPaneMethods = {
     _sessionQaControlsHtml(itemId) {
         const ui = this._getSessionQaUi(itemId);
         const btnLabel = this._sessionQaBtnLabel(ui);
-        const btnDisabled = ui.status === 'loading';
+        const btnDisabled = this._sessionQaBtnDisabled(ui);
+        const busy = ui.status === 'loading';
         return `<div data-wf-dash-session-qa-controls="1">`
-            + `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
+            + `<button type="button" class="wf-dash-session-qa-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-session-qa="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled' : ''}${busy ? ' aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
             + `</div>`;
     },
 
     _verifierOutputControlsHtml(itemId) {
         const ui = this._getVerifierOutputUi(itemId);
         const btnLabel = this._verifierOutputBtnLabel(ui);
-        const btnDisabled = ui.status === 'loading';
+        const btnDisabled = this._verifierOutputBtnDisabled(ui);
+        const busy = ui.status === 'loading';
         return `<div data-wf-dash-verifier-output-controls="1">`
-            + `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
+            + `<button type="button" class="wf-dash-verifier-output-btn ${this._dashBtnClass('basic', 'nav')}" data-wf-dash-verifier-output="1" data-item-id="${dashEscHtml(itemId)}"${btnDisabled ? ' disabled' : ''}${busy ? ' aria-busy="true"' : ''}>${dashEscHtml(btnLabel)}</button>`
             + `</div>`;
     },
 
@@ -3212,13 +3230,9 @@ const searchOutputResultsPaneMethods = {
         }
         if (!btn) return;
         btn.textContent = this._sessionQaBtnLabel(ui);
-        if (ui.status === 'loading') {
-            btn.disabled = true;
-            btn.setAttribute('aria-busy', 'true');
-        } else {
-            btn.disabled = false;
-            btn.removeAttribute('aria-busy');
-        }
+        btn.disabled = this._sessionQaBtnDisabled(ui);
+        if (ui.status === 'loading') btn.setAttribute('aria-busy', 'true');
+        else btn.removeAttribute('aria-busy');
     },
 
     _patchVerifierOutputControls(section, itemId) {
@@ -3239,13 +3253,9 @@ const searchOutputResultsPaneMethods = {
         }
         if (!btn) return;
         btn.textContent = this._verifierOutputBtnLabel(ui);
-        if (ui.status === 'loading') {
-            btn.disabled = true;
-            btn.setAttribute('aria-busy', 'true');
-        } else {
-            btn.disabled = false;
-            btn.removeAttribute('aria-busy');
-        }
+        btn.disabled = this._verifierOutputBtnDisabled(ui);
+        if (ui.status === 'loading') btn.setAttribute('aria-busy', 'true');
+        else btn.removeAttribute('aria-busy');
     },
 
     _patchUserStoryPanel(section, itemId) {
@@ -3840,6 +3850,10 @@ const searchOutputResultsPaneMethods = {
             }
             return;
         }
+        if (this._sessionQaIsAbsent(ui)) {
+            this._logDashApiSkip('session-qa-fetch', 'already empty', id);
+            return;
+        }
         if (ui.status === 'loading') {
             this._logDashApiSkip('session-qa-fetch', 'already loading', id);
             return;
@@ -3847,7 +3861,7 @@ const searchOutputResultsPaneMethods = {
 
         const taskId = String(item.task.id || '').trim();
         if (!taskId) {
-            ui.status = 'error';
+            ui.status = 'loaded';
             ui.reviews = [];
             ui.message = 'No sessions found for this task.';
             ui.visible = false;
@@ -3915,6 +3929,10 @@ const searchOutputResultsPaneMethods = {
             }
             return;
         }
+        if (this._verifierOutputIsAbsent(ui)) {
+            this._logDashApiSkip('verifier-output-fetch', 'already empty', id);
+            return;
+        }
         if (ui.status === 'loading') {
             this._logDashApiSkip('verifier-output-fetch', 'already loading', id);
             return;
@@ -3922,7 +3940,7 @@ const searchOutputResultsPaneMethods = {
 
         const taskId = String(item.task.id || '').trim();
         if (!taskId) {
-            ui.status = 'error';
+            ui.status = 'loaded';
             ui.executions = [];
             ui.message = 'No sessions found for this task.';
             ui.visible = false;
@@ -8814,7 +8832,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '13.0',
+    _version: '13.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
