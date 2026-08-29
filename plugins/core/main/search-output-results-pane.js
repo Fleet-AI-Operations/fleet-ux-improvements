@@ -5686,7 +5686,7 @@ const searchOutputResultsPaneMethods = {
     },
 
     _qaFeedbackBlockTitle(qa) {
-        return (qa && qa.isSystemFeedback) ? 'System Feedback' : 'QA Feedback';
+        return (qa && qa.isSystemFeedback) ? 'System Feedback' : 'Feedback';
     },
 
     _qaFeedbackOmittedLabel(qa) {
@@ -7676,7 +7676,7 @@ const searchOutputResultsPaneMethods = {
         const promptRatingHtml = (!isSystem && qa.qualityRating)
             ? `<span style="${this._qaPromptRatingBadgeStyle(qa.qualityRating)}">${dashEscHtml(qa.qualityRating)}</span>`
             : '';
-        const blockTitle = isSystem ? 'System Feedback' : 'QA Feedback';
+        const blockTitle = this._qaFeedbackBlockTitle(qa);
         const reviewerHtml = (!isSystem && qa.qaReviewerId)
             ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">${this._personChipsHtml(qa.qaReviewerName, qa.qaReviewerEmail, qa.qaReviewerId, 'Open reviewer in Fleet', 'qa')}</div>`
             : '';
@@ -8516,7 +8516,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.13',
+    _version: '12.14',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
