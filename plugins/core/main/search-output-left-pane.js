@@ -277,12 +277,14 @@ function dashFormatCreatedAt(iso) {
 function dashProblemCreationDurationText(seconds) {
     const total = Math.round(Number(seconds));
     if (!Number.isFinite(total) || total < 0) return '';
-    const h = Math.floor(total / 3600);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
     const m = Math.floor((total % 3600) / 60);
     const parts = [];
-    if (h > 0) parts.push(h + (h === 1 ? ' hr' : ' hrs'));
-    if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
-    if (parts.length === 0 && total > 0) return '< 1 min';
+    if (d > 0) parts.push(d + 'd');
+    if (h > 0) parts.push(h + 'h');
+    if (m > 0) parts.push(m + 'm');
+    if (parts.length === 0 && total > 0) return '< 1m';
     return parts.join(', ');
 }
 
@@ -2846,7 +2848,7 @@ const plugin = {
     id: 'search-output-left-pane',
     name: 'Search Output left pane',
     description: 'Worker Output Search tab — left pane',
-    _version: '6.2',
+    _version: '6.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

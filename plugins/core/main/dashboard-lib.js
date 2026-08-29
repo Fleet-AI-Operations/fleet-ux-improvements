@@ -907,21 +907,21 @@ function dashLibRelativeAgo(iso, options) {
     const days = Math.floor(totalHours / 24);
     const hours = totalHours % 24;
 
-    const dayLabel = (n) => n + ' day' + (n === 1 ? '' : 's');
-    const hourLabel = (n) => compact
-        ? n + (n === 1 ? ' hr' : ' hrs')
-        : n + ' hour' + (n === 1 ? '' : 's');
-    const minLabel = (n) => compact
-        ? n + (n === 1 ? ' min' : ' mins')
-        : n + ' minute' + (n === 1 ? '' : 's');
+    const mins = totalMins % 60;
+    const dayLabel = (n) => compact ? n + 'd' : n + ' day' + (n === 1 ? '' : 's');
+    const hourLabel = (n) => compact ? n + 'h' : n + ' hour' + (n === 1 ? '' : 's');
+    const minLabel = (n) => compact ? n + 'm' : n + ' minute' + (n === 1 ? '' : 's');
 
     if (days > 0) {
-        let text = dayLabel(days);
-        if (hours > 0) text += ', ' + hourLabel(hours);
-        return text + ' ago';
+        const parts = [dayLabel(days)];
+        if (hours > 0) parts.push(hourLabel(hours));
+        if (compact && mins > 0) parts.push(minLabel(mins));
+        return parts.join(', ') + ' ago';
     }
     if (hours > 0) {
-        return hourLabel(hours) + ' ago';
+        return compact && mins > 0
+            ? hourLabel(hours) + ', ' + minLabel(mins) + ' ago'
+            : hourLabel(hours) + ' ago';
     }
     return minLabel(Math.max(1, totalMins)) + ' ago';
 }
@@ -1070,7 +1070,7 @@ const plugin = {
     id: 'dashboard-lib',
     name: 'Dashboard Lib',
     description: 'Helpers for Worker Output Search (filters, versions, highlighting)',
-    _version: '9.4',
+    _version: '9.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

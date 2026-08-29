@@ -287,12 +287,14 @@ function dashFormatCreatedAt(iso) {
 function dashProblemCreationDurationText(seconds) {
     const total = Math.round(Number(seconds));
     if (!Number.isFinite(total) || total < 0) return '';
-    const h = Math.floor(total / 3600);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
     const m = Math.floor((total % 3600) / 60);
     const parts = [];
-    if (h > 0) parts.push(h + (h === 1 ? ' hr' : ' hrs'));
-    if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
-    if (parts.length === 0 && total > 0) return '< 1 min';
+    if (d > 0) parts.push(d + 'd');
+    if (h > 0) parts.push(h + 'h');
+    if (m > 0) parts.push(m + 'm');
+    if (parts.length === 0 && total > 0) return '< 1m';
     return parts.join(', ');
 }
 
@@ -7357,7 +7359,7 @@ const searchOutputResultsPaneMethods = {
 
     _plainTimestampHtml(iso, prefixLabel, opts) {
         const formatted = dashFormatCreatedAt(iso);
-        const ago = dashLib().relativeAgo(iso, { style: 'detailed' });
+        const ago = dashLib().relativeAgo(iso, { style: 'compact' });
         const muted = Boolean(opts && opts.muted);
         const dateColor = muted
             ? 'color: var(--muted-foreground, #64748b);'
@@ -8514,7 +8516,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.11',
+    _version: '12.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

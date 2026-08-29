@@ -279,12 +279,14 @@ function dashFormatCreatedAt(iso) {
 function dashProblemCreationDurationText(seconds) {
     const total = Math.round(Number(seconds));
     if (!Number.isFinite(total) || total < 0) return '';
-    const h = Math.floor(total / 3600);
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
     const m = Math.floor((total % 3600) / 60);
     const parts = [];
-    if (h > 0) parts.push(h + (h === 1 ? ' hr' : ' hrs'));
-    if (m > 0) parts.push(m + (m === 1 ? ' min' : ' mins'));
-    if (parts.length === 0 && total > 0) return '< 1 min';
+    if (d > 0) parts.push(d + 'd');
+    if (h > 0) parts.push(h + 'h');
+    if (m > 0) parts.push(m + 'm');
+    if (parts.length === 0 && total > 0) return '< 1m';
     return parts.join(', ');
 }
 
@@ -6782,7 +6784,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.4',
+    _version: '10.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
