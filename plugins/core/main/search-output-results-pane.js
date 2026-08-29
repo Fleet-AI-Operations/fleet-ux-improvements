@@ -8600,7 +8600,6 @@ const searchOutputResultsPaneMethods = {
             : '';
 
         const rollingUi = hasTimeline && totalVersions >= 2 ? this._getRollingUi(task.id) : null;
-        const diffMode = rollingUi && rollingUi.showHighlights;
 
         let row3Html = '';
         if (hasTimeline && totalVersions >= 2) {
@@ -8642,7 +8641,7 @@ const searchOutputResultsPaneMethods = {
             );
         }).join('');
 
-        const row2Html = !diffMode && reviewerBadges
+        const row2Html = reviewerBadges
             ? `<div style="display: flex; flex-wrap: wrap; align-items: start; justify-content: flex-start; gap: 8px 24px; padding: 8px 14px; border-bottom: 1px solid var(--border, #e2e8f0); font-size: 12px;">
                     ${reviewerBadges}
                 </div>`
@@ -8710,7 +8709,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.18',
+    _version: '12.19',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
