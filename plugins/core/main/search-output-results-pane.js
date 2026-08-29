@@ -4586,12 +4586,13 @@ const searchOutputResultsPaneMethods = {
                 );
             }
             this._expandBlockForHighlight('', text, highlight, ancestorBlockIds);
+            const alignToCaret = Boolean(p.alignToCaret);
             if (p.skipPlainLabel || !p.label) {
                 const inner = this._quotedBarWrapHtml(body, {
                     bodyStyle: p.bodyStyle,
                     bodyTag: p.bodyTag,
                     bodyClass: p.bodyClass,
-                    alignToCaret: false
+                    alignToCaret
                 });
                 return extraAttrs ? ('<div' + extraAttrs + '>' + inner + '</div>') : inner;
             }
@@ -4601,7 +4602,7 @@ const searchOutputResultsPaneMethods = {
                 bodyClass: p.bodyClass,
                 bodyStyle: p.bodyStyle,
                 bodyTag: p.bodyTag,
-                alignToCaret: false
+                alignToCaret
             });
             return extraAttrs ? ('<div' + extraAttrs + '>' + fieldHtml + '</div>') : fieldHtml;
         }).join('');
@@ -4666,6 +4667,7 @@ const searchOutputResultsPaneMethods = {
                 label: 'Prompt',
                 text: version && version.prompt,
                 skipPlainLabel: true,
+                alignToCaret: true,
                 bodyStyle: this._quotedFieldBodyLayoutStyle() + ' color: var(--foreground, #0f172a);'
             },
             {
@@ -8426,7 +8428,8 @@ const searchOutputResultsPaneMethods = {
         const taskActionsPart = diffMode ? '' : taskActionsHtml;
         const quotedBodyHtml = diffMode
             ? this._quotedBarWrapHtml(promptBody, {
-                bodyStyle: this._quotedFieldBodyLayoutStyle() + ' ' + promptColor
+                bodyStyle: this._quotedFieldBodyLayoutStyle() + ' ' + promptColor,
+                alignToCaret: true
             })
             : this._quotedPortionsHtml({
                 itemId,
@@ -8475,7 +8478,8 @@ const searchOutputResultsPaneMethods = {
                 blockId: this._promptTextActionBlockId(itemId, 'quick'),
                 label: 'Prompt',
                 text: task.prompt,
-                skipPlainLabel: true
+                skipPlainLabel: true,
+                alignToCaret: true
             }]
         });
         const leftHeader = `${this._labelSpan('Prompt')}`;
@@ -8488,7 +8492,7 @@ const searchOutputResultsPaneMethods = {
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
-            promptHtml || this._quotedBarWrapHtml('—')
+            promptHtml || this._quotedBarWrapHtml('—', { alignToCaret: true })
         );
         let bodyInner;
         const preferQaOnly = item.kind === 'qa' && item.qaFeedback;
@@ -8706,7 +8710,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.17',
+    _version: '12.18',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
