@@ -7638,7 +7638,7 @@ const searchOutputResultsPaneMethods = {
                     ? `<span style="${alertBadge}">Escalated for Fleet Review</span>`
                     : (isFlagged
                         ? `<span style="${alertBadge}">Flagged as Bugged</span>`
-                        : `<span style="${this._qaReturnedBadgeStyle()}">Returned for Revision</span>`))));
+                        : `<span style="${this._qaReturnedBadgeStyle()}">Returned</span>`))));
         const issueBadgeStyle = isOther
             ? this._qaAlertIssueBadgeStyle()
             : 'display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 600; color: #b45309; background: color-mix(in srgb, #d97706 14%, transparent);';
@@ -8516,7 +8516,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.12',
+    _version: '12.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
