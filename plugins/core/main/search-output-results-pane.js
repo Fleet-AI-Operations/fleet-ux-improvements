@@ -3300,7 +3300,7 @@ const searchOutputResultsPaneMethods = {
         const notesHtml = notesText
             ? `<div>
                 ${this._labelSpan('Notes')}
-                <p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${dashEscHtml(notesText)}</p>
+                ${this._quotedBarWrapHtml(dashEscHtml(notesText))}
             </div>`
             : '';
         const blockId = 'session-qa:' + review.id;
@@ -3368,7 +3368,13 @@ const searchOutputResultsPaneMethods = {
         const stdoutHtml = formatted
             ? `<div>
                 ${this._labelSpan('Stdout')}
-                <pre style="margin: 4px 0 0 0; padding: 8px 10px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.45; font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; color: var(--foreground, #0f172a);">${dashEscHtml(formatted)}</pre>
+                ${this._quotedBarWrapHtml(dashEscHtml(formatted), {
+                    bodyTag: 'pre',
+                    bodyStyle: this._quotedFieldBodyLayoutStyle()
+                        + ' padding: 8px 0 2px 0; line-height: 1.45; font-size: 11px;'
+                        + ' font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;'
+                        + ' color: var(--foreground, #0f172a);'
+                })}
             </div>`
             : '';
         const blockId = 'verifier-output:' + execution.id;
@@ -4425,30 +4431,49 @@ const searchOutputResultsPaneMethods = {
     },
 
     _quotedFieldBodyLayoutStyle() {
-        return 'margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5;';
+        return 'margin: 0; padding: 6px 0 2px 0; white-space: pre-wrap; line-height: 1.5; min-width: 0; flex: 1 1 auto;';
     },
 
     _mutedQuotedFieldBodyStyle() {
         return this._quotedFieldBodyLayoutStyle() + ' color: var(--muted-foreground, #64748b);';
     },
 
+    _quotedBarButtonHtml() {
+        return '<button type="button" data-wf-dash-quoted-bar="1" aria-label="Collapse" title="Collapse"></button>';
+    },
+
+    _quotedBarWrapHtml(innerHtml, options) {
+        this._ensureActionBlockCollapseStyles();
+        const opts = options || {};
+        const bodyTag = opts.bodyTag || 'p';
+        const bodyClass = opts.bodyClass ? ' class="' + dashEscHtml(opts.bodyClass) + '"' : '';
+        const layout = this._quotedFieldBodyLayoutStyle();
+        const bodyStyle = opts.bodyStyle != null
+            ? opts.bodyStyle
+            : (layout + ' color: var(--foreground, #0f172a);');
+        const styleAttr = bodyStyle ? ' style="' + bodyStyle + '"' : '';
+        return '<div data-wf-dash-quoted-wrap="1">'
+            + this._quotedBarButtonHtml()
+            + '<' + bodyTag + bodyClass + styleAttr + '>' + innerHtml + '</' + bodyTag + '>'
+            + '</div>';
+    },
+
     _quotedFieldBlockHtml(label, bodyHtml, _copyText, options) {
         const opts = options || {};
         const shellClass = opts.shellClass ? ' class="' + dashEscHtml(opts.shellClass) + '"' : '';
         const headerClass = opts.headerClass ? ' class="' + dashEscHtml(opts.headerClass) + '"' : '';
-        const bodyClass = opts.bodyClass ? ' class="' + dashEscHtml(opts.bodyClass) + '"' : '';
         const headerInner = opts.headerInner || this._labelSpan(label);
-        const bodyTag = opts.bodyTag || 'p';
         const layout = this._quotedFieldBodyLayoutStyle();
         const bodyStyle = opts.bodyStyle != null
             ? opts.bodyStyle
-            : (opts.bodyClass
-                ? layout
-                : layout + ' color: var(--foreground, #0f172a);');
-        const styleAttr = bodyStyle ? ' style="' + bodyStyle + '"' : '';
+            : (opts.bodyClass ? layout : layout + ' color: var(--foreground, #0f172a);');
         return '<div' + shellClass + '>'
             + '<div' + headerClass + '>' + headerInner + '</div>'
-            + '<' + bodyTag + bodyClass + styleAttr + '>' + bodyHtml + '</' + bodyTag + '>'
+            + this._quotedBarWrapHtml(bodyHtml, {
+                bodyTag: opts.bodyTag || 'p',
+                bodyClass: opts.bodyClass,
+                bodyStyle
+            })
             + '</div>';
     },
 
@@ -4845,8 +4870,45 @@ const searchOutputResultsPaneMethods = {
             '  flex-direction: column;',
             '  gap: 8px;',
             '}',
+            '#wf-dash-modal [data-wf-dash-quoted-wrap] {',
+            '  display: flex;',
+            '  align-items: stretch;',
+            '  margin: 4px 0 0 11px;',
+            '  min-width: 0;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-bar] {',
+            '  box-sizing: border-box;',
+            '  flex: 0 0 15px;',
+            '  width: 15px;',
+            '  min-height: 1.5em;',
+            '  margin: 0;',
+            '  padding: 0;',
+            '  border: none;',
+            '  background: transparent;',
+            '  cursor: pointer;',
+            '  position: relative;',
+            '  align-self: stretch;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-bar]::before {',
+            '  content: "";',
+            '  position: absolute;',
+            '  left: 0;',
+            '  top: 0;',
+            '  bottom: 0;',
+            '  width: 3px;',
+            '  border-radius: 1px;',
+            '  background: var(--border, #e2e8f0);',
+            '  transition: background 120ms ease;',
+            '}',
+            '#wf-dash-modal [data-wf-dash-quoted-bar]:hover::before,',
+            '#wf-dash-modal [data-wf-dash-quoted-bar]:focus-visible::before {',
+            '  background: var(--foreground, #0f172a);',
+            '}',
             '@media (prefers-reduced-motion: reduce) {',
             '  #wf-dash-modal [data-wf-dash-action-block-body] {',
+            '    transition: none;',
+            '  }',
+            '  #wf-dash-modal [data-wf-dash-quoted-bar]::before {',
             '    transition: none;',
             '  }',
             '}',
@@ -5137,7 +5199,7 @@ const searchOutputResultsPaneMethods = {
                 && versionIdx >= rollingUi.rollingLeft
                 && versionIdx <= rollingUi.rollingLeft + 1;
             block.classList.toggle('so-rolling-diff-on', inActivePair);
-            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > [data-wf-dash-action-block-body-inner] > p');
+            const promptP = block.querySelector(':scope > [data-wf-dash-action-block-body] > [data-wf-dash-action-block-body-inner] [data-wf-dash-quoted-wrap] > p');
             if (promptP) {
                 promptP.innerHTML = this._rollingPromptBodyHtml(version, versionIdx, renderedVersions, rollingUi);
             }
@@ -7254,7 +7316,7 @@ const searchOutputResultsPaneMethods = {
         }
         this._ensureActionBlockCollapseDefault(blockId, true);
         const headerRow = this._actionBlockHeaderRowHtml(blockId, this._labelSpan(label), '');
-        const bodyHtml = '<p style="' + this._mutedQuotedFieldBodyStyle() + '">' + body + '</p>';
+        const bodyHtml = this._quotedBarWrapHtml(body, { bodyStyle: this._mutedQuotedFieldBodyStyle() });
         return this._actionBlockShellHtml(
             blockId,
             itemId,
@@ -7592,12 +7654,12 @@ const searchOutputResultsPaneMethods = {
             if (!fieldId) {
                 return '<div>'
                     + this._labelSpan(blockLabel)
-                    + `<p style="${this._quotedFieldBodyLayoutStyle()} color: var(--foreground, #0f172a);">${body}</p>`
+                    + this._quotedBarWrapHtml(body)
                     + '</div>';
             }
             this._ensureActionBlockCollapseDefault(fieldId, false);
             const fieldHeader = this._actionBlockHeaderRowHtml(fieldId, this._labelSpan(blockLabel), '');
-            const fieldBody = `<p style="${this._quotedFieldBodyLayoutStyle()} color: var(--foreground, #0f172a);">${body}</p>`;
+            const fieldBody = this._quotedBarWrapHtml(body);
             return this._actionBlockShellHtml(
                 fieldId,
                 itemId,
@@ -8183,7 +8245,9 @@ const searchOutputResultsPaneMethods = {
             ? ''
             : this._scratchpadSectionHtml(version.scratchpad, hq, cs, fz, rx, itemId, version.displayVersionNo);
         const taskActionsPart = diffMode ? '' : taskActionsHtml;
-        const bodyHtml = `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; ${promptColor}">${promptBody}</p>`
+        const bodyHtml = this._quotedBarWrapHtml(promptBody, {
+            bodyStyle: this._quotedFieldBodyLayoutStyle() + ' ' + promptColor
+        })
             + notesToQaHtml
             + scratchpadHtml
             + taskActionsPart;
@@ -8232,7 +8296,7 @@ const searchOutputResultsPaneMethods = {
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
-            `<p style="margin: 4px 0 0 0; padding: 6px 0 2px 12px; border-left: 3px solid var(--border, #e2e8f0); white-space: pre-wrap; line-height: 1.5; color: var(--foreground, #0f172a);">${promptBody}</p>`
+            this._quotedBarWrapHtml(promptBody)
         );
         let bodyInner;
         const preferQaOnly = item.kind === 'qa' && item.qaFeedback;
@@ -8450,7 +8514,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '12.9',
+    _version: '12.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

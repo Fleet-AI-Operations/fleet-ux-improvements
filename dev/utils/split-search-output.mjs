@@ -73,7 +73,7 @@ const RESULTS_METHODS = new Set([
     '_cardTabShellBase', '_cardSurfaceTabHtml', '_cardCreatedTabHtml', '_cardKeyCopyHtml', '_cardKeyTabHtml', '_cardStatusTabHtml', '_cardActionAreaHtml',
     '_addToDiffFromCard', '_diffSeedFromItem', '_diffIncludedResults',
     '_autoGrowTextareaStyle', '_compactSelectStyle', '_iconMicroBtnStyle', '_segmentBtnStyle', '_textareaFocusSnapshot', '_restoreTextareaFocus',
-    '_quotedFieldBodyLayoutStyle', '_mutedQuotedFieldBodyStyle', '_quotedFieldBlockHtml',
+    '_quotedFieldBodyLayoutStyle', '_mutedQuotedFieldBodyStyle', '_quotedBarButtonHtml', '_quotedBarWrapHtml', '_quotedFieldBlockHtml',
     '_resolutionStatusBadgeHtml', '_entityResolutionChipHtml', '_resolutionBlockColors', '_resolvedActionSubBlockHtml',
     '_getCardUi', '_getRollingUi', '_ensureRollingUiOnExpand', '_clampCardRollingLeft', '_rollingSegBtn',
     '_rollingSimilarityLabelHtml', '_rollingSimilarityBadgeHtml', '_expandedRollingFeedbackBtnHtml', '_expandedRollingDiffToolbarHtml',

@@ -6284,6 +6284,14 @@ function attachSearchOutputListeners(modal, dash) {
                 if (blockId) dash._toggleActionBlockCollapse(blockId);
                 return;
             }
+            const quotedBar = e.target.closest('[data-wf-dash-quoted-bar]');
+            if (quotedBar && modal.contains(quotedBar)) {
+                e.preventDefault();
+                const block = quotedBar.closest('[data-wf-dash-action-block]');
+                const blockId = block && block.getAttribute('data-wf-dash-action-block');
+                if (blockId) dash._toggleActionBlockCollapse(blockId);
+                return;
+            }
             const candidate = e.target.closest('[data-wf-dash-candidate]');
             if (candidate && modal.contains(candidate)) {
                 const id = candidate.getAttribute('data-wf-dash-candidate');
@@ -6774,7 +6782,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.3',
+    _version: '10.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
