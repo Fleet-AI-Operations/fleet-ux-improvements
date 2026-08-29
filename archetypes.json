@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.479",
+  "archetypesVersion": "14.451",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -323,7 +323,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.41"
+      "version": "1.42"
     }
   ],
   "archetypes": [
@@ -801,9 +801,6 @@
       "description": "Page for reviewing session traces",
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
-      "libraries": [
-        "top-nav-horizontal-scroll.js"
-      ],
       "plugins": [
         {
           "name": "auto-expand-verifier-section.js",
@@ -812,9 +809,9 @@
           "log": false
         },
         {
-          "name": "top-nav-horizontal-scroll.js",
-          "version": "2.2",
-          "hash": "sha256-0a61a1e2b543345ea199d697e08166fc457bda0373094a603dd6b38644b95d42",
+          "name": "remember-layout-proportions.js",
+          "version": "2.0",
+          "hash": "sha256-3ce4cec12191a19d636044fe869de12c16dbe9b5dc5aecd6b4078acda640ce6a",
           "log": false
         }
       ]
@@ -1425,14 +1422,7 @@
       "description": "Page for reviewing session traces",
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "view-eval-task-link.js",
-          "version": "1.1",
-          "hash": "sha256-30b7fc2d487da58bcdb09377ced67994e98f83a1e77355d3b14444b6b73b77a8",
-          "log": false
-        }
-      ]
+      "plugins": []
     }
   ]
 }

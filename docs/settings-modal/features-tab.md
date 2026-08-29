@@ -1,4 +1,4 @@
-1.41
+1.42
 
 ## Features
 
@@ -87,6 +87,10 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+
+### Session Trace Review Page
+- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)
+- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits
 
 ### Guidelines
 - **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar
