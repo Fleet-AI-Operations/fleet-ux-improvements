@@ -1,5 +1,6 @@
 // ============= user-story-collapse.js (library) =============
-// Hide/Show User Story (or creation scenario) body from a right-aligned toggle on the label.
+// Hide/Show User Story (or creation scenario / annotator instructions) body
+// from a right-aligned toggle on the label.
 
 const SCOPE = '[data-fleet-user-story-collapse="1"]';
 const CONTAINER_ATTR = 'data-fleet-user-story-collapse';
@@ -7,10 +8,13 @@ const TOGGLE_SLOT = 'user-story-collapse-toggle';
 const HIDDEN_ATTR = 'data-fleet-user-story-section-hidden';
 const SAVED_DISPLAY_ATTR = 'data-fleet-user-story-saved-display';
 const OLD_HEADER_ATTR = 'data-fleet-user-story-header';
+const KIND_ATTR = 'data-fleet-collapse-kind';
 const LABEL_TEXT = 'User Story';
 const SCENARIO_INTRO_RE = /Write a problem inspired by the following scenario/i;
+const INSTRUCTIONS_INTRO_RE = /^\s*Instructions for Task Creation:?\s*$/i;
 const ORIGINAL_MARKER = 'data-fleet-user-story-original';
 const REPLICA_MARKER = 'data-fleet-user-story-replica';
+const PROSE_ATTR = 'data-fleet-user-story-prose';
 
 const UserStoryCollapseApi = {
     id: 'userStoryCollapse',
@@ -33,10 +37,26 @@ const UserStoryCollapseApi = {
         return SCENARIO_INTRO_RE.test(this.normalizeLabelText(clone.textContent));
     },
 
+    isInstructionIntro(el) {
+        if (!el || el.tagName !== 'P') return false;
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('[data-slot="' + TOGGLE_SLOT + '"]').forEach((n) => n.remove());
+        return INSTRUCTIONS_INTRO_RE.test(this.normalizeLabelText(clone.textContent));
+    },
+
+    isSectionHeader(el) {
+        return this.isUserStoryLabel(el) || this.isScenarioIntro(el) || this.isInstructionIntro(el);
+    },
+
+    sectionNoun(kind) {
+        return kind === 'instructions' ? 'Instructions' : 'User Story';
+    },
+
     isStoryBody(el) {
         if (!el || !el.getAttribute) return false;
         if (el.getAttribute(ORIGINAL_MARKER) === 'true') return true;
         if (el.getAttribute(REPLICA_MARKER) === 'true') return true;
+        if (el.hasAttribute(PROSE_ATTR)) return true;
         if (el.classList && el.classList.contains('whitespace-pre-wrap')) return true;
         return false;
     },
@@ -91,6 +111,21 @@ const UserStoryCollapseApi = {
             if (bodies.length === 0) continue;
             seenParents.add(container);
             sections.push({ kind: 'scenario', headerEl: intro, container, bodies });
+        }
+
+        for (const intro of intros) {
+            if (!this.isInstructionIntro(intro)) continue;
+            const parent = intro.parentElement;
+            if (!parent) continue;
+            const container =
+                parent.getAttribute && parent.getAttribute(OLD_HEADER_ATTR) === '1'
+                    ? parent.parentElement
+                    : parent;
+            if (!container || seenParents.has(container)) continue;
+            const bodies = this.collectBodiesInContainer(container, intro);
+            if (bodies.length === 0) continue;
+            seenParents.add(container);
+            sections.push({ kind: 'instructions', headerEl: intro, container, bodies });
         }
 
         return sections;
@@ -161,10 +196,11 @@ const UserStoryCollapseApi = {
         btn.style.zIndex = '2';
     },
 
-    syncToggleLabel(btn, hidden) {
+    syncToggleLabel(btn, hidden, kind) {
+        const noun = this.sectionNoun(kind || (btn && btn.getAttribute(KIND_ATTR)) || 'story');
         const label = hidden ? 'Show' : 'Hide';
         btn.textContent = label;
-        btn.setAttribute('aria-label', hidden ? 'Show User Story' : 'Hide User Story');
+        btn.setAttribute('aria-label', hidden ? 'Show ' + noun : 'Hide ' + noun);
         btn.title = btn.getAttribute('aria-label');
     },
 
@@ -177,7 +213,7 @@ const UserStoryCollapseApi = {
     },
 
     ensureToggle(section, logTag) {
-        const { headerEl, container } = section;
+        const { headerEl, container, kind } = section;
         if (!headerEl || !container) return;
 
         this.cleanupOrphanHeaders(container);
@@ -191,9 +227,7 @@ const UserStoryCollapseApi = {
         let header = headerEl;
         if (!header.isConnected || !container.contains(header)) {
             header =
-                Array.from(container.children).find(
-                    (el) => this.isUserStoryLabel(el) || this.isScenarioIntro(el)
-                ) || headerEl;
+                Array.from(container.children).find((el) => this.isSectionHeader(el)) || headerEl;
         }
 
         this.applyHeaderLayout(header);
@@ -201,14 +235,16 @@ const UserStoryCollapseApi = {
         let btn = this.findToggleInContainer(container, logTag);
         const bodies = this.collectBodiesInContainer(container, header);
         const hidden = this.isSectionHidden(bodies);
+        const noun = this.sectionNoun(kind);
 
         if (btn) {
             // Prefer button living on the live header
             if (btn.parentElement !== header && header.isConnected) {
                 header.appendChild(btn);
             }
+            btn.setAttribute(KIND_ATTR, kind || 'story');
             this.applyToggleChrome(btn);
-            this.syncToggleLabel(btn, hidden);
+            this.syncToggleLabel(btn, hidden, kind);
             if (hidden) this.setBodiesHidden(bodies, true);
             return;
         }
@@ -217,29 +253,30 @@ const UserStoryCollapseApi = {
         btn.type = 'button';
         btn.setAttribute('data-fleet-plugin', logTag);
         btn.setAttribute('data-slot', TOGGLE_SLOT);
+        btn.setAttribute(KIND_ATTR, kind || 'story');
         this.applyToggleChrome(btn);
-        this.syncToggleLabel(btn, hidden);
+        this.syncToggleLabel(btn, hidden, kind);
 
         const self = this;
         btn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            const liveKind = btn.getAttribute(KIND_ATTR) || kind || 'story';
             const liveContainer =
                 btn.closest('[' + CONTAINER_ATTR + '="1"]') || container;
             const liveHeader =
-                Array.from(liveContainer.children).find(
-                    (el) => self.isUserStoryLabel(el) || self.isScenarioIntro(el)
-                ) || btn.parentElement;
+                Array.from(liveContainer.children).find((el) => self.isSectionHeader(el))
+                || btn.parentElement;
             const liveBodies = self.collectBodiesInContainer(liveContainer, liveHeader);
             if (liveBodies.length === 0) {
-                Logger.warn('click — no User Story bodies found in container');
+                Logger.warn('click — no ' + self.sectionNoun(liveKind) + ' bodies found in container');
                 return;
             }
             const nowHidden = self.isSectionHidden(liveBodies);
             self.setBodiesHidden(liveBodies, !nowHidden);
-            self.syncToggleLabel(btn, !nowHidden);
+            self.syncToggleLabel(btn, !nowHidden, liveKind);
             self.applyToggleChrome(btn);
-            Logger.log('User Story ' +
+            Logger.log(self.sectionNoun(liveKind) + ' ' +
                     (!nowHidden ? 'hidden' : 'shown') +
                     ' (' +
                     liveBodies.length +
@@ -251,7 +288,7 @@ const UserStoryCollapseApi = {
         if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.registerElement) {
             CleanupRegistry.registerElement(btn);
         }
-        Logger.debug('Hide/Show control ready on User Story row');
+        Logger.debug('Hide/Show control ready on ' + noun + ' row');
 
         if (hidden) this.setBodiesHidden(bodies, true);
     },
@@ -288,7 +325,7 @@ const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
     description: 'Shared Hide/Show for User Story bodies',
-    _version: '1.5',
+    _version: '1.6',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

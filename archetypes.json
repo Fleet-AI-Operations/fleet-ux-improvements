@@ -1,7 +1,7 @@
 {
   "version": "13.11",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.451",
+  "archetypesVersion": "14.452",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -156,14 +156,14 @@
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.8",
-      "hash": "sha256-f79abc7752f53a04efb59a673bbbe67651ffe63d4d98a237a356d9776889a27f",
+      "version": "1.9",
+      "hash": "sha256-174c5b9dd750d507d6d80d8bccae25293b4cf7b97aed232775d0ea2b2e6707ff",
       "log": false
     },
     {
       "name": "user-story-collapse.js",
-      "version": "1.5",
-      "hash": "sha256-281bb61ec79a77f9b2c3e2eb2ba5803ec6d990b64520d02e0faee743512a115f",
+      "version": "1.6",
+      "hash": "sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807",
       "log": false
     },
     {
@@ -619,6 +619,12 @@
           "name": "user-story-markdown.js",
           "version": "1.1",
           "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
+          "log": false
+        },
+        {
+          "name": "creation-annotator-instructions.js",
+          "version": "1.0",
+          "hash": "sha256-715eca359b45eb557d3f05c6a9150fcabac3d32b7ea3af1cdf2463b5de2233e3",
           "log": false
         },
         {
