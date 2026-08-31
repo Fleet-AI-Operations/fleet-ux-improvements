@@ -11,6 +11,7 @@ const COLLAPSE_TOGGLE_SLOT = 'user-story-collapse-toggle';
 const DIV_MARKDOWN_LABELS = new Set(['User Story', 'Annotator Instructions']);
 const TASK_INSTRUCTIONS_RE = /^\s*Task Instructions\s*$/i;
 const SCENARIO_INTRO_RE = /Write a problem inspired by the following scenario/i;
+const INSTRUCTIONS_INTRO_RE = /^\s*Instructions for Task Creation:?\s*$/i;
 
 const MODAL_FRAME_CLASSES = [
     'mt-1',
@@ -50,6 +51,12 @@ const CREATION_QUOTE_CLASSES = [
     'text-base',
     'text-blue-700',
     'dark:text-blue-300'
+].join(' ');
+
+const CREATION_AMBER_BODY_CLASSES = [
+    'text-sm',
+    'text-amber-800',
+    'dark:text-amber-200'
 ].join(' ');
 
 const UserStoryMarkdownApi = {
@@ -113,6 +120,25 @@ const UserStoryMarkdownApi = {
     isTaskInstructionsHeading(el) {
         if (!el) return false;
         return TASK_INSTRUCTIONS_RE.test(this.labelTextFromEl(el));
+    },
+
+    isInstructionIntro(el) {
+        if (!el) return false;
+        return INSTRUCTIONS_INTRO_RE.test(this.labelTextFromEl(el));
+    },
+
+    isAmberBox(el) {
+        if (!el || !el.className) return false;
+        const cls = String(el.className);
+        return /\bborder-amber-200\b/.test(cls) && /\bbg-amber-50\b/.test(cls);
+    },
+
+    isAmberInstructionBody(el) {
+        if (!el) return false;
+        const box = el.closest && el.closest('div.rounded-lg.border');
+        if (!box || !this.isAmberBox(box)) return false;
+        const heading = box.querySelector('p');
+        return heading ? this.isInstructionIntro(heading) : false;
     },
 
     isNotesFromTaskCreatorBody(el) {
@@ -203,6 +229,21 @@ const UserStoryMarkdownApi = {
                 seen.add(quote);
                 bodies.push(quote);
             }
+
+            const intros = dialog.querySelectorAll('p');
+            for (const intro of intros) {
+                if (!this.isInstructionIntro(intro)) continue;
+                const box = intro.closest('div.rounded-lg.border');
+                if (!box || !this.isAmberBox(box)) continue;
+                const candidates = box.querySelectorAll('div.whitespace-pre-wrap, p.whitespace-pre-wrap');
+                for (const body of candidates) {
+                    if (body === intro) continue;
+                    if (seen.has(body)) continue;
+                    if (body.closest('[' + REPLICA_MARKER + '="true"]')) continue;
+                    seen.add(body);
+                    bodies.push(body);
+                }
+            }
         }
         return bodies;
     },
@@ -249,6 +290,9 @@ const UserStoryMarkdownApi = {
         const hasLeftAccent = /\bborder-l-4\b/.test(cls);
         const hasBlueFill = /\bbg-blue-50\b/.test(cls) || /\bborder-blue-200\b/.test(cls);
 
+        if (this.isAmberInstructionBody(body)) {
+            return 'creationAmber';
+        }
         if (isBlockquote || (hasLeftAccent && !hasBlueFill)) {
             return 'creationQuote';
         }
@@ -378,6 +422,7 @@ const UserStoryMarkdownApi = {
 
     replicaClassName(body) {
         const variant = this.getVariant(body);
+        if (variant === 'creationAmber') return CREATION_AMBER_BODY_CLASSES;
         if (variant === 'creationQuote') return CREATION_QUOTE_CLASSES;
         if (variant === 'modal') return MODAL_FRAME_CLASSES;
         if (variant === 'creationEmbedded') return CREATION_EMBEDDED_BODY_CLASSES;
@@ -512,7 +557,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared User Story markdown rendering',
-    _version: '1.8',
+    _version: '1.9',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

@@ -1,4 +1,4 @@
-1.42
+1.43
 
 ## Features
 
@@ -38,6 +38,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
+- **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 - **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change
