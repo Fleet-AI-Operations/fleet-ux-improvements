@@ -240,7 +240,7 @@ const ToggleMainPanelsApi = {
             slot.setAttribute('data-fleet-plugin', this.id);
             toolbar.appendChild(slot);
         }
-        slot.className = 'flex flex-1 items-center justify-end min-w-0 gap-2';
+        slot.className = 'flex items-center justify-end shrink-0 gap-2 ml-auto';
         return slot;
     },
 
@@ -546,7 +546,7 @@ const plugin = {
     name: 'Toggle Main Panels (library)',
     description:
         'Shared Hide/Unhide for the two main panes (task detail or environment); the other pane expands to full width',
-    _version: '1.11',
+    _version: '1.12',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
