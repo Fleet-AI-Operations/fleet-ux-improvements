@@ -4577,7 +4577,6 @@ const searchOutputCoreMethods = {
     _beginResultsLoad() {
         const additive = this._isAdditiveResultsMode();
         this._state.resultsKindTab = 'all';
-        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
         this._state.hasSearched = true;
         this._state.loading = true;
@@ -4633,7 +4632,6 @@ const searchOutputCoreMethods = {
         this._resetFilterDraftsFromResults(mergedItems || this._state.cachedItems || []);
         this._applyResultsPageSizeForNewSearch();
         this._state.resultsKindTab = 'all';
-        this._state.resultsReviewStatus = 'pending';
         this._state.resultsPage = 0;
     },
 
@@ -6784,7 +6782,7 @@ const plugin = {
     id: 'search-output',
     name: 'Search Output',
     description: 'Worker Output Search: search, filters, and result prefetch',
-    _version: '10.6',
+    _version: '10.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
