@@ -8666,7 +8666,8 @@ const searchOutputResultsPaneMethods = {
             itemId,
             'display: flex; flex-direction: column; gap: 8px;',
             headerRow,
-            promptHtml || this._quotedBarWrapHtml('—', { alignToCaret: true })
+            promptHtml || this._quotedBarWrapHtml('—', { alignToCaret: true }),
+            ' data-wf-dash-version-band="1"'
         );
         let bodyInner;
         const preferQaOnly = item.kind === 'qa' && item.qaFeedback;
@@ -8680,7 +8681,7 @@ const searchOutputResultsPaneMethods = {
                 ${this._flagCreatePanelHtml(itemId, task.id)}`;
         const bodyHtml = this._supplementalControlsHtml(itemId)
             + this._supplementalPanelsHtml(itemId)
-            + `<div style="padding: 12px 14px; font-size: 12px;">${bodyInner}</div>`;
+            + `<div style="padding: 12px 7px; font-size: 12px;">${bodyInner}</div>`;
         return this._resultCardOuterWrap(item, stickyChromeHtml, bodyHtml);
     },
 
@@ -8883,7 +8884,7 @@ const plugin = {
     id: 'search-output-results-pane',
     name: 'Search Output results pane',
     description: 'Worker Output Search tab — results pane',
-    _version: '13.2',
+    _version: '13.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

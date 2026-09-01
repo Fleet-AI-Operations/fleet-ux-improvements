@@ -4,6 +4,7 @@
 const USER_STORY_STYLE_ID = 'fleet-user-story-markdown-hide';
 const ORIGINAL_MARKER = 'data-fleet-user-story-original';
 const REPLICA_MARKER = 'data-fleet-user-story-replica';
+const CHECKMARK_MARKER = 'data-fleet-user-story-checkmark-hidden';
 const PROSE_ATTR = 'data-fleet-user-story-prose';
 const LABEL_TEXT = 'User Story';
 const NOTES_FROM_TASK_CREATOR_LABEL = 'Notes from Task Creator';
@@ -80,6 +81,9 @@ const UserStoryMarkdownApi = {
             '  margin: 0 !important;',
             '  pointer-events: none !important;',
             '  user-select: none !important;',
+            '}',
+            '[' + CHECKMARK_MARKER + '="true"] {',
+            '  display: none !important;',
             '}'
         ].join('\n');
         (document.head || document.documentElement).appendChild(style);
@@ -252,6 +256,33 @@ const UserStoryMarkdownApi = {
         if (!el || !el.className) return false;
         const cls = String(el.className);
         return /\bborder-blue-200\b/.test(cls) && /\bbg-blue-50\b/.test(cls);
+    },
+
+    findLeadingCheckmark(body) {
+        if (!body || !body.closest) return null;
+        const blueBox = body.closest('div.rounded-lg.border');
+        if (!blueBox || !this.isBlueStoryBox(blueBox)) return null;
+        const col = body.closest('div.flex-1');
+        if (!col || !blueBox.contains(col)) return null;
+        const prev = col.previousElementSibling;
+        if (!prev || !prev.classList.contains('flex-shrink-0')) return null;
+        const svg = prev.querySelector('svg');
+        if (!svg || !svg.classList.contains('text-blue-600')) return null;
+        return prev;
+    },
+
+    hideLeadingCheckmark(body) {
+        const wrap = this.findLeadingCheckmark(body);
+        if (!wrap) return;
+        wrap.setAttribute(CHECKMARK_MARKER, 'true');
+    },
+
+    unhideLeadingCheckmark(body) {
+        const wrap = this.findLeadingCheckmark(body);
+        if (!wrap) return;
+        const blueBox = wrap.closest('div.rounded-lg.border');
+        if (blueBox && blueBox.querySelector('[' + ORIGINAL_MARKER + '="true"]')) return;
+        wrap.removeAttribute(CHECKMARK_MARKER);
     },
 
     findCreationScenarioBodies(seen) {
@@ -466,6 +497,7 @@ const UserStoryMarkdownApi = {
 
     ensureReplica(body, state, logTag) {
         body.setAttribute(ORIGINAL_MARKER, 'true');
+        this.hideLeadingCheckmark(body);
 
         let replica = body.nextElementSibling;
         if (!replica || replica.getAttribute(REPLICA_MARKER) !== 'true') {
@@ -497,6 +529,7 @@ const UserStoryMarkdownApi = {
         if (replica && replica.getAttribute(REPLICA_MARKER) === 'true') {
             replica.remove();
         }
+        this.unhideLeadingCheckmark(body);
     },
 
     teardownAll(state, logTag) {
@@ -557,7 +590,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared User Story markdown rendering',
-    _version: '1.9',
+    _version: '1.10',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
