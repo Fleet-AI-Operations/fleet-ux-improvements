@@ -16,6 +16,30 @@ const FOS_EXTRACT_RESULT_TYPE = 'fleet-fos-extract-result';
 const FOS_CLIPBOARD_ALLOW_TOKENS = ['clipboard-read *', 'clipboard-write *'];
 const FOS_PANEL_ATTR = 'data-fleet-fos-vm-clipboard';
 const FOS_CLIP_FLASH_MS = 600;
+const FOS_CLIPBOARD_MAX_CHARS = 262144;
+const FOS_PARENT_ORIGINS = new Set(['https://www.fleetai.com', 'https://fleetai.com']);
+
+function fosRandomNonce() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function fosIsExactEnvOrigin(origin) {
+    try {
+        const hostname = new URL(origin).hostname;
+        return FOS_ENV_HOST_PATTERN.test(hostname) && new URL(origin).protocol === 'https:';
+    } catch (_e) {
+        return false;
+    }
+}
+
+function fosEnsureInstanceNonce(rec) {
+    if (!rec.bridgeNonce) {
+        rec.bridgeNonce = fosRandomNonce();
+    }
+    return rec.bridgeNonce;
+}
 
 function fosInstanceIdFromHostname(hostname) {
     return String(hostname || '').split('.')[0] || '';
@@ -189,8 +213,8 @@ const plugin = {
     id: 'fosEmbeddedWatcher',
     name: 'FOS Embedded Watcher',
     description:
-        'Detects embedded FOS desktops and adds VM Clipboard controls on the parent page',
-    _version: '5.3',
+        'Detects FOS desktop envs and hosts the VM Clipboard bridge (Safe UX Build: nonce-bound messaging)',
+    _version: '5.4',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -453,12 +477,27 @@ const plugin = {
         if (text == null) {
             return false;
         }
+        if (typeof text !== 'string' || text.length > FOS_CLIPBOARD_MAX_CHARS) {
+            Logger.warn('overwrite skipped — clipboard text missing or too large');
+            return false;
+        }
         const requestId = fosNextRequestId();
         const resultPromise = this._waitForChildResult(state, requestId, 8000);
+        const nonce = fosEnsureInstanceNonce(this._ensureInstance(state, id));
+        if (!child.origin || child.origin === '*') {
+            Logger.warn('overwrite failed — child origin missing for ' + id);
+            return false;
+        }
         try {
             child.source.postMessage(
-                { type: FOS_PUSH_TYPE, text: String(text), requestId },
-                child.origin || '*'
+                {
+                    type: FOS_PUSH_TYPE,
+                    text: String(text).slice(0, FOS_CLIPBOARD_MAX_CHARS),
+                    requestId,
+                    nonce,
+                    instanceId: id
+                },
+                child.origin
             );
         } catch (ePost) {
             state.pendingRequests.delete(requestId);
@@ -483,10 +522,15 @@ const plugin = {
         }
         const requestId = fosNextRequestId();
         const resultPromise = this._waitForChildResult(state, requestId, 8000);
+        const nonce = fosEnsureInstanceNonce(this._ensureInstance(state, id));
+        if (!child.origin || child.origin === '*') {
+            Logger.warn('extract failed — child origin missing for ' + id);
+            return false;
+        }
         try {
             child.source.postMessage(
-                { type: FOS_EXTRACT_REQ_TYPE, requestId },
-                child.origin || '*'
+                { type: FOS_EXTRACT_REQ_TYPE, requestId, nonce, instanceId: id },
+                child.origin
             );
         } catch (ePost) {
             state.pendingRequests.delete(requestId);
@@ -919,10 +963,19 @@ const plugin = {
         if (!child || !child.source || typeof child.source.postMessage !== 'function') {
             return false;
         }
+        if (!child.origin || child.origin === '*') {
+            return false;
+        }
+        const nonce = fosEnsureInstanceNonce(rec);
         try {
             child.source.postMessage(
-                { type: FOS_EMBEDDED_READY_TYPE, envKey: rec.envKey },
-                child.origin || '*'
+                {
+                    type: FOS_EMBEDDED_READY_TYPE,
+                    envKey: rec.envKey,
+                    nonce,
+                    instanceId
+                },
+                child.origin
             );
             rec.child = child;
             const hostname =
@@ -960,30 +1013,36 @@ const plugin = {
     },
 
     _onEmbeddedAck(state, event) {
+        if (!fosIsExactEnvOrigin(event.origin)) {
+            return;
+        }
+        if (!fosFindIframeForSource(event.source)) {
+            Logger.warn('embedded ack ignored — source is not a page iframe');
+            return;
+        }
+        if (!event.data || event.data.ok !== true) {
+            Logger.warn('embedded ack rejected from ' + event.origin);
+            return;
+        }
         let originHostname = '';
         try {
             originHostname = new URL(event.origin).hostname;
         } catch (_e) {
             return;
         }
-        if (!FOS_ENV_HOST_PATTERN.test(originHostname)) {
-            return;
-        }
-        if (!event.data || event.data.ok !== true) {
-            Logger.warn('embedded ack rejected from ' + originHostname);
-            return;
-        }
-        const instanceId = fosInstanceIdFromHostname(originHostname);
+        const instanceId = String(event.data.instanceId || fosInstanceIdFromHostname(originHostname));
         if (!instanceId) {
             return;
         }
         const rec = state.fosInstances.get(instanceId);
-        const child =
-            (rec && rec.child && rec.child.source === event.source && rec.child) ||
-            { source: event.source, origin: event.origin };
-        if (rec) {
-            rec.child = child;
+        if (!rec || !rec.bridgeNonce || event.data.nonce !== rec.bridgeNonce) {
+            Logger.warn('embedded ack ignored — nonce mismatch for ' + instanceId);
+            return;
         }
+        const child =
+            (rec.child && rec.child.source === event.source && rec.child) ||
+            { source: event.source, origin: event.origin };
+        rec.child = child;
         const iframe =
             fosFindIframeForSource(event.source) ||
             fosFindEnvIframeByHostname(originHostname);
@@ -1136,24 +1195,33 @@ const plugin = {
         }
         state.resultListenerInstalled = true;
         window.addEventListener('message', (event) => {
-            if (!event.data || typeof event.data.type !== 'string') {
+            if (!event.data || typeof event.data !== 'object' || typeof event.data.type !== 'string') {
                 return;
             }
             const type = event.data.type;
             if (type !== FOS_PUSH_RESULT_TYPE && type !== FOS_EXTRACT_RESULT_TYPE) {
                 return;
             }
-            let originHostname = '';
-            try {
-                originHostname = new URL(event.origin).hostname;
-            } catch (_e) {
-                return;
-            }
-            if (!FOS_ENV_HOST_PATTERN.test(originHostname)) {
+            if (!fosIsExactEnvOrigin(event.origin) || !fosFindIframeForSource(event.source)) {
                 return;
             }
             const requestId = event.data.requestId;
             if (!requestId || !state.pendingRequests.has(requestId)) {
+                return;
+            }
+            const instanceId = String(event.data.instanceId || '');
+            const rec = instanceId ? state.fosInstances.get(instanceId) : null;
+            if (!rec || event.data.nonce !== rec.bridgeNonce) {
+                Logger.warn('clipboard result ignored — nonce/instance mismatch');
+                return;
+            }
+            if (rec.child && rec.child.source && rec.child.source !== event.source) {
+                Logger.warn('clipboard result ignored — source does not match bound iframe');
+                return;
+            }
+            if (type === FOS_EXTRACT_RESULT_TYPE && typeof event.data.text === 'string' &&
+                event.data.text.length > FOS_CLIPBOARD_MAX_CHARS) {
+                Logger.warn('clipboard extract ignored — text too large');
                 return;
             }
             const pending = state.pendingRequests.get(requestId);
@@ -1174,13 +1242,13 @@ const plugin = {
             if (!event.data || event.data.type !== FOS_CHILD_READY_TYPE) {
                 return;
             }
+            if (!fosIsExactEnvOrigin(event.origin) || !fosFindIframeForSource(event.source)) {
+                return;
+            }
             let originHostname = '';
             try {
                 originHostname = new URL(event.origin).hostname;
             } catch (_e) {
-                return;
-            }
-            if (!FOS_ENV_HOST_PATTERN.test(originHostname)) {
                 return;
             }
             const hostname = String(event.data.hostname || originHostname);

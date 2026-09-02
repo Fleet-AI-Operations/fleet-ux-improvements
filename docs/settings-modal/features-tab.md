@@ -1,4 +1,7 @@
-1.43
+1.44
+
+## Fleet Safe UX Build
+This containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.
 
 ## Features
 

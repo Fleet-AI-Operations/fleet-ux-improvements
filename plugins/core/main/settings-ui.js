@@ -7,7 +7,7 @@ const plugin = {
     id: 'settings-ui',
     name: 'Settings UI',
     description: 'Provides the settings panel for managing plugins',
-    _version: '11.17',
+    _version: '11.18',
     phase: 'core', // Special phase - loaded once, never cleaned up
     enabledByDefault: true,
 
@@ -683,10 +683,11 @@ const plugin = {
             <div id="wf-settings-sticky-header" style="position: sticky; top: -24px; margin: -24px -24px 20px -24px; padding: 24px 24px 16px 24px; background: ${this._settingsThemeColors().bg}; border-bottom: 1px solid ${c.border}; z-index: 1;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                     <div>
-                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0; color: ${c.fg};">Fleet Enhancer Extension</h2>
+                        <h2 style="font-size: 18px; font-weight: 600; margin: 0 0 4px 0; color: ${c.fg};">${Context.safeUxBuildName || 'Fleet Enhancer Extension'}</h2>
                         <p style="font-size: 13px; color: ${c.muted}; margin: 0;">
                             v${version} · a${Context.archetypesVersion || '?'} · <strong style="color: ${c.fg};">${(archetypeId.replace(/archetype/gi, '').trim() || archetypeId)}</strong>
                         </p>
+                        ${Context.safeUxBuild ? `<p style="font-size: 12px; color: ${c.muted}; margin: 8px 0 0 0; line-height: 1.45;">Containment build: FOS clipboard/autoconnect, local UX helpers, and QA shortcuts only. Ops, AI, verifier lookup, and remote code loading are off.</p>` : ''}
                     </div>
                     <button id="wf-settings-close" style="
                         width: 28px;

@@ -1,4 +1,7 @@
-1.18
+1.19
+## Fleet Safe UX Build
+This is a containment userscript. It keeps FOS clipboard/autoconnect, local prompt/UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are suspended pending investigation.
+
 ## Information
 If you still cannot find a specific codename, please use the `Feedback` tab to notify me!
 #### Environment Codenames

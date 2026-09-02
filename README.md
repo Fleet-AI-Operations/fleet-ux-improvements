@@ -1,6 +1,8 @@
-# Fleet UX Enhancer
+# Fleet Safe UX Build
 
-Custom userscript to enhance the web UX for Fleet problem creation and review workflows.
+Local containment userscript for Fleet problem creation and review. It keeps FOS clipboard/autoconnect, local UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are off.
+
+This checkout is intended for **local Tampermonkey install only**. After editing allowlisted plugins, rebuild with `node dev/utils/build-safe-ux.mjs`.
 
 ---
 
@@ -41,28 +43,19 @@ Some browsers require developer mode to be enabled and may prompt for Tampermonk
 4. Go to **Develop** → **Allow Unsigned Extensions** (if needed)
 5. Note: Safari extensions must be installed from the Mac App Store or signed by a developer
 
-### Step 3: Install the Script
+### Step 3: Install the Local Script
 
-**Option A: Direct Install (Recommended)**
+1. Run `node dev/utils/build-safe-ux.mjs` from the repo root if `fleet.user.js` has not been bundled yet
+2. Open Tampermonkey in your browser and go to the **Dashboard**
+3. Click the **+** tab (or "Create a new script")
+4. Delete any template code
+5. Copy the contents of `fleet.user.js` and paste it into the editor
+6. Press `Ctrl+S` (or `Cmd+S` on Mac) to save
+7. Disable any older Fleet UX Enhancer script so only this Safe UX Build runs
 
-Click the link below to install the script directly:
-- [Install Fleet UX Enhancer](https://raw.githubusercontent.com/fleet-ai-operations/fleet-ux-improvements/main/fleet.user.js)
+### Step 4: Confirm the script is enabled
 
-Tampermonkey will open an installation prompt. Click **Install** to add the script.
-
-**Option B: Manual Install**
-
-1. Open Tampermonkey in your browser and go to the **Dashboard**
-2. Click the **+** tab (or "Create a new script")
-3. Delete any template code
-4. Copy the contents of `fleet.user.js` and paste it into the editor
-5. Press `Ctrl+S` (or `Cmd+S` on Mac) to save
-
-### Step 4: Grant Permissions
-
-When you first visit a Fleet page with the script active, Tampermonkey may ask for additional permissions:
-
-- **Cross-origin requests to `raw.githubusercontent.com`**: Required to load plugins from GitHub. Click **Allow** when prompted.
+This Safe UX Build does not fetch plugins from GitHub and does not need cross-origin GitHub/jsDelivr/OpenRouter permissions.
 
 If the script doesn't seem to be working:
 1. Click the Tampermonkey icon in your browser toolbar
@@ -74,7 +67,13 @@ If the script doesn't seem to be working:
 
 ## Features
 
-The extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).
+This build loads only compile-time allowlisted modules bundled into `fleet.user.js`. Changing `archetypes.json` alone cannot activate a new remote module.
+
+**Kept:** FOS iframe autoconnect and VM clipboard Extract/Overwrite; prompt counters, scratchpads, sanitizer, resize handles, user-story markdown/collapse, panel toggles; QA auto-start recording (toggleable), copy buttons, Request Revisions helpers, accept-task modal helpers, hide/show verifier output.
+
+**Suspended:** Ops Dashboard, worker search, ratings, team/permission tools, OpenRouter/AI, verifier-source lookup, source-data explorer, dashboard stats, remote plugin fetching, and session-token capture.
+
+The extension still uses an archetype-based plugin system. The lists below may mention older production features that are **not** loaded in this containment build.
 
 Many of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!
 
