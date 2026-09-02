@@ -1,6 +1,6 @@
 
 // ==UserScript==
-// @name         Fleet Safe UX Build
+// @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
 // @version      14.0
 // @description  Local Fleet UX helpers only (FOS, counters, QA shortcuts). No Ops, no remote code, no token capture.
