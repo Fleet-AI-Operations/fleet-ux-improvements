@@ -2,7 +2,7 @@
 
 Local containment userscript for Fleet problem creation and review. It keeps FOS clipboard/autoconnect, local UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are off.
 
-This checkout is intended for **local Tampermonkey install only**. After editing allowlisted plugins, rebuild with `node dev/utils/build-safe-ux.mjs`.
+Existing Tampermonkey installs continue to update from GitHub `main` (`@downloadURL` / `@updateURL`). After editing allowlisted plugins, rebuild with `node dev/utils/build-safe-ux.mjs` before committing.
 
 ---
 
@@ -43,7 +43,13 @@ Some browsers require developer mode to be enabled and may prompt for Tampermonk
 4. Go to **Develop** → **Allow Unsigned Extensions** (if needed)
 5. Note: Safari extensions must be installed from the Mac App Store or signed by a developer
 
-### Step 3: Install the Local Script
+### Step 3: Install or update the script
+
+Existing installs of **Fleet Workflow Builder UX Enhancer** update from:
+
+`https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/fleet.user.js`
+
+After this lands on `main`, use Tampermonkey **Check for updates**. For a local checkout before that:
 
 1. Run `node dev/utils/build-safe-ux.mjs` from the repo root if `fleet.user.js` has not been bundled yet
 2. Open Tampermonkey in your browser and go to the **Dashboard**
@@ -51,7 +57,7 @@ Some browsers require developer mode to be enabled and may prompt for Tampermonk
 4. Delete any template code
 5. Copy the contents of `fleet.user.js` and paste it into the editor
 6. Press `Ctrl+S` (or `Cmd+S` on Mac) to save
-7. Disable any older Fleet UX Enhancer script so only this Safe UX Build runs
+7. Keep a single copy of **Fleet Workflow Builder UX Enhancer** enabled
 
 ### Step 4: Confirm the script is enabled
 

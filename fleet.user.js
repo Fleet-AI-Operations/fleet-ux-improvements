@@ -15,6 +15,8 @@
 // @grant        GM_listValues
 // @grant        GM_openInTab
 // @run-at       document-start
+// @downloadURL  https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/fleet.user.js
+// @updateURL    https://raw.githubusercontent.com/Fleet-AI-Operations/fleet-ux-improvements/main/fleet.user.js
 // ==/UserScript==
 
 (function() {
