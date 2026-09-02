@@ -1,17 +1,11 @@
 {
-  "version": "13.11",
+  "version": "14.0",
   "coreOnlyMode": false,
-  "archetypesVersion": "14.457",
+  "archetypesVersion": "15.0",
   "logs": {
     "debug": false,
     "verbose": false,
     "submodule": false
-  },
-  "opsAccess": {
-    "passwordHash": "sha256-849af5b2f63f95b8d633e5c998a14f803d5a8b65a6dc7ac98bd53cc6ab59c382"
-  },
-  "opsSecrets": {
-    "encryptedFile": "ops-secrets.enc.json"
   },
   "corePlugins": [
     {
@@ -21,27 +15,15 @@
       "log": false
     },
     {
-      "name": "highlight-js.js",
-      "version": "1.9",
-      "hash": "sha256-b8fb829703daf3b7add1d03e68b4affdc5a3aa8458d41c3dd8684076a1c9be27",
-      "log": false
-    },
-    {
-      "name": "ops-tab.js",
-      "version": "13.3",
-      "hash": "sha256-ca33ada445c2aa99f504268bcbdb6fd659632606de7eb307b2a00783e412e390",
-      "log": false
-    },
-    {
       "name": "settings-ui.js",
-      "version": "11.17",
-      "hash": "sha256-269476c101a539f10e227ddff8b191f0eb7733077f83948101fb91db73082052",
+      "version": "11.18",
+      "hash": "sha256-3de387b59ce35c18b0dd62a3a1dd9239bf553f16570bfd35fe8f2d2ac8b199f6",
       "log": false
     },
     {
       "name": "fos-embedded-watcher.js",
-      "version": "5.3",
-      "hash": "sha256-13b9abedb17188577dc8a252653235fc8116d48e387829b1ec85a2c5d4340e37",
+      "version": "5.4",
+      "hash": "sha256-5b1c214882fcdc15c3d81045f93164a44e1b313565ae65c11aa659ffd90341e7",
       "log": false
     }
   ],
@@ -53,51 +35,15 @@
       "log": false
     },
     {
-      "name": "action-counter.js",
-      "version": "3.7",
-      "hash": "sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35",
-      "log": false
-    },
-    {
-      "name": "ai-chat.js",
-      "version": "8.3",
-      "hash": "sha256-c435cc63964cd14aa127c2093fa73b0e9a905d47d1b27e8621f466c19df509b7",
-      "log": false
-    },
-    {
-      "name": "chart-js.js",
-      "version": "2.3",
-      "hash": "sha256-69b3fdd2a9dd71fac325e03940a962d3ad25ff8c8c458a69b797cc40e12aea5f",
-      "log": false
-    },
-    {
       "name": "copy-verifier-output.js",
       "version": "5.4",
       "hash": "sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d",
       "log": false
     },
     {
-      "name": "deep-chat-lib.js",
-      "version": "1.2",
-      "hash": "sha256-2a4f0ffc38e0b607286a44cdedce05a028c85bd9da673499a250eb77c88a3bd6",
-      "log": false
-    },
-    {
-      "name": "dispute-resolution-messages.js",
-      "version": "1.4",
-      "hash": "sha256-88aeeb496282fdf06e234da5968d280d0609af71d070a7966fdb1f49fe39a66c",
-      "log": false
-    },
-    {
       "name": "screenshot-upload-improvement.js",
       "version": "1.1",
       "hash": "sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371",
-      "log": false
-    },
-    {
-      "name": "embedded-urlbar-fit.js",
-      "version": "2.2",
-      "hash": "sha256-02544efa2b3864250729c757fe6bde61d684e2c88b0f199fa97c48a74f8ca760",
       "log": false
     },
     {
@@ -137,18 +83,6 @@
       "log": false
     },
     {
-      "name": "source-data-explorer.js",
-      "version": "6.4",
-      "hash": "sha256-aff3b1f56971397569c9f2dee6eb087142f5692478c42ebe3d675ead7318df09",
-      "log": false
-    },
-    {
-      "name": "top-nav-horizontal-scroll.js",
-      "version": "3.2",
-      "hash": "sha256-3a83b51180ecac0c1437d3bb7c398b9934d658e5557a727eff608100678731d1",
-      "log": false
-    },
-    {
       "name": "toggle-main-panels.js",
       "version": "1.12",
       "hash": "sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d",
@@ -165,165 +99,19 @@
       "version": "1.6",
       "hash": "sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807",
       "log": false
-    },
-    {
-      "name": "verifier-source-tab.js",
-      "version": "3.2",
-      "hash": "sha256-9fc5c16dc9fe75a7761579cbee3fd924ee4b62d439a21d6bea89bdc7662f9c81",
-      "log": false
-    },
-    {
-      "name": "vnc-helper.js",
-      "version": "3.9",
-      "hash": "sha256-29c83ad41ffc6a1f435fb54073a5dfa4bd0a6cc7e64c58eddf786c99a22de767",
-      "log": false
-    },
-    {
-      "name": "work-history.js",
-      "version": "1.2",
-      "hash": "sha256-f505071f33a18a1a4fa7995e5c5a2bd0edf1246c3644f1fbd948560cf099f0f3",
-      "log": false
-    },
-    {
-      "name": "env-helper.js",
-      "version": "2.8",
-      "hash": "sha256-8c5c650ed1b46b734171c4403a69251f895a287c7feeca5e9a7367967fe6490a",
-      "log": false
     }
   ],
-  "opsDashboardPlugins": [
-    {
-      "name": "dashboard-lib.js",
-      "version": "9.5",
-      "hash": "sha256-4ae3f6f72fb6806f4d2b2b6d681e1f128a8dea4d31d79c66f878fe5c3c808e79",
-      "log": false
-    },
-    {
-      "name": "rating-engine.js",
-      "version": "19.1",
-      "hash": "sha256-8f85b5e5a9b5f5e8a25f27a1390ec35019349158e507ff371ff36f4e70e2d225",
-      "log": false
-    },
-    {
-      "name": "rating-explain.js",
-      "version": "4.16",
-      "hash": "sha256-bacbc4a6c54375888c4eee0e97863abc42b609337dc06d7e7a264148665ebc6c",
-      "log": false
-    },
-    {
-      "name": "dashboard-data.js",
-      "version": "3.2",
-      "hash": "sha256-bd63962bce4c1a1b87ffd13c59024e60af3062b0121381d1e4e1bd2653d54e4b",
-      "log": false
-    },
-    {
-      "name": "dashboard.js",
-      "version": "13.1",
-      "hash": "sha256-5dfac9969b6cb7f6b4c02f4020dc57980406d0b164b1a814e5a07a2a483ef791",
-      "log": false
-    },
-    {
-      "name": "dashboard-chats.js",
-      "version": "4.4",
-      "hash": "sha256-0f9db6bb8bcf0dd1bc08dad060b48caf563c19f29d3faf1383aa9d9455597046",
-      "log": false
-    },
-    {
-      "name": "diff-engine.js",
-      "version": "4.2",
-      "hash": "sha256-ad6feb59ceea65d7bcac987ae911e6b0efdb2afe7ecf8ef8d28e7149ea0fe71d",
-      "log": false
-    },
-    {
-      "name": "search-output-left-pane.js",
-      "version": "6.3",
-      "hash": "sha256-b19d11f79491113f51998221f47beb6ea669f3c66f89ee298fa1a5385305196f",
-      "log": false
-    },
-    {
-      "name": "search-output-results-pane.js",
-      "version": "13.3",
-      "hash": "sha256-a504d6ebbafda57cfbc79674f12d180d83cd2b47716da8cef110b597893f6d25",
-      "log": false
-    },
-    {
-      "name": "search-output-stats-engine.js",
-      "version": "9.0",
-      "hash": "sha256-6c16f85df22ee126e355f56677d6093d13518c64ee23d480ca3281a58efc61f9",
-      "log": false
-    },
-    {
-      "name": "search-output-chat.js",
-      "version": "7.6",
-      "hash": "sha256-ef0b5b2c3127f6253010faf6ab44a3214545189760cadd32548b1c9a1decac87",
-      "log": false
-    },
-    {
-      "name": "search-output-stats-pane.js",
-      "version": "15.1",
-      "hash": "sha256-10581a2053de03de6c17b31d06be0717f174b4214d279f2e43938f153bb0e34a",
-      "log": false
-    },
-    {
-      "name": "search-output.js",
-      "version": "10.7",
-      "hash": "sha256-08db902415afa120941e433da76486d33f623b80868001c72c303e88a598c66f",
-      "log": false
-    },
-    {
-      "name": "prefetch-output-tabs.js",
-      "version": "1.1",
-      "hash": "sha256-199f757396a917bbcfd9c0d936ae3c0534a95c549a698ec61df6f176be6dd6d8",
-      "log": false
-    },
-    {
-      "name": "diff-viewer.js",
-      "version": "5.12",
-      "hash": "sha256-dbcae314505f7d1aabd572db83e60490914c42ed7074fd074e7ec50aca822f87",
-      "log": false
-    },
-    {
-      "name": "team-members.js",
-      "version": "6.1",
-      "hash": "sha256-533fd3320a7759d3feb410d16b6326c6ae7fae6f5f8aeb8e10db2354efcc1fd0",
-      "log": false
-    },
-    {
-      "name": "verifier-fetcher.js",
-      "version": "9.2",
-      "hash": "sha256-77bcf212d957c45e8ff210bd4864d3dbf98d1cd55c6c59ae27a558f39822f909",
-      "log": false
-    },
-    {
-      "name": "dashboard-settings.js",
-      "version": "1.22",
-      "hash": "sha256-976517dfa6f72f40d984c69944f86cb4e58a2df37a6cf9ea183f270158824127",
-      "log": false
-    }
-  ],
-  "opsDashboardLibraries": [
-    "dispute-resolution-messages.js",
-    "chart-js.js",
-    "user-story-markdown.js",
-    "deep-chat-lib.js",
-    "ai-chat.js"
-  ],
-  "devPlugins": [
-    {
-      "name": "logger-panel.js",
-      "version": "3.2",
-      "hash": "sha256-f6baf167cf93a8d4bab3d29acbe71547a0ce891e34b9565365a1958255198c18",
-      "log": false
-    }
-  ],
+  "opsDashboardPlugins": [],
+  "opsDashboardLibraries": [],
+  "devPlugins": [],
   "settingsModalDocs": [
     {
       "name": "information-tab.md",
-      "version": "1.18"
+      "version": "1.19"
     },
     {
       "name": "features-tab.md",
-      "version": "1.43"
+      "version": "1.44"
     }
   ],
   "archetypes": [
@@ -333,29 +121,7 @@
       "description": "Main dashboard page",
       "urlPattern": "work/create",
       "disambiguationSelectors": [],
-      "libraries": [
-        "work-history.js"
-      ],
-      "plugins": [
-        {
-          "name": "feedback-given-stats.js",
-          "version": "5.1",
-          "hash": "sha256-cc2a6450d64cf9b79580226a6746b0b39a7a271de9dfda096e709a6e0414fa40",
-          "log": false
-        },
-        {
-          "name": "task-creation-today-env.js",
-          "version": "5.1",
-          "hash": "sha256-b92930fb8c87c2aa4a45649ab2f208052a830a274f0b10cbb17d347f524a3da4",
-          "log": false
-        },
-        {
-          "name": "disputes-reviewed-today.js",
-          "version": "5.1",
-          "hash": "sha256-ae950c9b50e6229a783a788f72e1a5dd69ad3e500e2ddb26033f9321fb850656",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "tool-use-task-creation",
@@ -366,7 +132,6 @@
       "libraries": [
         "notes-resize-handle.js",
         "prompt-text-counter.js",
-        "source-data-explorer.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
       ],
@@ -381,12 +146,6 @@
           "name": "prompt-text-counter.js",
           "version": "1.0",
           "hash": "sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c",
-          "log": false
-        },
-        {
-          "name": "source-data-explorer.js",
-          "version": "2.1",
-          "hash": "sha256-7c289d3b5546d48c6ce7d6ebed7b84767024e611d6912f0c2e0e87a636b3a52c",
           "log": false
         },
         {
@@ -430,12 +189,6 @@
         "user-story-collapse.js"
       ],
       "plugins": [
-        {
-          "name": "json-editor-online.js",
-          "version": "3.3",
-          "hash": "sha256-95c8b2202a0bf7cdc61d0c77064f9db770564e76da18f97446098d3470b4c1bb",
-          "log": false
-        },
         {
           "name": "notes-resize-handle.js",
           "version": "1.2",
@@ -483,7 +236,6 @@
       "libraries": [
         "prompt-scratchpad.js",
         "prompt-text-counter.js",
-        "source-data-explorer.js",
         "user-story-markdown.js",
         "user-story-collapse.js"
       ],
@@ -498,12 +250,6 @@
           "name": "prompt-text-counter.js",
           "version": "1.0",
           "hash": "sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c",
-          "log": false
-        },
-        {
-          "name": "source-data-explorer.js",
-          "version": "2.1",
-          "hash": "sha256-4cf146a35d700887e32a865fdb2ae75be44de55584d63770a56c13df2c0809cb",
           "log": false
         },
         {
@@ -540,14 +286,7 @@
       "description": "Dashboard page for creating instances",
       "urlPattern": "dashboard/instances/create",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "clipboard-autofill.js",
-          "version": "1.7",
-          "hash": "sha256-382a1c8307e20229182cfb161218b02ac15e8a483366a789f7793ac6df54f95e",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "comp-use-task-creation",
@@ -557,8 +296,6 @@
       "disambiguationSelectors": [],
       "libraries": [
         "notes-resize-handle.js",
-        "embedded-urlbar-fit.js",
-        "action-counter.js",
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
         "prompt-text-counter.js",
@@ -567,18 +304,6 @@
         "toggle-main-panels.js"
       ],
       "plugins": [
-        {
-          "name": "action-counter.js",
-          "version": "3.2",
-          "log": false,
-          "hash": "sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"
-        },
-        {
-          "name": "embedded-urlbar-fit.js",
-          "version": "1.3",
-          "hash": "sha256-d7b3cfe1e234a99b732b4b1d71d00a448ce4c6783b0d20e85d6961d43b23dfee",
-          "log": false
-        },
         {
           "name": "fos-vm-clipboard.js",
           "version": "2.1",
@@ -598,33 +323,15 @@
           "log": false
         },
         {
-          "name": "prompt-cache.js",
-          "version": "4.3",
-          "hash": "sha256-0551a281beaca53fce95c264e3e281bf41dd5994555abb842e158849dcbfbddf",
-          "log": false
-        },
-        {
           "name": "prompt-text-counter.js",
           "version": "1.0",
           "hash": "sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c",
           "log": false
         },
         {
-          "name": "time-remaining-chip.js",
-          "version": "1.1",
-          "log": false,
-          "hash": "sha256-9bf256bfd88311f612c9a3cfe11c6ea6ef2aff39a6165e71fabf7b66cffa166a"
-        },
-        {
           "name": "user-story-markdown.js",
           "version": "1.1",
           "hash": "sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6",
-          "log": false
-        },
-        {
-          "name": "creation-annotator-instructions.js",
-          "version": "1.0",
-          "hash": "sha256-715eca359b45eb557d3f05c6a9150fcabac3d32b7ea3af1cdf2463b5de2233e3",
           "log": false
         },
         {
@@ -648,10 +355,8 @@
       "urlPattern": "work/problems/respond-feedback/edit*",
       "disambiguationSelectors": [],
       "libraries": [
-        "embedded-urlbar-fit.js",
         "prompt-scratchpad.js",
         "prompt-text-counter.js",
-        "action-counter.js",
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
         "user-story-markdown.js",
@@ -659,18 +364,6 @@
         "toggle-main-panels.js"
       ],
       "plugins": [
-        {
-          "name": "action-counter.js",
-          "version": "3.1",
-          "log": false,
-          "hash": "sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"
-        },
-        {
-          "name": "embedded-urlbar-fit.js",
-          "version": "1.3",
-          "hash": "sha256-5e839dd994fde0ea2de4b1a2bcdd64a3c83a15bc012ff42afe5c1583fe752573",
-          "log": false
-        },
         {
           "name": "fos-vm-clipboard.js",
           "version": "2.0",
@@ -726,11 +419,8 @@
         "copy-verifier-output.js",
         "request-revisions.js",
         "screenshot-upload-improvement.js",
-        "source-data-explorer.js",
-        "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
-        "user-story-collapse.js",
-        "verifier-source-tab.js"
+        "user-story-collapse.js"
       ],
       "plugins": [
         {
@@ -752,12 +442,6 @@
           "log": false
         },
         {
-          "name": "workflow-verifier-tab.js",
-          "version": "2.0",
-          "hash": "sha256-bab51206740a13a33f20b0cda272f6b2542d2afe257cdcd60c8c82803bf2df4f",
-          "log": false
-        },
-        {
           "name": "request-revisions.js",
           "version": "8.0",
           "hash": "sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c",
@@ -770,21 +454,9 @@
           "log": false
         },
         {
-          "name": "top-nav-horizontal-scroll.js",
-          "version": "2.2",
-          "hash": "sha256-827919bffce8c2baf8833c11a41dcea2a5abfb35d7dcf3990ccf70bf543cd0b6",
-          "log": false
-        },
-        {
           "name": "tool-results-resize-handle.js",
           "version": "2.4",
           "hash": "sha256-ed705a53a986c843f8605db4599f4abfac0bc755b03f28afc9a2ac650c326bef",
-          "log": false
-        },
-        {
-          "name": "useful-links-buttons.js",
-          "version": "3.2",
-          "hash": "sha256-f6076bffaa4d8ddf68ae267a933cf7333a19f33565f7750c39db303cad9cdf6a",
           "log": false
         },
         {
@@ -807,37 +479,21 @@
       "description": "Page for reviewing session traces",
       "urlPattern": "work/problems/qa-session/*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "auto-expand-verifier-section.js",
-          "version": "1.3",
-          "hash": "sha256-08f201bc87f3c63a8182ba504af603d46499b72ea97a1fcae3d9fcb54ad9df85",
-          "log": false
-        },
-        {
-          "name": "remember-layout-proportions.js",
-          "version": "2.0",
-          "hash": "sha256-3ce4cec12191a19d636044fe869de12c16dbe9b5dc5aecd6b4078acda640ce6a",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "qa-comp-use",
-      "name": "Computer Use Task Creation Page",
-      "description": "Page for reviewing and approving tasks",
+      "name": "Computer Use Task Review Page",
+      "description": "Page for reviewing and approving computer-use tasks",
       "urlPattern": "work/problems/qa/*",
       "disambiguationSelectors": [],
       "libraries": [
         "accept-task-modal-improvements.js",
-        "action-counter.js",
         "copy-verifier-output.js",
-        "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
         "request-revisions.js",
         "screenshot-upload-improvement.js",
-        "top-nav-horizontal-scroll.js",
         "user-story-markdown.js",
         "user-story-collapse.js",
         "toggle-main-panels.js"
@@ -848,12 +504,6 @@
           "version": "1.8",
           "hash": "sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6",
           "log": false
-        },
-        {
-          "name": "action-counter.js",
-          "version": "2.1",
-          "log": false,
-          "hash": "sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"
         },
         {
           "name": "auto-start-recording.js",
@@ -874,12 +524,6 @@
           "log": false
         },
         {
-          "name": "embedded-urlbar-fit.js",
-          "version": "1.3",
-          "hash": "sha256-76e1e3289a6c0ed618366c64bc3e28d00dc767376dfd19ba7bcde61b84bd4e40",
-          "log": false
-        },
-        {
           "name": "fos-vm-clipboard.js",
           "version": "1.2",
           "hash": "sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9",
@@ -889,18 +533,6 @@
           "name": "fos-iframe-autoconnect.js",
           "version": "1.2",
           "hash": "sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052",
-          "log": false
-        },
-        {
-          "name": "prompt-display-style.js",
-          "version": "1.8",
-          "log": false,
-          "hash": "sha256-810cbebbab53624ec93ea898c871d47c1fb9cb2d5a3e8f1207525fc0f04def9e"
-        },
-        {
-          "name": "top-nav-horizontal-scroll.js",
-          "version": "2.2",
-          "hash": "sha256-be233916bed1e6914a0e522617c38a34841226a4d9ce9129f7abd3c935300152",
           "log": false
         },
         {
@@ -932,12 +564,6 @@
           "version": "1.0",
           "hash": "sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959",
           "log": false
-        },
-        {
-          "name": "vnc-prompt-writer.js",
-          "version": "1.5",
-          "hash": "sha256-f0ba7d3728571227a0080ca158beb0c9988e29a52d3064425527cea7a2e423de",
-          "log": false
         }
       ]
     },
@@ -948,41 +574,9 @@
       "urlPattern": "work/problems/disputes",
       "disambiguationSelectors": [],
       "libraries": [
-        "dispute-resolution-messages.js",
-        "screenshot-upload-improvement.js",
         "user-story-markdown.js"
       ],
       "plugins": [
-        {
-          "name": "dispute-id-display.js",
-          "version": "1.1",
-          "hash": "sha256-ca0bad2ff49898a8b6e8d9207bb11a13c8434fb9574b9d6fc8277088c5de8908",
-          "log": false
-        },
-        {
-          "name": "dispute-list-collapse.js",
-          "version": "1.4",
-          "hash": "sha256-e8a9e18eb30ffb30ec4338175f5eb845899e231a55fa989a354565fce04a44fd",
-          "log": false
-        },
-        {
-          "name": "dispute-list-filters.js",
-          "version": "1.10",
-          "hash": "sha256-39356d62f32061fd7ce5d5173205c9de14fd525a0ed09269a0be2bd84fd03679",
-          "log": false
-        },
-        {
-          "name": "dispute-screenshot-upload-improvement.js",
-          "version": "2.2",
-          "hash": "sha256-bc3d1a676819d7d6ec6affd0ce16c21ff6fa1ceed6f60584b28b51b53f1d0780",
-          "log": false
-        },
-        {
-          "name": "dispute-resolution-snippets.js",
-          "version": "1.2",
-          "hash": "sha256-cb9afb596142729e3d87b05e1d2bbc8512e7e0447e6f62b006e3511854556a4b",
-          "log": false
-        },
         {
           "name": "user-story-markdown.js",
           "version": "1.2",
@@ -998,38 +592,16 @@
       "urlPattern": "work/problems/disputes/*",
       "disambiguationSelectors": [],
       "libraries": [
-        "dispute-resolution-messages.js",
-        "screenshot-upload-improvement.js",
         "copy-verifier-output.js",
-        "embedded-urlbar-fit.js",
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
-        "user-story-markdown.js",
-        "verifier-source-tab.js"
+        "user-story-markdown.js"
       ],
       "plugins": [
         {
           "name": "copy-verifier-output.js",
           "version": "4.2",
           "hash": "sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b",
-          "log": false
-        },
-        {
-          "name": "dispute-screenshot-upload-improvement.js",
-          "version": "2.2",
-          "hash": "sha256-bc3d1a676819d7d6ec6affd0ce16c21ff6fa1ceed6f60584b28b51b53f1d0780",
-          "log": false
-        },
-        {
-          "name": "embedded-urlbar-fit.js",
-          "version": "1.3",
-          "hash": "sha256-b2782d65cff615f80605c8c3a03cb6fb0b1affd896e354b088eb16caca9506df",
-          "log": false
-        },
-        {
-          "name": "env-load-gate.js",
-          "version": "1.5",
-          "hash": "sha256-d0db96fef820b7c12ca1d15ee7d999694eec5ad797960500caa08f94b1642bdc",
           "log": false
         },
         {
@@ -1045,33 +617,9 @@
           "log": false
         },
         {
-          "name": "qa-feedback-whitespace.js",
-          "version": "1.2",
-          "hash": "sha256-184813653b12d1b66adf55cea374b004093b7e45f43d27f1d73422a01fdd25c1",
-          "log": false
-        },
-        {
           "name": "tool-results-resize-handle.js",
           "version": "1.3",
           "hash": "sha256-7df97c2a426026a2002da1f31cac0c81d2e5abc995182cd9bba6773d1ec69462",
-          "log": false
-        },
-        {
-          "name": "verifier-expand-mismatch-rows.js",
-          "version": "1.3",
-          "hash": "sha256-f8ef0e0a9226fec713dfd3ccd87002ba80918e0c7a0e150af20ab8faa35e3064",
-          "log": false
-        },
-        {
-          "name": "verifier-source-tab.js",
-          "version": "1.3",
-          "hash": "sha256-ce3ebd37f84cfa124594eaa8bb0b33d96bbe8602e322ed1d6f33e3b83547aacd",
-          "log": false
-        },
-        {
-          "name": "dispute-resolution-snippets.js",
-          "version": "1.2",
-          "hash": "sha256-8a7303cd94b3b36cebe8eff9d4c0be0a0b8846483634e1bd2f197eca69d393da",
           "log": false
         },
         {
@@ -1088,14 +636,7 @@
       "description": "Page for viewing a task",
       "urlPattern": "work/problems/view-task*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "activity-identity-reveal.js",
-          "version": "1.8",
-          "hash": "sha256-5d94671a274b81d9d2ba7eb055e55db971dc7c87eec85ef83744681cbd0bbe4f",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "dashboard-data-task",
@@ -1103,29 +644,7 @@
       "description": "Dashboard task detail page",
       "urlPattern": "dashboard/data/tasks/*",
       "disambiguationSelectors": [],
-      "libraries": [
-        "user-story-markdown.js"
-      ],
-      "plugins": [
-        {
-          "name": "verifier-code-block.js",
-          "version": "2.3",
-          "hash": "sha256-cfef91f17614d3e3ef8eca5b17dc381955511420103f7158ad5ed4118fe180f1",
-          "log": false
-        },
-        {
-          "name": "prompt-version-actions.js",
-          "version": "2.5",
-          "hash": "sha256-937ed3084118d62e281a1733595572555149357f95ca0b8e7582821201cbce4c",
-          "log": false
-        },
-        {
-          "name": "task-user-story-section.js",
-          "version": "2.5",
-          "hash": "sha256-d981a9a89050680e3068f18e56405dd757bea9093900c18b09762ce8c9ff4b70",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "dashboard-data-expert",
@@ -1133,20 +652,7 @@
       "description": "Expert profile page on the dashboard",
       "urlPattern": "dashboard/data/experts/*",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "expert-datasets-task-actions.js",
-          "version": "2.1",
-          "hash": "sha256-b0c77b64b27964ae3cd3222042f256979fe58954aaa376e0fb530dc8b8ac218c",
-          "log": false
-        },
-        {
-          "name": "expert-feedback-tooltip.js",
-          "version": "1.3",
-          "hash": "sha256-6c3f5e1818760ce11b22470eef6dff382aefb02df5891da72d8c28cd2b5c6432",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "no-vnc",
@@ -1154,25 +660,7 @@
       "description": "noVNC remote desktop instances on fleet environment subdomains",
       "urlPattern": "_novnc",
       "disambiguationSelectors": [],
-      "libraries": [
-        "prompt-text-counter.js",
-        "vnc-helper.js",
-        "env-helper.js"
-      ],
-      "plugins": [
-        {
-          "name": "vnc-helper.js",
-          "version": "1.14",
-          "hash": "sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411",
-          "log": false
-        },
-        {
-          "name": "env-helper.js",
-          "version": "1.6",
-          "hash": "sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "assessments-grade",
@@ -1182,20 +670,7 @@
       "disambiguationSelectors": [
         "text:To grade"
       ],
-      "plugins": [
-        {
-          "name": "grade-content-full-width.js",
-          "version": "1.1",
-          "hash": "sha256-3a2c3f5b9bb8ef593b88fabb96a85a7ac0a88e09a09eb24ff2c27c9e5fba8b23",
-          "log": false
-        },
-        {
-          "name": "submitted-prompt-scroll-resize.js",
-          "version": "1.4",
-          "hash": "sha256-16cc7c11f199b036cebccffe97130ed85767e9c870726db7919074982a72d4f2",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "assessments-grade-detail",
@@ -1205,20 +680,7 @@
       "disambiguationSelectors": [
         "text:← Back to queue"
       ],
-      "plugins": [
-        {
-          "name": "clipboard-event-relative-times.js",
-          "version": "1.3",
-          "hash": "sha256-ff11fe712e0cd68e4efd21420d580dabc8444c8acfacc6f6777925495a5e0667",
-          "log": false
-        },
-        {
-          "name": "grade-question-pasted-text.js",
-          "version": "1.9",
-          "hash": "sha256-b9f3a7c0490a304290b06ad76934e3ec4570d5bb9ee46f87719a1d73cc8604b8",
-          "log": false
-        }
-      ]
+      "plugins": []
     },
     {
       "id": "guidelines",
@@ -1226,209 +688,8 @@
       "description": "Guidelines list and editor",
       "urlPattern": "work/guidelines",
       "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "export-markdown.js",
-          "version": "1.0",
-          "hash": "sha256-3c740d6e2dcb70c7663da7f16a5b1862e01e12278787f9dfe743fb6e47f8c3d9",
-          "log": false
-        },
-        {
-          "name": "theme-presets.js",
-          "version": "1.3",
-          "hash": "sha256-5ee8ef0bef04babd14541a87ca4af0228350bebc1d1689ca198c9088f640aa25",
-          "log": false
-        }
-      ]
+      "plugins": []
     }
   ],
-  "devArchetypes": [
-    {
-      "id": "tool-use-task-creation",
-      "name": "Tool Use Task Creation Page",
-      "description": "Page for creating K-type workflow tasks",
-      "urlPattern": "work/problems/create-tool-use*",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "json-editor-online.js",
-          "version": "2.3",
-          "hash": "sha256-b55d5eda727fa9ecc0dce714234666f1455f6546f7d290783b978a7ab5f7d028",
-          "log": false
-        },
-        {
-          "name": "prompt-and-notes-areas.js",
-          "version": "3.2",
-          "hash": "sha256-d9a54732ae808069a93f5be524b2d3327de24532e33c07be57d9747dd7d8dcb5",
-          "log": false
-        },
-        {
-          "name": "task-instructions-dismiss.js",
-          "version": "1.2",
-          "hash": "sha256-92f5270de1e9a2366a567a3e9c78fd1dc4c57cf1b49d89601d47ba4e62ad6289",
-          "log": false
-        }
-      ]
-    },
-    {
-      "id": "tool-use-task-creation-openclaw",
-      "name": "Tool Use OpenClaw Task Creation Page",
-      "description": "Task Designers Special Projects OpenClaw variant",
-      "urlPattern": "work/problems/create-tool-use*",
-      "disambiguationSelectors": [
-        "text:Task Designers - Special Projects Tasks"
-      ],
-      "plugins": [
-        {
-          "name": "prompt-and-notes-areas.js",
-          "version": "3.3",
-          "hash": "sha256-f3077fd030eac9b28a8c5669d664096b2afd06ea6a9031125d46f1682fc16d19",
-          "log": false
-        }
-      ]
-    },
-    {
-      "id": "tool-use-revision",
-      "name": "Tool Use Task Revision Page",
-      "description": "Page for reviewing and fixing previously submitted tool use tasks",
-      "urlPattern": "work/problems/respond-feedback/edit-tool-use*",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "text-sanitizer.js",
-          "version": "3.2",
-          "hash": "sha256-f2e53a442eeb28da3c8fda0b96f40f2255c96fe206a59345237708f1581aae92",
-          "log": false
-        }
-      ]
-    },
-    {
-      "id": "qa-tool-use",
-      "name": "Task Review Page",
-      "urlPattern": "work/problems/qa-tool-use/*",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "source-data-explorer.js",
-          "version": "3.0",
-          "hash": "sha256-14398ad2d7e58e844b3e748351ef47fffd430f9c364ab0edc886d2e3f46f5914",
-          "log": false
-        },
-        {
-          "name": "text-sanitizer.js",
-          "version": "2.7",
-          "hash": "sha256-765afbc6c1807b1952303b48ed421234947b566a1afba7cac0f7741222f3bcc0",
-          "log": false
-        },
-        {
-          "name": "workflow-cache-dev.js",
-          "version": "1.28",
-          "hash": "sha256-b85c357d09c230dc8eac41f65fa39f21e4fdd2ae50625f8bb912cfab36cb8423",
-          "log": false
-        }
-      ]
-    },
-    {
-      "id": "create-task-project-selection",
-      "name": "Create Task Project Selection",
-      "description": "Screen for choosing a project before creating a task",
-      "urlPattern": "work/problems/create-instance",
-      "disambiguationSelectors": [],
-      "plugins": []
-    },
-    {
-      "id": "comp-use-task-creation",
-      "name": "Computer Use Task Creation Page",
-      "description": "Page for creating computer use tasks",
-      "urlPattern": "work/problems/create*",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "auto-toggle-fullscreen-mode.js",
-          "version": "1.2",
-          "hash": "sha256-c31856e8cd7a56503ddb7241e9bdc1fa1fb88ee1bffc9704a2d9bb34d9119faf",
-          "log": false
-        },
-        {
-          "name": "hide-testing-environment-banner.js",
-          "version": "1.1",
-          "hash": "sha256-a15409d3668aebabb055966bf4b0d575cd7e0c9346def12910c0f228870f9e85",
-          "log": false
-        }
-      ]
-    },
-    {
-      "id": "comp-use-revision",
-      "name": "Computer Use Task Revision Page",
-      "description": "Page for reviewing and fixing previously submitted computer use tasks",
-      "urlPattern": "work/problems/respond-feedback/edit*",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "auto-toggle-fullscreen-mode.js",
-          "version": "1.2",
-          "hash": "sha256-c31856e8cd7a56503ddb7241e9bdc1fa1fb88ee1bffc9704a2d9bb34d9119faf",
-          "log": false
-        },
-        {
-          "name": "hide-testing-environment-banner.js",
-          "version": "1.1",
-          "hash": "sha256-a15409d3668aebabb055966bf4b0d575cd7e0c9346def12910c0f228870f9e85",
-          "log": false
-        }
-      ]
-    },
-    {
-      "id": "qa-comp-use",
-      "name": "Computer Use Task Creation Page",
-      "description": "Page for reviewing and approving tasks",
-      "urlPattern": "work/problems/qa/*",
-      "disambiguationSelectors": [],
-      "plugins": []
-    },
-    {
-      "id": "disputes",
-      "name": "Dispute Review Page",
-      "description": "Page for reviewing writer disputes",
-      "urlPattern": "work/problems/disputes",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "dispute-ids-enhancer.js",
-          "version": "3.2",
-          "hash": "sha256-4be4922a61174e06e13a16e0840d38f53e8e2861199cf7d256c8f08ff926ef3e",
-          "log": false
-        },
-        {
-          "name": "flag-as-bug-modal-improvements.js",
-          "version": "2.2",
-          "log": false,
-          "hash": "sha256-e67d8ce6569bac931716086afa76f418edb69d04257ccd8bfe7d30f9a1010bc6"
-        }
-      ]
-    },
-    {
-      "id": "dispute-detail",
-      "name": "Dispute Detail Page",
-      "description": "Page for reviewing a single writer dispute",
-      "urlPattern": "work/problems/disputes/*",
-      "disambiguationSelectors": [],
-      "plugins": [
-        {
-          "name": "flag-as-bug-modal-improvements.js",
-          "version": "2.2",
-          "log": false,
-          "hash": "sha256-9bba8137aa6cf94c43f97c971d97dd7ca6391a0e2c61eb73cd3d32c35c86ba8b"
-        }
-      ]
-    },
-    {
-      "id": "qa-session",
-      "name": "Session Trace Review",
-      "description": "Page for reviewing session traces",
-      "urlPattern": "work/problems/qa-session/*",
-      "disambiguationSelectors": [],
-      "plugins": []
-    }
-  ]
+  "devArchetypes": []
 }

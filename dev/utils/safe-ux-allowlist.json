@@ -1,0 +1,46 @@
+{
+  "buildName": "Fleet Safe UX Build",
+  "description": "Compile-time allowlist for the containment userscript. Adding a module requires a reviewed source change and a rebuilt bundle.",
+  "core": [
+    "ui-lib.js",
+    "settings-ui.js",
+    "fos-embedded-watcher.js"
+  ],
+  "libraries": [
+    "accept-task-modal-improvements.js",
+    "copy-verifier-output.js",
+    "screenshot-upload-improvement.js",
+    "fos-vm-clipboard-bar.js",
+    "fos-iframe-autoconnect.js",
+    "notes-resize-handle.js",
+    "prompt-scratchpad.js",
+    "prompt-text-counter.js",
+    "request-revisions.js",
+    "toggle-main-panels.js",
+    "user-story-markdown.js",
+    "user-story-collapse.js"
+  ],
+  "archetypePlugins": [
+    "accept-task-modal-improvements.js",
+    "auto-start-recording.js",
+    "copy-result-params.js",
+    "copy-verifier-output.js",
+    "fos-iframe-autoconnect.js",
+    "fos-vm-clipboard.js",
+    "hide-verifier-output.js",
+    "notes-resize-handle.js",
+    "prompt-scratchpad.js",
+    "prompt-text-counter.js",
+    "request-revisions.js",
+    "show-verifier-on-run.js",
+    "text-sanitizer.js",
+    "toggle-main-panels.js",
+    "tool-results-resize-handle.js",
+    "user-story-collapse.js",
+    "user-story-markdown.js"
+  ],
+  "settingsDocs": [
+    "information-tab.md",
+    "features-tab.md"
+  ]
+}
