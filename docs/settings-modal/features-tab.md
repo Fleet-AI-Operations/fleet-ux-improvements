@@ -1,4 +1,4 @@
-1.44
+1.45
 
 ## Fleet Safe UX Build
 This containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.
@@ -41,6 +41,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Prompt Text Counter**: Shows a live word and character count below the prompt
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
+- **Action Counter**: Persistent +/- counter in the page header
 - **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
@@ -52,6 +53,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Scratchpad**: Adds an adjustable height scratchpad to the page
 - **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
+- **Action Counter**: Persistent +/- counter in the page header
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 - **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
@@ -75,6 +77,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Hide Grading Autoclick**: Automatically clicks the "Hide Grading" button once when it becomes available after load.
 - **"Request Revisions" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
+- **Action Counter**: Persistent +/- counter beside the Verifier tab
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 - **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width

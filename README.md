@@ -75,7 +75,7 @@ If the script doesn't seem to be working:
 
 This build loads only compile-time allowlisted modules bundled into `fleet.user.js`. Changing `archetypes.json` alone cannot activate a new remote module.
 
-**Kept:** FOS iframe autoconnect and VM clipboard Extract/Overwrite; prompt counters, scratchpads, sanitizer, resize handles, user-story markdown/collapse, panel toggles; QA auto-start recording (toggleable), copy buttons, Request Revisions helpers, accept-task modal helpers, hide/show verifier output.
+**Kept:** FOS iframe autoconnect, Action Counter, and VM clipboard Extract/Overwrite; prompt counters, scratchpads, sanitizer, resize handles, user-story markdown/collapse, panel toggles; QA auto-start recording (toggleable), copy buttons, Request Revisions helpers, accept-task modal helpers, hide/show verifier output.
 
 **Suspended:** Ops Dashboard, worker search, ratings, team/permission tools, OpenRouter/AI, verifier-source lookup, source-data explorer, dashboard stats, remote plugin fetching, and session-token capture.
 

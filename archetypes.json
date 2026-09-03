@@ -1,7 +1,7 @@
 {
-  "version": "14.0",
+  "version": "14.1",
   "coreOnlyMode": false,
-  "archetypesVersion": "15.0",
+  "archetypesVersion": "15.1",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -44,6 +44,12 @@
       "name": "screenshot-upload-improvement.js",
       "version": "1.1",
       "hash": "sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371",
+      "log": false
+    },
+    {
+      "name": "action-counter.js",
+      "version": "3.7",
+      "hash": "sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35",
       "log": false
     },
     {
@@ -111,7 +117,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.44"
+      "version": "1.45"
     }
   ],
   "archetypes": [
@@ -296,6 +302,7 @@
       "disambiguationSelectors": [],
       "libraries": [
         "notes-resize-handle.js",
+        "action-counter.js",
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
         "prompt-text-counter.js",
@@ -304,6 +311,12 @@
         "toggle-main-panels.js"
       ],
       "plugins": [
+        {
+          "name": "action-counter.js",
+          "version": "3.2",
+          "log": false,
+          "hash": "sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"
+        },
         {
           "name": "fos-vm-clipboard.js",
           "version": "2.1",
@@ -357,6 +370,7 @@
       "libraries": [
         "prompt-scratchpad.js",
         "prompt-text-counter.js",
+        "action-counter.js",
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
         "user-story-markdown.js",
@@ -364,6 +378,12 @@
         "toggle-main-panels.js"
       ],
       "plugins": [
+        {
+          "name": "action-counter.js",
+          "version": "3.1",
+          "log": false,
+          "hash": "sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"
+        },
         {
           "name": "fos-vm-clipboard.js",
           "version": "2.0",
@@ -489,6 +509,7 @@
       "disambiguationSelectors": [],
       "libraries": [
         "accept-task-modal-improvements.js",
+        "action-counter.js",
         "copy-verifier-output.js",
         "fos-vm-clipboard-bar.js",
         "fos-iframe-autoconnect.js",
@@ -504,6 +525,12 @@
           "version": "1.8",
           "hash": "sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6",
           "log": false
+        },
+        {
+          "name": "action-counter.js",
+          "version": "2.1",
+          "log": false,
+          "hash": "sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"
         },
         {
           "name": "auto-start-recording.js",
