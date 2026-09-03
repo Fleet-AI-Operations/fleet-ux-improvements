@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      14.1
+// @version      14.2
 // @description  Local Fleet UX helpers only (FOS, counters, QA shortcuts). No Ops, no remote code, no token capture.
 // @author       Fleet AI Operations
 // @match        https://www.fleetai.com/*
@@ -39,7 +39,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '14.1';
+    const VERSION = '14.2';
     const SAFE_UX_BUILD = true;
     const SAFE_UX_BUILD_NAME = 'Fleet Safe UX Build';
     const STORAGE_PREFIX = 'wf-enhancer-';
@@ -66,7 +66,9 @@
         'toggle-main-panels.js',
         'tool-results-resize-handle.js',
         'user-story-collapse.js',
-        'user-story-markdown.js'
+        'user-story-markdown.js',
+        'vnc-helper.js',
+        'env-helper.js'
     ]);
     const FOS_ORCHESTRATOR_INSTANCES_URL = 'https://orchestrator.fleetai.com/v1/env/instances';
     const PRIVILEGED_STORAGE_KEYS_TO_PURGE = [
@@ -92,8 +94,8 @@
         'fleet-ux:verifier-fetcher-chat-open'
     ];
     // @@SAFE_UX_BUNDLE_START
-    const BUNDLED_ARCHETYPES = {"version":"14.1","coreOnlyMode":false,"archetypesVersion":"15.1","logs":{"debug":false,"verbose":false,"submodule":false},"corePlugins":[{"name":"ui-lib.js","version":"3.24","hash":"sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053","log":false},{"name":"settings-ui.js","version":"11.18","hash":"sha256-3de387b59ce35c18b0dd62a3a1dd9239bf553f16570bfd35fe8f2d2ac8b199f6","log":false},{"name":"fos-embedded-watcher.js","version":"5.4","hash":"sha256-5b1c214882fcdc15c3d81045f93164a44e1b313565ae65c11aa659ffd90341e7","log":false}],"libraries":[{"name":"accept-task-modal-improvements.js","version":"2.3","hash":"sha256-0707031982051172a43a9f2507be481f22c8c900026bfde041a94f2b86b4e6db","log":false},{"name":"copy-verifier-output.js","version":"5.4","hash":"sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d","log":false},{"name":"screenshot-upload-improvement.js","version":"1.1","hash":"sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371","log":false},{"name":"action-counter.js","version":"3.7","hash":"sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35","log":false},{"name":"fos-vm-clipboard-bar.js","version":"1.8","hash":"sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-ad3b70a082fa2e3ddf5ca934ab86cb13c6aeed02e6f138643e46ee491361b0fa","log":false},{"name":"notes-resize-handle.js","version":"2.2","hash":"sha256-845e1f33ecf6a389a9c66c5e5242bb7a15830e4544b4502860a6a911d96a5dcd","log":false},{"name":"prompt-scratchpad.js","version":"3.3","hash":"sha256-1391b3d0b3d7ab405b9680d5bc37668a58eb6935ccc2b14fae96c9fdfbfd1fb4","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-b0d71baa66ad441d5a0dc190028cb1a04a8d7adf465d1211b27fc1be019d75ce","log":false},{"name":"request-revisions.js","version":"1.2","hash":"sha256-b835c1c13b5bcb185401f3f333bf559651817b5d1b3551a8e02795d2e4f538c5","log":false},{"name":"toggle-main-panels.js","version":"1.12","hash":"sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d","log":false},{"name":"user-story-markdown.js","version":"1.10","hash":"sha256-394efdd7463de3eeb1d8ceb242c378019d66e834f892a10eb998423c6c955ca3","log":false},{"name":"user-story-collapse.js","version":"1.6","hash":"sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807","log":false}],"opsDashboardPlugins":[],"opsDashboardLibraries":[],"devPlugins":[],"settingsModalDocs":[{"name":"information-tab.md","version":"1.19"},{"name":"features-tab.md","version":"1.45"}],"archetypes":[{"id":"dashboard","name":"Main Dashboard","description":"Main dashboard page","urlPattern":"work/create","disambiguationSelectors":[],"plugins":[]},{"id":"tool-use-task-creation","name":"Tool Use Task Creation Page","description":"Page for creating K-type workflow tasks","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-8088efb71950f66e8522dce416402ef607510a1edc2203b98c2d13c1bd6c49ee","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-task-creation-openclaw","name":"Tool Use OpenClaw Task Creation Page","description":"Task Designers Special Projects OpenClaw variant","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":["text:Task Designers - Special Projects Tasks"],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-f9d1e893030f8800986bae1ac02fe5614a70d74839d942df3aeeab756984edfc","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-revision","name":"Tool Use Task Revision Page","description":"Page for reviewing and fixing previously submitted tool use tasks","urlPattern":"work/problems/respond-feedback/edit-tool-use*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-82432dd241762fefdae9d4602b7900ecf54a3b37a37c0d5222f1cc4fbcee5728","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"tool-results-resize-handle.js","version":"3.4","hash":"sha256-a244822dd48563ef7b169293483a5bebc2de2ee2f65406acb23489855a0d9733","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"create-task-project-selection","name":"Create Task Project Selection","description":"Screen for choosing a project before creating a task","urlPattern":"work/problems/create-instance","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-create-instance","name":"Dashboard Create Instance","description":"Dashboard page for creating instances","urlPattern":"dashboard/instances/create","disambiguationSelectors":[],"plugins":[]},{"id":"comp-use-task-creation","name":"Computer Use Task Creation Page","description":"Page for creating computer use tasks","urlPattern":"work/problems/create*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.2","log":false,"hash":"sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"},{"name":"fos-vm-clipboard.js","version":"2.1","hash":"sha256-814b760804fd15837dee2087faf9b6dc73455a1245ecb922755203989dbb48c9","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-7ae4d81165d55305d48d9e3051e4d1b0ab40e3ef60234cd72e890f11d872d775","log":false},{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"comp-use-revision","name":"Computer Use Task Revision Page","description":"Page for reviewing and fixing previously submitted computer use tasks","urlPattern":"work/problems/respond-feedback/edit*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.1","log":false,"hash":"sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"},{"name":"fos-vm-clipboard.js","version":"2.0","hash":"sha256-7c15434c8773235ff010e6e292279abd498594a4ded07ebe51f011e59b21df8e","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-a9540416f8f6b1f9f4b9750957705033f90ad4d620569e72798cb43b1f411be8","log":false},{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"qa-tool-use","name":"Task Review Page","description":"Page for reviewing and approving tasks","urlPattern":"work/problems/qa-tool-use/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","copy-verifier-output.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"hide-verifier-output.js","version":"1.8","hash":"sha256-22888468f4715d7152cb411e98d2de55183327fb540d8ba455273875c1806781","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"text-sanitizer.js","version":"3.2","hash":"sha256-dd1887ece3307bf0f35e6b08b23af4af4ba5dfdecc62200211f3f37e8cfa3fe7","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-ed705a53a986c843f8605db4599f4abfac0bc755b03f28afc9a2ac650c326bef","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"qa-session","name":"Session Trace Review","description":"Page for reviewing session traces","urlPattern":"work/problems/qa-session/*","disambiguationSelectors":[],"plugins":[]},{"id":"qa-comp-use","name":"Computer Use Task Review Page","description":"Page for reviewing and approving computer-use tasks","urlPattern":"work/problems/qa/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","action-counter.js","copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"action-counter.js","version":"2.1","log":false,"hash":"sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"},{"name":"auto-start-recording.js","version":"1.4","hash":"sha256-41c516f670f44c9d03d736b938ecfe346313b28810766e3860b322d039a80cd1","log":false},{"name":"copy-result-params.js","version":"2.0","hash":"sha256-c8b3853bafeb018ace90c39bd585b857aca0c5ac3617f5ea79d7c42cf3491dee","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"show-verifier-on-run.js","version":"1.4","hash":"sha256-c2e4e617d066522280dfa894595d996e75ffb9040f2abad75315f8a872d8975c","log":false},{"name":"toggle-main-panels.js","version":"1.11","log":false,"hash":"sha256-57e883d0db1eaaf784343de7a4ece06eaff54d108860971027692f8e5b6ab201"},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"disputes","name":"Dispute Review Page","description":"Page for reviewing writer disputes","urlPattern":"work/problems/disputes","disambiguationSelectors":[],"libraries":["user-story-markdown.js"],"plugins":[{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-053a47538155b35ec5a766ee7b55291b3b78d8de4a113dcd609975101d138bc3","log":false}]},{"id":"dispute-detail","name":"Dispute Detail Page","description":"Page for reviewing a single writer dispute","urlPattern":"work/problems/disputes/*","disambiguationSelectors":[],"libraries":["copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js"],"plugins":[{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-bb6c066c58e5bf843439c6b18e35d95ba88ab6e1f0c7a3b1fed4d813d0ab9f66","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-662ca9bd9c4883de4250fb87deb48291a4f15b5740a081421cf4e7f2d0dd7db2","log":false},{"name":"tool-results-resize-handle.js","version":"1.3","hash":"sha256-7df97c2a426026a2002da1f31cac0c81d2e5abc995182cd9bba6773d1ec69462","log":false},{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-bd4703bc5f63c20aa08db6babe4177f495ff40e10e69f604d5730edcd8905ae0","log":false}]},{"id":"task-view","name":"Task View","description":"Page for viewing a task","urlPattern":"work/problems/view-task*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-task","name":"Dashboard Data Task View","description":"Dashboard task detail page","urlPattern":"dashboard/data/tasks/*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-expert","name":"Dashboard Data Expert Profile","description":"Expert profile page on the dashboard","urlPattern":"dashboard/data/experts/*","disambiguationSelectors":[],"plugins":[]},{"id":"no-vnc","name":"noVNC Instance","description":"noVNC remote desktop instances on fleet environment subdomains","urlPattern":"_novnc","disambiguationSelectors":[],"plugins":[]},{"id":"assessments-grade","name":"Assessments Grade","description":"Assessment grading queue","urlPattern":"work/assessments/grade","disambiguationSelectors":["text:To grade"],"plugins":[]},{"id":"assessments-grade-detail","name":"Assessments Grade Detail","description":"Individual assessment grading page","urlPattern":"work/assessments/grade/*","disambiguationSelectors":["text:← Back to queue"],"plugins":[]},{"id":"guidelines","name":"Guidelines","description":"Guidelines list and editor","urlPattern":"work/guidelines","disambiguationSelectors":[],"plugins":[]}],"devArchetypes":[]};
-    const BUNDLED_SETTINGS_DOCS = {"information-tab.md":"1.19\n## Fleet Safe UX Build\nThis is a containment userscript. It keeps FOS clipboard/autoconnect, local prompt/UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are suspended pending investigation.\n\n## Information\nIf you still cannot find a specific codename, please use the `Feedback` tab to notify me!\n#### Environment Codenames\n| Environment Codename      | Real App Name          |\n|---------------------------|------------------------|\n| Agora                     | Reddit                 |\n| Aisle                     | Walmart                |\n| Atlas                     | Google Maps            |\n| Bay                       | Amazon                 |\n| Brass                     | Bill                   |\n| Citadel                   | Salesforce             |\n| Chorus                    | Teams                  |\n| Crate                     | Instacart              |\n| Docket                    | Dropbox                |\n| Float                     | Ramp                   |\n| Seal                      | Docusign               |\n| Foundry                   | Github                 |\n| Funnel                    | Zip                    |\n| Harbor                    | Bank of America        |\n| Jetstream                 | Google Flights         |\n| Kernel                    | Jira / RevOps          |\n| KeyRing                   | Booking                |\n| Latch Calendar/Mail/Tasks | Outlook                |\n| Ledger                    | Quickbooks             |\n| LedgerGov                 | DMV                    |\n| Lumen                     | Datadog                |\n| Medora                    | Zocdoc                 |\n| Meridian                  | Amex                   |\n| Nest                      | Zillow                 |\n| Orbit                     | PandaDoc               |\n| Portal                    | Ticketmaster           |\n| Relay                     | Hubspot                |\n| Seal                      | Docusign               |\n| Sentinel                  | Vanta                  |\n| Signal                    | Sentry                 |\n| StackLine                 | StackOverflow          |\n| Torch                     | PagerDuty              |\n| Vault                     | Confluence             |\n| Ward                      | Synk                   |\n| Yelp                      | Hearth                 |\n\n#### Guidelines\n- [General](https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3)\n- [Tool use](https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b)\n- [QA](https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43)\n- [Time submission](https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c)\n\n#### Community\n- [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)\n- [Environment Gists](https://fleetai-env-gists.vercel.app)\n- [This Extension](https://github.com/fleet-ai-operations/fleet-ux-improvements)","features-tab.md":"1.45\n\n## Fleet Safe UX Build\nThis containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.\n\n## Features\n\nThe extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).\n\nMany of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!\n\n### Main Dashboard\n- **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning\n\n### Tool Use Task Creation Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Creation Page (OpenClaw / Special Projects)\n*Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*\n- **Bug Report Readability Fix**: Makes bug report cards expandable to see full text\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Tool Favorites**: Add favorite stars to tools list\n- **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Computer Use Task Creation Page\n- **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Computer Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### QA Tool Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Useful Link Buttons**: Add useful link buttons to the page\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### QA Computer Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter beside the Verifier tab\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Dispute Detail Page\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear\n- **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages\n- **Environment Verifier Tab**: Adds Environment | Verifier tabs on the instance status bar (beside Start Recording / Reset / Run Verifier) and shows searchable verifier source; switches only the iframe stack\n- **Tool Favorites**: Add favorite stars to tools list\n- **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n\n### Session Trace Review Page\n- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)\n- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits\n\n### Guidelines\n- **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar\n- **Guideline Theme Presets**: Apply named text themes from the edit toolbar\n\n### Task View\n*No production plugins are configured for this archetype.*\n"};
+    const BUNDLED_ARCHETYPES = {"version":"14.2","coreOnlyMode":false,"archetypesVersion":"15.2","logs":{"debug":false,"verbose":false,"submodule":false},"corePlugins":[{"name":"ui-lib.js","version":"3.24","hash":"sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053","log":false},{"name":"settings-ui.js","version":"11.18","hash":"sha256-3de387b59ce35c18b0dd62a3a1dd9239bf553f16570bfd35fe8f2d2ac8b199f6","log":false},{"name":"fos-embedded-watcher.js","version":"5.5","hash":"sha256-bf233bd9a801a085be0bcb6ab9113c03b853b5b5e0733b95512be9a778ffba39","log":false}],"libraries":[{"name":"accept-task-modal-improvements.js","version":"2.3","hash":"sha256-0707031982051172a43a9f2507be481f22c8c900026bfde041a94f2b86b4e6db","log":false},{"name":"copy-verifier-output.js","version":"5.4","hash":"sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d","log":false},{"name":"screenshot-upload-improvement.js","version":"1.1","hash":"sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371","log":false},{"name":"action-counter.js","version":"3.7","hash":"sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35","log":false},{"name":"fos-vm-clipboard-bar.js","version":"1.8","hash":"sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-ad3b70a082fa2e3ddf5ca934ab86cb13c6aeed02e6f138643e46ee491361b0fa","log":false},{"name":"notes-resize-handle.js","version":"2.2","hash":"sha256-845e1f33ecf6a389a9c66c5e5242bb7a15830e4544b4502860a6a911d96a5dcd","log":false},{"name":"prompt-scratchpad.js","version":"3.3","hash":"sha256-1391b3d0b3d7ab405b9680d5bc37668a58eb6935ccc2b14fae96c9fdfbfd1fb4","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-b0d71baa66ad441d5a0dc190028cb1a04a8d7adf465d1211b27fc1be019d75ce","log":false},{"name":"request-revisions.js","version":"1.2","hash":"sha256-b835c1c13b5bcb185401f3f333bf559651817b5d1b3551a8e02795d2e4f538c5","log":false},{"name":"toggle-main-panels.js","version":"1.12","hash":"sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d","log":false},{"name":"user-story-markdown.js","version":"1.10","hash":"sha256-394efdd7463de3eeb1d8ceb242c378019d66e834f892a10eb998423c6c955ca3","log":false},{"name":"user-story-collapse.js","version":"1.6","hash":"sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807","log":false},{"name":"vnc-helper.js","version":"3.9","hash":"sha256-29c83ad41ffc6a1f435fb54073a5dfa4bd0a6cc7e64c58eddf786c99a22de767","log":false},{"name":"env-helper.js","version":"2.8","hash":"sha256-8c5c650ed1b46b734171c4403a69251f895a287c7feeca5e9a7367967fe6490a","log":false}],"opsDashboardPlugins":[],"opsDashboardLibraries":[],"devPlugins":[],"settingsModalDocs":[{"name":"information-tab.md","version":"1.19"},{"name":"features-tab.md","version":"1.46"}],"archetypes":[{"id":"dashboard","name":"Main Dashboard","description":"Main dashboard page","urlPattern":"work/create","disambiguationSelectors":[],"plugins":[]},{"id":"tool-use-task-creation","name":"Tool Use Task Creation Page","description":"Page for creating K-type workflow tasks","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-8088efb71950f66e8522dce416402ef607510a1edc2203b98c2d13c1bd6c49ee","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-task-creation-openclaw","name":"Tool Use OpenClaw Task Creation Page","description":"Task Designers Special Projects OpenClaw variant","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":["text:Task Designers - Special Projects Tasks"],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-f9d1e893030f8800986bae1ac02fe5614a70d74839d942df3aeeab756984edfc","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-revision","name":"Tool Use Task Revision Page","description":"Page for reviewing and fixing previously submitted tool use tasks","urlPattern":"work/problems/respond-feedback/edit-tool-use*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-82432dd241762fefdae9d4602b7900ecf54a3b37a37c0d5222f1cc4fbcee5728","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"tool-results-resize-handle.js","version":"3.4","hash":"sha256-a244822dd48563ef7b169293483a5bebc2de2ee2f65406acb23489855a0d9733","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"create-task-project-selection","name":"Create Task Project Selection","description":"Screen for choosing a project before creating a task","urlPattern":"work/problems/create-instance","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-create-instance","name":"Dashboard Create Instance","description":"Dashboard page for creating instances","urlPattern":"dashboard/instances/create","disambiguationSelectors":[],"plugins":[]},{"id":"comp-use-task-creation","name":"Computer Use Task Creation Page","description":"Page for creating computer use tasks","urlPattern":"work/problems/create*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.2","log":false,"hash":"sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"},{"name":"fos-vm-clipboard.js","version":"2.2","hash":"sha256-6d1869308b81556279f433fa856f130afb22ffdf485050221e2f8f1e6c05a17c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-7ae4d81165d55305d48d9e3051e4d1b0ab40e3ef60234cd72e890f11d872d775","log":false},{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"comp-use-revision","name":"Computer Use Task Revision Page","description":"Page for reviewing and fixing previously submitted computer use tasks","urlPattern":"work/problems/respond-feedback/edit*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.1","log":false,"hash":"sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"},{"name":"fos-vm-clipboard.js","version":"2.1","hash":"sha256-c6586ebceb0d6099098c2de6fc804fc8d7838c0195760a84430ebd07802fe8de","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-a9540416f8f6b1f9f4b9750957705033f90ad4d620569e72798cb43b1f411be8","log":false},{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"qa-tool-use","name":"Task Review Page","description":"Page for reviewing and approving tasks","urlPattern":"work/problems/qa-tool-use/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","copy-verifier-output.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"hide-verifier-output.js","version":"1.8","hash":"sha256-22888468f4715d7152cb411e98d2de55183327fb540d8ba455273875c1806781","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"text-sanitizer.js","version":"3.2","hash":"sha256-dd1887ece3307bf0f35e6b08b23af4af4ba5dfdecc62200211f3f37e8cfa3fe7","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-ed705a53a986c843f8605db4599f4abfac0bc755b03f28afc9a2ac650c326bef","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"qa-session","name":"Session Trace Review","description":"Page for reviewing session traces","urlPattern":"work/problems/qa-session/*","disambiguationSelectors":[],"plugins":[]},{"id":"qa-comp-use","name":"Computer Use Task Review Page","description":"Page for reviewing and approving computer-use tasks","urlPattern":"work/problems/qa/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","action-counter.js","copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"action-counter.js","version":"2.1","log":false,"hash":"sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"},{"name":"auto-start-recording.js","version":"1.4","hash":"sha256-41c516f670f44c9d03d736b938ecfe346313b28810766e3860b322d039a80cd1","log":false},{"name":"copy-result-params.js","version":"2.0","hash":"sha256-c8b3853bafeb018ace90c39bd585b857aca0c5ac3617f5ea79d7c42cf3491dee","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"show-verifier-on-run.js","version":"1.4","hash":"sha256-c2e4e617d066522280dfa894595d996e75ffb9040f2abad75315f8a872d8975c","log":false},{"name":"toggle-main-panels.js","version":"1.11","log":false,"hash":"sha256-57e883d0db1eaaf784343de7a4ece06eaff54d108860971027692f8e5b6ab201"},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"disputes","name":"Dispute Review Page","description":"Page for reviewing writer disputes","urlPattern":"work/problems/disputes","disambiguationSelectors":[],"libraries":["user-story-markdown.js"],"plugins":[{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-053a47538155b35ec5a766ee7b55291b3b78d8de4a113dcd609975101d138bc3","log":false}]},{"id":"dispute-detail","name":"Dispute Detail Page","description":"Page for reviewing a single writer dispute","urlPattern":"work/problems/disputes/*","disambiguationSelectors":[],"libraries":["copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js"],"plugins":[{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-bb6c066c58e5bf843439c6b18e35d95ba88ab6e1f0c7a3b1fed4d813d0ab9f66","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-662ca9bd9c4883de4250fb87deb48291a4f15b5740a081421cf4e7f2d0dd7db2","log":false},{"name":"tool-results-resize-handle.js","version":"1.3","hash":"sha256-7df97c2a426026a2002da1f31cac0c81d2e5abc995182cd9bba6773d1ec69462","log":false},{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-bd4703bc5f63c20aa08db6babe4177f495ff40e10e69f604d5730edcd8905ae0","log":false}]},{"id":"task-view","name":"Task View","description":"Page for viewing a task","urlPattern":"work/problems/view-task*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-task","name":"Dashboard Data Task View","description":"Dashboard task detail page","urlPattern":"dashboard/data/tasks/*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-expert","name":"Dashboard Data Expert Profile","description":"Expert profile page on the dashboard","urlPattern":"dashboard/data/experts/*","disambiguationSelectors":[],"plugins":[]},{"id":"no-vnc","name":"noVNC Instance","description":"noVNC remote desktop instances on fleet environment subdomains","urlPattern":"_novnc","disambiguationSelectors":[],"plugins":[{"name":"vnc-helper.js","version":"1.14","hash":"sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411","log":false},{"name":"env-helper.js","version":"1.6","hash":"sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c","log":false}],"libraries":["prompt-text-counter.js","vnc-helper.js","env-helper.js"]},{"id":"assessments-grade","name":"Assessments Grade","description":"Assessment grading queue","urlPattern":"work/assessments/grade","disambiguationSelectors":["text:To grade"],"plugins":[]},{"id":"assessments-grade-detail","name":"Assessments Grade Detail","description":"Individual assessment grading page","urlPattern":"work/assessments/grade/*","disambiguationSelectors":["text:← Back to queue"],"plugins":[]},{"id":"guidelines","name":"Guidelines","description":"Guidelines list and editor","urlPattern":"work/guidelines","disambiguationSelectors":[],"plugins":[]}],"devArchetypes":[]};
+    const BUNDLED_SETTINGS_DOCS = {"information-tab.md":"1.19\n## Fleet Safe UX Build\nThis is a containment userscript. It keeps FOS clipboard/autoconnect, local prompt/UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are suspended pending investigation.\n\n## Information\nIf you still cannot find a specific codename, please use the `Feedback` tab to notify me!\n#### Environment Codenames\n| Environment Codename      | Real App Name          |\n|---------------------------|------------------------|\n| Agora                     | Reddit                 |\n| Aisle                     | Walmart                |\n| Atlas                     | Google Maps            |\n| Bay                       | Amazon                 |\n| Brass                     | Bill                   |\n| Citadel                   | Salesforce             |\n| Chorus                    | Teams                  |\n| Crate                     | Instacart              |\n| Docket                    | Dropbox                |\n| Float                     | Ramp                   |\n| Seal                      | Docusign               |\n| Foundry                   | Github                 |\n| Funnel                    | Zip                    |\n| Harbor                    | Bank of America        |\n| Jetstream                 | Google Flights         |\n| Kernel                    | Jira / RevOps          |\n| KeyRing                   | Booking                |\n| Latch Calendar/Mail/Tasks | Outlook                |\n| Ledger                    | Quickbooks             |\n| LedgerGov                 | DMV                    |\n| Lumen                     | Datadog                |\n| Medora                    | Zocdoc                 |\n| Meridian                  | Amex                   |\n| Nest                      | Zillow                 |\n| Orbit                     | PandaDoc               |\n| Portal                    | Ticketmaster           |\n| Relay                     | Hubspot                |\n| Seal                      | Docusign               |\n| Sentinel                  | Vanta                  |\n| Signal                    | Sentry                 |\n| StackLine                 | StackOverflow          |\n| Torch                     | PagerDuty              |\n| Vault                     | Confluence             |\n| Ward                      | Synk                   |\n| Yelp                      | Hearth                 |\n\n#### Guidelines\n- [General](https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3)\n- [Tool use](https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b)\n- [QA](https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43)\n- [Time submission](https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c)\n\n#### Community\n- [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)\n- [Environment Gists](https://fleetai-env-gists.vercel.app)\n- [This Extension](https://github.com/fleet-ai-operations/fleet-ux-improvements)","features-tab.md":"1.46\n\n## Fleet Safe UX Build\nThis containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.\n\n## Features\n\nThe extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).\n\nMany of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!\n\n### Main Dashboard\n- **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning\n\n### Tool Use Task Creation Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Creation Page (OpenClaw / Special Projects)\n*Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*\n- **Bug Report Readability Fix**: Makes bug report cards expandable to see full text\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Tool Favorites**: Add favorite stars to tools list\n- **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Computer Use Task Creation Page\n- **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Computer Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### QA Tool Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Useful Link Buttons**: Add useful link buttons to the page\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### QA Computer Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter beside the Verifier tab\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Dispute Detail Page\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear\n- **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages\n- **Environment Verifier Tab**: Adds Environment | Verifier tabs on the instance status bar (beside Start Recording / Reset / Run Verifier) and shows searchable verifier source; switches only the iframe stack\n- **Tool Favorites**: Add favorite stars to tools list\n- **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n\n### Session Trace Review Page\n- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)\n- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits\n\n### Guidelines\n- **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar\n- **Guideline Theme Presets**: Apply named text themes from the edit toolbar\n\n### noVNC Instance (FOS opened directly in a tab)\n- **External VNC Helper**: Floating panel on directly-opened noVNC sessions with a clipboard bridge (Extract/Overwrite between your OS clipboard and the VM), prompt cache, and scratchpad; keyboard shortcuts keep working with the panel hidden\n- **External Env Helper**: Floating prompt cache + scratchpad panel for non-VNC external env pages\n\n### Task View\n*No production plugins are configured for this archetype.*\n"};
     const BUNDLED_PLUGIN_FACTORIES = {
         "core/main/ui-lib.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
 // ui-lib.js — shared UI tokens, button styles, spinners, and copy feedback.
@@ -4841,7 +4843,7 @@ const plugin = {
     name: 'FOS Embedded Watcher',
     description:
         'Detects FOS desktop envs and hosts the VM Clipboard bridge (Safe UX Build: nonce-bound messaging)',
-    _version: '5.4',
+    _version: '5.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -5109,9 +5111,10 @@ const plugin = {
             return false;
         }
         const requestId = fosNextRequestId();
-        const resultPromise = this._waitForChildResult(state, requestId, 8000);
         const nonce = fosEnsureInstanceNonce(this._ensureInstance(state, id));
+        const resultPromise = this._waitForChildResult(state, requestId, 8000, nonce);
         if (!child.origin || child.origin === '*') {
+            state.pendingRequests.delete(requestId);
             Logger.warn('overwrite failed — child origin missing for ' + id);
             return false;
         }
@@ -5148,9 +5151,10 @@ const plugin = {
             return false;
         }
         const requestId = fosNextRequestId();
-        const resultPromise = this._waitForChildResult(state, requestId, 8000);
         const nonce = fosEnsureInstanceNonce(this._ensureInstance(state, id));
+        const resultPromise = this._waitForChildResult(state, requestId, 8000, nonce);
         if (!child.origin || child.origin === '*') {
+            state.pendingRequests.delete(requestId);
             Logger.warn('extract failed — child origin missing for ' + id);
             return false;
         }
@@ -5389,13 +5393,14 @@ const plugin = {
         });
     },
 
-    _waitForChildResult(state, requestId, timeoutMs) {
+    _waitForChildResult(state, requestId, timeoutMs, nonce) {
         return new Promise((resolve) => {
             const timer = setTimeout(() => {
                 state.pendingRequests.delete(requestId);
                 resolve({ ok: false, timedOut: true });
             }, timeoutMs || 8000);
             state.pendingRequests.set(requestId, {
+                nonce: nonce || null,
                 resolve: (payload) => {
                     clearTimeout(timer);
                     resolve(payload);
@@ -5838,8 +5843,14 @@ const plugin = {
             }
             const instanceId = String(event.data.instanceId || '');
             const rec = instanceId ? state.fosInstances.get(instanceId) : null;
-            if (!rec || event.data.nonce !== rec.bridgeNonce) {
-                Logger.warn('clipboard result ignored — nonce/instance mismatch');
+            const pendingReq = state.pendingRequests.get(requestId);
+            const nonceOk =
+                !!rec &&
+                (event.data.nonce === rec.bridgeNonce ||
+                    (pendingReq && pendingReq.nonce && event.data.nonce === pendingReq.nonce));
+            if (!nonceOk) {
+                Logger.warn('clipboard result ignored — nonce/instance mismatch (instance ' +
+                    (instanceId || '?') + ', known=' + (rec ? 'yes' : 'no') + ')');
                 return;
             }
             if (rec.child && rec.child.source && rec.child.source !== event.source) {
@@ -11157,6 +11168,2135 @@ const plugin = {
 
 return plugin;
 },
+        "libs/vnc-helper.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
+// ============= vnc-helper.js (library) =============
+// Shared External VNC Helper for no-vnc (external env tabs).
+// Modal: Prompt (from qa-comp-use cache), scratchpad, clipboard bridge buttons, and
+// ⌘C/⌘V + Ctrl+Shift+C/F shortcuts. Replaces novnc-clipboard-bridge.js.
+
+const ROOT_ID = 'fleet-vnc-helper';
+const TAB_ID = 'fleet-vnc-helper-tab';
+const Z_INDEX = '2147483646';
+const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
+const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
+const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
+const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
+const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
+/** 'qa' | 'non-qa' — host sets from last Fleet archetype; helpers only prefill when 'qa'. */
+const PROMPT_CONTEXT_STORAGE_KEY = 'vnc-helper-prompt-context';
+const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
+const LINE_HEIGHT_PX = 20;
+const DEFAULT_LINES = 2;
+const PROMPT_DEFAULT_LINES = 5;
+const DEFAULT_MODAL_LEFT = 16;
+const DEFAULT_MODAL_TOP = 120;
+const DEFAULT_MODAL_WIDTH = 320;
+const DEFAULT_MODAL_HEIGHT = 420;
+const MIN_MODAL_WIDTH = 260;
+const MIN_MODAL_HEIGHT = 180;
+
+const LAYOUT_STORAGE_KEYS = {
+    left: 'vnc-helper-layout-left',
+    top: 'vnc-helper-layout-top',
+    width: 'vnc-helper-layout-width',
+    height: 'vnc-helper-layout-height'
+};
+
+const SHOW_PANEL_SUBOPTION = {
+    id: SHOW_PANEL_SUBOPTION_ID,
+    name: 'Show panel',
+    description: 'Hide the External VNC Helper panel (keyboard clipboard shortcuts still work)',
+    enabledByDefault: true
+};
+
+const FORCE_DARK_SUBOPTION = {
+    id: FORCE_DARK_SUBOPTION_ID,
+    name: 'Force dark mode',
+    description: 'Overrides Preferred Visual Mode for this helper panel only.',
+    enabledByDefault: false
+};
+
+const VncHelperApi = {
+    id: 'vncHelper',
+    name: 'External VNC Helper',
+    description:
+        'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
+    _version: '3.9',
+    enabledByDefault: true,
+    phase: 'mutation',
+    subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
+    initialState: {
+        bridgeStarted: false,
+        waitObserverAttached: false,
+        waitObserver: null,
+        minimized: true
+    },
+
+    isPanelEnabled() {
+        return Storage.getSubOptionEnabled(this.id, SHOW_PANEL_SUBOPTION_ID, true);
+    },
+
+    isForceDarkEnabled() {
+        return Storage.getSubOptionEnabled(this.id, FORCE_DARK_SUBOPTION_ID, false);
+    },
+
+    helperChromeColors() {
+        const forceDark = this.isForceDarkEnabled();
+        const ui = Context.uiLib;
+        const preferredDark = !!(ui && typeof ui.isFleetDark === 'function' && ui.isFleetDark());
+        const dark = forceDark || preferredDark;
+        if (!forceDark && ui && typeof ui.chromeColors === 'function') {
+            const c = ui.chromeColors();
+            return {
+                bg: c.bg,
+                fg: c.fg,
+                border: c.border,
+                headerBg: c.hover || c.card,
+                inputBg: c.bg,
+                dark: preferredDark,
+                fromPreferred: true
+            };
+        }
+        if (dark) {
+            return {
+                bg: '#1c1c1e',
+                fg: '#e5e7eb',
+                border: '#3f3f46',
+                headerBg: 'rgba(255,255,255,0.06)',
+                inputBg: '#121212',
+                dark: true,
+                fromPreferred: false
+            };
+        }
+        return {
+            bg: '#ffffff',
+            fg: '#0f172a',
+            border: '#e2e8f0',
+            headerBg: '#f1f5f9',
+            inputBg: '#ffffff',
+            dark: false,
+            fromPreferred: false
+        };
+    },
+
+    ensurePreferredThemeSubscription() {
+        if (this._preferredThemeUnsub) return;
+        const ui = Context.uiLib;
+        if (!ui || typeof ui.onThemeChange !== 'function') return;
+        this._preferredThemeUnsub = ui.onThemeChange(() => {
+            this.applyHelperChromeToMounted();
+        });
+    },
+
+    applyHelperChrome(root, chip) {
+        this.ensurePreferredThemeSubscription();
+        const forceDark = this.isForceDarkEnabled();
+        const c = this.helperChromeColors();
+        const theme = c.dark ? 'dark' : 'light';
+        // When following Preferred mode (force-dark off), clear inline overpaint so
+        // PANEL_CLASSES + data-fleet-ux-theme own the chrome.
+        if (!forceDark && c.fromPreferred) {
+            const clearInline = (el) => {
+                if (!el) return;
+                el.style.background = '';
+                el.style.color = '';
+                el.style.border = '';
+                el.style.borderRadius = '';
+                el.style.boxShadow = '';
+                el.style.borderBottom = '';
+            };
+            if (root) {
+                root.dataset.fleetHelperTheme = theme;
+                clearInline(root);
+                const header = root.querySelector('.fleet-ui-panel__header') || root.firstElementChild;
+                clearInline(header);
+                root.querySelectorAll('textarea, input, button').forEach(clearInline);
+            }
+            if (chip) {
+                chip.dataset.fleetHelperTheme = theme;
+                clearInline(chip);
+                chip.querySelectorAll('button').forEach(clearInline);
+            }
+            return;
+        }
+        const shadow = c.dark
+            ? '0 12px 40px rgba(0,0,0,0.55)'
+            : '0 12px 40px rgba(15,23,42,0.18)';
+        if (root) {
+            root.dataset.fleetHelperTheme = theme;
+            root.style.background = c.bg;
+            root.style.color = c.fg;
+            root.style.border = '1px solid ' + c.border;
+            root.style.borderRadius = '10px';
+            root.style.boxShadow = shadow;
+            const header = root.querySelector('.fleet-ui-panel__header') || root.firstElementChild;
+            if (header) {
+                header.style.background = c.headerBg;
+                header.style.borderBottom = '1px solid ' + c.border;
+                header.style.color = c.fg;
+            }
+            root.querySelectorAll('textarea, input').forEach((el) => {
+                el.style.background = c.inputBg;
+                el.style.color = c.fg;
+                el.style.border = '1px solid ' + c.border;
+            });
+            root.querySelectorAll('button').forEach((el) => {
+                if (!el.style.background || el.style.background === 'transparent' || el.style.background === '') {
+                    el.style.background = c.bg;
+                }
+                el.style.color = c.fg;
+                if (!el.style.border || el.style.border === 'none') {
+                    el.style.border = '1px solid ' + c.border;
+                }
+            });
+        }
+        if (chip) {
+            chip.dataset.fleetHelperTheme = theme;
+            chip.style.background = '';
+            chip.style.boxShadow = '';
+            chip.style.color = c.fg;
+            chip.style.border = '1px solid ' + c.border;
+            chip.style.borderRadius = '10px';
+            chip.querySelectorAll('button').forEach((el) => {
+                el.style.background = 'transparent';
+                el.style.color = c.fg;
+            });
+        }
+    },
+
+    applyHelperChromeToMounted() {
+        this.applyHelperChrome(
+            document.getElementById(ROOT_ID),
+            document.getElementById(TAB_ID)
+        );
+    },
+
+    loadSavedLayout() {
+        return {
+            left: Storage.get(LAYOUT_STORAGE_KEYS.left, null),
+            top: Storage.get(LAYOUT_STORAGE_KEYS.top, null),
+            width: Storage.get(LAYOUT_STORAGE_KEYS.width, DEFAULT_MODAL_WIDTH),
+            height: Storage.get(LAYOUT_STORAGE_KEYS.height, DEFAULT_MODAL_HEIGHT)
+        };
+    },
+
+    clearSavedLayout() {
+        Storage.delete(LAYOUT_STORAGE_KEYS.left);
+        Storage.delete(LAYOUT_STORAGE_KEYS.top);
+        Storage.delete(LAYOUT_STORAGE_KEYS.width);
+        Storage.delete(LAYOUT_STORAGE_KEYS.height);
+    },
+
+    applyDefaultLayout(root) {
+        if (!root) {
+            return;
+        }
+        root.style.left = `${DEFAULT_MODAL_LEFT}px`;
+        root.style.top = `${DEFAULT_MODAL_TOP}px`;
+        root.style.width = `${DEFAULT_MODAL_WIDTH}px`;
+        root.style.height = `${DEFAULT_MODAL_HEIGHT}px`;
+    },
+
+    saveLayout(root) {
+        if (!root) {
+            return;
+        }
+        const rect = root.getBoundingClientRect();
+        Storage.set(LAYOUT_STORAGE_KEYS.left, rect.left);
+        Storage.set(LAYOUT_STORAGE_KEYS.top, rect.top);
+        Storage.set(LAYOUT_STORAGE_KEYS.width, rect.width);
+        Storage.set(LAYOUT_STORAGE_KEYS.height, rect.height);
+    },
+
+    makeSmallHeaderButton(label, ariaLabel) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.setAttribute('aria-label', ariaLabel);
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        btn.className = pc.ghostBtn || '';
+        return btn;
+    },
+
+    makeClipboardHelpDetails() {
+        const details = document.createElement('details');
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        details.className = pc.divider || '';
+        details.style.cssText = 'margin:10px 0 0 0;padding-top:10px;';
+
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = 'How this works';
+        summaryEl.className = pc.muted || '';
+        summaryEl.style.cssText = 'cursor:pointer;font-size:12px;outline:none;user-select:none;';
+
+        const help = document.createElement('div');
+        help.className = pc.muted || '';
+        help.style.cssText = 'margin-top:10px;font-size:11px;line-height:1.55;user-select:text;';
+
+        function pBlock(strongLabel, rest) {
+            const p = document.createElement('p');
+            p.style.margin = '0 0 8px 0';
+            const s = document.createElement('strong');
+            s.className = pc.strong || '';
+            s.textContent = strongLabel;
+            p.appendChild(s);
+            p.appendChild(document.createTextNode(` ${rest}`));
+            return p;
+        }
+
+        help.appendChild(
+            pBlock(
+                'Extract',
+                'copies the text noVNC currently holds for the virtual machine into this computer\u2019s system clipboard. Use the virtual machine\u2019s normal copy first so that buffer fills, then click Extract.'
+            )
+        );
+        help.appendChild(
+            pBlock(
+                'Overwrite',
+                'takes plain text from this computer\u2019s clipboard and pushes it into noVNC\u2019s virtual machine clipboard buffer. Then use the virtual machine\u2019s normal paste.'
+            )
+        );
+        help.appendChild(
+            pBlock(
+                'Keyboard',
+                '\u2318+C sends Ctrl+C to the virtual machine, then copies noVNC\u2019s buffer to this computer. \u2318+V pushes this computer\u2019s clipboard into the virtual machine and sends Ctrl+V. Ctrl+Shift+F is the same as Overwrite. Ctrl+Shift+C is the same as Extract.'
+            )
+        );
+        const p3 = document.createElement('p');
+        p3.style.margin = '0';
+        p3.textContent =
+            'Always combine these controls with the virtual machine\u2019s native copy/paste: copy in the virtual machine \u2192 Extract (or Ctrl+Shift+C) to the host; copy on the host \u2192 Overwrite (or Ctrl+Shift+F) \u2192 paste in the virtual machine (or \u2318+V).';
+        help.appendChild(p3);
+
+        details.appendChild(summaryEl);
+        details.appendChild(help);
+        return details;
+    },
+
+    installWaitObserver(state) {
+        if (state.waitObserverAttached) {
+            return;
+        }
+        state.waitObserverAttached = true;
+
+        const self = this;
+        const tryStart = () => {
+            if (state.bridgeStarted) {
+                return;
+            }
+            if (!document.getElementById(NOVNC_CLIPBOARD_ID)) {
+                return;
+            }
+            self.startBridge(state);
+        };
+
+        tryStart();
+        if (state.bridgeStarted) {
+            return;
+        }
+
+        const target = document.body || document.documentElement;
+        const observer = new MutationObserver(() => {
+            tryStart();
+        });
+        observer.observe(target, { childList: true, subtree: true });
+        CleanupRegistry.registerObserver(observer);
+        state.waitObserver = observer;
+        Logger.debug('waiting for noVNC clipboard element (MutationObserver)');
+    },
+
+    readCachedPrompt() {
+        try {
+            const context = Storage.get(PROMPT_CONTEXT_STORAGE_KEY, '');
+            if (context !== 'qa') {
+                Logger.debug(
+                    `vncHelper: skipping cached prompt (context=${context || 'unset'}; last page was not QA)`
+                );
+                return '';
+            }
+            const text = Storage.get(PROMPT_STORAGE_KEY, '');
+            const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
+            if (!text || !tsRaw) {
+                Logger.debug('no cached prompt in storage');
+                return '';
+            }
+            const ts = parseInt(tsRaw, 10);
+            if (Number.isNaN(ts) || Date.now() - ts > PROMPT_TTL_MS) {
+                Storage.delete(PROMPT_STORAGE_KEY);
+                Storage.delete(PROMPT_TS_STORAGE_KEY);
+                Logger.debug('cached prompt expired, cleared');
+                return '';
+            }
+            Logger.debug(`loaded cached prompt (${text.length} chars)`);
+            return text;
+        } catch (e) {
+            Logger.warn('failed to read cached prompt', e);
+            return '';
+        }
+    },
+
+    textareaHeightForLines(lineCount) {
+        const lines = Math.max(DEFAULT_LINES, lineCount);
+        return `${lines * LINE_HEIGHT_PX + 16}px`;
+    },
+
+    applyPromptTextareaSizing(textarea, promptText) {
+        const initialLines = promptText ? PROMPT_DEFAULT_LINES : DEFAULT_LINES;
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
+        textarea.style.height = this.textareaHeightForLines(initialLines);
+        textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
+        textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
+    },
+
+    applyScratchpadTextareaSizing(textarea) {
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
+        textarea.style.height = this.textareaHeightForLines(DEFAULT_LINES);
+        textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
+        textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
+    },
+
+    makeSectionHeader(label, onToggle, trailingEl) {
+        const header = document.createElement('div');
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        header.className = pc.sectionLabel || '';
+        header.style.cssText =
+            'display:flex;align-items:center;gap:6px;padding:8px 12px 4px 12px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.textContent = '▼';
+        toggleBtn.setAttribute('aria-label', `Toggle ${label} section`);
+        toggleBtn.className = pc.muted || '';
+        toggleBtn.style.cssText =
+            'margin:0;padding:0 4px;border:none;background:transparent;font:inherit;font-size:11px;cursor:pointer;line-height:1;color:inherit;';
+
+        const title = document.createElement('span');
+        title.textContent = label;
+        title.style.flex = '1';
+
+        header.appendChild(toggleBtn);
+        header.appendChild(title);
+        if (trailingEl) {
+            header.appendChild(trailingEl);
+        }
+
+        let collapsed = false;
+        toggleBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            collapsed = !collapsed;
+            toggleBtn.textContent = collapsed ? '▶' : '▼';
+            onToggle(collapsed);
+            Logger.log(`${label} section ${collapsed ? 'hidden' : 'shown'}`);
+        });
+
+        return { header, setCollapsed: (next) => {
+            collapsed = next;
+            toggleBtn.textContent = collapsed ? '▶' : '▼';
+            onToggle(collapsed);
+        } };
+    },
+
+    startBridge(state) {
+        if (state.bridgeStarted) {
+            return;
+        }
+        if (state.waitObserver) {
+            try {
+                state.waitObserver.disconnect();
+            } catch (eDisc) {
+                Logger.warn('error disconnecting wait observer', eDisc);
+            }
+            state.waitObserver = null;
+        }
+
+        state.bridgeStarted = true;
+        Logger.debug('noVNC clipboard element detected, initialising External VNC Helper');
+
+        const oldRoot = document.getElementById(ROOT_ID);
+        const oldTab = document.getElementById(TAB_ID);
+        if (oldRoot || oldTab) {
+            if (window.__fleetVncHelperTeardown) {
+                try {
+                    window.__fleetVncHelperTeardown();
+                } catch (e4) {
+                    Logger.warn('prior teardown failed', e4);
+                }
+            }
+            if (oldRoot) {
+                oldRoot.remove();
+            }
+            if (oldTab) {
+                oldTab.remove();
+            }
+        }
+        if (window._vncHelperKeydown) {
+            document.removeEventListener('keydown', window._vncHelperKeydown, true);
+        }
+
+        /** Serialize paste, overwrite, and extract so clipboard I/O does not interleave. */
+        let clipQueue = Promise.resolve();
+
+        const showPanel = this.isPanelEnabled();
+        let root = null;
+        let restoreTab = null;
+        let onMove = () => {};
+        let onUp = () => {};
+        let onResizeMove = () => {};
+        let onResizeUp = () => {};
+
+        const self = this;
+
+        /** Persistent tab: stays mounted while the modal is open or minimized. */
+        const ensureRestoreTab = () => {
+            if (restoreTab) {
+                return;
+            }
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+            restoreTab = document.createElement('div');
+            restoreTab.id = TAB_ID;
+            restoreTab.className = pc.chip || '';
+            restoreTab.style.cssText =
+                'position:fixed;left:20px;bottom:124px;z-index:2147483646;';
+
+            const openBtn = document.createElement('button');
+            openBtn.type = 'button';
+            openBtn.textContent = 'Helper';
+            openBtn.setAttribute('aria-label', 'Toggle Helper');
+            openBtn.addEventListener('click', () => {
+                if (!root) {
+                    return;
+                }
+                if (root.style.display === 'none') {
+                    root.style.display = '';
+                    state.minimized = false;
+                    Logger.log('modal restored from minimized tab');
+                } else {
+                    minimizeModal();
+                }
+            });
+
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            const refreshGlyph = document.createElement('span');
+            refreshGlyph.textContent = '\u21BB';
+            refreshGlyph.style.cssText = 'display:inline-block;transform:rotate(90deg);';
+            refreshBtn.appendChild(refreshGlyph);
+            refreshBtn.setAttribute('aria-label', 'Reset Helper to default position');
+            refreshBtn.title = 'Reset to default position';
+            refreshBtn.className = pc.chipSep || '';
+            refreshBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (!root) {
+                    return;
+                }
+                self.clearSavedLayout();
+                self.applyDefaultLayout(root);
+                root.style.display = '';
+                state.minimized = false;
+                Logger.log('modal reset to default position');
+            });
+
+            restoreTab.appendChild(openBtn);
+            restoreTab.appendChild(refreshBtn);
+            document.body.appendChild(restoreTab);
+            self.applyHelperChrome(root, restoreTab);
+        };
+
+        const minimizeModal = () => {
+            if (!root) {
+                return;
+            }
+            root.style.display = 'none';
+            state.minimized = true;
+            ensureRestoreTab();
+            Logger.log('modal minimized');
+        };
+
+        if (showPanel) {
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+            const savedLayout = this.loadSavedLayout();
+            root = document.createElement('div');
+            root.id = ROOT_ID;
+            root.className = pc.root || '';
+            root.style.cssText = `position:fixed;left:${savedLayout.left ?? DEFAULT_MODAL_LEFT}px;top:${savedLayout.top ?? DEFAULT_MODAL_TOP}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};user-select:none;`;
+
+            const headerEl = document.createElement('div');
+            headerEl.className = pc.header || '';
+            const headerTitle = document.createElement('div');
+            headerTitle.textContent = 'Helper';
+            headerTitle.className = pc.title || '';
+            headerTitle.style.cursor = 'grab';
+            headerTitle.style.padding = '2px 0';
+            const minimizeBtn = document.createElement('button');
+            minimizeBtn.type = 'button';
+            minimizeBtn.textContent = 'Minimize';
+            minimizeBtn.setAttribute('aria-label', 'Minimize External VNC Helper');
+            minimizeBtn.className = pc.btn || '';
+            minimizeBtn.style.flexShrink = '0';
+            headerEl.appendChild(headerTitle);
+            headerEl.appendChild(minimizeBtn);
+
+            const bodyEl = document.createElement('div');
+            bodyEl.style.cssText =
+                'flex:1;min-height:0;overflow-y:auto;padding:0 0 12px 0;user-select:text;';
+
+            // Prompt section
+            const promptBody = document.createElement('div');
+            promptBody.style.cssText = 'padding:0 12px 8px 12px;';
+            const promptTextarea = document.createElement('textarea');
+            promptTextarea.setAttribute('aria-label', 'Prompt');
+            promptTextarea.spellcheck = false;
+            const cachedPrompt = this.readCachedPrompt();
+            const initialPromptText = cachedPrompt;
+            if (cachedPrompt) {
+                promptTextarea.value = cachedPrompt;
+            }
+            this.applyPromptTextareaSizing(promptTextarea, cachedPrompt);
+            promptBody.appendChild(promptTextarea);
+            if (Context.promptTextCounter && typeof Context.promptTextCounter.attach === 'function') {
+                Context.promptTextCounter.attach(promptTextarea, { mountParent: promptBody });
+            }
+
+            let resetPromptBtn = null;
+            if (cachedPrompt) {
+                resetPromptBtn = this.makeSmallHeaderButton('Reset', 'Reset prompt to page-load state');
+                resetPromptBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    promptTextarea.value = initialPromptText;
+                    this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
+                    promptTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    Logger.log('prompt reset to page-load state');
+                });
+            }
+
+            const promptSection = this.makeSectionHeader('Prompt', (collapsed) => {
+                promptBody.style.display = collapsed ? 'none' : '';
+            }, resetPromptBtn);
+            bodyEl.appendChild(promptSection.header);
+            bodyEl.appendChild(promptBody);
+
+            // Scratchpad section
+            const scratchBody = document.createElement('div');
+            scratchBody.style.cssText = 'padding:0 12px 8px 12px;';
+            const scratchTextarea = document.createElement('textarea');
+            scratchTextarea.setAttribute('aria-label', 'Scratchpad');
+            scratchTextarea.placeholder = 'Scratchpad…';
+            scratchTextarea.spellcheck = false;
+            this.applyScratchpadTextareaSizing(scratchTextarea);
+            scratchBody.appendChild(scratchTextarea);
+
+            const scratchSection = this.makeSectionHeader('Scratchpad', (collapsed) => {
+                scratchBody.style.display = collapsed ? 'none' : '';
+            });
+            bodyEl.appendChild(scratchSection.header);
+            bodyEl.appendChild(scratchBody);
+
+            // VM Clipboard buttons section
+            const clipSection = document.createElement('div');
+            clipSection.className = pc.divider || '';
+            clipSection.style.cssText = 'padding:0 0 4px 0;user-select:text;';
+
+            const clipHeader = document.createElement('div');
+            clipHeader.textContent = 'VM Clipboard';
+            clipHeader.className = pc.sectionLabel || '';
+            clipHeader.style.cssText = 'padding:8px 12px 4px 12px;';
+
+            const clipBody = document.createElement('div');
+            clipBody.style.cssText = 'padding:0 12px 8px 12px;';
+
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:8px;';
+
+            function makeBtn(label) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = label;
+                b.className = pc.btn || '';
+                b.style.flex = '1';
+                return b;
+            }
+
+            const bExtract = makeBtn('Extract');
+            const bOverwrite = makeBtn('Overwrite');
+            const shortcutHint = document.createElement('div');
+            shortcutHint.textContent = '⌘C/⌘V · Ctrl+Shift+C/F';
+            shortcutHint.className = pc.muted || '';
+            shortcutHint.style.cssText = 'font-size:11px;text-align:center;margin-top:8px;';
+
+            btnRow.appendChild(bExtract);
+            btnRow.appendChild(bOverwrite);
+            clipBody.appendChild(btnRow);
+            clipBody.appendChild(shortcutHint);
+            clipBody.appendChild(this.makeClipboardHelpDetails());
+            clipSection.appendChild(clipHeader);
+            clipSection.appendChild(clipBody);
+            bodyEl.appendChild(clipSection);
+
+            const resizeHandle = document.createElement('div');
+            resizeHandle.setAttribute('aria-label', 'Resize External VNC Helper');
+            resizeHandle.className = pc.resize || '';
+
+            root.appendChild(headerEl);
+            root.appendChild(bodyEl);
+            root.appendChild(resizeHandle);
+            document.body.appendChild(root);
+            self.applyHelperChrome(root, null);
+
+            bExtract.addEventListener('click', () => {
+                clipQueue = clipQueue
+                    .then(async () => {
+                        const ok = await extractVmTextToOs({ deferFocus: true });
+                        if (ok) flashClipBtnSuccess(bExtract);
+                        else flashClipBtnFailure(bExtract);
+                        focusVncTarget();
+                    })
+                    .catch((err) => {
+                        Logger.error('Extract click failed', err);
+                        flashClipBtnFailure(bExtract);
+                        focusVncTarget();
+                    });
+            });
+            bOverwrite.addEventListener('click', () => {
+                clipQueue = clipQueue
+                    .then(async () => {
+                        try {
+                            const t = await readClipboardText();
+                            const ok = await pushOsTextToVmClipboard(typeof t === 'string' ? t : '', {
+                                deferFocus: true
+                            });
+                            if (ok) flashClipBtnSuccess(bOverwrite);
+                            else flashClipBtnFailure(bOverwrite);
+                        } catch (eOw) {
+                            toast('Overwrite failed: could not read system clipboard.');
+                            Logger.warn('Overwrite failed — could not read system clipboard', eOw);
+                            flashClipBtnFailure(bOverwrite);
+                        }
+                        focusVncTarget();
+                    })
+                    .catch((err) => {
+                        Logger.error('Overwrite click failed', err);
+                        flashClipBtnFailure(bOverwrite);
+                        focusVncTarget();
+                    });
+            });
+
+            minimizeBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                onUp();
+                minimizeModal();
+            });
+
+            let drag = false;
+            let resizing = false;
+            let ox = 0;
+            let oy = 0;
+            let resizeStartX = 0;
+            let resizeStartY = 0;
+            let resizeStartW = 0;
+            let resizeStartH = 0;
+
+            onMove = (ev) => {
+                if (!drag || !root) {
+                    return;
+                }
+                root.style.left = `${Math.max(0, ev.clientX - ox)}px`;
+                root.style.top = `${Math.max(0, ev.clientY - oy)}px`;
+            };
+            onResizeMove = (ev) => {
+                if (!resizing || !root) {
+                    return;
+                }
+                const nextW = Math.max(MIN_MODAL_WIDTH, resizeStartW + (ev.clientX - resizeStartX));
+                const nextH = Math.max(MIN_MODAL_HEIGHT, resizeStartH + (ev.clientY - resizeStartY));
+                root.style.width = `${nextW}px`;
+                root.style.height = `${nextH}px`;
+            };
+            onUp = () => {
+                if (!drag) {
+                    return;
+                }
+                drag = false;
+                headerTitle.style.cursor = 'grab';
+                document.removeEventListener('mousemove', onMove, true);
+                document.removeEventListener('mouseup', onUp, true);
+                if (root) {
+                    this.saveLayout(root);
+                    const rect = root.getBoundingClientRect();
+                    Logger.debug(`modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
+                }
+            };
+            onResizeUp = () => {
+                if (!resizing) {
+                    return;
+                }
+                resizing = false;
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onResizeMove, true);
+                document.removeEventListener('mouseup', onResizeUp, true);
+                if (root) {
+                    this.saveLayout(root);
+                    const rect = root.getBoundingClientRect();
+                    Logger.debug(`modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
+                }
+            };
+            headerTitle.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0) {
+                    return;
+                }
+                drag = true;
+                headerTitle.style.cursor = 'grabbing';
+                const r = root.getBoundingClientRect();
+                ox = ev.clientX - r.left;
+                oy = ev.clientY - r.top;
+                document.addEventListener('mousemove', onMove, true);
+                document.addEventListener('mouseup', onUp, true);
+                ev.preventDefault();
+            });
+            resizeHandle.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0) {
+                    return;
+                }
+                ev.preventDefault();
+                ev.stopPropagation();
+                resizing = true;
+                const r = root.getBoundingClientRect();
+                resizeStartX = ev.clientX;
+                resizeStartY = ev.clientY;
+                resizeStartW = r.width;
+                resizeStartH = r.height;
+                document.body.style.userSelect = 'none';
+                document.addEventListener('mousemove', onResizeMove, true);
+                document.addEventListener('mouseup', onResizeUp, true);
+            });
+        }
+
+        window._vncHelperKeydown = async (e) => {
+            const key = (e.key || '').toLowerCase();
+            if (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && e.code === 'KeyF') {
+                if (e.repeat) {
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                clipQueue = clipQueue.then(runOverwriteFromShortcut).catch(() => {});
+                return;
+            }
+            if (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && e.code === 'KeyC') {
+                if (e.repeat) {
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                clipQueue = clipQueue.then(() => extractVmTextToOs()).catch(() => {});
+                return;
+            }
+            if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'c') {
+                if (isTypingTarget(document.activeElement)) {
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                clipQueue = clipQueue.then(runCopyVmToHost).catch(() => {});
+                return;
+            }
+            if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'v') {
+                if (isTypingTarget(document.activeElement)) {
+                    return;
+                }
+                e.preventDefault();
+                e.stopPropagation();
+                clipQueue = clipQueue.then(runPasteFromClipboard).catch(() => {});
+            }
+        };
+        document.addEventListener('keydown', window._vncHelperKeydown, true);
+
+        window.__fleetVncHelperTeardown = () => {
+            document.removeEventListener('mousemove', onMove, true);
+            document.removeEventListener('mouseup', onUp, true);
+            document.removeEventListener('mousemove', onResizeMove, true);
+            document.removeEventListener('mouseup', onResizeUp, true);
+            document.body.style.userSelect = '';
+            if (window._vncHelperKeydown) {
+                document.removeEventListener('keydown', window._vncHelperKeydown, true);
+                window._vncHelperKeydown = null;
+            }
+            if (root && root.parentNode) {
+                root.parentNode.removeChild(root);
+            }
+            if (restoreTab && restoreTab.parentNode) {
+                restoreTab.parentNode.removeChild(restoreTab);
+            }
+            root = null;
+            restoreTab = null;
+        };
+
+        if (showPanel) {
+            minimizeModal();
+            Logger.log('modal and keyboard shortcuts active (starts minimized)');
+            toast('External VNC Helper ready — open from the tab. ⌘C/⌘V, Ctrl+Shift+C/F.');
+        } else {
+            Logger.debug('keyboard shortcuts active (panel hidden via settings)');
+            toast('External VNC Helper ready — ⌘C/⌘V, Ctrl+Shift+C/F. Panel is hidden in settings.');
+        }
+    },
+
+    run(state, options) {
+        if (state.bridgeStarted) {
+            this.applyHelperChromeToMounted();
+            return;
+        }
+        this.installWaitObserver(state);
+    },
+
+    destroy(state) {
+        if (state.waitObserver) {
+            try {
+                state.waitObserver.disconnect();
+            } catch (e) {
+                Logger.warn('wait observer disconnect in destroy', e);
+            }
+            state.waitObserver = null;
+        }
+        if (typeof window.__fleetVncHelperTeardown === 'function') {
+            try {
+                window.__fleetVncHelperTeardown();
+            } catch (eTeardown) {
+                Logger.error('teardown failed', eTeardown);
+            }
+            window.__fleetVncHelperTeardown = undefined;
+        }
+        state.waitObserverAttached = false;
+        state.bridgeStarted = false;
+        state.minimized = false;
+        Logger.log('destroyed');
+    }
+};
+
+const plugin = {
+    id: 'vncHelperLib',
+    name: 'External VNC Helper (library)',
+    description: 'Shared External VNC Helper panel and clipboard helpers',
+    _version: '3.9',
+    phase: 'core',
+    enabledByDefault: true,
+    initialState: { registered: false },
+
+    init(state) {
+        Context.vncHelper = {
+            run: (s, options) => {
+                const impl = Object.create(VncHelperApi);
+                if (options && options.pluginId) {
+                    impl.id = options.pluginId;
+                }
+                return VncHelperApi.run.call(impl, s, options);
+            },
+            destroy: (s, options) => {
+                const impl = Object.create(VncHelperApi);
+                if (options && options.pluginId) {
+                    impl.id = options.pluginId;
+                }
+                return VncHelperApi.destroy.call(impl, s);
+            }
+        };
+        if (!state.registered) {
+            Logger.log('vncHelperLib: module registered (Context.vncHelper)');
+            state.registered = true;
+        }
+    }
+};
+
+// ---- Clipboard / noVNC helpers (declarations hoisted; used by plugin methods above) ----
+
+const CLIP_BTN_FLASH_MS = 600;
+
+function flashClipBtnSuccess(btn) {
+    if (!btn) return;
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashSuccess === 'function') {
+        Context.buttonFeedback.flashSuccess(btn);
+        return;
+    }
+    if (btn._fleetClipFlashTimeout) clearTimeout(btn._fleetClipFlashTimeout);
+    btn.style.background = 'rgb(34, 197, 94)';
+    btn.style.color = '#ffffff';
+    btn._fleetClipFlashTimeout = setTimeout(() => {
+        btn._fleetClipFlashTimeout = null;
+        btn.style.background = '';
+        btn.style.color = '';
+    }, CLIP_BTN_FLASH_MS);
+}
+
+function flashClipBtnFailure(btn) {
+    if (!btn) return;
+    if (Context.buttonFeedback && typeof Context.buttonFeedback.flashFailure === 'function') {
+        Context.buttonFeedback.flashFailure(btn);
+        return;
+    }
+    if (btn._fleetClipFlashTimeout) clearTimeout(btn._fleetClipFlashTimeout);
+    btn.style.background = 'rgb(239, 68, 68)';
+    btn.style.color = '#ffffff';
+    btn._fleetClipFlashTimeout = setTimeout(() => {
+        btn._fleetClipFlashTimeout = null;
+        btn.style.background = '';
+        btn.style.color = '';
+    }, CLIP_BTN_FLASH_MS);
+}
+function clipEl() {
+    return document.getElementById(NOVNC_CLIPBOARD_ID);
+}
+
+function getRfb() {
+    return (
+        window.rfb ||
+        window._rfb ||
+        (window.UI && window.UI.rfb) ||
+        (window.APP && window.APP.rfb) ||
+        (window.noVNC && window.noVNC.rfb) ||
+        null
+    );
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
+function focusVncTarget() {
+    const rfb = getRfb();
+    if (rfb && typeof rfb.focus === 'function') {
+        try {
+            rfb.focus();
+            return;
+        } catch (e0) {
+            /* ignore */
+        }
+    }
+    const c = document.querySelector('canvas');
+    if (c && typeof c.focus === 'function') {
+        try {
+            c.focus();
+        } catch (e1) {
+            /* ignore */
+        }
+    }
+}
+
+/** True when focus is in a field that should get native ⌘C/⌘V (Prompt/Scratchpad, etc.). */
+function isTypingTarget(el) {
+    if (!el || el === document.body || el === document.documentElement) {
+        return false;
+    }
+    const tag = (el.tagName || '').toUpperCase();
+    if (tag === 'TEXTAREA' || tag === 'SELECT') {
+        return true;
+    }
+    if (tag === 'INPUT') {
+        const type = String(el.type || 'text').toLowerCase();
+        return (
+            type === '' ||
+            type === 'text' ||
+            type === 'search' ||
+            type === 'url' ||
+            type === 'tel' ||
+            type === 'email' ||
+            type === 'password' ||
+            type === 'number' ||
+            type === 'date' ||
+            type === 'datetime-local' ||
+            type === 'month' ||
+            type === 'week' ||
+            type === 'time'
+        );
+    }
+    return !!el.isContentEditable;
+}
+
+/** Truncation for button toasts; empty becomes "(empty)". */
+function truncPreview(t) {
+    if (t == null || String(t).length === 0) {
+        return '(empty)';
+    }
+    t = String(t);
+    return t.length > 40 ? `${t.slice(0, 40)}\u2026` : t;
+}
+
+/** Truncation for Cmd+C / Cmd+V bridge toasts; empty stays blank. */
+function truncKey(t) {
+    t = t == null ? '' : String(t);
+    if (!t.length) {
+        return '';
+    }
+    return t.length > 40 ? `${t.slice(0, 40)}\u2026` : t;
+}
+
+function fireKey(target, type, opts) {
+    target.dispatchEvent(
+        new KeyboardEvent(type, Object.assign({ bubbles: true, cancelable: true, composed: true }, opts))
+    );
+}
+
+function sendCtrlDom(k) {
+    const t =
+        document.activeElement ||
+        document.querySelector('canvas') ||
+        document.body ||
+        document.documentElement;
+    fireKey(t, 'keydown', { key: 'Control', code: 'ControlLeft', ctrlKey: true });
+    fireKey(t, 'keydown', { key: k, code: `Key${k.toUpperCase()}`, ctrlKey: true });
+    fireKey(t, 'keyup', { key: k, code: `Key${k.toUpperCase()}`, ctrlKey: true });
+    fireKey(t, 'keyup', { key: 'Control', code: 'ControlLeft' });
+}
+
+function sendCtrlRfb(k) {
+    const rf = getRfb();
+    if (!rf || typeof rf.sendKey !== 'function') {
+        return false;
+    }
+    const ctrl = 0xffe3;
+    const ch = k.toLowerCase().charCodeAt(0);
+    rf.sendKey(ctrl, 'ControlLeft', true);
+    rf.sendKey(ch, `Key${k.toUpperCase()}`, true);
+    rf.sendKey(ch, `Key${k.toUpperCase()}`, false);
+    rf.sendKey(ctrl, 'ControlLeft', false);
+    return true;
+}
+
+function toast(message) {
+    if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+        Context.uiLib.ensurePanelStyles();
+    }
+    const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+    const d = document.createElement('div');
+    d.textContent = message;
+    d.className = pc.toast || '';
+    d.style.cssText = `position:fixed;top:12px;right:12px;z-index:${Z_INDEX};`;
+    document.body.appendChild(d);
+    setTimeout(() => {
+        d.remove();
+    }, 2200);
+}
+
+/** Prefer text/plain blob (tabs/line breaks); used for Cmd+V and Overwrite. */
+async function readClipboardText() {
+    try {
+        const items = await navigator.clipboard.read();
+        for (let i = 0; i < items.length; i++) {
+            const types = items[i].types || [];
+            for (let j = 0; j < types.length; j++) {
+                if (types[j] === 'text/plain') {
+                    const blob = await items[i].getType('text/plain');
+                    return await blob.text();
+                }
+            }
+        }
+    } catch (e2) {
+        /* fall through */
+    }
+    return await navigator.clipboard.readText();
+}
+
+async function syncRemoteClipboard(el, merged, caret, editingClipboard) {
+    if (editingClipboard) {
+        try {
+            el.focus();
+        } catch (eFocus) {
+            /* ignore */
+        }
+    }
+    const rf = getRfb();
+    if (rf && typeof rf.clipboardPasteFrom === 'function') {
+        el.value = merged;
+        if (editingClipboard && typeof el.setSelectionRange === 'function') {
+            try {
+                el.setSelectionRange(caret, caret);
+            } catch (eSel) {
+                /* ignore */
+            }
+        }
+        rf.clipboardPasteFrom('');
+        await sleep(12);
+        rf.clipboardPasteFrom(merged);
+        return;
+    }
+    el.value = '';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(12);
+    el.value = merged;
+    if (editingClipboard && typeof el.setSelectionRange === 'function') {
+        try {
+            el.setSelectionRange(caret, caret);
+        } catch (eSel2) {
+            /* ignore */
+        }
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+async function runPasteFromClipboard() {
+    const elSnap = clipEl();
+    const editingClipboard = !!(elSnap && document.activeElement === elSnap);
+    let text = '';
+    try {
+        text = await readClipboardText();
+    } catch (err) {
+        toast('PASTE fail (clipboard)');
+        Logger.warn('PASTE failed — could not read system clipboard', err);
+        focusVncTarget();
+        return;
+    }
+    const el = clipEl();
+    if (!el) {
+        toast('PASTE fail (noVNC el)');
+        Logger.warn('PASTE failed — noVNC clipboard element missing');
+        focusVncTarget();
+        return;
+    }
+    const cur = el.value || '';
+    let merged;
+    let caret;
+    if (editingClipboard) {
+        let start = typeof el.selectionStart === 'number' ? el.selectionStart : cur.length;
+        let end = typeof el.selectionEnd === 'number' ? el.selectionEnd : cur.length;
+        if (start > end) {
+            const swap = start;
+            start = end;
+            end = swap;
+        }
+        merged = cur.slice(0, start) + text + cur.slice(end);
+        caret = start + text.length;
+    } else {
+        merged = text;
+        caret = text.length;
+    }
+    await syncRemoteClipboard(el, merged, caret, editingClipboard);
+    await sleep(75);
+    const ok = sendCtrlRfb('v');
+    if (!ok) {
+        sendCtrlDom('v');
+    }
+    toast(`${ok ? 'PASTE ' : 'PASTE? '}\u2192 ${truncKey(merged)}`);
+    if (ok) {
+        Logger.log(`PASTE ok (${merged.length} chars)`);
+    } else {
+        Logger.warn(`PASTE uncertain — Ctrl+V RFB send failed (${merged.length} chars)`);
+    }
+    focusVncTarget();
+}
+
+async function runOverwriteFromShortcut() {
+    try {
+        const t = await readClipboardText();
+        await pushOsTextToVmClipboard(typeof t === 'string' ? t : '');
+    } catch (eOw) {
+        toast('Overwrite failed: could not read system clipboard.');
+        Logger.warn('Overwrite failed — could not read system clipboard', eOw);
+        focusVncTarget();
+    }
+}
+
+async function runCopyVmToHost() {
+    if (!sendCtrlRfb('c')) {
+        sendCtrlDom('c');
+    }
+    await sleep(150);
+    const el = clipEl();
+    const val = el ? el.value || '' : '';
+    if (val) {
+        try {
+            await navigator.clipboard.writeText(val);
+        } catch (eW) {
+            toast('COPY fail (could not write system clipboard)');
+            Logger.error('COPY failed — could not write system clipboard', eW);
+            focusVncTarget();
+            return;
+        }
+    }
+    toast(`COPY \u2192 ${truncKey(val)}`);
+    Logger.log(`COPY ok (${val.length} chars)`);
+    focusVncTarget();
+}
+
+/** Push plain text to the virtual machine via noVNC (no Ctrl+V — updates remote clipboard only). */
+async function pushOsTextToVmClipboard(text, opts) {
+    const deferFocus = !!(opts && opts.deferFocus);
+    const el = clipEl();
+    if (!el) {
+        toast('Overwrite failed: noVNC clipboard field (#noVNC_clipboard_text) not found.');
+        Logger.warn('Overwrite failed — noVNC clipboard field not found');
+        if (!deferFocus) focusVncTarget();
+        return false;
+    }
+    const merged = text;
+    const rfb = getRfb();
+    el.value = merged;
+    if (rfb && typeof rfb.clipboardPasteFrom === 'function') {
+        rfb.clipboardPasteFrom('');
+        await sleep(12);
+        rfb.clipboardPasteFrom(merged);
+    } else {
+        el.value = '';
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(12);
+        el.value = merged;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    toast(`Virtual machine clipboard updated from this computer.\n\u2192 ${truncPreview(merged)}`);
+    Logger.log(`Overwrite ok (${String(merged || '').length} chars)`);
+    if (!deferFocus) focusVncTarget();
+    return true;
+}
+
+async function extractVmTextToOs(opts) {
+    const deferFocus = !!(opts && opts.deferFocus);
+    const el = clipEl();
+    if (!el) {
+        toast('Extract failed: noVNC clipboard field not found.');
+        Logger.warn('Extract failed — noVNC clipboard field not found');
+        if (!deferFocus) focusVncTarget();
+        return false;
+    }
+    const v = el.value || '';
+    if (!v) {
+        toast('Nothing to extract yet. Copy inside the virtual machine first, then try again.');
+        Logger.warn('Extract failed — VM clipboard empty');
+        if (!deferFocus) focusVncTarget();
+        return false;
+    }
+    try {
+        await navigator.clipboard.writeText(v);
+        toast(`Copied virtual machine clipboard to this computer.\n\u2192 ${truncPreview(v)}`);
+        Logger.log(`Extract ok (${v.length} chars)`);
+        if (!deferFocus) focusVncTarget();
+        return true;
+    } catch (e3) {
+        toast('Extract failed: could not write to system clipboard.');
+        Logger.error('Extract failed — could not write system clipboard', e3);
+        if (!deferFocus) focusVncTarget();
+        return false;
+    }
+}
+
+return plugin;
+},
+        "libs/env-helper.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
+// ============= env-helper.js (library) =============
+// External Env Helper for non-VNC external env pages (no-vnc when #noVNC_clipboard_text is absent).
+// Floating modal: Prompt (from qa-comp-use cache) + scratchpad. No clipboard / RFB bridging.
+
+const ROOT_ID = 'fleet-env-helper';
+const TAB_ID = 'fleet-env-helper-tab';
+const Z_INDEX = '2147483646';
+const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
+const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
+const NOVNC_CLIPBOARD_ID = 'noVNC_clipboard_text';
+/** Shared with vnc-helper / vnc-prompt-writer so QA prompt cache fills External Env Helper too. */
+const PROMPT_STORAGE_KEY = 'vnc-helper-prompt';
+const PROMPT_TS_STORAGE_KEY = 'vnc-helper-prompt-ts';
+/** 'qa' | 'non-qa' — host sets from last Fleet archetype; helpers only prefill when 'qa'. */
+const PROMPT_CONTEXT_STORAGE_KEY = 'vnc-helper-prompt-context';
+const PROMPT_TTL_MS = 2 * 60 * 60 * 1000;
+const LINE_HEIGHT_PX = 20;
+const DEFAULT_LINES = 2;
+const PROMPT_DEFAULT_LINES = 5;
+const DEFAULT_MODAL_LEFT = 16;
+const DEFAULT_MODAL_TOP = 120;
+const DEFAULT_MODAL_WIDTH = 320;
+const DEFAULT_MODAL_HEIGHT = 360;
+const MIN_MODAL_WIDTH = 260;
+const MIN_MODAL_HEIGHT = 180;
+
+const LAYOUT_STORAGE_KEYS = {
+    left: 'env-helper-layout-left',
+    top: 'env-helper-layout-top',
+    width: 'env-helper-layout-width',
+    height: 'env-helper-layout-height'
+};
+
+const SHOW_PANEL_SUBOPTION = {
+    id: SHOW_PANEL_SUBOPTION_ID,
+    name: 'Show panel',
+    description: 'Hide the External Env Helper panel',
+    enabledByDefault: true
+};
+
+const FORCE_DARK_SUBOPTION = {
+    id: FORCE_DARK_SUBOPTION_ID,
+    name: 'Force dark mode',
+    description: 'Overrides Preferred Visual Mode for this helper panel only.',
+    enabledByDefault: false
+};
+
+const EnvHelperApi = {
+    id: 'envHelper',
+    name: 'External Env Helper',
+    description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
+    _version: '2.8',
+    enabledByDefault: true,
+    phase: 'mutation',
+    subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
+    initialState: {
+        panelStarted: false,
+        waitObserverAttached: false,
+        waitObserver: null,
+        minimized: true
+    },
+
+    isPanelEnabled() {
+        return Storage.getSubOptionEnabled(this.id, SHOW_PANEL_SUBOPTION_ID, true);
+    },
+
+    isForceDarkEnabled() {
+        return Storage.getSubOptionEnabled(this.id, FORCE_DARK_SUBOPTION_ID, false);
+    },
+
+    helperChromeColors() {
+        const forceDark = this.isForceDarkEnabled();
+        const ui = Context.uiLib;
+        const preferredDark = !!(ui && typeof ui.isFleetDark === 'function' && ui.isFleetDark());
+        const dark = forceDark || preferredDark;
+        if (!forceDark && ui && typeof ui.chromeColors === 'function') {
+            const c = ui.chromeColors();
+            return {
+                bg: c.bg,
+                fg: c.fg,
+                border: c.border,
+                headerBg: c.hover || c.card,
+                inputBg: c.bg,
+                dark: preferredDark,
+                fromPreferred: true
+            };
+        }
+        if (dark) {
+            return {
+                bg: '#1c1c1e',
+                fg: '#e5e7eb',
+                border: '#3f3f46',
+                headerBg: 'rgba(255,255,255,0.06)',
+                inputBg: '#121212',
+                dark: true,
+                fromPreferred: false
+            };
+        }
+        return {
+            bg: '#ffffff',
+            fg: '#0f172a',
+            border: '#e2e8f0',
+            headerBg: '#f1f5f9',
+            inputBg: '#ffffff',
+            dark: false,
+            fromPreferred: false
+        };
+    },
+
+    ensurePreferredThemeSubscription() {
+        if (this._preferredThemeUnsub) return;
+        const ui = Context.uiLib;
+        if (!ui || typeof ui.onThemeChange !== 'function') return;
+        this._preferredThemeUnsub = ui.onThemeChange(() => {
+            this.applyHelperChromeToMounted();
+        });
+    },
+
+    applyHelperChrome(root, chip) {
+        this.ensurePreferredThemeSubscription();
+        const forceDark = this.isForceDarkEnabled();
+        const c = this.helperChromeColors();
+        const theme = c.dark ? 'dark' : 'light';
+        if (!forceDark && c.fromPreferred) {
+            const clearInline = (el) => {
+                if (!el) return;
+                el.style.background = '';
+                el.style.color = '';
+                el.style.border = '';
+                el.style.borderRadius = '';
+                el.style.boxShadow = '';
+                el.style.borderBottom = '';
+            };
+            if (root) {
+                root.dataset.fleetHelperTheme = theme;
+                clearInline(root);
+                const header = root.querySelector('.fleet-ui-panel__header') || root.firstElementChild;
+                clearInline(header);
+                root.querySelectorAll('textarea, input, button').forEach(clearInline);
+            }
+            if (chip) {
+                chip.dataset.fleetHelperTheme = theme;
+                clearInline(chip);
+                chip.querySelectorAll('button').forEach(clearInline);
+            }
+            return;
+        }
+        const shadow = c.dark
+            ? '0 12px 40px rgba(0,0,0,0.55)'
+            : '0 12px 40px rgba(15,23,42,0.18)';
+        if (root) {
+            root.dataset.fleetHelperTheme = theme;
+            root.style.background = c.bg;
+            root.style.color = c.fg;
+            root.style.border = '1px solid ' + c.border;
+            root.style.borderRadius = '10px';
+            root.style.boxShadow = shadow;
+            const header = root.querySelector('.fleet-ui-panel__header') || root.firstElementChild;
+            if (header) {
+                header.style.background = c.headerBg;
+                header.style.borderBottom = '1px solid ' + c.border;
+                header.style.color = c.fg;
+            }
+            root.querySelectorAll('textarea, input').forEach((el) => {
+                el.style.background = c.inputBg;
+                el.style.color = c.fg;
+                el.style.border = '1px solid ' + c.border;
+            });
+            root.querySelectorAll('button').forEach((el) => {
+                if (!el.style.background || el.style.background === 'transparent' || el.style.background === '') {
+                    el.style.background = c.bg;
+                }
+                el.style.color = c.fg;
+                if (!el.style.border || el.style.border === 'none') {
+                    el.style.border = '1px solid ' + c.border;
+                }
+            });
+        }
+        if (chip) {
+            chip.dataset.fleetHelperTheme = theme;
+            chip.style.background = '';
+            chip.style.boxShadow = '';
+            chip.style.color = c.fg;
+            chip.style.border = '1px solid ' + c.border;
+            chip.style.borderRadius = '10px';
+            chip.querySelectorAll('button').forEach((el) => {
+                el.style.background = 'transparent';
+                el.style.color = c.fg;
+            });
+        }
+    },
+
+    applyHelperChromeToMounted() {
+        this.applyHelperChrome(
+            document.getElementById(ROOT_ID),
+            document.getElementById(TAB_ID)
+        );
+    },
+
+    hasNovncClipboard() {
+        return !!document.getElementById(NOVNC_CLIPBOARD_ID);
+    },
+
+    loadSavedLayout() {
+        return {
+            left: Storage.get(LAYOUT_STORAGE_KEYS.left, null),
+            top: Storage.get(LAYOUT_STORAGE_KEYS.top, null),
+            width: Storage.get(LAYOUT_STORAGE_KEYS.width, DEFAULT_MODAL_WIDTH),
+            height: Storage.get(LAYOUT_STORAGE_KEYS.height, DEFAULT_MODAL_HEIGHT)
+        };
+    },
+
+    clearSavedLayout() {
+        Storage.delete(LAYOUT_STORAGE_KEYS.left);
+        Storage.delete(LAYOUT_STORAGE_KEYS.top);
+        Storage.delete(LAYOUT_STORAGE_KEYS.width);
+        Storage.delete(LAYOUT_STORAGE_KEYS.height);
+    },
+
+    applyDefaultLayout(root) {
+        if (!root) {
+            return;
+        }
+        root.style.left = `${DEFAULT_MODAL_LEFT}px`;
+        root.style.top = `${DEFAULT_MODAL_TOP}px`;
+        root.style.width = `${DEFAULT_MODAL_WIDTH}px`;
+        root.style.height = `${DEFAULT_MODAL_HEIGHT}px`;
+    },
+
+    saveLayout(root) {
+        if (!root) {
+            return;
+        }
+        const rect = root.getBoundingClientRect();
+        Storage.set(LAYOUT_STORAGE_KEYS.left, rect.left);
+        Storage.set(LAYOUT_STORAGE_KEYS.top, rect.top);
+        Storage.set(LAYOUT_STORAGE_KEYS.width, rect.width);
+        Storage.set(LAYOUT_STORAGE_KEYS.height, rect.height);
+    },
+
+    makeSmallHeaderButton(label, ariaLabel) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.setAttribute('aria-label', ariaLabel);
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        btn.className = pc.ghostBtn || '';
+        return btn;
+    },
+
+    /**
+     * Inverse of External VNC Helper: start when noVNC clipboard is absent; tear down if it appears later.
+     */
+    installWaitObserver(state) {
+        if (state.waitObserverAttached) {
+            return;
+        }
+        state.waitObserverAttached = true;
+
+        const self = this;
+        const sync = () => {
+            if (self.hasNovncClipboard()) {
+                if (state.panelStarted) {
+                    Logger.log('noVNC clipboard appeared — tearing down External Env Helper');
+                    self.destroy(state);
+                    self.installWaitObserver(state);
+                }
+                return;
+            }
+            if (!document.body) {
+                return;
+            }
+            if (state.panelStarted) {
+                return;
+            }
+            self.startPanel(state);
+        };
+
+        sync();
+
+        const target = document.body || document.documentElement;
+        const observer = new MutationObserver(() => {
+            sync();
+        });
+        observer.observe(target, { childList: true, subtree: true });
+        CleanupRegistry.registerObserver(observer);
+        state.waitObserver = observer;
+        if (!state.panelStarted) {
+            Logger.debug('watching for non-VNC page (no #noVNC_clipboard_text)');
+        }
+    },
+
+    readCachedPrompt() {
+        try {
+            const context = Storage.get(PROMPT_CONTEXT_STORAGE_KEY, '');
+            if (context !== 'qa') {
+                Logger.debug(
+                    `envHelper: skipping cached prompt (context=${context || 'unset'}; last page was not QA)`
+                );
+                return '';
+            }
+            const text = Storage.get(PROMPT_STORAGE_KEY, '');
+            const tsRaw = Storage.get(PROMPT_TS_STORAGE_KEY, '');
+            if (!text || !tsRaw) {
+                Logger.debug('no cached prompt in storage');
+                return '';
+            }
+            const ts = parseInt(tsRaw, 10);
+            if (Number.isNaN(ts) || Date.now() - ts > PROMPT_TTL_MS) {
+                Storage.delete(PROMPT_STORAGE_KEY);
+                Storage.delete(PROMPT_TS_STORAGE_KEY);
+                Logger.debug('cached prompt expired, cleared');
+                return '';
+            }
+            Logger.debug(`loaded cached prompt (${text.length} chars)`);
+            return text;
+        } catch (e) {
+            Logger.warn('failed to read cached prompt', e);
+            return '';
+        }
+    },
+
+    textareaHeightForLines(lineCount) {
+        const lines = Math.max(DEFAULT_LINES, lineCount);
+        return `${lines * LINE_HEIGHT_PX + 16}px`;
+    },
+
+    applyPromptTextareaSizing(textarea, promptText) {
+        const initialLines = promptText ? PROMPT_DEFAULT_LINES : DEFAULT_LINES;
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
+        textarea.style.height = this.textareaHeightForLines(initialLines);
+        textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
+        textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
+    },
+
+    applyScratchpadTextareaSizing(textarea) {
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        textarea.className = pc.textarea || '';
+        textarea.style.height = this.textareaHeightForLines(DEFAULT_LINES);
+        textarea.style.minHeight = this.textareaHeightForLines(DEFAULT_LINES);
+        textarea.style.lineHeight = `${LINE_HEIGHT_PX}px`;
+    },
+
+    makeSectionHeader(label, onToggle, trailingEl) {
+        const header = document.createElement('div');
+        const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+        header.className = pc.sectionLabel || '';
+        header.style.cssText =
+            'display:flex;align-items:center;gap:6px;padding:8px 12px 4px 12px;';
+
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.textContent = '▼';
+        toggleBtn.setAttribute('aria-label', `Toggle ${label} section`);
+        toggleBtn.className = pc.muted || '';
+        toggleBtn.style.cssText =
+            'margin:0;padding:0 4px;border:none;background:transparent;font:inherit;font-size:11px;cursor:pointer;line-height:1;color:inherit;';
+
+        const title = document.createElement('span');
+        title.textContent = label;
+        title.style.flex = '1';
+
+        header.appendChild(toggleBtn);
+        header.appendChild(title);
+        if (trailingEl) {
+            header.appendChild(trailingEl);
+        }
+
+        let collapsed = false;
+        toggleBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            collapsed = !collapsed;
+            toggleBtn.textContent = collapsed ? '▶' : '▼';
+            onToggle(collapsed);
+            Logger.log(`${label} section ${collapsed ? 'hidden' : 'shown'}`);
+        });
+
+        return {
+            header,
+            setCollapsed: (next) => {
+                collapsed = next;
+                toggleBtn.textContent = collapsed ? '▶' : '▼';
+                onToggle(collapsed);
+            }
+        };
+    },
+
+    startPanel(state) {
+        if (state.panelStarted) {
+            return;
+        }
+        if (this.hasNovncClipboard()) {
+            return;
+        }
+
+        if (state.waitObserver) {
+            try {
+                state.waitObserver.disconnect();
+            } catch (eDisc) {
+                Logger.warn('error disconnecting wait observer', eDisc);
+            }
+            state.waitObserver = null;
+        }
+
+        // Keep watching so we tear down if noVNC appears later on a slow load.
+        const self = this;
+        const handoffTarget = document.body || document.documentElement;
+        const handoffObserver = new MutationObserver(() => {
+            if (!self.hasNovncClipboard()) {
+                return;
+            }
+            Logger.log('noVNC clipboard appeared after start — tearing down');
+            self.destroy(state);
+            self.installWaitObserver(state);
+        });
+        handoffObserver.observe(handoffTarget, { childList: true, subtree: true });
+        CleanupRegistry.registerObserver(handoffObserver);
+        state.waitObserver = handoffObserver;
+        state.waitObserverAttached = true;
+
+        state.panelStarted = true;
+        Logger.debug('non-VNC env page detected, initialising External Env Helper');
+
+        const oldRoot = document.getElementById(ROOT_ID);
+        const oldTab = document.getElementById(TAB_ID);
+        if (oldRoot || oldTab) {
+            if (window.__fleetEnvHelperTeardown) {
+                try {
+                    window.__fleetEnvHelperTeardown();
+                } catch (e4) {
+                    Logger.warn('prior teardown failed', e4);
+                }
+            }
+            if (oldRoot) {
+                oldRoot.remove();
+            }
+            if (oldTab) {
+                oldTab.remove();
+            }
+        }
+
+        const showPanel = this.isPanelEnabled();
+        let root = null;
+        let restoreTab = null;
+        let onMove = () => {};
+        let onUp = () => {};
+        let onResizeMove = () => {};
+        let onResizeUp = () => {};
+
+        /** Persistent tab: stays mounted while the modal is open or minimized. */
+        const ensureRestoreTab = () => {
+            if (restoreTab) {
+                return;
+            }
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+            restoreTab = document.createElement('div');
+            restoreTab.id = TAB_ID;
+            restoreTab.className = pc.chip || '';
+            restoreTab.style.cssText =
+                'position:fixed;left:20px;bottom:124px;z-index:2147483646;';
+
+            const openBtn = document.createElement('button');
+            openBtn.type = 'button';
+            openBtn.textContent = 'Helper';
+            openBtn.setAttribute('aria-label', 'Toggle Helper');
+            openBtn.addEventListener('click', () => {
+                if (!root) {
+                    return;
+                }
+                if (root.style.display === 'none') {
+                    root.style.display = '';
+                    state.minimized = false;
+                    Logger.log('modal restored from minimized tab');
+                } else {
+                    minimizeModal();
+                }
+            });
+
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            const refreshGlyph = document.createElement('span');
+            refreshGlyph.textContent = '\u21BB';
+            refreshGlyph.style.cssText = 'display:inline-block;transform:rotate(90deg);';
+            refreshBtn.appendChild(refreshGlyph);
+            refreshBtn.setAttribute('aria-label', 'Reset Helper to default position');
+            refreshBtn.title = 'Reset to default position';
+            refreshBtn.className = pc.chipSep || '';
+            refreshBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                if (!root) {
+                    return;
+                }
+                self.clearSavedLayout();
+                self.applyDefaultLayout(root);
+                root.style.display = '';
+                state.minimized = false;
+                Logger.log('modal reset to default position');
+            });
+
+            restoreTab.appendChild(openBtn);
+            restoreTab.appendChild(refreshBtn);
+            document.body.appendChild(restoreTab);
+            self.applyHelperChrome(root, restoreTab);
+        };
+
+        const minimizeModal = () => {
+            if (!root) {
+                return;
+            }
+            root.style.display = 'none';
+            state.minimized = true;
+            ensureRestoreTab();
+            Logger.log('modal minimized');
+        };
+
+        if (showPanel) {
+            if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+                Context.uiLib.ensurePanelStyles();
+            }
+            const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+            const savedLayout = this.loadSavedLayout();
+            root = document.createElement('div');
+            root.id = ROOT_ID;
+            root.className = pc.root || '';
+            root.style.cssText = `position:fixed;left:${savedLayout.left ?? DEFAULT_MODAL_LEFT}px;top:${savedLayout.top ?? DEFAULT_MODAL_TOP}px;width:${savedLayout.width}px;height:${savedLayout.height}px;min-width:${MIN_MODAL_WIDTH}px;min-height:${MIN_MODAL_HEIGHT}px;display:flex;flex-direction:column;z-index:${Z_INDEX};user-select:none;`;
+
+            const headerEl = document.createElement('div');
+            headerEl.className = pc.header || '';
+            const headerTitle = document.createElement('div');
+            headerTitle.textContent = 'Helper';
+            headerTitle.className = pc.title || '';
+            headerTitle.style.cursor = 'grab';
+            headerTitle.style.padding = '2px 0';
+            const minimizeBtn = document.createElement('button');
+            minimizeBtn.type = 'button';
+            minimizeBtn.textContent = 'Minimize';
+            minimizeBtn.setAttribute('aria-label', 'Minimize External Env Helper');
+            minimizeBtn.className = pc.btn || '';
+            minimizeBtn.style.flexShrink = '0';
+            headerEl.appendChild(headerTitle);
+            headerEl.appendChild(minimizeBtn);
+
+            const bodyEl = document.createElement('div');
+            bodyEl.style.cssText =
+                'flex:1;min-height:0;overflow-y:auto;padding:0 0 12px 0;user-select:text;';
+
+            const promptBody = document.createElement('div');
+            promptBody.style.cssText = 'padding:0 12px 8px 12px;';
+            const promptTextarea = document.createElement('textarea');
+            promptTextarea.setAttribute('aria-label', 'Prompt');
+            promptTextarea.spellcheck = false;
+            const cachedPrompt = this.readCachedPrompt();
+            const initialPromptText = cachedPrompt;
+            if (cachedPrompt) {
+                promptTextarea.value = cachedPrompt;
+            }
+            this.applyPromptTextareaSizing(promptTextarea, cachedPrompt);
+            promptBody.appendChild(promptTextarea);
+            if (Context.promptTextCounter && typeof Context.promptTextCounter.attach === 'function') {
+                Context.promptTextCounter.attach(promptTextarea, { mountParent: promptBody });
+            }
+
+            let resetPromptBtn = null;
+            if (cachedPrompt) {
+                resetPromptBtn = this.makeSmallHeaderButton('Reset', 'Reset prompt to page-load state');
+                resetPromptBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    promptTextarea.value = initialPromptText;
+                    this.applyPromptTextareaSizing(promptTextarea, initialPromptText);
+                    promptTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    Logger.log('prompt reset to page-load state');
+                });
+            }
+
+            const promptSection = this.makeSectionHeader('Prompt', (collapsed) => {
+                promptBody.style.display = collapsed ? 'none' : '';
+            }, resetPromptBtn);
+            bodyEl.appendChild(promptSection.header);
+            bodyEl.appendChild(promptBody);
+
+            const scratchBody = document.createElement('div');
+            scratchBody.style.cssText = 'padding:0 12px 8px 12px;';
+            const scratchTextarea = document.createElement('textarea');
+            scratchTextarea.setAttribute('aria-label', 'Scratchpad');
+            scratchTextarea.placeholder = 'Scratchpad…';
+            scratchTextarea.spellcheck = false;
+            this.applyScratchpadTextareaSizing(scratchTextarea);
+            scratchBody.appendChild(scratchTextarea);
+
+            const scratchSection = this.makeSectionHeader('Scratchpad', (collapsed) => {
+                scratchBody.style.display = collapsed ? 'none' : '';
+            });
+            bodyEl.appendChild(scratchSection.header);
+            bodyEl.appendChild(scratchBody);
+
+            const resizeHandle = document.createElement('div');
+            resizeHandle.setAttribute('aria-label', 'Resize External Env Helper');
+            resizeHandle.className = pc.resize || '';
+
+            root.appendChild(headerEl);
+            root.appendChild(bodyEl);
+            root.appendChild(resizeHandle);
+            document.body.appendChild(root);
+            self.applyHelperChrome(root, null);
+
+            minimizeBtn.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                onUp();
+                minimizeModal();
+            });
+
+            let drag = false;
+            let resizing = false;
+            let ox = 0;
+            let oy = 0;
+            let resizeStartX = 0;
+            let resizeStartY = 0;
+            let resizeStartW = 0;
+            let resizeStartH = 0;
+
+            onMove = (ev) => {
+                if (!drag || !root) {
+                    return;
+                }
+                root.style.left = `${Math.max(0, ev.clientX - ox)}px`;
+                root.style.top = `${Math.max(0, ev.clientY - oy)}px`;
+            };
+            onResizeMove = (ev) => {
+                if (!resizing || !root) {
+                    return;
+                }
+                const nextW = Math.max(MIN_MODAL_WIDTH, resizeStartW + (ev.clientX - resizeStartX));
+                const nextH = Math.max(MIN_MODAL_HEIGHT, resizeStartH + (ev.clientY - resizeStartY));
+                root.style.width = `${nextW}px`;
+                root.style.height = `${nextH}px`;
+            };
+            onUp = () => {
+                if (!drag) {
+                    return;
+                }
+                drag = false;
+                headerTitle.style.cursor = 'grab';
+                document.removeEventListener('mousemove', onMove, true);
+                document.removeEventListener('mouseup', onUp, true);
+                if (root) {
+                    this.saveLayout(root);
+                    const rect = root.getBoundingClientRect();
+                    Logger.debug(`modal moved to ${Math.round(rect.left)},${Math.round(rect.top)}`);
+                }
+            };
+            onResizeUp = () => {
+                if (!resizing) {
+                    return;
+                }
+                resizing = false;
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', onResizeMove, true);
+                document.removeEventListener('mouseup', onResizeUp, true);
+                if (root) {
+                    this.saveLayout(root);
+                    const rect = root.getBoundingClientRect();
+                    Logger.debug(`modal resized to ${Math.round(rect.width)}×${Math.round(rect.height)}`);
+                }
+            };
+            headerTitle.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0) {
+                    return;
+                }
+                drag = true;
+                headerTitle.style.cursor = 'grabbing';
+                const r = root.getBoundingClientRect();
+                ox = ev.clientX - r.left;
+                oy = ev.clientY - r.top;
+                document.addEventListener('mousemove', onMove, true);
+                document.addEventListener('mouseup', onUp, true);
+                ev.preventDefault();
+            });
+            resizeHandle.addEventListener('mousedown', (ev) => {
+                if (ev.button !== 0) {
+                    return;
+                }
+                ev.preventDefault();
+                ev.stopPropagation();
+                resizing = true;
+                const r = root.getBoundingClientRect();
+                resizeStartX = ev.clientX;
+                resizeStartY = ev.clientY;
+                resizeStartW = r.width;
+                resizeStartH = r.height;
+                document.body.style.userSelect = 'none';
+                document.addEventListener('mousemove', onResizeMove, true);
+                document.addEventListener('mouseup', onResizeUp, true);
+            });
+        }
+
+        window.__fleetEnvHelperTeardown = () => {
+            document.removeEventListener('mousemove', onMove, true);
+            document.removeEventListener('mouseup', onUp, true);
+            document.removeEventListener('mousemove', onResizeMove, true);
+            document.removeEventListener('mouseup', onResizeUp, true);
+            document.body.style.userSelect = '';
+            if (root && root.parentNode) {
+                root.parentNode.removeChild(root);
+            }
+            if (restoreTab && restoreTab.parentNode) {
+                restoreTab.parentNode.removeChild(restoreTab);
+            }
+            root = null;
+            restoreTab = null;
+        };
+
+        if (showPanel) {
+            minimizeModal();
+            Logger.log('modal active (starts minimized)');
+            toast('External Env Helper ready — open from the tab.');
+        } else {
+            Logger.debug('panel hidden via settings');
+        }
+    },
+
+    run(state) {
+        if (state.panelStarted) {
+            this.applyHelperChromeToMounted();
+            return;
+        }
+        this.installWaitObserver(state);
+    },
+
+    destroy(state) {
+        if (state.waitObserver) {
+            try {
+                state.waitObserver.disconnect();
+            } catch (e) {
+                Logger.warn('wait observer disconnect in destroy', e);
+            }
+            state.waitObserver = null;
+        }
+        if (typeof window.__fleetEnvHelperTeardown === 'function') {
+            try {
+                window.__fleetEnvHelperTeardown();
+            } catch (eTeardown) {
+                Logger.error('teardown failed', eTeardown);
+            }
+            window.__fleetEnvHelperTeardown = undefined;
+        }
+        state.waitObserverAttached = false;
+        state.panelStarted = false;
+        state.minimized = false;
+        Logger.log('destroyed');
+    }
+};
+
+const plugin = {
+    id: 'envHelperLib',
+    name: 'External Env Helper (library)',
+    description: 'Shared External Env Helper panel for non-VNC env pages',
+    _version: '2.8',
+    phase: 'core',
+    enabledByDefault: true,
+    initialState: { registered: false },
+
+    init(state) {
+        Context.envHelper = {
+            run: (s, options) => {
+                const impl = Object.create(EnvHelperApi);
+                if (options && options.pluginId) {
+                    impl.id = options.pluginId;
+                }
+                return EnvHelperApi.run.call(impl, s, options);
+            },
+            destroy: (s, options) => {
+                const impl = Object.create(EnvHelperApi);
+                if (options && options.pluginId) {
+                    impl.id = options.pluginId;
+                }
+                return EnvHelperApi.destroy.call(impl, s);
+            }
+        };
+        if (!state.registered) {
+            Logger.log('envHelperLib: module registered (Context.envHelper)');
+            state.registered = true;
+        }
+    }
+};
+
+function toast(message) {
+    if (Context.uiLib && typeof Context.uiLib.ensurePanelStyles === 'function') {
+        Context.uiLib.ensurePanelStyles();
+    }
+    const pc = (Context.uiLib && Context.uiLib.PANEL_CLASSES) || {};
+    const d = document.createElement('div');
+    d.textContent = message;
+    d.className = pc.toast || '';
+    d.style.cssText = `position:fixed;top:12px;right:12px;z-index:${Z_INDEX};`;
+    document.body.appendChild(d);
+    setTimeout(() => {
+        d.remove();
+    }, 2200);
+}
+
+return plugin;
+},
         "archetypes/tool-use-task-creation/main/notes-resize-handle.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
 // ============= notes-resize-handle.js =============
 // Thin wrapper: shared Context.notesResizeHandle library.
@@ -13735,7 +15875,7 @@ const plugin = {
     name: 'VM Clipboard',
     description:
         'Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)',
-    _version: '2.1',
+    _version: '2.2',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -13871,18 +16011,32 @@ const plugin = {
         const host = this.findRightHost(headerRow);
         if (!host) return;
 
+        // Prefer sitting beside the Action Counter, but never depend on it: if the
+        // counter is disabled or has not mounted, host the bar directly so
+        // Extract/Overwrite are still available.
         const counter = host.querySelector(`[${counterMarker}="true"]`);
-        if (!counter) {
-            return;
+        const existing = host.querySelector(`[${marker}="true"]`);
+        if (counter && existing && existing.previousElementSibling !== counter) {
+            // Counter mounted after us — move beside it so the header order is stable.
+            counter.insertAdjacentElement('afterend', existing);
         }
 
         api.run(state, {
             pluginId: this.id,
             logTag: this.id,
-            activationDetail: 'VM Clipboard injected in page header',
+            activationDetail: counter
+                ? 'VM Clipboard injected in page header'
+                : 'VM Clipboard injected in page header (no Action Counter)',
             alreadyMounted: () => Boolean(host.querySelector(`[${marker}="true"]`)),
             mountGroup: (group) => {
-                counter.insertAdjacentElement('afterend', group);
+                if (counter) {
+                    counter.insertAdjacentElement('afterend', group);
+                } else if (host === headerRow) {
+                    group.style.marginLeft = 'auto';
+                    host.appendChild(group);
+                } else {
+                    host.insertBefore(group, host.firstChild);
+                }
             }
         });
     }
@@ -14199,7 +16353,7 @@ const plugin = {
     name: 'VM Clipboard',
     description:
         'Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -14323,18 +16477,32 @@ const plugin = {
         const host = this.findRightHost(headerRow);
         if (!host) return;
 
+        // Prefer sitting beside the Action Counter, but never depend on it: if the
+        // counter is disabled or has not mounted, host the bar directly so
+        // Extract/Overwrite are still available.
         const counter = host.querySelector(`[${counterMarker}="true"]`);
-        if (!counter) {
-            return;
+        const existing = host.querySelector(`[${marker}="true"]`);
+        if (counter && existing && existing.previousElementSibling !== counter) {
+            // Counter mounted after us — move beside it so the header order is stable.
+            counter.insertAdjacentElement('afterend', existing);
         }
 
         api.run(state, {
             pluginId: this.id,
             logTag: this.id,
-            activationDetail: 'VM Clipboard injected in page header',
+            activationDetail: counter
+                ? 'VM Clipboard injected in page header'
+                : 'VM Clipboard injected in page header (no Action Counter)',
             alreadyMounted: () => Boolean(host.querySelector(`[${marker}="true"]`)),
             mountGroup: (group) => {
-                counter.insertAdjacentElement('afterend', group);
+                if (counter) {
+                    counter.insertAdjacentElement('afterend', group);
+                } else if (host === headerRow) {
+                    group.style.marginLeft = 'auto';
+                    host.appendChild(group);
+                } else {
+                    host.insertBefore(group, host.firstChild);
+                }
             }
         });
     }
@@ -17723,6 +19891,105 @@ const plugin = {
 };
 
 return plugin;
+},
+        "archetypes/no-vnc/main/vnc-helper.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
+// ============= vnc-helper.js =============
+// Thin wrapper: shared Context.vncHelper library.
+
+const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
+const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
+const SHOW_PANEL_SUBOPTION = {
+    id: SHOW_PANEL_SUBOPTION_ID,
+    name: 'Show panel',
+    description: 'Hide the External VNC Helper panel (keyboard clipboard shortcuts still work)',
+    enabledByDefault: true
+};
+const FORCE_DARK_SUBOPTION = {
+    id: FORCE_DARK_SUBOPTION_ID,
+    name: 'Force dark mode',
+    description: 'Overrides Preferred Visual Mode for this helper panel only.',
+    enabledByDefault: false
+};
+
+const plugin = {
+    id: 'vncHelper',
+    name: 'External VNC Helper',
+    description:
+        'External VNC Helper modal with prompt cache, scratchpad, and clipboard bridge for noVNC sessions',
+    _version: '1.14',
+    enabledByDefault: true,
+    phase: 'mutation',
+    subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
+    initialState: {
+        bridgeStarted: false,
+        waitObserverAttached: false,
+        waitObserver: null,
+        minimized: true
+    },
+
+    onMutation(state) {
+        const api = Context.vncHelper;
+        if (!api || typeof api.run !== 'function') return;
+        api.run(state, { pluginId: this.id, logTag: this.id });
+    },
+
+    destroy(state) {
+        const api = Context.vncHelper;
+        if (!api || typeof api.destroy !== 'function') return;
+        api.destroy(state, { pluginId: this.id });
+    }
+};
+
+return plugin;
+},
+        "archetypes/no-vnc/main/env-helper.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
+// ============= env-helper.js =============
+// Thin wrapper: shared Context.envHelper library.
+
+const SHOW_PANEL_SUBOPTION_ID = 'show-panel';
+const FORCE_DARK_SUBOPTION_ID = 'force-dark-mode';
+const SHOW_PANEL_SUBOPTION = {
+    id: SHOW_PANEL_SUBOPTION_ID,
+    name: 'Show panel',
+    description: 'Hide the External Env Helper panel',
+    enabledByDefault: true
+};
+const FORCE_DARK_SUBOPTION = {
+    id: FORCE_DARK_SUBOPTION_ID,
+    name: 'Force dark mode',
+    description: 'Overrides Preferred Visual Mode for this helper panel only.',
+    enabledByDefault: false
+};
+
+const plugin = {
+    id: 'envHelper',
+    name: 'External Env Helper',
+    description: 'External Env Helper modal with prompt cache and scratchpad for non-VNC env pages',
+    _version: '1.6',
+    enabledByDefault: true,
+    phase: 'mutation',
+    subOptions: [SHOW_PANEL_SUBOPTION, FORCE_DARK_SUBOPTION],
+    initialState: {
+        panelStarted: false,
+        waitObserverAttached: false,
+        waitObserver: null,
+        minimized: true
+    },
+
+    onMutation(state) {
+        const api = Context.envHelper;
+        if (!api || typeof api.run !== 'function') return;
+        api.run(state, { pluginId: this.id, logTag: this.id });
+    },
+
+    destroy(state) {
+        const api = Context.envHelper;
+        if (!api || typeof api.destroy !== 'function') return;
+        api.destroy(state, { pluginId: this.id });
+    }
+};
+
+return plugin;
 }
     };
     // @@SAFE_UX_BUNDLE_END
@@ -18245,6 +20512,10 @@ return plugin;
         let clipQueue = Promise.resolve();
         let sessionNonce = null;
         let sessionInstanceId = '';
+        // Every nonce the parent has authorised this document with. A parent may
+        // re-send embedded-ready (iframe re-render, second watcher record) with a
+        // fresh nonce; requests signed with any earlier nonce must keep working.
+        const authorizedNonces = new Set();
 
         function isExactFleetParentOrigin(origin) {
             return FLEET_PARENT_ORIGINS.has(origin);
@@ -18300,7 +20571,13 @@ return plugin;
                 if (event.source !== window.parent) return;
                 if (!isExactFleetParentOrigin(event.origin)) return;
                 if (event.source && typeof event.source.postMessage === 'function') {
-                    const out = Object.assign({ nonce: sessionNonce, instanceId: sessionInstanceId }, payload);
+                    const out = Object.assign(
+                        { nonce: sessionNonce, instanceId: sessionInstanceId },
+                        payload,
+                        // Echo the nonce the request was signed with so the parent can
+                        // match it to the pending request even after a nonce rotation.
+                        event.data && typeof event.data.nonce === 'string' ? { nonce: event.data.nonce } : {}
+                    );
                     event.source.postMessage(out, event.origin);
                 }
             } catch (e) {
@@ -18405,6 +20682,7 @@ return plugin;
                 }
                 const envKey = String(event.data.envKey || '');
                 sessionNonce = event.data.nonce;
+                authorizedNonces.add(sessionNonce);
                 sessionInstanceId = String(event.data.instanceId || '');
                 const wasAuthorized = fosAuthorized;
                 fosAuthorized = true;
@@ -18418,8 +20696,11 @@ return plugin;
                 return;
             }
 
-            if (!fosAuthorized || !sessionNonce || event.data.nonce !== sessionNonce) {
-                console.warn(EMBED_LOG + ': message ignored — not authorized or nonce mismatch');
+            if (!fosAuthorized || !sessionNonce || !authorizedNonces.has(event.data.nonce)) {
+                console.warn(
+                    EMBED_LOG + ': ' + event.data.type + ' ignored — ' +
+                    (!fosAuthorized ? 'not authorized yet' : 'nonce mismatch')
+                );
                 return;
             }
 

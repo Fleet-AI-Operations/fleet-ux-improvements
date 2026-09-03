@@ -6,7 +6,7 @@ const plugin = {
     name: 'VM Clipboard',
     description:
         'Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)',
-    _version: '2.0',
+    _version: '2.1',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -130,18 +130,32 @@ const plugin = {
         const host = this.findRightHost(headerRow);
         if (!host) return;
 
+        // Prefer sitting beside the Action Counter, but never depend on it: if the
+        // counter is disabled or has not mounted, host the bar directly so
+        // Extract/Overwrite are still available.
         const counter = host.querySelector(`[${counterMarker}="true"]`);
-        if (!counter) {
-            return;
+        const existing = host.querySelector(`[${marker}="true"]`);
+        if (counter && existing && existing.previousElementSibling !== counter) {
+            // Counter mounted after us — move beside it so the header order is stable.
+            counter.insertAdjacentElement('afterend', existing);
         }
 
         api.run(state, {
             pluginId: this.id,
             logTag: this.id,
-            activationDetail: 'VM Clipboard injected in page header',
+            activationDetail: counter
+                ? 'VM Clipboard injected in page header'
+                : 'VM Clipboard injected in page header (no Action Counter)',
             alreadyMounted: () => Boolean(host.querySelector(`[${marker}="true"]`)),
             mountGroup: (group) => {
-                counter.insertAdjacentElement('afterend', group);
+                if (counter) {
+                    counter.insertAdjacentElement('afterend', group);
+                } else if (host === headerRow) {
+                    group.style.marginLeft = 'auto';
+                    host.appendChild(group);
+                } else {
+                    host.insertBefore(group, host.firstChild);
+                }
             }
         });
     }

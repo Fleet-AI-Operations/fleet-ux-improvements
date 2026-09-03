@@ -1,4 +1,4 @@
-1.45
+1.46
 
 ## Fleet Safe UX Build
 This containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.
@@ -102,6 +102,10 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 ### Guidelines
 - **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar
 - **Guideline Theme Presets**: Apply named text themes from the edit toolbar
+
+### noVNC Instance (FOS opened directly in a tab)
+- **External VNC Helper**: Floating panel on directly-opened noVNC sessions with a clipboard bridge (Extract/Overwrite between your OS clipboard and the VM), prompt cache, and scratchpad; keyboard shortcuts keep working with the panel hidden
+- **External Env Helper**: Floating prompt cache + scratchpad panel for non-VNC external env pages
 
 ### Task View
 *No production plugins are configured for this archetype.*

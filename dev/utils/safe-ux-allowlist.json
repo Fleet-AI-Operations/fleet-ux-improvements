@@ -19,7 +19,9 @@
     "request-revisions.js",
     "toggle-main-panels.js",
     "user-story-markdown.js",
-    "user-story-collapse.js"
+    "user-story-collapse.js",
+    "vnc-helper.js",
+    "env-helper.js"
   ],
   "archetypePlugins": [
     "accept-task-modal-improvements.js",
@@ -39,7 +41,9 @@
     "toggle-main-panels.js",
     "tool-results-resize-handle.js",
     "user-story-collapse.js",
-    "user-story-markdown.js"
+    "user-story-markdown.js",
+    "vnc-helper.js",
+    "env-helper.js"
   ],
   "settingsDocs": [
     "information-tab.md",
