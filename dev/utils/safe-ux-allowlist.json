@@ -10,6 +10,7 @@
     "accept-task-modal-improvements.js",
     "copy-verifier-output.js",
     "screenshot-upload-improvement.js",
+    "action-counter.js",
     "fos-vm-clipboard-bar.js",
     "fos-iframe-autoconnect.js",
     "notes-resize-handle.js",
@@ -22,6 +23,7 @@
   ],
   "archetypePlugins": [
     "accept-task-modal-improvements.js",
+    "action-counter.js",
     "auto-start-recording.js",
     "copy-result-params.js",
     "copy-verifier-output.js",
