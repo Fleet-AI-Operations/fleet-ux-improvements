@@ -1,7 +1,7 @@
 {
-  "version": "14.1",
+  "version": "14.2",
   "coreOnlyMode": false,
-  "archetypesVersion": "15.1",
+  "archetypesVersion": "15.2",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -22,8 +22,8 @@
     },
     {
       "name": "fos-embedded-watcher.js",
-      "version": "5.4",
-      "hash": "sha256-5b1c214882fcdc15c3d81045f93164a44e1b313565ae65c11aa659ffd90341e7",
+      "version": "5.5",
+      "hash": "sha256-bf233bd9a801a085be0bcb6ab9113c03b853b5b5e0733b95512be9a778ffba39",
       "log": false
     }
   ],
@@ -105,6 +105,18 @@
       "version": "1.6",
       "hash": "sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807",
       "log": false
+    },
+    {
+      "name": "vnc-helper.js",
+      "version": "3.9",
+      "hash": "sha256-29c83ad41ffc6a1f435fb54073a5dfa4bd0a6cc7e64c58eddf786c99a22de767",
+      "log": false
+    },
+    {
+      "name": "env-helper.js",
+      "version": "2.8",
+      "hash": "sha256-8c5c650ed1b46b734171c4403a69251f895a287c7feeca5e9a7367967fe6490a",
+      "log": false
     }
   ],
   "opsDashboardPlugins": [],
@@ -117,7 +129,7 @@
     },
     {
       "name": "features-tab.md",
-      "version": "1.45"
+      "version": "1.46"
     }
   ],
   "archetypes": [
@@ -319,8 +331,8 @@
         },
         {
           "name": "fos-vm-clipboard.js",
-          "version": "2.1",
-          "hash": "sha256-814b760804fd15837dee2087faf9b6dc73455a1245ecb922755203989dbb48c9",
+          "version": "2.2",
+          "hash": "sha256-6d1869308b81556279f433fa856f130afb22ffdf485050221e2f8f1e6c05a17c",
           "log": false
         },
         {
@@ -386,8 +398,8 @@
         },
         {
           "name": "fos-vm-clipboard.js",
-          "version": "2.0",
-          "hash": "sha256-7c15434c8773235ff010e6e292279abd498594a4ded07ebe51f011e59b21df8e",
+          "version": "2.1",
+          "hash": "sha256-c6586ebceb0d6099098c2de6fc804fc8d7838c0195760a84430ebd07802fe8de",
           "log": false
         },
         {
@@ -687,7 +699,25 @@
       "description": "noVNC remote desktop instances on fleet environment subdomains",
       "urlPattern": "_novnc",
       "disambiguationSelectors": [],
-      "plugins": []
+      "plugins": [
+        {
+          "name": "vnc-helper.js",
+          "version": "1.14",
+          "hash": "sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411",
+          "log": false
+        },
+        {
+          "name": "env-helper.js",
+          "version": "1.6",
+          "hash": "sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c",
+          "log": false
+        }
+      ],
+      "libraries": [
+        "prompt-text-counter.js",
+        "vnc-helper.js",
+        "env-helper.js"
+      ]
     },
     {
       "id": "assessments-grade",

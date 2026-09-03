@@ -214,7 +214,7 @@ const plugin = {
     name: 'FOS Embedded Watcher',
     description:
         'Detects FOS desktop envs and hosts the VM Clipboard bridge (Safe UX Build: nonce-bound messaging)',
-    _version: '5.4',
+    _version: '5.5',
     phase: 'core',
     enabledByDefault: true,
     initialState: {
@@ -482,9 +482,10 @@ const plugin = {
             return false;
         }
         const requestId = fosNextRequestId();
-        const resultPromise = this._waitForChildResult(state, requestId, 8000);
         const nonce = fosEnsureInstanceNonce(this._ensureInstance(state, id));
+        const resultPromise = this._waitForChildResult(state, requestId, 8000, nonce);
         if (!child.origin || child.origin === '*') {
+            state.pendingRequests.delete(requestId);
             Logger.warn('overwrite failed — child origin missing for ' + id);
             return false;
         }
@@ -521,9 +522,10 @@ const plugin = {
             return false;
         }
         const requestId = fosNextRequestId();
-        const resultPromise = this._waitForChildResult(state, requestId, 8000);
         const nonce = fosEnsureInstanceNonce(this._ensureInstance(state, id));
+        const resultPromise = this._waitForChildResult(state, requestId, 8000, nonce);
         if (!child.origin || child.origin === '*') {
+            state.pendingRequests.delete(requestId);
             Logger.warn('extract failed — child origin missing for ' + id);
             return false;
         }
@@ -762,13 +764,14 @@ const plugin = {
         });
     },
 
-    _waitForChildResult(state, requestId, timeoutMs) {
+    _waitForChildResult(state, requestId, timeoutMs, nonce) {
         return new Promise((resolve) => {
             const timer = setTimeout(() => {
                 state.pendingRequests.delete(requestId);
                 resolve({ ok: false, timedOut: true });
             }, timeoutMs || 8000);
             state.pendingRequests.set(requestId, {
+                nonce: nonce || null,
                 resolve: (payload) => {
                     clearTimeout(timer);
                     resolve(payload);
@@ -1211,8 +1214,14 @@ const plugin = {
             }
             const instanceId = String(event.data.instanceId || '');
             const rec = instanceId ? state.fosInstances.get(instanceId) : null;
-            if (!rec || event.data.nonce !== rec.bridgeNonce) {
-                Logger.warn('clipboard result ignored — nonce/instance mismatch');
+            const pendingReq = state.pendingRequests.get(requestId);
+            const nonceOk =
+                !!rec &&
+                (event.data.nonce === rec.bridgeNonce ||
+                    (pendingReq && pendingReq.nonce && event.data.nonce === pendingReq.nonce));
+            if (!nonceOk) {
+                Logger.warn('clipboard result ignored — nonce/instance mismatch (instance ' +
+                    (instanceId || '?') + ', known=' + (rec ? 'yes' : 'no') + ')');
                 return;
             }
             if (rec.child && rec.child.source && rec.child.source !== event.source) {
