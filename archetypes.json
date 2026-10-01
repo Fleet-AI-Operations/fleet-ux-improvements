@@ -1,7 +1,7 @@
 {
-  "version": "14.2",
+  "version": "14.3",
   "coreOnlyMode": false,
-  "archetypesVersion": "15.2",
+  "archetypesVersion": "15.3",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -370,6 +370,12 @@
           "version": "1.0",
           "log": false,
           "hash": "sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"
+        },
+        {
+          "name": "task-metadata-cache.js",
+          "version": "1.1",
+          "hash": "sha256-11ff7265db5e305c858fbcd1008ed00702ba95d883f8605ebc34502735cba58e",
+          "log": false
         }
       ]
     },

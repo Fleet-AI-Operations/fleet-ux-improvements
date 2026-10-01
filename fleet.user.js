@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      14.2
+// @version      14.3
 // @description  Local Fleet UX helpers only (FOS, counters, QA shortcuts). No Ops, no remote code, no token capture.
 // @author       Fleet AI Operations
 // @match        https://www.fleetai.com/*
@@ -39,7 +39,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '14.2';
+    const VERSION = '14.3';
     const SAFE_UX_BUILD = true;
     const SAFE_UX_BUILD_NAME = 'Fleet Safe UX Build';
     const STORAGE_PREFIX = 'wf-enhancer-';
@@ -62,6 +62,7 @@
         'request-revisions.js',
         'screenshot-upload-improvement.js',
         'show-verifier-on-run.js',
+        'task-metadata-cache.js',
         'text-sanitizer.js',
         'toggle-main-panels.js',
         'tool-results-resize-handle.js',
@@ -94,8 +95,8 @@
         'fleet-ux:verifier-fetcher-chat-open'
     ];
     // @@SAFE_UX_BUNDLE_START
-    const BUNDLED_ARCHETYPES = {"version":"14.2","coreOnlyMode":false,"archetypesVersion":"15.2","logs":{"debug":false,"verbose":false,"submodule":false},"corePlugins":[{"name":"ui-lib.js","version":"3.24","hash":"sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053","log":false},{"name":"settings-ui.js","version":"11.18","hash":"sha256-3de387b59ce35c18b0dd62a3a1dd9239bf553f16570bfd35fe8f2d2ac8b199f6","log":false},{"name":"fos-embedded-watcher.js","version":"5.5","hash":"sha256-bf233bd9a801a085be0bcb6ab9113c03b853b5b5e0733b95512be9a778ffba39","log":false}],"libraries":[{"name":"accept-task-modal-improvements.js","version":"2.3","hash":"sha256-0707031982051172a43a9f2507be481f22c8c900026bfde041a94f2b86b4e6db","log":false},{"name":"copy-verifier-output.js","version":"5.4","hash":"sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d","log":false},{"name":"screenshot-upload-improvement.js","version":"1.1","hash":"sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371","log":false},{"name":"action-counter.js","version":"3.7","hash":"sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35","log":false},{"name":"fos-vm-clipboard-bar.js","version":"1.8","hash":"sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-ad3b70a082fa2e3ddf5ca934ab86cb13c6aeed02e6f138643e46ee491361b0fa","log":false},{"name":"notes-resize-handle.js","version":"2.2","hash":"sha256-845e1f33ecf6a389a9c66c5e5242bb7a15830e4544b4502860a6a911d96a5dcd","log":false},{"name":"prompt-scratchpad.js","version":"3.3","hash":"sha256-1391b3d0b3d7ab405b9680d5bc37668a58eb6935ccc2b14fae96c9fdfbfd1fb4","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-b0d71baa66ad441d5a0dc190028cb1a04a8d7adf465d1211b27fc1be019d75ce","log":false},{"name":"request-revisions.js","version":"1.2","hash":"sha256-b835c1c13b5bcb185401f3f333bf559651817b5d1b3551a8e02795d2e4f538c5","log":false},{"name":"toggle-main-panels.js","version":"1.12","hash":"sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d","log":false},{"name":"user-story-markdown.js","version":"1.10","hash":"sha256-394efdd7463de3eeb1d8ceb242c378019d66e834f892a10eb998423c6c955ca3","log":false},{"name":"user-story-collapse.js","version":"1.6","hash":"sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807","log":false},{"name":"vnc-helper.js","version":"3.9","hash":"sha256-29c83ad41ffc6a1f435fb54073a5dfa4bd0a6cc7e64c58eddf786c99a22de767","log":false},{"name":"env-helper.js","version":"2.8","hash":"sha256-8c5c650ed1b46b734171c4403a69251f895a287c7feeca5e9a7367967fe6490a","log":false}],"opsDashboardPlugins":[],"opsDashboardLibraries":[],"devPlugins":[],"settingsModalDocs":[{"name":"information-tab.md","version":"1.19"},{"name":"features-tab.md","version":"1.46"}],"archetypes":[{"id":"dashboard","name":"Main Dashboard","description":"Main dashboard page","urlPattern":"work/create","disambiguationSelectors":[],"plugins":[]},{"id":"tool-use-task-creation","name":"Tool Use Task Creation Page","description":"Page for creating K-type workflow tasks","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-8088efb71950f66e8522dce416402ef607510a1edc2203b98c2d13c1bd6c49ee","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-task-creation-openclaw","name":"Tool Use OpenClaw Task Creation Page","description":"Task Designers Special Projects OpenClaw variant","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":["text:Task Designers - Special Projects Tasks"],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-f9d1e893030f8800986bae1ac02fe5614a70d74839d942df3aeeab756984edfc","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-revision","name":"Tool Use Task Revision Page","description":"Page for reviewing and fixing previously submitted tool use tasks","urlPattern":"work/problems/respond-feedback/edit-tool-use*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-82432dd241762fefdae9d4602b7900ecf54a3b37a37c0d5222f1cc4fbcee5728","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"tool-results-resize-handle.js","version":"3.4","hash":"sha256-a244822dd48563ef7b169293483a5bebc2de2ee2f65406acb23489855a0d9733","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"create-task-project-selection","name":"Create Task Project Selection","description":"Screen for choosing a project before creating a task","urlPattern":"work/problems/create-instance","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-create-instance","name":"Dashboard Create Instance","description":"Dashboard page for creating instances","urlPattern":"dashboard/instances/create","disambiguationSelectors":[],"plugins":[]},{"id":"comp-use-task-creation","name":"Computer Use Task Creation Page","description":"Page for creating computer use tasks","urlPattern":"work/problems/create*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.2","log":false,"hash":"sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"},{"name":"fos-vm-clipboard.js","version":"2.2","hash":"sha256-6d1869308b81556279f433fa856f130afb22ffdf485050221e2f8f1e6c05a17c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-7ae4d81165d55305d48d9e3051e4d1b0ab40e3ef60234cd72e890f11d872d775","log":false},{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"comp-use-revision","name":"Computer Use Task Revision Page","description":"Page for reviewing and fixing previously submitted computer use tasks","urlPattern":"work/problems/respond-feedback/edit*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.1","log":false,"hash":"sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"},{"name":"fos-vm-clipboard.js","version":"2.1","hash":"sha256-c6586ebceb0d6099098c2de6fc804fc8d7838c0195760a84430ebd07802fe8de","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-a9540416f8f6b1f9f4b9750957705033f90ad4d620569e72798cb43b1f411be8","log":false},{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"qa-tool-use","name":"Task Review Page","description":"Page for reviewing and approving tasks","urlPattern":"work/problems/qa-tool-use/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","copy-verifier-output.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"hide-verifier-output.js","version":"1.8","hash":"sha256-22888468f4715d7152cb411e98d2de55183327fb540d8ba455273875c1806781","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"text-sanitizer.js","version":"3.2","hash":"sha256-dd1887ece3307bf0f35e6b08b23af4af4ba5dfdecc62200211f3f37e8cfa3fe7","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-ed705a53a986c843f8605db4599f4abfac0bc755b03f28afc9a2ac650c326bef","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"qa-session","name":"Session Trace Review","description":"Page for reviewing session traces","urlPattern":"work/problems/qa-session/*","disambiguationSelectors":[],"plugins":[]},{"id":"qa-comp-use","name":"Computer Use Task Review Page","description":"Page for reviewing and approving computer-use tasks","urlPattern":"work/problems/qa/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","action-counter.js","copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"action-counter.js","version":"2.1","log":false,"hash":"sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"},{"name":"auto-start-recording.js","version":"1.4","hash":"sha256-41c516f670f44c9d03d736b938ecfe346313b28810766e3860b322d039a80cd1","log":false},{"name":"copy-result-params.js","version":"2.0","hash":"sha256-c8b3853bafeb018ace90c39bd585b857aca0c5ac3617f5ea79d7c42cf3491dee","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"show-verifier-on-run.js","version":"1.4","hash":"sha256-c2e4e617d066522280dfa894595d996e75ffb9040f2abad75315f8a872d8975c","log":false},{"name":"toggle-main-panels.js","version":"1.11","log":false,"hash":"sha256-57e883d0db1eaaf784343de7a4ece06eaff54d108860971027692f8e5b6ab201"},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"disputes","name":"Dispute Review Page","description":"Page for reviewing writer disputes","urlPattern":"work/problems/disputes","disambiguationSelectors":[],"libraries":["user-story-markdown.js"],"plugins":[{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-053a47538155b35ec5a766ee7b55291b3b78d8de4a113dcd609975101d138bc3","log":false}]},{"id":"dispute-detail","name":"Dispute Detail Page","description":"Page for reviewing a single writer dispute","urlPattern":"work/problems/disputes/*","disambiguationSelectors":[],"libraries":["copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js"],"plugins":[{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-bb6c066c58e5bf843439c6b18e35d95ba88ab6e1f0c7a3b1fed4d813d0ab9f66","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-662ca9bd9c4883de4250fb87deb48291a4f15b5740a081421cf4e7f2d0dd7db2","log":false},{"name":"tool-results-resize-handle.js","version":"1.3","hash":"sha256-7df97c2a426026a2002da1f31cac0c81d2e5abc995182cd9bba6773d1ec69462","log":false},{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-bd4703bc5f63c20aa08db6babe4177f495ff40e10e69f604d5730edcd8905ae0","log":false}]},{"id":"task-view","name":"Task View","description":"Page for viewing a task","urlPattern":"work/problems/view-task*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-task","name":"Dashboard Data Task View","description":"Dashboard task detail page","urlPattern":"dashboard/data/tasks/*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-expert","name":"Dashboard Data Expert Profile","description":"Expert profile page on the dashboard","urlPattern":"dashboard/data/experts/*","disambiguationSelectors":[],"plugins":[]},{"id":"no-vnc","name":"noVNC Instance","description":"noVNC remote desktop instances on fleet environment subdomains","urlPattern":"_novnc","disambiguationSelectors":[],"plugins":[{"name":"vnc-helper.js","version":"1.14","hash":"sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411","log":false},{"name":"env-helper.js","version":"1.6","hash":"sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c","log":false}],"libraries":["prompt-text-counter.js","vnc-helper.js","env-helper.js"]},{"id":"assessments-grade","name":"Assessments Grade","description":"Assessment grading queue","urlPattern":"work/assessments/grade","disambiguationSelectors":["text:To grade"],"plugins":[]},{"id":"assessments-grade-detail","name":"Assessments Grade Detail","description":"Individual assessment grading page","urlPattern":"work/assessments/grade/*","disambiguationSelectors":["text:← Back to queue"],"plugins":[]},{"id":"guidelines","name":"Guidelines","description":"Guidelines list and editor","urlPattern":"work/guidelines","disambiguationSelectors":[],"plugins":[]}],"devArchetypes":[]};
-    const BUNDLED_SETTINGS_DOCS = {"information-tab.md":"1.19\n## Fleet Safe UX Build\nThis is a containment userscript. It keeps FOS clipboard/autoconnect, local prompt/UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are suspended pending investigation.\n\n## Information\nIf you still cannot find a specific codename, please use the `Feedback` tab to notify me!\n#### Environment Codenames\n| Environment Codename      | Real App Name          |\n|---------------------------|------------------------|\n| Agora                     | Reddit                 |\n| Aisle                     | Walmart                |\n| Atlas                     | Google Maps            |\n| Bay                       | Amazon                 |\n| Brass                     | Bill                   |\n| Citadel                   | Salesforce             |\n| Chorus                    | Teams                  |\n| Crate                     | Instacart              |\n| Docket                    | Dropbox                |\n| Float                     | Ramp                   |\n| Seal                      | Docusign               |\n| Foundry                   | Github                 |\n| Funnel                    | Zip                    |\n| Harbor                    | Bank of America        |\n| Jetstream                 | Google Flights         |\n| Kernel                    | Jira / RevOps          |\n| KeyRing                   | Booking                |\n| Latch Calendar/Mail/Tasks | Outlook                |\n| Ledger                    | Quickbooks             |\n| LedgerGov                 | DMV                    |\n| Lumen                     | Datadog                |\n| Medora                    | Zocdoc                 |\n| Meridian                  | Amex                   |\n| Nest                      | Zillow                 |\n| Orbit                     | PandaDoc               |\n| Portal                    | Ticketmaster           |\n| Relay                     | Hubspot                |\n| Seal                      | Docusign               |\n| Sentinel                  | Vanta                  |\n| Signal                    | Sentry                 |\n| StackLine                 | StackOverflow          |\n| Torch                     | PagerDuty              |\n| Vault                     | Confluence             |\n| Ward                      | Synk                   |\n| Yelp                      | Hearth                 |\n\n#### Guidelines\n- [General](https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3)\n- [Tool use](https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b)\n- [QA](https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43)\n- [Time submission](https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c)\n\n#### Community\n- [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)\n- [Environment Gists](https://fleetai-env-gists.vercel.app)\n- [This Extension](https://github.com/fleet-ai-operations/fleet-ux-improvements)","features-tab.md":"1.46\n\n## Fleet Safe UX Build\nThis containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.\n\n## Features\n\nThe extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).\n\nMany of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!\n\n### Main Dashboard\n- **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning\n\n### Tool Use Task Creation Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Creation Page (OpenClaw / Special Projects)\n*Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*\n- **Bug Report Readability Fix**: Makes bug report cards expandable to see full text\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Tool Favorites**: Add favorite stars to tools list\n- **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Computer Use Task Creation Page\n- **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Computer Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### QA Tool Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Useful Link Buttons**: Add useful link buttons to the page\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### QA Computer Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter beside the Verifier tab\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Dispute Detail Page\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear\n- **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages\n- **Environment Verifier Tab**: Adds Environment | Verifier tabs on the instance status bar (beside Start Recording / Reset / Run Verifier) and shows searchable verifier source; switches only the iframe stack\n- **Tool Favorites**: Add favorite stars to tools list\n- **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n\n### Session Trace Review Page\n- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)\n- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits\n\n### Guidelines\n- **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar\n- **Guideline Theme Presets**: Apply named text themes from the edit toolbar\n\n### noVNC Instance (FOS opened directly in a tab)\n- **External VNC Helper**: Floating panel on directly-opened noVNC sessions with a clipboard bridge (Extract/Overwrite between your OS clipboard and the VM), prompt cache, and scratchpad; keyboard shortcuts keep working with the panel hidden\n- **External Env Helper**: Floating prompt cache + scratchpad panel for non-VNC external env pages\n\n### Task View\n*No production plugins are configured for this archetype.*\n"};
+    const BUNDLED_ARCHETYPES = {"version":"14.3","coreOnlyMode":false,"archetypesVersion":"15.3","logs":{"debug":false,"verbose":false,"submodule":false},"corePlugins":[{"name":"ui-lib.js","version":"3.24","hash":"sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053","log":false},{"name":"settings-ui.js","version":"11.18","hash":"sha256-3de387b59ce35c18b0dd62a3a1dd9239bf553f16570bfd35fe8f2d2ac8b199f6","log":false},{"name":"fos-embedded-watcher.js","version":"5.5","hash":"sha256-bf233bd9a801a085be0bcb6ab9113c03b853b5b5e0733b95512be9a778ffba39","log":false}],"libraries":[{"name":"accept-task-modal-improvements.js","version":"2.3","hash":"sha256-0707031982051172a43a9f2507be481f22c8c900026bfde041a94f2b86b4e6db","log":false},{"name":"copy-verifier-output.js","version":"5.4","hash":"sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d","log":false},{"name":"screenshot-upload-improvement.js","version":"1.1","hash":"sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371","log":false},{"name":"action-counter.js","version":"3.7","hash":"sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35","log":false},{"name":"fos-vm-clipboard-bar.js","version":"1.8","hash":"sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-ad3b70a082fa2e3ddf5ca934ab86cb13c6aeed02e6f138643e46ee491361b0fa","log":false},{"name":"notes-resize-handle.js","version":"2.2","hash":"sha256-845e1f33ecf6a389a9c66c5e5242bb7a15830e4544b4502860a6a911d96a5dcd","log":false},{"name":"prompt-scratchpad.js","version":"3.3","hash":"sha256-1391b3d0b3d7ab405b9680d5bc37668a58eb6935ccc2b14fae96c9fdfbfd1fb4","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-b0d71baa66ad441d5a0dc190028cb1a04a8d7adf465d1211b27fc1be019d75ce","log":false},{"name":"request-revisions.js","version":"1.2","hash":"sha256-b835c1c13b5bcb185401f3f333bf559651817b5d1b3551a8e02795d2e4f538c5","log":false},{"name":"toggle-main-panels.js","version":"1.12","hash":"sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d","log":false},{"name":"user-story-markdown.js","version":"1.10","hash":"sha256-394efdd7463de3eeb1d8ceb242c378019d66e834f892a10eb998423c6c955ca3","log":false},{"name":"user-story-collapse.js","version":"1.6","hash":"sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807","log":false},{"name":"vnc-helper.js","version":"3.9","hash":"sha256-29c83ad41ffc6a1f435fb54073a5dfa4bd0a6cc7e64c58eddf786c99a22de767","log":false},{"name":"env-helper.js","version":"2.8","hash":"sha256-8c5c650ed1b46b734171c4403a69251f895a287c7feeca5e9a7367967fe6490a","log":false}],"opsDashboardPlugins":[],"opsDashboardLibraries":[],"devPlugins":[],"settingsModalDocs":[{"name":"information-tab.md","version":"1.19"},{"name":"features-tab.md","version":"1.46"}],"archetypes":[{"id":"dashboard","name":"Main Dashboard","description":"Main dashboard page","urlPattern":"work/create","disambiguationSelectors":[],"plugins":[]},{"id":"tool-use-task-creation","name":"Tool Use Task Creation Page","description":"Page for creating K-type workflow tasks","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-8088efb71950f66e8522dce416402ef607510a1edc2203b98c2d13c1bd6c49ee","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-task-creation-openclaw","name":"Tool Use OpenClaw Task Creation Page","description":"Task Designers Special Projects OpenClaw variant","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":["text:Task Designers - Special Projects Tasks"],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-f9d1e893030f8800986bae1ac02fe5614a70d74839d942df3aeeab756984edfc","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-revision","name":"Tool Use Task Revision Page","description":"Page for reviewing and fixing previously submitted tool use tasks","urlPattern":"work/problems/respond-feedback/edit-tool-use*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-82432dd241762fefdae9d4602b7900ecf54a3b37a37c0d5222f1cc4fbcee5728","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"tool-results-resize-handle.js","version":"3.4","hash":"sha256-a244822dd48563ef7b169293483a5bebc2de2ee2f65406acb23489855a0d9733","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"create-task-project-selection","name":"Create Task Project Selection","description":"Screen for choosing a project before creating a task","urlPattern":"work/problems/create-instance","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-create-instance","name":"Dashboard Create Instance","description":"Dashboard page for creating instances","urlPattern":"dashboard/instances/create","disambiguationSelectors":[],"plugins":[]},{"id":"comp-use-task-creation","name":"Computer Use Task Creation Page","description":"Page for creating computer use tasks","urlPattern":"work/problems/create*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.2","log":false,"hash":"sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"},{"name":"fos-vm-clipboard.js","version":"2.2","hash":"sha256-6d1869308b81556279f433fa856f130afb22ffdf485050221e2f8f1e6c05a17c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-7ae4d81165d55305d48d9e3051e4d1b0ab40e3ef60234cd72e890f11d872d775","log":false},{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"},{"name":"task-metadata-cache.js","version":"1.1","hash":"sha256-11ff7265db5e305c858fbcd1008ed00702ba95d883f8605ebc34502735cba58e","log":false}]},{"id":"comp-use-revision","name":"Computer Use Task Revision Page","description":"Page for reviewing and fixing previously submitted computer use tasks","urlPattern":"work/problems/respond-feedback/edit*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.1","log":false,"hash":"sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"},{"name":"fos-vm-clipboard.js","version":"2.1","hash":"sha256-c6586ebceb0d6099098c2de6fc804fc8d7838c0195760a84430ebd07802fe8de","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-a9540416f8f6b1f9f4b9750957705033f90ad4d620569e72798cb43b1f411be8","log":false},{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"qa-tool-use","name":"Task Review Page","description":"Page for reviewing and approving tasks","urlPattern":"work/problems/qa-tool-use/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","copy-verifier-output.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"hide-verifier-output.js","version":"1.8","hash":"sha256-22888468f4715d7152cb411e98d2de55183327fb540d8ba455273875c1806781","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"text-sanitizer.js","version":"3.2","hash":"sha256-dd1887ece3307bf0f35e6b08b23af4af4ba5dfdecc62200211f3f37e8cfa3fe7","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-ed705a53a986c843f8605db4599f4abfac0bc755b03f28afc9a2ac650c326bef","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"qa-session","name":"Session Trace Review","description":"Page for reviewing session traces","urlPattern":"work/problems/qa-session/*","disambiguationSelectors":[],"plugins":[]},{"id":"qa-comp-use","name":"Computer Use Task Review Page","description":"Page for reviewing and approving computer-use tasks","urlPattern":"work/problems/qa/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","action-counter.js","copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"action-counter.js","version":"2.1","log":false,"hash":"sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"},{"name":"auto-start-recording.js","version":"1.4","hash":"sha256-41c516f670f44c9d03d736b938ecfe346313b28810766e3860b322d039a80cd1","log":false},{"name":"copy-result-params.js","version":"2.0","hash":"sha256-c8b3853bafeb018ace90c39bd585b857aca0c5ac3617f5ea79d7c42cf3491dee","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"show-verifier-on-run.js","version":"1.4","hash":"sha256-c2e4e617d066522280dfa894595d996e75ffb9040f2abad75315f8a872d8975c","log":false},{"name":"toggle-main-panels.js","version":"1.11","log":false,"hash":"sha256-57e883d0db1eaaf784343de7a4ece06eaff54d108860971027692f8e5b6ab201"},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"disputes","name":"Dispute Review Page","description":"Page for reviewing writer disputes","urlPattern":"work/problems/disputes","disambiguationSelectors":[],"libraries":["user-story-markdown.js"],"plugins":[{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-053a47538155b35ec5a766ee7b55291b3b78d8de4a113dcd609975101d138bc3","log":false}]},{"id":"dispute-detail","name":"Dispute Detail Page","description":"Page for reviewing a single writer dispute","urlPattern":"work/problems/disputes/*","disambiguationSelectors":[],"libraries":["copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js"],"plugins":[{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-bb6c066c58e5bf843439c6b18e35d95ba88ab6e1f0c7a3b1fed4d813d0ab9f66","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-662ca9bd9c4883de4250fb87deb48291a4f15b5740a081421cf4e7f2d0dd7db2","log":false},{"name":"tool-results-resize-handle.js","version":"1.3","hash":"sha256-7df97c2a426026a2002da1f31cac0c81d2e5abc995182cd9bba6773d1ec69462","log":false},{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-bd4703bc5f63c20aa08db6babe4177f495ff40e10e69f604d5730edcd8905ae0","log":false}]},{"id":"task-view","name":"Task View","description":"Page for viewing a task","urlPattern":"work/problems/view-task*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-task","name":"Dashboard Data Task View","description":"Dashboard task detail page","urlPattern":"dashboard/data/tasks/*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-expert","name":"Dashboard Data Expert Profile","description":"Expert profile page on the dashboard","urlPattern":"dashboard/data/experts/*","disambiguationSelectors":[],"plugins":[]},{"id":"no-vnc","name":"noVNC Instance","description":"noVNC remote desktop instances on fleet environment subdomains","urlPattern":"_novnc","disambiguationSelectors":[],"plugins":[{"name":"vnc-helper.js","version":"1.14","hash":"sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411","log":false},{"name":"env-helper.js","version":"1.6","hash":"sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c","log":false}],"libraries":["prompt-text-counter.js","vnc-helper.js","env-helper.js"]},{"id":"assessments-grade","name":"Assessments Grade","description":"Assessment grading queue","urlPattern":"work/assessments/grade","disambiguationSelectors":["text:To grade"],"plugins":[]},{"id":"assessments-grade-detail","name":"Assessments Grade Detail","description":"Individual assessment grading page","urlPattern":"work/assessments/grade/*","disambiguationSelectors":["text:← Back to queue"],"plugins":[]},{"id":"guidelines","name":"Guidelines","description":"Guidelines list and editor","urlPattern":"work/guidelines","disambiguationSelectors":[],"plugins":[]}],"devArchetypes":[]};
+    const BUNDLED_SETTINGS_DOCS = {"information-tab.md":"1.19\n## Fleet Safe UX Build\nThis is a containment userscript. It keeps FOS clipboard/autoconnect, local prompt/UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are suspended pending investigation.\n\n## Information\nIf you still cannot find a specific codename, please use the `Feedback` tab to notify me!\n#### Environment Codenames\n| Environment Codename      | Real App Name          |\n|---------------------------|------------------------|\n| Agora                     | Reddit                 |\n| Aisle                     | Walmart                |\n| Atlas                     | Google Maps            |\n| Bay                       | Amazon                 |\n| Brass                     | Bill                   |\n| Citadel                   | Salesforce             |\n| Chorus                    | Teams                  |\n| Crate                     | Instacart              |\n| Docket                    | Dropbox                |\n| Float                     | Ramp                   |\n| Seal                      | Docusign               |\n| Foundry                   | Github                 |\n| Funnel                    | Zip                    |\n| Harbor                    | Bank of America        |\n| Jetstream                 | Google Flights         |\n| Kernel                    | Jira / RevOps          |\n| KeyRing                   | Booking                |\n| Latch Calendar/Mail/Tasks | Outlook                |\n| Ledger                    | Quickbooks             |\n| LedgerGov                 | DMV                    |\n| Lumen                     | Datadog                |\n| Medora                    | Zocdoc                 |\n| Meridian                  | Amex                   |\n| Nest                      | Zillow                 |\n| Orbit                     | PandaDoc               |\n| Portal                    | Ticketmaster           |\n| Relay                     | Hubspot                |\n| Seal                      | Docusign               |\n| Sentinel                  | Vanta                  |\n| Signal                    | Sentry                 |\n| StackLine                 | StackOverflow          |\n| Torch                     | PagerDuty              |\n| Vault                     | Confluence             |\n| Ward                      | Synk                   |\n| Yelp                      | Hearth                 |\n\n#### Guidelines\n- [General](https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3)\n- [Tool use](https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b)\n- [QA](https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43)\n- [Time submission](https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c)\n\n#### Community\n- [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)\n- [Environment Gists](https://fleetai-env-gists.vercel.app)\n- [This Extension](https://github.com/fleet-ai-operations/fleet-ux-improvements)","features-tab.md":"1.46\n\n## Fleet Safe UX Build\nThis containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.\n\n## Features\n\nThe extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).\n\nMany of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!\n\n### Main Dashboard\n- **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning\n\n### Tool Use Task Creation Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Creation Page (OpenClaw / Special Projects)\n*Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*\n- **Bug Report Readability Fix**: Makes bug report cards expandable to see full text\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Tool Favorites**: Add favorite stars to tools list\n- **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Computer Use Task Creation Page\n- **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n- **Task Metadata Cache**: Saves the Task Metadata boxes (Crux, Intended outcome, Message requirements), Writer Notes and Scratchpad as you type, and refills them after a page reload or instance reset\n\n### Computer Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### QA Tool Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Useful Link Buttons**: Add useful link buttons to the page\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### QA Computer Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter beside the Verifier tab\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Dispute Detail Page\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear\n- **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages\n- **Environment Verifier Tab**: Adds Environment | Verifier tabs on the instance status bar (beside Start Recording / Reset / Run Verifier) and shows searchable verifier source; switches only the iframe stack\n- **Tool Favorites**: Add favorite stars to tools list\n- **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n\n### Session Trace Review Page\n- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)\n- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits\n\n### Guidelines\n- **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar\n- **Guideline Theme Presets**: Apply named text themes from the edit toolbar\n\n### noVNC Instance (FOS opened directly in a tab)\n- **External VNC Helper**: Floating panel on directly-opened noVNC sessions with a clipboard bridge (Extract/Overwrite between your OS clipboard and the VM), prompt cache, and scratchpad; keyboard shortcuts keep working with the panel hidden\n- **External Env Helper**: Floating prompt cache + scratchpad panel for non-VNC external env pages\n\n### Task View\n*No production plugins are configured for this archetype.*\n"};
     const BUNDLED_PLUGIN_FACTORIES = {
         "core/main/ui-lib.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
 // ui-lib.js — shared UI tokens, button styles, spinners, and copy feedback.
@@ -16207,6 +16208,442 @@ const plugin = {
         const api = Context.toggleMainPanels;
         if (!api || typeof api.run !== 'function') return;
         api.run(state, { pluginId: this.id, logTag: this.id });
+    }
+};
+
+return plugin;
+},
+        "archetypes/comp-use-task-creation/main/task-metadata-cache.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
+// ============= task-metadata-cache.js =============
+// Keeps the Task Metadata boxes (Crux, Intended outcome, Message requirements, …),
+// Writer Notes and Scratchpad across page reloads and instance resets on computer-use
+// task creation.
+//
+// Every edit is saved locally (debounced) under the current task's authoring
+// reservation (falling back to the instance id). When the page loads again for
+// the same task, any of those boxes that come back empty are refilled from the
+// cache. Boxes that already have text are never overwritten, and clearing a box
+// on purpose is remembered so it is not refilled.
+
+const plugin = {
+    id: 'taskMetadataCache',
+    name: 'Task Metadata Cache',
+    description: 'Saves the Task Metadata boxes, Writer Notes and Scratchpad as you type and refills them after a page reload or instance reset',
+    _version: '1.1',
+    enabledByDefault: true,
+    phase: 'mutation',
+
+    storageKey: 'comp-use-task-metadata-cache',
+    saveDelayMs: 800,
+    maxEntries: 25,
+    maxAgeMs: 14 * 24 * 60 * 60 * 1000,
+    restoreVerifyDelaysMs: [400, 1500, 3000],
+    resetRecheckDelaysMs: [500, 1000, 2000, 4000, 8000],
+    panelFields: {
+        'Writer Notes': 'writer-notes',
+        'Scratchpad': 'scratchpad'
+    },
+
+    initialState: {
+        cacheKey: null,
+        fields: null,           // key -> field state
+        stylesInjected: false,
+        globalListenersBound: false,
+        missingLogged: false,
+        activationLogged: false
+    },
+
+    destroy(state) {
+        this.flushAll(state);
+        this.clearFieldTimers(state);
+        state.fields = null;
+        state.cacheKey = null;
+    },
+
+    onMutation(state) {
+        const cacheKey = this.getCacheKey();
+        if (!cacheKey) return;
+
+        if (state.cacheKey !== cacheKey) {
+            // New task (or first run): drop per-field state from any previous task.
+            this.flushAll(state);
+            this.clearFieldTimers(state);
+            state.cacheKey = cacheKey;
+            state.fields = {};
+            state.activationLogged = false;
+        }
+
+        if (!state.stylesInjected) {
+            this.injectStyles();
+            state.stylesInjected = true;
+        }
+
+        if (!state.globalListenersBound) {
+            const flush = () => this.flushAll(state);
+            CleanupRegistry.registerEventListener(document, 'visibilitychange', () => {
+                if (document.visibilityState === 'hidden') flush();
+            });
+            CleanupRegistry.registerEventListener(window, 'pagehide', flush);
+            CleanupRegistry.registerEventListener(window, 'beforeunload', flush);
+            // Reset Instance may empty the boxes without reloading or re-mounting them.
+            // Re-check for a few seconds after it is clicked and refill boxes that came back empty.
+            CleanupRegistry.registerEventListener(document, 'click', (e) => {
+                const btn = e.target && e.target.closest ? e.target.closest('button') : null;
+                if (!btn || !/^\s*reset(\s+instance)?\s*$/i.test(btn.textContent || '')) return;
+                this.flushAll(state);
+                for (const delay of this.resetRecheckDelaysMs) {
+                    setTimeout(() => this.refillEmptied(state), delay);
+                }
+                Logger.debug('Task Metadata Cache: Reset clicked, re-checking fields');
+            }, true);
+            state.globalListenersBound = true;
+        }
+
+        const found = this.findFields();
+        if (found.length === 0) {
+            if (!state.missingLogged) {
+                Logger.debug('Task Metadata Cache: metadata / writer notes fields not found yet');
+                state.missingLogged = true;
+            }
+            return;
+        }
+        state.missingLogged = false;
+
+        for (const f of found) {
+            let field = state.fields[f.key];
+            if (field && field.textarea === f.textarea) {
+                this.ensureStatusIndicator(field, f.labelEl);
+                continue;
+            }
+            if (field) this.clearFieldTimer(field);
+            field = {
+                key: f.key,
+                label: f.label,
+                textarea: f.textarea,
+                labelEl: f.labelEl,
+                saveTimer: null,
+                verifyTimers: [],
+                statusEl: null,
+                statusCurrent: null,
+                restoredValue: null,
+                userEdited: false,
+                suppressInput: false
+            };
+            state.fields[f.key] = field;
+            this.bindField(state, field);
+            this.ensureStatusIndicator(field, f.labelEl);
+            this.maybeRestore(state, field);
+        }
+
+        if (!state.activationLogged) {
+            Logger.info(`Task Metadata Cache: watching ${found.length} field(s) for ${cacheKey}`);
+            state.activationLogged = true;
+        }
+    },
+
+    // ─── field discovery ──────────────────────────────────────────────────────
+
+    findFields() {
+        const out = [];
+        const seen = new Set();
+
+        // Task Metadata card: <h3>Task Metadata</h3> … <label>Crux*</label><textarea>
+        const headings = document.querySelectorAll('h3');
+        for (const h3 of headings) {
+            if (this.cleanLabel(h3.textContent) !== 'Task Metadata') continue;
+            const card = h3.closest('.rounded-lg') || (h3.parentElement && h3.parentElement.parentElement);
+            if (!card) continue;
+            for (const label of card.querySelectorAll('label')) {
+                const name = this.cleanLabel(label.textContent);
+                if (!name) continue;
+                const container = label.closest('.space-y-2') || label.parentElement;
+                const ta = container && container.querySelector('textarea');
+                if (!ta || seen.has(ta)) continue;
+                seen.add(ta);
+                out.push({ key: 'meta:' + name, label: name, textarea: ta, labelEl: label });
+            }
+        }
+
+        // Writer Notes / Scratchpad panels: <div class="text-sm text-muted-foreground font-medium">Writer Notes</div>
+        const panelLabels = document.querySelectorAll('.text-sm.text-muted-foreground.font-medium');
+        for (const labelEl of panelLabels) {
+            const name = this.cleanLabel(labelEl.textContent);
+            const key = this.panelFields[name];
+            if (!key) continue;
+            const section = labelEl.closest('.relative.space-y-2') || labelEl.closest('.space-y-2');
+            const ta = section && section.querySelector('textarea');
+            if (!ta || seen.has(ta)) continue;
+            seen.add(ta);
+            out.push({ key, label: name, textarea: ta, labelEl });
+        }
+
+        return out;
+    },
+
+    cleanLabel(text) {
+        // Strip required-asterisks and anything this plugin appended to the label.
+        return String(text || '')
+            .replace(/\*/g, '')
+            .replace(/\s*Restored\s*$/i, '')
+            .trim();
+    },
+
+    // ─── cache key / storage ──────────────────────────────────────────────────
+
+    getCacheKey() {
+        const params = new URLSearchParams(window.location.search);
+        const reservation = params.get('authoring_reservation_id');
+        if (reservation) return 'reservation:' + reservation;
+        const instance = params.get('instance_id');
+        if (instance) return 'instance:' + instance;
+        return null;
+    },
+
+    readCache() {
+        const raw = Storage.get(this.storageKey, '');
+        if (!raw) return {};
+        try {
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            Logger.warn('Task Metadata Cache: could not parse cache, starting fresh');
+            return {};
+        }
+    },
+
+    writeCache(cache) {
+        const now = Date.now();
+        const entries = Object.entries(cache)
+            .filter(([, entry]) => entry && typeof entry.savedAt === 'number' && now - entry.savedAt <= this.maxAgeMs)
+            .sort((a, b) => b[1].savedAt - a[1].savedAt)
+            .slice(0, this.maxEntries);
+        Storage.set(this.storageKey, JSON.stringify(Object.fromEntries(entries)));
+    },
+
+    getCachedValue(cacheKey, fieldKey) {
+        const entry = this.readCache()[cacheKey];
+        if (!entry || !entry.fields) return null;
+        const value = entry.fields[fieldKey];
+        return typeof value === 'string' ? value : null;
+    },
+
+    saveField(state, field) {
+        if (!state.cacheKey || !field.textarea) return;
+        const cache = this.readCache();
+        const entry = cache[state.cacheKey] || { fields: {} };
+        entry.fields = entry.fields || {};
+        entry.fields[field.key] = field.textarea.value;
+        entry.savedAt = Date.now();
+        cache[state.cacheKey] = entry;
+        this.writeCache(cache);
+        this.setStatus(field, 'saved');
+        Logger.debug(`Task Metadata Cache: saved "${field.label}" (${field.textarea.value.length} chars)`);
+    },
+
+    // ─── binding / saving ─────────────────────────────────────────────────────
+
+    bindField(state, field) {
+        const onInput = () => {
+            if (field.suppressInput) return;
+            field.userEdited = true;
+            this.cancelVerify(field);
+            this.setStatus(field, 'pending');
+            this.clearFieldTimer(field);
+            field.saveTimer = setTimeout(() => {
+                field.saveTimer = null;
+                this.saveField(state, field);
+            }, this.saveDelayMs);
+        };
+        CleanupRegistry.registerEventListener(field.textarea, 'input', onInput);
+        CleanupRegistry.registerEventListener(field.textarea, 'blur', () => this.flushField(state, field));
+    },
+
+    flushField(state, field) {
+        if (!field.saveTimer) return;
+        this.clearFieldTimer(field);
+        this.saveField(state, field);
+    },
+
+    flushAll(state) {
+        if (!state.fields) return;
+        for (const field of Object.values(state.fields)) this.flushField(state, field);
+    },
+
+    clearFieldTimer(field) {
+        if (field.saveTimer) {
+            clearTimeout(field.saveTimer);
+            field.saveTimer = null;
+        }
+    },
+
+    cancelVerify(field) {
+        for (const t of field.verifyTimers) clearTimeout(t);
+        field.verifyTimers = [];
+    },
+
+    clearFieldTimers(state) {
+        if (!state.fields) return;
+        for (const field of Object.values(state.fields)) {
+            this.clearFieldTimer(field);
+            this.cancelVerify(field);
+        }
+    },
+
+    // ─── restore ──────────────────────────────────────────────────────────────
+
+    maybeRestore(state, field) {
+        const cached = this.getCachedValue(state.cacheKey, field.key);
+        if (!cached || !cached.trim()) {
+            this.setStatus(field, null);
+            return;
+        }
+        if (field.textarea.value.trim()) {
+            // Never overwrite text that is already there.
+            this.setStatus(field, field.textarea.value === cached ? 'saved' : null);
+            return;
+        }
+
+        this.applyValue(field, cached);
+        field.restoredValue = cached;
+        this.setStatus(field, 'saved');
+        this.showRestoredBadge(field);
+        Logger.log(`Task Metadata Cache: restored "${field.label}" (${cached.length} chars)`);
+
+        // React can wipe the value if it hydrates/re-renders after we fill it;
+        // re-apply a few times until it sticks or the user starts typing.
+        for (const delay of this.restoreVerifyDelaysMs) {
+            field.verifyTimers.push(setTimeout(() => {
+                if (field.userEdited || !document.contains(field.textarea)) return;
+                if (field.textarea.value === '' && field.restoredValue) {
+                    this.applyValue(field, field.restoredValue);
+                    Logger.debug(`Task Metadata Cache: re-applied "${field.label}" after it was reset`);
+                }
+            }, delay));
+        }
+    },
+
+    refillEmptied(state) {
+        if (!state.fields || !state.cacheKey) return;
+        for (const f of this.findFields()) {
+            const field = state.fields[f.key];
+            // A re-mounted box is picked up (and restored) by onMutation instead.
+            if (!field || field.textarea !== f.textarea) continue;
+            const ta = field.textarea;
+            if (ta.value !== '' || document.activeElement === ta || field.saveTimer) continue;
+            const cached = this.getCachedValue(state.cacheKey, field.key);
+            if (!cached || !cached.trim()) continue;
+            this.applyValue(field, cached);
+            this.setStatus(field, 'saved');
+            this.showRestoredBadge(field);
+            Logger.log(`Task Metadata Cache: refilled "${field.label}" after reset`);
+        }
+    },
+
+    applyValue(field, value) {
+        field.suppressInput = true;
+        try {
+            this.setTextareaValueReactFriendly(field.textarea, value);
+        } finally {
+            field.suppressInput = false;
+        }
+    },
+
+    setTextareaValueReactFriendly(textarea, value) {
+        const previousValue = textarea.value;
+        const descriptor = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+        if (descriptor && descriptor.set) {
+            descriptor.set.call(textarea, value);
+        } else {
+            textarea.value = value;
+        }
+        if (textarea._valueTracker && typeof textarea._valueTracker.setValue === 'function') {
+            try { textarea._valueTracker.setValue(previousValue); } catch (_) { /* ignore */ }
+        }
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+
+    // ─── status indicator ─────────────────────────────────────────────────────
+
+    ensureStatusIndicator(field, labelEl) {
+        if (field.statusEl && document.contains(field.statusEl)) return;
+        if (!labelEl) return;
+        const existing = labelEl.querySelector('[data-fleet-metadata-cache-status]');
+        const el = existing || document.createElement('span');
+        if (!existing) {
+            el.setAttribute('data-fleet-metadata-cache-status', 'true');
+            el.className = 'fleet-metadata-cache-status';
+            labelEl.appendChild(el);
+        }
+        field.statusEl = el;
+        const prev = field.statusCurrent;
+        field.statusCurrent = undefined;
+        this.setStatus(field, prev === undefined ? null : prev);
+    },
+
+    setStatus(field, status) {
+        if (status === field.statusCurrent) return;
+        field.statusCurrent = status;
+        const el = field.statusEl;
+        if (!el) return;
+        if (status === 'saved') {
+            el.title = `${field.label} saved locally`;
+            el.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgb(34,197,94)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        } else if (status === 'pending') {
+            el.title = `Saving ${field.label}…`;
+            el.innerHTML = Context.uiLib && typeof Context.uiLib.spinnerHtml === 'function'
+                ? Context.uiLib.spinnerHtml(12)
+                : '<span class="fleet-ui-spinner" style="width:12px;height:12px;"></span>';
+        } else {
+            el.title = '';
+            el.innerHTML = '';
+        }
+    },
+
+    showRestoredBadge(field) {
+        if (!field.labelEl || field.labelEl.querySelector('[data-fleet-metadata-cache-restored]')) return;
+        const badge = document.createElement('span');
+        badge.setAttribute('data-fleet-metadata-cache-restored', 'true');
+        badge.className = 'fleet-metadata-cache-restored';
+        badge.textContent = 'Restored';
+        badge.title = 'Refilled from your last saved text for this task';
+        field.labelEl.appendChild(badge);
+        setTimeout(() => badge.classList.add('fleet-metadata-cache-restored--fade'), 6000);
+        setTimeout(() => badge.remove(), 7000);
+    },
+
+    injectStyles() {
+        if (Context.uiLib && typeof Context.uiLib.ensureStyles === 'function') {
+            Context.uiLib.ensureStyles();
+        }
+        if (document.getElementById('fleet-metadata-cache-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'fleet-metadata-cache-styles';
+        style.textContent = `
+            .fleet-metadata-cache-status {
+                display: inline-flex;
+                align-items: center;
+                margin-left: 6px;
+                vertical-align: middle;
+            }
+            .fleet-metadata-cache-restored {
+                display: inline-block;
+                margin-left: 6px;
+                padding: 0 6px;
+                border-radius: 9999px;
+                border: 1px solid rgba(34, 197, 94, 0.5);
+                color: rgb(34, 197, 94);
+                font-size: 0.675rem;
+                font-weight: 500;
+                line-height: 1.4;
+                vertical-align: middle;
+                transition: opacity 0.8s ease;
+            }
+            .fleet-metadata-cache-restored--fade {
+                opacity: 0;
+            }
+        `;
+        document.head.appendChild(style);
     }
 };
 

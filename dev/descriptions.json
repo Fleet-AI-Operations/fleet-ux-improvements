@@ -100,6 +100,11 @@
       "file": "toggle-main-panels.js",
       "name": "Toggle Main Panels",
       "description": "Hide or unhide either main pane (task detail or environment); the other pane expands to full width"
+    },
+    {
+      "file": "task-metadata-cache.js",
+      "name": "Task Metadata Cache",
+      "description": "Saves the Task Metadata boxes, Writer Notes and Scratchpad as you type and refills them after a page reload or instance reset"
     }
   ],
   "archetypes/dashboard/main": [
