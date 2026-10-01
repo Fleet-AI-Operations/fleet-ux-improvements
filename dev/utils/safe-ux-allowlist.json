@@ -43,7 +43,8 @@
     "user-story-collapse.js",
     "user-story-markdown.js",
     "vnc-helper.js",
-    "env-helper.js"
+    "env-helper.js",
+    "task-metadata-cache.js"
   ],
   "settingsDocs": [
     "information-tab.md",

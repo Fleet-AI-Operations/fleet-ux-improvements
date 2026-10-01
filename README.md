@@ -127,6 +127,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
 - **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change
 - **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
+- **Task Metadata Cache**: Saves the Task Metadata boxes (Crux, Intended outcome, Message requirements), Writer Notes and Scratchpad as you type, and refills them after a page reload or instance reset
 
 ### Computer Use Task Revision Page
 - **Prompt Text Counter**: Shows a live word and character count below the prompt
