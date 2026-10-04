@@ -1486,7 +1486,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared buttons, segments, panels, and copy feedback',
-    _version: '3.24',
+    _version: '3.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1517,9 +1517,18 @@ const plugin = {
                 style = document.createElement('style');
                 style.id = styleId;
             }
-            style.textContent = fleetUiBtnBaseCssLines(scopeSelector + ' ').join('\n');
+            // Only touch the DOM when something changed. Rewriting the text or re-appending the
+            // <style> on every call is a DOM mutation (plus a full style recalc), and callers run
+            // from mutation plugins, so unconditional writes kept every page re-running all
+            // plugins once per frame.
+            const css = fleetUiBtnBaseCssLines(scopeSelector + ' ').join('\n');
+            if (style.textContent !== css) {
+                style.textContent = css;
+            }
             const target = appendRoot || document.head || document.documentElement;
-            target.appendChild(style);
+            if (style.parentNode !== target) {
+                target.appendChild(style);
+            }
         }
 
         function ensurePanelStyles(scopeSelector, appendRoot) {

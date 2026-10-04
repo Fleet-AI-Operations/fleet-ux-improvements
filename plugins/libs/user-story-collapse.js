@@ -2,6 +2,19 @@
 // Hide/Show User Story (or creation scenario / annotator instructions) body
 // from a right-aligned toggle on the label.
 
+// Write-if-changed helpers. This runs from a mutation plugin: any DOM write, even one that sets
+// the same value again, is a mutation that re-runs every mutation plugin on the next frame, so
+// unconditional writes here kept the page looping ~60 times a second.
+function setAttr(el, name, value) {
+    if (el && el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+function setStyle(el, prop, value) {
+    if (el && el.style[prop] !== value) el.style[prop] = value;
+}
+function setClass(el, value) {
+    if (el && el.className !== value) el.className = value;
+}
+
 const SCOPE = '[data-fleet-user-story-collapse="1"]';
 const CONTAINER_ATTR = 'data-fleet-user-story-collapse';
 const TOGGLE_SLOT = 'user-story-collapse-toggle';
@@ -163,8 +176,8 @@ const UserStoryCollapseApi = {
                 if (!body.hasAttribute(SAVED_DISPLAY_ATTR)) {
                     body.setAttribute(SAVED_DISPLAY_ATTR, body.style.display || '');
                 }
-                body.style.display = 'none';
-                body.setAttribute(HIDDEN_ATTR, '1');
+                setStyle(body, 'display', 'none');
+                setAttr(body, HIDDEN_ATTR, '1');
             } else {
                 const saved = body.getAttribute(SAVED_DISPLAY_ATTR);
                 body.style.display = saved != null ? saved : '';
@@ -175,33 +188,34 @@ const UserStoryCollapseApi = {
     },
 
     applyHeaderLayout(headerEl) {
-        headerEl.style.display = 'flex';
-        headerEl.style.alignItems = 'center';
-        headerEl.style.justifyContent = 'space-between';
-        headerEl.style.width = '100%';
-        headerEl.style.gap = '8px';
+        setStyle(headerEl, 'display', 'flex');
+        setStyle(headerEl, 'alignItems', 'center');
+        setStyle(headerEl, 'justifyContent', 'space-between');
+        setStyle(headerEl, 'width', '100%');
+        setStyle(headerEl, 'gap', '8px');
     },
 
     applyToggleChrome(btn) {
         if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            btn.className = Context.uiLib.btnClass('basic', 'compact');
+            setClass(btn, Context.uiLib.btnClass('basic', 'compact'));
         } else {
-            btn.className =
-                'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
+            setClass(btn,
+                'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1');
         }
-        btn.style.flexShrink = '0';
-        btn.style.marginLeft = 'auto';
-        btn.style.pointerEvents = 'auto';
-        btn.style.position = 'relative';
-        btn.style.zIndex = '2';
+        setStyle(btn, 'flexShrink', '0');
+        setStyle(btn, 'marginLeft', 'auto');
+        setStyle(btn, 'pointerEvents', 'auto');
+        setStyle(btn, 'position', 'relative');
+        setStyle(btn, 'zIndex', '2');
     },
 
     syncToggleLabel(btn, hidden, kind) {
         const noun = this.sectionNoun(kind || (btn && btn.getAttribute(KIND_ATTR)) || 'story');
         const label = hidden ? 'Show' : 'Hide';
-        btn.textContent = label;
-        btn.setAttribute('aria-label', hidden ? 'Show ' + noun : 'Hide ' + noun);
-        btn.title = btn.getAttribute('aria-label');
+        const aria = hidden ? 'Show ' + noun : 'Hide ' + noun;
+        if (btn.textContent !== label) btn.textContent = label;
+        setAttr(btn, 'aria-label', aria);
+        setAttr(btn, 'title', aria);
     },
 
     findToggleInContainer(container, logTag) {
@@ -217,7 +231,7 @@ const UserStoryCollapseApi = {
         if (!headerEl || !container) return;
 
         this.cleanupOrphanHeaders(container);
-        container.setAttribute(CONTAINER_ATTR, '1');
+        setAttr(container, CONTAINER_ATTR, '1');
 
         if (Context.uiLib && typeof Context.uiLib.ensureButtonStyles === 'function') {
             Context.uiLib.ensureButtonStyles(SCOPE);
@@ -242,7 +256,7 @@ const UserStoryCollapseApi = {
             if (btn.parentElement !== header && header.isConnected) {
                 header.appendChild(btn);
             }
-            btn.setAttribute(KIND_ATTR, kind || 'story');
+            setAttr(btn, KIND_ATTR, kind || 'story');
             this.applyToggleChrome(btn);
             this.syncToggleLabel(btn, hidden, kind);
             if (hidden) this.setBodiesHidden(bodies, true);
@@ -325,7 +339,7 @@ const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
     description: 'Shared Hide/Show for User Story bodies',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
