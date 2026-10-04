@@ -274,7 +274,9 @@ const UserStoryMarkdownApi = {
     hideLeadingCheckmark(body) {
         const wrap = this.findLeadingCheckmark(body);
         if (!wrap) return;
-        wrap.setAttribute(CHECKMARK_MARKER, 'true');
+        if (wrap.getAttribute(CHECKMARK_MARKER) !== 'true') {
+            wrap.setAttribute(CHECKMARK_MARKER, 'true');
+        }
     },
 
     unhideLeadingCheckmark(body) {
@@ -471,6 +473,11 @@ const UserStoryMarkdownApi = {
     detachObserver(entry) {
         if (entry && entry.observer) {
             entry.observer.disconnect();
+            // Drop it from the cleanup registry too, or every replaced User Story body
+            // stays reachable (with its replica) through the disconnected observer.
+            if (typeof CleanupRegistry !== 'undefined' && CleanupRegistry.unregisterObserver) {
+                CleanupRegistry.unregisterObserver(entry.observer);
+            }
             entry.observer = null;
         }
     },
@@ -496,7 +503,11 @@ const UserStoryMarkdownApi = {
     },
 
     ensureReplica(body, state, logTag) {
-        body.setAttribute(ORIGINAL_MARKER, 'true');
+        // Write only when different: this runs on every mutation pass, and a write that
+        // repeats the same value still counts as a mutation and re-runs every plugin.
+        if (body.getAttribute(ORIGINAL_MARKER) !== 'true') {
+            body.setAttribute(ORIGINAL_MARKER, 'true');
+        }
         this.hideLeadingCheckmark(body);
 
         let replica = body.nextElementSibling;
@@ -508,8 +519,13 @@ const UserStoryMarkdownApi = {
             body.insertAdjacentElement('afterend', replica);
         }
 
-        replica.className = this.replicaClassName(body);
-        replica.setAttribute(PROSE_ATTR, '');
+        const replicaClass = this.replicaClassName(body);
+        if (replica.className !== replicaClass) {
+            replica.className = replicaClass;
+        }
+        if (replica.getAttribute(PROSE_ATTR) !== '') {
+            replica.setAttribute(PROSE_ATTR, '');
+        }
         this.syncReplica(body, replica);
 
         let entry = state.activeByBody.get(body);
@@ -590,7 +606,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared User Story markdown rendering',
-    _version: '1.10',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

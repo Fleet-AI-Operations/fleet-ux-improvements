@@ -1,6 +1,21 @@
 // ============= toggle-main-panels.js (library) =============
 // Hide/Unhide toggles in each main pane header; CSS-only collapse with mutual exclusivity.
 
+// Set or remove a boolean marker attribute only when it actually changes, so the
+// write does not generate a mutation (and another plugin pass) when nothing changed.
+function setMarker(el, name, on) {
+    if (!el) {
+        return;
+    }
+    if (on) {
+        if (el.getAttribute(name) !== 'true') {
+            el.setAttribute(name, 'true');
+        }
+    } else if (el.hasAttribute(name)) {
+        el.removeAttribute(name);
+    }
+}
+
 const STYLE_ID = 'fleet-toggle-main-panels';
 const TOGGLE_MARKER = 'data-fleet-pane-toggle';
 const SLIVER_MARKER = 'data-fleet-pane-sliver';
@@ -240,7 +255,10 @@ const ToggleMainPanelsApi = {
             slot.setAttribute('data-fleet-plugin', this.id);
             toolbar.appendChild(slot);
         }
-        slot.className = 'flex items-center justify-end shrink-0 gap-2 ml-auto';
+        const slotClass = 'flex items-center justify-end shrink-0 gap-2 ml-auto';
+        if (slot.className !== slotClass) {
+            slot.className = slotClass;
+        }
         return slot;
     },
 
@@ -255,7 +273,9 @@ const ToggleMainPanelsApi = {
             return;
         }
 
-        btn.classList.remove('ml-auto');
+        if (btn.classList.contains('ml-auto')) {
+            btn.classList.remove('ml-auto');
+        }
 
         const slot = this.ensureToggleSlot(toolbar);
         if (btn.parentElement !== slot) {
@@ -392,7 +412,9 @@ const ToggleMainPanelsApi = {
                 toolbar.closest('div.border-b') ||
                 toolbar;
         }
-        header.setAttribute('data-fleet-pane-header', 'true');
+        if (header.getAttribute('data-fleet-pane-header') !== 'true') {
+            header.setAttribute('data-fleet-pane-header', 'true');
+        }
     },
 
     ensureToggleButton(state, side, toolbar, panel) {
@@ -496,26 +518,9 @@ const ToggleMainPanelsApi = {
         const right = panels.right;
         const group = panels.group;
 
-        if (left) {
-            left.removeAttribute('data-fleet-collapsed');
-        }
-        if (right) {
-            right.removeAttribute('data-fleet-collapsed');
-        }
-
-        if (state.hiddenPane === 'left' && left) {
-            left.setAttribute('data-fleet-collapsed', 'true');
-        } else if (state.hiddenPane === 'right' && right) {
-            right.setAttribute('data-fleet-collapsed', 'true');
-        }
-
-        if (group) {
-            if (state.hiddenPane) {
-                group.setAttribute('data-fleet-has-collapsed', 'true');
-            } else {
-                group.removeAttribute('data-fleet-has-collapsed');
-            }
-        }
+        setMarker(left, 'data-fleet-collapsed', state.hiddenPane === 'left');
+        setMarker(right, 'data-fleet-collapsed', state.hiddenPane === 'right');
+        setMarker(group, 'data-fleet-has-collapsed', !!state.hiddenPane);
     },
 
     clearCollapsedMarkers(panels) {
@@ -535,8 +540,16 @@ const ToggleMainPanelsApi = {
             const side = btn.getAttribute('data-fleet-pane');
             const collapsed = state.hiddenPane === side;
             const paneName = side === 'left' ? 'task detail' : 'environment';
-            btn.textContent = collapsed ? 'Unhide' : 'Hide Panel';
-            btn.title = collapsed ? 'Show the ' + paneName + ' pane' : 'Hide the ' + paneName + ' pane';
+            const label = collapsed ? 'Unhide' : 'Hide Panel';
+            const title = collapsed ? 'Show the ' + paneName + ' pane' : 'Hide the ' + paneName + ' pane';
+            // Only write when different: every write is a DOM mutation, which re-runs all
+            // mutation plugins on the next frame (and would loop forever if repeated each run).
+            if (btn.textContent !== label) {
+                btn.textContent = label;
+            }
+            if (btn.title !== title) {
+                btn.title = title;
+            }
         });
     }
 };
@@ -546,7 +559,7 @@ const plugin = {
     name: 'Toggle Main Panels (library)',
     description:
         'Shared Hide/Unhide for the two main panes (task detail or environment); the other pane expands to full width',
-    _version: '1.12',
+    _version: '1.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
