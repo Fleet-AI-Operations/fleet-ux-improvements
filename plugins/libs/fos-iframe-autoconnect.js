@@ -1,11 +1,15 @@
 // ============= fos-iframe-autoconnect.js (library) =============
 // Patch FOS env iframe src with noVNC remote-resize and autoconnect params,
-// reconnect on tab visibility, and replace the native open-in-new-tab control.
+// optionally reconnect on tab visibility, and replace the native open-in-new-tab control.
 
 const FOS_AUTOCONNECT_ENV_HOST = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 const FOS_AUTOCONNECT_OPEN_TAB_MARKER = 'data-fleet-fos-open-tab';
 const FOS_AUTOCONNECT_OPEN_PATH_PREFIX = 'M14 4C14 3.44772';
 const FOS_AUTOCONNECT_RELOAD_DEBOUNCE_MS = 300;
+// Sub-option id (declared on each wrapper plugin). Off by default: reloading the embedded
+// instance on every return to the tab interrupts work in it (and Fleet's own page keeps the
+// instance connected without it), so only do it for people who opt in.
+const FOS_AUTOCONNECT_FOCUS_SUBOPTION = 'reconnect-on-tab-focus';
 
 const FosIframeAutoconnectApi = {
     id: 'fosIframeAutoconnect',
@@ -55,7 +59,7 @@ const FosIframeAutoconnectApi = {
         state.waitingFosLogged = false;
         this._patchIframeSrc(state, iframe);
         this._replaceOpenTabButton(state, iframe);
-        if (state.pendingFocusReconnect && !this._isEnvPanelCollapsed(iframe)) {
+        if (state.pendingFocusReconnect && !this._isEnvPanelCollapsed(iframe) && this._reconnectOnFocusEnabled()) {
             this._reconnectIframe(state);
         }
     },
@@ -91,6 +95,9 @@ const FosIframeAutoconnectApi = {
                 return;
             }
             state.wasHidden = false;
+            if (!self._reconnectOnFocusEnabled()) {
+                return;
+            }
             if (state.reloadTimer) {
                 clearTimeout(state.reloadTimer);
             }
@@ -104,6 +111,14 @@ const FosIframeAutoconnectApi = {
             CleanupRegistry.registerEventListener(document, 'visibilitychange', onVisibility);
         } else {
             document.addEventListener('visibilitychange', onVisibility);
+        }
+    },
+
+    _reconnectOnFocusEnabled() {
+        try {
+            return !!Storage.getSubOptionEnabled(this.id, FOS_AUTOCONNECT_FOCUS_SUBOPTION, false);
+        } catch (_e) {
+            return false;
         }
     },
 
@@ -360,8 +375,8 @@ const plugin = {
     id: 'fosIframeAutoconnectLib',
     name: 'FOS Viewport Resize (library)',
     description:
-        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs; reconnects on tab focus unless the environment pane is hidden',
-    _version: '1.2',
+        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs; can optionally reconnect when you return to the tab',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
