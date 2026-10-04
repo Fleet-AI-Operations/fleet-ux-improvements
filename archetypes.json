@@ -1,7 +1,7 @@
 {
-  "version": "14.2",
+  "version": "14.4",
   "coreOnlyMode": false,
-  "archetypesVersion": "15.2",
+  "archetypesVersion": "15.4",
   "logs": {
     "debug": false,
     "verbose": false,
@@ -10,8 +10,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.24",
-      "hash": "sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053",
+      "version": "3.25",
+      "hash": "sha256-fda427d62a5818cf107e9f4a5e7db4f905b4dcb7264193034c92d717e177e732",
       "log": false
     },
     {
@@ -78,8 +78,8 @@
     },
     {
       "name": "prompt-text-counter.js",
-      "version": "1.0",
-      "hash": "sha256-b0d71baa66ad441d5a0dc190028cb1a04a8d7adf465d1211b27fc1be019d75ce",
+      "version": "1.1",
+      "hash": "sha256-a22da5a775aed6c5ea37ae57a1d79385fe60cdc39cbcac6d66a92d042effaa61",
       "log": false
     },
     {
@@ -90,20 +90,20 @@
     },
     {
       "name": "toggle-main-panels.js",
-      "version": "1.12",
-      "hash": "sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d",
+      "version": "1.13",
+      "hash": "sha256-ff9465e4b94d244f96039a26f4ec7a140a951d370895b09f4618e16a2281569c",
       "log": false
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.10",
-      "hash": "sha256-394efdd7463de3eeb1d8ceb242c378019d66e834f892a10eb998423c6c955ca3",
+      "version": "1.11",
+      "hash": "sha256-46263f273981cfcea805f5649ff7fc3ae30d958f8a70073fa0ab8e5995e9ea46",
       "log": false
     },
     {
       "name": "user-story-collapse.js",
-      "version": "1.6",
-      "hash": "sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807",
+      "version": "1.7",
+      "hash": "sha256-a912e02dff61d3af40a1077260f5d1317dbfb9c26beb6d17da1424e9beeb4ffb",
       "log": false
     },
     {

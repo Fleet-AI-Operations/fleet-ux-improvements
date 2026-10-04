@@ -47,7 +47,12 @@ const PromptTextCounterApi = {
 
     syncEl(el, textarea) {
         if (!el || !textarea) return;
-        el.textContent = this.formatCounts(textarea.value);
+        const next = this.formatCounts(textarea.value);
+        // Skip identical writes: replacing the text node is a DOM mutation, which re-runs
+        // every mutation plugin on the next frame (an endless loop when done on every run).
+        if (el.textContent !== next) {
+            el.textContent = next;
+        }
     },
 
     bindInput(textarea, el) {
@@ -127,7 +132,7 @@ const plugin = {
     id: 'promptTextCounterLib',
     name: 'Prompt Text Counter (library)',
     description: 'Shared word and character count for editable prompt textareas',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
