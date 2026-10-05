@@ -44,7 +44,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Action Counter**: Persistent +/- counter in the page header
 - **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
-- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default
 - **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change
 - **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
 - **Task Metadata Cache**: Saves the Task Metadata boxes (Crux, Intended outcome, Message requirements), Writer Notes and Scratchpad as you type, and refills them after a page reload or instance reset
@@ -56,7 +56,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **Action Counter**: Persistent +/- counter in the page header
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)
-- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default
 - **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
 
 ### QA Tool Use Review Page
@@ -80,7 +80,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas
 - **Action Counter**: Persistent +/- counter beside the Verifier tab
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)
-- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default
 - **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width
 
 ### Dispute Detail Page
@@ -94,7 +94,7 @@ Many of the original modifications (such as a 3-column layout in the Kinesis tas
 - **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging
 - **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field
 - **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)
-- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again
+- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default
 
 ### Session Trace Review Page
 - **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)

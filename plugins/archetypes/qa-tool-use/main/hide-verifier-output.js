@@ -18,7 +18,7 @@ const plugin = {
     name: 'Hide Verifier Output',
     description:
         'Hide/Show Verifier Output on the bottom panel',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -221,15 +221,16 @@ const plugin = {
 
     applyToggleChrome(btn) {
         if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            btn.className = Context.uiLib.btnClass('basic', 'compact');
+            const nextClass = Context.uiLib.btnClass('basic', 'compact');
+            if (btn.className !== nextClass) btn.className = nextClass;
         } else if (!btn.className) {
             btn.className =
                 'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
         }
-        btn.style.flexShrink = '0';
-        btn.style.pointerEvents = 'auto';
-        btn.style.position = 'relative';
-        btn.style.zIndex = '2';
+        if (btn.style.flexShrink !== '0') btn.style.flexShrink = '0';
+        if (btn.style.pointerEvents !== 'auto') btn.style.pointerEvents = 'auto';
+        if (btn.style.position !== 'relative') btn.style.position = 'relative';
+        if (btn.style.zIndex !== '2') btn.style.zIndex = '2';
     },
 
     ensureToggle(ctx, state) {
@@ -293,9 +294,9 @@ const plugin = {
 
     syncToggleLabel(btn, hidden) {
         const label = hidden ? 'Show Verifier' : 'Hide Verifier';
-        btn.textContent = label;
-        btn.setAttribute('aria-label', label);
-        btn.title = label;
+        if (btn.textContent !== label) btn.textContent = label;
+        if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+        if (btn.title !== label) btn.title = label;
     },
 
     measureHeaderPx(ctx) {

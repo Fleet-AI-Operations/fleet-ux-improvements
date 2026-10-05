@@ -157,51 +157,70 @@ const UserStoryCollapseApi = {
         );
     },
 
+    setStyleIfChanged(el, prop, value) {
+        if (!el || !el.style || el.style[prop] === value) return;
+        el.style[prop] = value;
+    },
+
     setBodiesHidden(bodies, hidden) {
         for (const body of bodies) {
             if (hidden) {
                 if (!body.hasAttribute(SAVED_DISPLAY_ATTR)) {
                     body.setAttribute(SAVED_DISPLAY_ATTR, body.style.display || '');
                 }
-                body.style.display = 'none';
-                body.setAttribute(HIDDEN_ATTR, '1');
+                this.setStyleIfChanged(body, 'display', 'none');
+                if (body.getAttribute(HIDDEN_ATTR) !== '1') {
+                    body.setAttribute(HIDDEN_ATTR, '1');
+                }
             } else {
                 const saved = body.getAttribute(SAVED_DISPLAY_ATTR);
-                body.style.display = saved != null ? saved : '';
-                body.removeAttribute(SAVED_DISPLAY_ATTR);
-                body.removeAttribute(HIDDEN_ATTR);
+                const nextDisplay = saved != null ? saved : '';
+                this.setStyleIfChanged(body, 'display', nextDisplay);
+                if (body.hasAttribute(SAVED_DISPLAY_ATTR)) {
+                    body.removeAttribute(SAVED_DISPLAY_ATTR);
+                }
+                if (body.hasAttribute(HIDDEN_ATTR)) {
+                    body.removeAttribute(HIDDEN_ATTR);
+                }
             }
         }
     },
 
     applyHeaderLayout(headerEl) {
-        headerEl.style.display = 'flex';
-        headerEl.style.alignItems = 'center';
-        headerEl.style.justifyContent = 'space-between';
-        headerEl.style.width = '100%';
-        headerEl.style.gap = '8px';
+        this.setStyleIfChanged(headerEl, 'display', 'flex');
+        this.setStyleIfChanged(headerEl, 'alignItems', 'center');
+        this.setStyleIfChanged(headerEl, 'justifyContent', 'space-between');
+        this.setStyleIfChanged(headerEl, 'width', '100%');
+        this.setStyleIfChanged(headerEl, 'gap', '8px');
     },
 
     applyToggleChrome(btn) {
-        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            btn.className = Context.uiLib.btnClass('basic', 'compact');
-        } else {
-            btn.className =
-                'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
+        const nextClass = (Context.uiLib && typeof Context.uiLib.btnClass === 'function')
+            ? Context.uiLib.btnClass('basic', 'compact')
+            : 'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
+        if (btn.className !== nextClass) {
+            btn.className = nextClass;
         }
-        btn.style.flexShrink = '0';
-        btn.style.marginLeft = 'auto';
-        btn.style.pointerEvents = 'auto';
-        btn.style.position = 'relative';
-        btn.style.zIndex = '2';
+        this.setStyleIfChanged(btn, 'flexShrink', '0');
+        this.setStyleIfChanged(btn, 'marginLeft', 'auto');
+        this.setStyleIfChanged(btn, 'pointerEvents', 'auto');
+        this.setStyleIfChanged(btn, 'position', 'relative');
+        this.setStyleIfChanged(btn, 'zIndex', '2');
     },
 
     syncToggleLabel(btn, hidden, kind) {
         const noun = this.sectionNoun(kind || (btn && btn.getAttribute(KIND_ATTR)) || 'story');
         const label = hidden ? 'Show' : 'Hide';
-        btn.textContent = label;
-        btn.setAttribute('aria-label', hidden ? 'Show ' + noun : 'Hide ' + noun);
-        btn.title = btn.getAttribute('aria-label');
+        const aria = hidden ? 'Show ' + noun : 'Hide ' + noun;
+        if (btn.textContent !== label) {
+            btn.textContent = label;
+        }
+        if (btn.getAttribute('aria-label') !== aria) {
+            btn.setAttribute('aria-label', aria);
+        }
+        if (btn.title !== aria) {
+            btn.title = aria;
+        }
     },
 
     findToggleInContainer(container, logTag) {
@@ -325,7 +344,7 @@ const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
     description: 'Shared Hide/Show for User Story bodies',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
