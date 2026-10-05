@@ -6,6 +6,7 @@ const FOS_AUTOCONNECT_ENV_HOST = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 const FOS_AUTOCONNECT_OPEN_TAB_MARKER = 'data-fleet-fos-open-tab';
 const FOS_AUTOCONNECT_OPEN_PATH_PREFIX = 'M14 4C14 3.44772';
 const FOS_AUTOCONNECT_RELOAD_DEBOUNCE_MS = 300;
+const FOS_RECONNECT_ON_FOCUS_SUBOPTION = 'reconnect-on-focus';
 
 const FosIframeAutoconnectApi = {
     id: 'fosIframeAutoconnect',
@@ -16,9 +17,24 @@ const FosIframeAutoconnectApi = {
             this.id = opts.pluginId;
         }
 
+        if (!this._reconnectOnFocusEnabled()) {
+            state.pendingFocusReconnect = false;
+            if (state.reloadTimer) {
+                clearTimeout(state.reloadTimer);
+                state.reloadTimer = null;
+            }
+        }
+
         this._ensureDesktopSubscription(state);
         this._ensureVisibilityListener(state);
         this._apply(state);
+    },
+
+    _reconnectOnFocusEnabled() {
+        if (typeof Storage === 'undefined' || typeof Storage.getSubOptionEnabled !== 'function') {
+            return false;
+        }
+        return Storage.getSubOptionEnabled(this.id, FOS_RECONNECT_ON_FOCUS_SUBOPTION, false) === true;
     },
 
     _apply(state) {
@@ -55,7 +71,11 @@ const FosIframeAutoconnectApi = {
         state.waitingFosLogged = false;
         this._patchIframeSrc(state, iframe);
         this._replaceOpenTabButton(state, iframe);
-        if (state.pendingFocusReconnect && !this._isEnvPanelCollapsed(iframe)) {
+        if (
+            state.pendingFocusReconnect &&
+            this._reconnectOnFocusEnabled() &&
+            !this._isEnvPanelCollapsed(iframe)
+        ) {
             this._reconnectIframe(state);
         }
     },
@@ -91,11 +111,17 @@ const FosIframeAutoconnectApi = {
                 return;
             }
             state.wasHidden = false;
+            if (!self._reconnectOnFocusEnabled()) {
+                return;
+            }
             if (state.reloadTimer) {
                 clearTimeout(state.reloadTimer);
             }
             state.reloadTimer = setTimeout(() => {
                 state.reloadTimer = null;
+                if (!self._reconnectOnFocusEnabled()) {
+                    return;
+                }
                 self._reconnectIframe(state);
             }, FOS_AUTOCONNECT_RELOAD_DEBOUNCE_MS);
         };
@@ -295,8 +321,12 @@ const FosIframeAutoconnectApi = {
             existing.getAttribute(FOS_AUTOCONNECT_OPEN_TAB_MARKER) === '1' &&
             existing.isConnected
         ) {
-            native.style.display = 'none';
-            native.setAttribute('aria-hidden', 'true');
+            if (native.style.display !== 'none') {
+                native.style.display = 'none';
+            }
+            if (native.getAttribute('aria-hidden') !== 'true') {
+                native.setAttribute('aria-hidden', 'true');
+            }
             state.hadOpenBtn = true;
             return;
         }
@@ -360,8 +390,8 @@ const plugin = {
     id: 'fosIframeAutoconnectLib',
     name: 'FOS Viewport Resize (library)',
     description:
-        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs; reconnects on tab focus unless the environment pane is hidden',
-    _version: '1.2',
+        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs. Reloading the VM when you return to the tab is optional and off by default',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

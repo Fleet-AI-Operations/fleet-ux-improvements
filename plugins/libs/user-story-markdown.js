@@ -274,7 +274,9 @@ const UserStoryMarkdownApi = {
     hideLeadingCheckmark(body) {
         const wrap = this.findLeadingCheckmark(body);
         if (!wrap) return;
-        wrap.setAttribute(CHECKMARK_MARKER, 'true');
+        if (wrap.getAttribute(CHECKMARK_MARKER) !== 'true') {
+            wrap.setAttribute(CHECKMARK_MARKER, 'true');
+        }
     },
 
     unhideLeadingCheckmark(body) {
@@ -496,7 +498,9 @@ const UserStoryMarkdownApi = {
     },
 
     ensureReplica(body, state, logTag) {
-        body.setAttribute(ORIGINAL_MARKER, 'true');
+        if (body.getAttribute(ORIGINAL_MARKER) !== 'true') {
+            body.setAttribute(ORIGINAL_MARKER, 'true');
+        }
         this.hideLeadingCheckmark(body);
 
         let replica = body.nextElementSibling;
@@ -508,8 +512,13 @@ const UserStoryMarkdownApi = {
             body.insertAdjacentElement('afterend', replica);
         }
 
-        replica.className = this.replicaClassName(body);
-        replica.setAttribute(PROSE_ATTR, '');
+        const nextClass = this.replicaClassName(body);
+        if (replica.className !== nextClass) {
+            replica.className = nextClass;
+        }
+        if (replica.getAttribute(PROSE_ATTR) !== '') {
+            replica.setAttribute(PROSE_ATTR, '');
+        }
         this.syncReplica(body, replica);
 
         let entry = state.activeByBody.get(body);
@@ -590,7 +599,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared User Story markdown rendering',
-    _version: '1.10',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },

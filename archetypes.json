@@ -1,5 +1,5 @@
 {
-  "version": "14.3",
+  "version": "14.4",
   "coreOnlyMode": false,
   "archetypesVersion": "15.3",
   "logs": {
@@ -10,8 +10,8 @@
   "corePlugins": [
     {
       "name": "ui-lib.js",
-      "version": "3.24",
-      "hash": "sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053",
+      "version": "3.25",
+      "hash": "sha256-e1ee1f3b5230cb5d121126eba3d3392ed3f98447070460529639840ed7242807",
       "log": false
     },
     {
@@ -60,8 +60,8 @@
     },
     {
       "name": "fos-iframe-autoconnect.js",
-      "version": "1.2",
-      "hash": "sha256-ad3b70a082fa2e3ddf5ca934ab86cb13c6aeed02e6f138643e46ee491361b0fa",
+      "version": "1.3",
+      "hash": "sha256-49b84558294b230188e0a1c372a88e3306587bc76425b08c9597bbc2e189bb7d",
       "log": false
     },
     {
@@ -78,8 +78,8 @@
     },
     {
       "name": "prompt-text-counter.js",
-      "version": "1.0",
-      "hash": "sha256-b0d71baa66ad441d5a0dc190028cb1a04a8d7adf465d1211b27fc1be019d75ce",
+      "version": "1.1",
+      "hash": "sha256-4f35c157e1963a5b01c03e2d670916733764d541f053861ba9b90ffee0edba80",
       "log": false
     },
     {
@@ -90,20 +90,20 @@
     },
     {
       "name": "toggle-main-panels.js",
-      "version": "1.12",
-      "hash": "sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d",
+      "version": "1.13",
+      "hash": "sha256-e0d87fb0696130cb4890f36a38cb5d58bce157cafaf00b0dabd3c087fa63c44e",
       "log": false
     },
     {
       "name": "user-story-markdown.js",
-      "version": "1.10",
-      "hash": "sha256-394efdd7463de3eeb1d8ceb242c378019d66e834f892a10eb998423c6c955ca3",
+      "version": "1.11",
+      "hash": "sha256-3ab880c92fc187feafcc3339b94286c935880b4d53eb0e6db18efa616abf4354",
       "log": false
     },
     {
       "name": "user-story-collapse.js",
-      "version": "1.6",
-      "hash": "sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807",
+      "version": "1.7",
+      "hash": "sha256-84a33ad31eb4427b5b394f381859a6f32b7b034cbce137773315a274f3fa6248",
       "log": false
     },
     {
@@ -337,8 +337,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.2",
-          "hash": "sha256-7ae4d81165d55305d48d9e3051e4d1b0ab40e3ef60234cd72e890f11d872d775",
+          "version": "1.3",
+          "hash": "sha256-f39f498a05bf67fd4b5309ee0811c9a02b9ff0f6167b5ef3ad845c2cdc183a95",
           "log": false
         },
         {
@@ -410,8 +410,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.2",
-          "hash": "sha256-a9540416f8f6b1f9f4b9750957705033f90ad4d620569e72798cb43b1f411be8",
+          "version": "1.3",
+          "hash": "sha256-05f2d8c3a80e30e2f371150ec75d3963e14974d20929b0589b2ea8c697f90625",
           "log": false
         },
         {
@@ -475,8 +475,8 @@
         },
         {
           "name": "hide-verifier-output.js",
-          "version": "1.8",
-          "hash": "sha256-22888468f4715d7152cb411e98d2de55183327fb540d8ba455273875c1806781",
+          "version": "1.9",
+          "hash": "sha256-99d641cd0b2116b869e48d7f89e8319cdffe35438624e837ffc890866ebfddb3",
           "log": false
         },
         {
@@ -576,8 +576,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.2",
-          "hash": "sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052",
+          "version": "1.3",
+          "hash": "sha256-ca7b951100fcdd0c1cf094eb5bad500240644907d576637bb79c147cac7870a5",
           "log": false
         },
         {
@@ -657,8 +657,8 @@
         },
         {
           "name": "fos-iframe-autoconnect.js",
-          "version": "1.2",
-          "hash": "sha256-662ca9bd9c4883de4250fb87deb48291a4f15b5740a081421cf4e7f2d0dd7db2",
+          "version": "1.3",
+          "hash": "sha256-3462f2542bfe65207bbd6bb5dba2d32bdce4873b7593dc19d9d56505f9de2252",
           "log": false
         },
         {

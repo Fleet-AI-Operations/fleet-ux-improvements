@@ -1486,7 +1486,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared buttons, segments, panels, and copy feedback',
-    _version: '3.24',
+    _version: '3.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1510,13 +1510,12 @@ const plugin = {
             const styleId = fleetUiScopeStyleId(scopeSelector);
             const root = appendRoot || document;
             ensureStyles();
-            let style = (root.getElementById && root.getElementById(styleId))
+            const existing = (root.getElementById && root.getElementById(styleId))
                 || (root.querySelector && root.querySelector('#' + styleId))
                 || document.getElementById(styleId);
-            if (!style) {
-                style = document.createElement('style');
-                style.id = styleId;
-            }
+            if (existing) return;
+            const style = document.createElement('style');
+            style.id = styleId;
             style.textContent = fleetUiBtnBaseCssLines(scopeSelector + ' ').join('\n');
             const target = appendRoot || document.head || document.documentElement;
             target.appendChild(style);
@@ -1554,13 +1553,12 @@ const plugin = {
                 ? fleetUiSegmentScopeStyleId(scopeSelector)
                 : FLEET_UI_SEGMENT_STYLE_ID;
             const root = appendRoot || document;
-            let style = (root.getElementById && root.getElementById(styleId))
+            const existing = (root.getElementById && root.getElementById(styleId))
                 || (root.querySelector && root.querySelector('#' + styleId))
                 || document.getElementById(styleId);
-            if (!style) {
-                style = document.createElement('style');
-                style.id = styleId;
-            }
+            if (existing) return;
+            const style = document.createElement('style');
+            style.id = styleId;
             const prefix = scopeSelector ? scopeSelector + ' ' : '';
             style.textContent = fleetUiSegmentCssLines(prefix).join('\n');
             const target = appendRoot || document.head || document.documentElement;

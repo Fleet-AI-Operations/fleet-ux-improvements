@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name         Fleet Workflow Builder UX Enhancer
 // @namespace    http://tampermonkey.net/
-// @version      14.3
+// @version      14.4
 // @description  Local Fleet UX helpers only (FOS, counters, QA shortcuts). No Ops, no remote code, no token capture.
 // @author       Fleet AI Operations
 // @match        https://www.fleetai.com/*
@@ -39,7 +39,7 @@
     }
 
     // ============= CORE CONFIGURATION =============
-    const VERSION = '14.3';
+    const VERSION = '14.4';
     const SAFE_UX_BUILD = true;
     const SAFE_UX_BUILD_NAME = 'Fleet Safe UX Build';
     const STORAGE_PREFIX = 'wf-enhancer-';
@@ -95,8 +95,8 @@
         'fleet-ux:verifier-fetcher-chat-open'
     ];
     // @@SAFE_UX_BUNDLE_START
-    const BUNDLED_ARCHETYPES = {"version":"14.3","coreOnlyMode":false,"archetypesVersion":"15.3","logs":{"debug":false,"verbose":false,"submodule":false},"corePlugins":[{"name":"ui-lib.js","version":"3.24","hash":"sha256-cbc6806b400abf6e043369934cfc61505f089e2547cee74b634905113e347053","log":false},{"name":"settings-ui.js","version":"11.18","hash":"sha256-3de387b59ce35c18b0dd62a3a1dd9239bf553f16570bfd35fe8f2d2ac8b199f6","log":false},{"name":"fos-embedded-watcher.js","version":"5.5","hash":"sha256-bf233bd9a801a085be0bcb6ab9113c03b853b5b5e0733b95512be9a778ffba39","log":false}],"libraries":[{"name":"accept-task-modal-improvements.js","version":"2.3","hash":"sha256-0707031982051172a43a9f2507be481f22c8c900026bfde041a94f2b86b4e6db","log":false},{"name":"copy-verifier-output.js","version":"5.4","hash":"sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d","log":false},{"name":"screenshot-upload-improvement.js","version":"1.1","hash":"sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371","log":false},{"name":"action-counter.js","version":"3.7","hash":"sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35","log":false},{"name":"fos-vm-clipboard-bar.js","version":"1.8","hash":"sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-ad3b70a082fa2e3ddf5ca934ab86cb13c6aeed02e6f138643e46ee491361b0fa","log":false},{"name":"notes-resize-handle.js","version":"2.2","hash":"sha256-845e1f33ecf6a389a9c66c5e5242bb7a15830e4544b4502860a6a911d96a5dcd","log":false},{"name":"prompt-scratchpad.js","version":"3.3","hash":"sha256-1391b3d0b3d7ab405b9680d5bc37668a58eb6935ccc2b14fae96c9fdfbfd1fb4","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-b0d71baa66ad441d5a0dc190028cb1a04a8d7adf465d1211b27fc1be019d75ce","log":false},{"name":"request-revisions.js","version":"1.2","hash":"sha256-b835c1c13b5bcb185401f3f333bf559651817b5d1b3551a8e02795d2e4f538c5","log":false},{"name":"toggle-main-panels.js","version":"1.12","hash":"sha256-b5b1bb1bcf86ccb32a8decc3193841bcd82317effdf92447d63c7f35cbbc734d","log":false},{"name":"user-story-markdown.js","version":"1.10","hash":"sha256-394efdd7463de3eeb1d8ceb242c378019d66e834f892a10eb998423c6c955ca3","log":false},{"name":"user-story-collapse.js","version":"1.6","hash":"sha256-c339004a313287eca5338f97872ee3afa24d1dce87bf2929692559846c3c4807","log":false},{"name":"vnc-helper.js","version":"3.9","hash":"sha256-29c83ad41ffc6a1f435fb54073a5dfa4bd0a6cc7e64c58eddf786c99a22de767","log":false},{"name":"env-helper.js","version":"2.8","hash":"sha256-8c5c650ed1b46b734171c4403a69251f895a287c7feeca5e9a7367967fe6490a","log":false}],"opsDashboardPlugins":[],"opsDashboardLibraries":[],"devPlugins":[],"settingsModalDocs":[{"name":"information-tab.md","version":"1.19"},{"name":"features-tab.md","version":"1.46"}],"archetypes":[{"id":"dashboard","name":"Main Dashboard","description":"Main dashboard page","urlPattern":"work/create","disambiguationSelectors":[],"plugins":[]},{"id":"tool-use-task-creation","name":"Tool Use Task Creation Page","description":"Page for creating K-type workflow tasks","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-8088efb71950f66e8522dce416402ef607510a1edc2203b98c2d13c1bd6c49ee","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-task-creation-openclaw","name":"Tool Use OpenClaw Task Creation Page","description":"Task Designers Special Projects OpenClaw variant","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":["text:Task Designers - Special Projects Tasks"],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-f9d1e893030f8800986bae1ac02fe5614a70d74839d942df3aeeab756984edfc","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-revision","name":"Tool Use Task Revision Page","description":"Page for reviewing and fixing previously submitted tool use tasks","urlPattern":"work/problems/respond-feedback/edit-tool-use*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-82432dd241762fefdae9d4602b7900ecf54a3b37a37c0d5222f1cc4fbcee5728","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"tool-results-resize-handle.js","version":"3.4","hash":"sha256-a244822dd48563ef7b169293483a5bebc2de2ee2f65406acb23489855a0d9733","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"create-task-project-selection","name":"Create Task Project Selection","description":"Screen for choosing a project before creating a task","urlPattern":"work/problems/create-instance","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-create-instance","name":"Dashboard Create Instance","description":"Dashboard page for creating instances","urlPattern":"dashboard/instances/create","disambiguationSelectors":[],"plugins":[]},{"id":"comp-use-task-creation","name":"Computer Use Task Creation Page","description":"Page for creating computer use tasks","urlPattern":"work/problems/create*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.2","log":false,"hash":"sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"},{"name":"fos-vm-clipboard.js","version":"2.2","hash":"sha256-6d1869308b81556279f433fa856f130afb22ffdf485050221e2f8f1e6c05a17c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-7ae4d81165d55305d48d9e3051e4d1b0ab40e3ef60234cd72e890f11d872d775","log":false},{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"},{"name":"task-metadata-cache.js","version":"1.1","hash":"sha256-11ff7265db5e305c858fbcd1008ed00702ba95d883f8605ebc34502735cba58e","log":false}]},{"id":"comp-use-revision","name":"Computer Use Task Revision Page","description":"Page for reviewing and fixing previously submitted computer use tasks","urlPattern":"work/problems/respond-feedback/edit*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.1","log":false,"hash":"sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"},{"name":"fos-vm-clipboard.js","version":"2.1","hash":"sha256-c6586ebceb0d6099098c2de6fc804fc8d7838c0195760a84430ebd07802fe8de","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-a9540416f8f6b1f9f4b9750957705033f90ad4d620569e72798cb43b1f411be8","log":false},{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"qa-tool-use","name":"Task Review Page","description":"Page for reviewing and approving tasks","urlPattern":"work/problems/qa-tool-use/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","copy-verifier-output.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"hide-verifier-output.js","version":"1.8","hash":"sha256-22888468f4715d7152cb411e98d2de55183327fb540d8ba455273875c1806781","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"text-sanitizer.js","version":"3.2","hash":"sha256-dd1887ece3307bf0f35e6b08b23af4af4ba5dfdecc62200211f3f37e8cfa3fe7","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-ed705a53a986c843f8605db4599f4abfac0bc755b03f28afc9a2ac650c326bef","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"qa-session","name":"Session Trace Review","description":"Page for reviewing session traces","urlPattern":"work/problems/qa-session/*","disambiguationSelectors":[],"plugins":[]},{"id":"qa-comp-use","name":"Computer Use Task Review Page","description":"Page for reviewing and approving computer-use tasks","urlPattern":"work/problems/qa/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","action-counter.js","copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"action-counter.js","version":"2.1","log":false,"hash":"sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"},{"name":"auto-start-recording.js","version":"1.4","hash":"sha256-41c516f670f44c9d03d736b938ecfe346313b28810766e3860b322d039a80cd1","log":false},{"name":"copy-result-params.js","version":"2.0","hash":"sha256-c8b3853bafeb018ace90c39bd585b857aca0c5ac3617f5ea79d7c42cf3491dee","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-4cebf3f63cdbcfc8cf2e246153465e7299691dafbf8199e1c25e45807721a052","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"show-verifier-on-run.js","version":"1.4","hash":"sha256-c2e4e617d066522280dfa894595d996e75ffb9040f2abad75315f8a872d8975c","log":false},{"name":"toggle-main-panels.js","version":"1.11","log":false,"hash":"sha256-57e883d0db1eaaf784343de7a4ece06eaff54d108860971027692f8e5b6ab201"},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"disputes","name":"Dispute Review Page","description":"Page for reviewing writer disputes","urlPattern":"work/problems/disputes","disambiguationSelectors":[],"libraries":["user-story-markdown.js"],"plugins":[{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-053a47538155b35ec5a766ee7b55291b3b78d8de4a113dcd609975101d138bc3","log":false}]},{"id":"dispute-detail","name":"Dispute Detail Page","description":"Page for reviewing a single writer dispute","urlPattern":"work/problems/disputes/*","disambiguationSelectors":[],"libraries":["copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js"],"plugins":[{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-bb6c066c58e5bf843439c6b18e35d95ba88ab6e1f0c7a3b1fed4d813d0ab9f66","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.2","hash":"sha256-662ca9bd9c4883de4250fb87deb48291a4f15b5740a081421cf4e7f2d0dd7db2","log":false},{"name":"tool-results-resize-handle.js","version":"1.3","hash":"sha256-7df97c2a426026a2002da1f31cac0c81d2e5abc995182cd9bba6773d1ec69462","log":false},{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-bd4703bc5f63c20aa08db6babe4177f495ff40e10e69f604d5730edcd8905ae0","log":false}]},{"id":"task-view","name":"Task View","description":"Page for viewing a task","urlPattern":"work/problems/view-task*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-task","name":"Dashboard Data Task View","description":"Dashboard task detail page","urlPattern":"dashboard/data/tasks/*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-expert","name":"Dashboard Data Expert Profile","description":"Expert profile page on the dashboard","urlPattern":"dashboard/data/experts/*","disambiguationSelectors":[],"plugins":[]},{"id":"no-vnc","name":"noVNC Instance","description":"noVNC remote desktop instances on fleet environment subdomains","urlPattern":"_novnc","disambiguationSelectors":[],"plugins":[{"name":"vnc-helper.js","version":"1.14","hash":"sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411","log":false},{"name":"env-helper.js","version":"1.6","hash":"sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c","log":false}],"libraries":["prompt-text-counter.js","vnc-helper.js","env-helper.js"]},{"id":"assessments-grade","name":"Assessments Grade","description":"Assessment grading queue","urlPattern":"work/assessments/grade","disambiguationSelectors":["text:To grade"],"plugins":[]},{"id":"assessments-grade-detail","name":"Assessments Grade Detail","description":"Individual assessment grading page","urlPattern":"work/assessments/grade/*","disambiguationSelectors":["text:← Back to queue"],"plugins":[]},{"id":"guidelines","name":"Guidelines","description":"Guidelines list and editor","urlPattern":"work/guidelines","disambiguationSelectors":[],"plugins":[]}],"devArchetypes":[]};
-    const BUNDLED_SETTINGS_DOCS = {"information-tab.md":"1.19\n## Fleet Safe UX Build\nThis is a containment userscript. It keeps FOS clipboard/autoconnect, local prompt/UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are suspended pending investigation.\n\n## Information\nIf you still cannot find a specific codename, please use the `Feedback` tab to notify me!\n#### Environment Codenames\n| Environment Codename      | Real App Name          |\n|---------------------------|------------------------|\n| Agora                     | Reddit                 |\n| Aisle                     | Walmart                |\n| Atlas                     | Google Maps            |\n| Bay                       | Amazon                 |\n| Brass                     | Bill                   |\n| Citadel                   | Salesforce             |\n| Chorus                    | Teams                  |\n| Crate                     | Instacart              |\n| Docket                    | Dropbox                |\n| Float                     | Ramp                   |\n| Seal                      | Docusign               |\n| Foundry                   | Github                 |\n| Funnel                    | Zip                    |\n| Harbor                    | Bank of America        |\n| Jetstream                 | Google Flights         |\n| Kernel                    | Jira / RevOps          |\n| KeyRing                   | Booking                |\n| Latch Calendar/Mail/Tasks | Outlook                |\n| Ledger                    | Quickbooks             |\n| LedgerGov                 | DMV                    |\n| Lumen                     | Datadog                |\n| Medora                    | Zocdoc                 |\n| Meridian                  | Amex                   |\n| Nest                      | Zillow                 |\n| Orbit                     | PandaDoc               |\n| Portal                    | Ticketmaster           |\n| Relay                     | Hubspot                |\n| Seal                      | Docusign               |\n| Sentinel                  | Vanta                  |\n| Signal                    | Sentry                 |\n| StackLine                 | StackOverflow          |\n| Torch                     | PagerDuty              |\n| Vault                     | Confluence             |\n| Ward                      | Synk                   |\n| Yelp                      | Hearth                 |\n\n#### Guidelines\n- [General](https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3)\n- [Tool use](https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b)\n- [QA](https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43)\n- [Time submission](https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c)\n\n#### Community\n- [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)\n- [Environment Gists](https://fleetai-env-gists.vercel.app)\n- [This Extension](https://github.com/fleet-ai-operations/fleet-ux-improvements)","features-tab.md":"1.46\n\n## Fleet Safe UX Build\nThis containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.\n\n## Features\n\nThe extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).\n\nMany of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!\n\n### Main Dashboard\n- **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning\n\n### Tool Use Task Creation Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Creation Page (OpenClaw / Special Projects)\n*Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*\n- **Bug Report Readability Fix**: Makes bug report cards expandable to see full text\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Tool Favorites**: Add favorite stars to tools list\n- **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Computer Use Task Creation Page\n- **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n- **Task Metadata Cache**: Saves the Task Metadata boxes (Crux, Intended outcome, Message requirements), Writer Notes and Scratchpad as you type, and refills them after a page reload or instance reset\n\n### Computer Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### QA Tool Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Useful Link Buttons**: Add useful link buttons to the page\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### QA Computer Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter beside the Verifier tab\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Dispute Detail Page\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear\n- **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages\n- **Environment Verifier Tab**: Adds Environment | Verifier tabs on the instance status bar (beside Start Recording / Reset / Run Verifier) and shows searchable verifier source; switches only the iframe stack\n- **Tool Favorites**: Add favorite stars to tools list\n- **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again\n\n### Session Trace Review Page\n- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)\n- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits\n\n### Guidelines\n- **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar\n- **Guideline Theme Presets**: Apply named text themes from the edit toolbar\n\n### noVNC Instance (FOS opened directly in a tab)\n- **External VNC Helper**: Floating panel on directly-opened noVNC sessions with a clipboard bridge (Extract/Overwrite between your OS clipboard and the VM), prompt cache, and scratchpad; keyboard shortcuts keep working with the panel hidden\n- **External Env Helper**: Floating prompt cache + scratchpad panel for non-VNC external env pages\n\n### Task View\n*No production plugins are configured for this archetype.*\n"};
+    const BUNDLED_ARCHETYPES = {"version":"14.4","coreOnlyMode":false,"archetypesVersion":"15.3","logs":{"debug":false,"verbose":false,"submodule":false},"corePlugins":[{"name":"ui-lib.js","version":"3.25","hash":"sha256-e1ee1f3b5230cb5d121126eba3d3392ed3f98447070460529639840ed7242807","log":false},{"name":"settings-ui.js","version":"11.18","hash":"sha256-3de387b59ce35c18b0dd62a3a1dd9239bf553f16570bfd35fe8f2d2ac8b199f6","log":false},{"name":"fos-embedded-watcher.js","version":"5.5","hash":"sha256-bf233bd9a801a085be0bcb6ab9113c03b853b5b5e0733b95512be9a778ffba39","log":false}],"libraries":[{"name":"accept-task-modal-improvements.js","version":"2.3","hash":"sha256-0707031982051172a43a9f2507be481f22c8c900026bfde041a94f2b86b4e6db","log":false},{"name":"copy-verifier-output.js","version":"5.4","hash":"sha256-664558f445aebfb1c61b296377fffcb45233e33fa64dc82803774a7550c0021d","log":false},{"name":"screenshot-upload-improvement.js","version":"1.1","hash":"sha256-b6e737f3e8ef886051154ff27b4b6e09016b44bf80224668463ed97474456371","log":false},{"name":"action-counter.js","version":"3.7","hash":"sha256-b06eb33bb0065da47284139f38890b4b91fe79a2c0342706a33211efdfbdae35","log":false},{"name":"fos-vm-clipboard-bar.js","version":"1.8","hash":"sha256-e33cccb48347c5c89bf37f2835f02bd5518bc4cc58bbd983ed99914c8acd4d7c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.3","hash":"sha256-49b84558294b230188e0a1c372a88e3306587bc76425b08c9597bbc2e189bb7d","log":false},{"name":"notes-resize-handle.js","version":"2.2","hash":"sha256-845e1f33ecf6a389a9c66c5e5242bb7a15830e4544b4502860a6a911d96a5dcd","log":false},{"name":"prompt-scratchpad.js","version":"3.3","hash":"sha256-1391b3d0b3d7ab405b9680d5bc37668a58eb6935ccc2b14fae96c9fdfbfd1fb4","log":false},{"name":"prompt-text-counter.js","version":"1.1","hash":"sha256-4f35c157e1963a5b01c03e2d670916733764d541f053861ba9b90ffee0edba80","log":false},{"name":"request-revisions.js","version":"1.2","hash":"sha256-b835c1c13b5bcb185401f3f333bf559651817b5d1b3551a8e02795d2e4f538c5","log":false},{"name":"toggle-main-panels.js","version":"1.13","hash":"sha256-e0d87fb0696130cb4890f36a38cb5d58bce157cafaf00b0dabd3c087fa63c44e","log":false},{"name":"user-story-markdown.js","version":"1.11","hash":"sha256-3ab880c92fc187feafcc3339b94286c935880b4d53eb0e6db18efa616abf4354","log":false},{"name":"user-story-collapse.js","version":"1.7","hash":"sha256-84a33ad31eb4427b5b394f381859a6f32b7b034cbce137773315a274f3fa6248","log":false},{"name":"vnc-helper.js","version":"3.9","hash":"sha256-29c83ad41ffc6a1f435fb54073a5dfa4bd0a6cc7e64c58eddf786c99a22de767","log":false},{"name":"env-helper.js","version":"2.8","hash":"sha256-8c5c650ed1b46b734171c4403a69251f895a287c7feeca5e9a7367967fe6490a","log":false}],"opsDashboardPlugins":[],"opsDashboardLibraries":[],"devPlugins":[],"settingsModalDocs":[{"name":"information-tab.md","version":"1.19"},{"name":"features-tab.md","version":"1.46"}],"archetypes":[{"id":"dashboard","name":"Main Dashboard","description":"Main dashboard page","urlPattern":"work/create","disambiguationSelectors":[],"plugins":[]},{"id":"tool-use-task-creation","name":"Tool Use Task Creation Page","description":"Page for creating K-type workflow tasks","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-8088efb71950f66e8522dce416402ef607510a1edc2203b98c2d13c1bd6c49ee","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-task-creation-openclaw","name":"Tool Use OpenClaw Task Creation Page","description":"Task Designers Special Projects OpenClaw variant","urlPattern":"work/problems/create-tool-use*","disambiguationSelectors":["text:Task Designers - Special Projects Tasks"],"libraries":["notes-resize-handle.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"text-sanitizer.js","version":"4.2","hash":"sha256-f9d1e893030f8800986bae1ac02fe5614a70d74839d942df3aeeab756984edfc","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-0fb0fbe80e9eb779f516aa3871ed08ef39503f0d2e6e48553394633869b6f477","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"tool-use-revision","name":"Tool Use Task Revision Page","description":"Page for reviewing and fixing previously submitted tool use tasks","urlPattern":"work/problems/respond-feedback/edit-tool-use*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-82432dd241762fefdae9d4602b7900ecf54a3b37a37c0d5222f1cc4fbcee5728","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"tool-results-resize-handle.js","version":"3.4","hash":"sha256-a244822dd48563ef7b169293483a5bebc2de2ee2f65406acb23489855a0d9733","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"create-task-project-selection","name":"Create Task Project Selection","description":"Screen for choosing a project before creating a task","urlPattern":"work/problems/create-instance","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-create-instance","name":"Dashboard Create Instance","description":"Dashboard page for creating instances","urlPattern":"dashboard/instances/create","disambiguationSelectors":[],"plugins":[]},{"id":"comp-use-task-creation","name":"Computer Use Task Creation Page","description":"Page for creating computer use tasks","urlPattern":"work/problems/create*","disambiguationSelectors":[],"libraries":["notes-resize-handle.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","prompt-text-counter.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.2","log":false,"hash":"sha256-493bbb1b472191eea6f6762e8715f5c40ef84122884340f23132c33b9c9cc9a8"},{"name":"fos-vm-clipboard.js","version":"2.2","hash":"sha256-6d1869308b81556279f433fa856f130afb22ffdf485050221e2f8f1e6c05a17c","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.3","hash":"sha256-f39f498a05bf67fd4b5309ee0811c9a02b9ff0f6167b5ef3ad845c2cdc183a95","log":false},{"name":"notes-resize-handle.js","version":"1.2","hash":"sha256-0c448040a545cd8fb1a95c07fe3d20c586e2564323751c12741d27c363d8859a","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"},{"name":"task-metadata-cache.js","version":"1.1","hash":"sha256-11ff7265db5e305c858fbcd1008ed00702ba95d883f8605ebc34502735cba58e","log":false}]},{"id":"comp-use-revision","name":"Computer Use Task Revision Page","description":"Page for reviewing and fixing previously submitted computer use tasks","urlPattern":"work/problems/respond-feedback/edit*","disambiguationSelectors":[],"libraries":["prompt-scratchpad.js","prompt-text-counter.js","action-counter.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"action-counter.js","version":"3.1","log":false,"hash":"sha256-a60367b612d26d7689c24a44ceb486d68d8c3376f95976854ac448b45c8094b7"},{"name":"fos-vm-clipboard.js","version":"2.1","hash":"sha256-c6586ebceb0d6099098c2de6fc804fc8d7838c0195760a84430ebd07802fe8de","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.3","hash":"sha256-05f2d8c3a80e30e2f371150ec75d3963e14974d20929b0589b2ea8c697f90625","log":false},{"name":"prompt-scratchpad.js","version":"2.3","hash":"sha256-d236db4f8a7b598d20278aa03f53a53a6e185e5c3682a94fe5267dbaeb3b2c9e","log":false},{"name":"prompt-text-counter.js","version":"1.0","hash":"sha256-8770cb46c0f4a1831a071588769d7762f1298930e08eb042cd599601e8a2fd2c","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false},{"name":"toggle-main-panels.js","version":"1.0","log":false,"hash":"sha256-f8778c48ed98c701c8d32bdbd155d551072f97be5b62f4c5cf462b62202f6e2f"}]},{"id":"qa-tool-use","name":"Task Review Page","description":"Page for reviewing and approving tasks","urlPattern":"work/problems/qa-tool-use/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","copy-verifier-output.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"hide-verifier-output.js","version":"1.9","hash":"sha256-99d641cd0b2116b869e48d7f89e8319cdffe35438624e837ffc890866ebfddb3","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"text-sanitizer.js","version":"3.2","hash":"sha256-dd1887ece3307bf0f35e6b08b23af4af4ba5dfdecc62200211f3f37e8cfa3fe7","log":false},{"name":"tool-results-resize-handle.js","version":"2.4","hash":"sha256-ed705a53a986c843f8605db4599f4abfac0bc755b03f28afc9a2ac650c326bef","log":false},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"qa-session","name":"Session Trace Review","description":"Page for reviewing session traces","urlPattern":"work/problems/qa-session/*","disambiguationSelectors":[],"plugins":[]},{"id":"qa-comp-use","name":"Computer Use Task Review Page","description":"Page for reviewing and approving computer-use tasks","urlPattern":"work/problems/qa/*","disambiguationSelectors":[],"libraries":["accept-task-modal-improvements.js","action-counter.js","copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","request-revisions.js","screenshot-upload-improvement.js","user-story-markdown.js","user-story-collapse.js","toggle-main-panels.js"],"plugins":[{"name":"accept-task-modal-improvements.js","version":"1.8","hash":"sha256-d7a50c2fc6a6800f1bb050d9d2bba32b6966b24cf919e039ad1358be3273eed6","log":false},{"name":"action-counter.js","version":"2.1","log":false,"hash":"sha256-acf016786bee0a736809f777b684265670f9fdd235ae7e2682d4636a7a53fdbc"},{"name":"auto-start-recording.js","version":"1.4","hash":"sha256-41c516f670f44c9d03d736b938ecfe346313b28810766e3860b322d039a80cd1","log":false},{"name":"copy-result-params.js","version":"2.0","hash":"sha256-c8b3853bafeb018ace90c39bd585b857aca0c5ac3617f5ea79d7c42cf3491dee","log":false},{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-dbf69e0448ba4b77facb7a400260d505f8d02e48883373ed20d5b9599d4669b9","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.3","hash":"sha256-ca7b951100fcdd0c1cf094eb5bad500240644907d576637bb79c147cac7870a5","log":false},{"name":"request-revisions.js","version":"8.0","hash":"sha256-913205a4e8eda3704e2d51078404560b48b5cfc11b5a867d0a57b7034b085d6c","log":false},{"name":"show-verifier-on-run.js","version":"1.4","hash":"sha256-c2e4e617d066522280dfa894595d996e75ffb9040f2abad75315f8a872d8975c","log":false},{"name":"toggle-main-panels.js","version":"1.11","log":false,"hash":"sha256-57e883d0db1eaaf784343de7a4ece06eaff54d108860971027692f8e5b6ab201"},{"name":"user-story-markdown.js","version":"1.1","hash":"sha256-a7e78253b63f803a1c7e86330ec1630b2050aaff3ad66ea5610e547051ea28a6","log":false},{"name":"user-story-collapse.js","version":"1.0","hash":"sha256-d8b2c80adfe4eed14ecc7726fa5f87de24f2ce7d5e5aa321a9cfc0b4d1dcb959","log":false}]},{"id":"disputes","name":"Dispute Review Page","description":"Page for reviewing writer disputes","urlPattern":"work/problems/disputes","disambiguationSelectors":[],"libraries":["user-story-markdown.js"],"plugins":[{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-053a47538155b35ec5a766ee7b55291b3b78d8de4a113dcd609975101d138bc3","log":false}]},{"id":"dispute-detail","name":"Dispute Detail Page","description":"Page for reviewing a single writer dispute","urlPattern":"work/problems/disputes/*","disambiguationSelectors":[],"libraries":["copy-verifier-output.js","fos-vm-clipboard-bar.js","fos-iframe-autoconnect.js","user-story-markdown.js"],"plugins":[{"name":"copy-verifier-output.js","version":"4.2","hash":"sha256-fc06c07eca5c10458b7ca6efe3d54b1386f6958672782bad217244ae9e6e4c1b","log":false},{"name":"fos-vm-clipboard.js","version":"1.2","hash":"sha256-bb6c066c58e5bf843439c6b18e35d95ba88ab6e1f0c7a3b1fed4d813d0ab9f66","log":false},{"name":"fos-iframe-autoconnect.js","version":"1.3","hash":"sha256-3462f2542bfe65207bbd6bb5dba2d32bdce4873b7593dc19d9d56505f9de2252","log":false},{"name":"tool-results-resize-handle.js","version":"1.3","hash":"sha256-7df97c2a426026a2002da1f31cac0c81d2e5abc995182cd9bba6773d1ec69462","log":false},{"name":"user-story-markdown.js","version":"1.2","hash":"sha256-bd4703bc5f63c20aa08db6babe4177f495ff40e10e69f604d5730edcd8905ae0","log":false}]},{"id":"task-view","name":"Task View","description":"Page for viewing a task","urlPattern":"work/problems/view-task*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-task","name":"Dashboard Data Task View","description":"Dashboard task detail page","urlPattern":"dashboard/data/tasks/*","disambiguationSelectors":[],"plugins":[]},{"id":"dashboard-data-expert","name":"Dashboard Data Expert Profile","description":"Expert profile page on the dashboard","urlPattern":"dashboard/data/experts/*","disambiguationSelectors":[],"plugins":[]},{"id":"no-vnc","name":"noVNC Instance","description":"noVNC remote desktop instances on fleet environment subdomains","urlPattern":"_novnc","disambiguationSelectors":[],"plugins":[{"name":"vnc-helper.js","version":"1.14","hash":"sha256-19748537777ff3ddbdb06d2415722be9be1fe47f4e32d7dd7bf97406a563f411","log":false},{"name":"env-helper.js","version":"1.6","hash":"sha256-24af5df7c6fb896fb78d15f77086bc9f422ec02c644bdd766eb1848735ad101c","log":false}],"libraries":["prompt-text-counter.js","vnc-helper.js","env-helper.js"]},{"id":"assessments-grade","name":"Assessments Grade","description":"Assessment grading queue","urlPattern":"work/assessments/grade","disambiguationSelectors":["text:To grade"],"plugins":[]},{"id":"assessments-grade-detail","name":"Assessments Grade Detail","description":"Individual assessment grading page","urlPattern":"work/assessments/grade/*","disambiguationSelectors":["text:← Back to queue"],"plugins":[]},{"id":"guidelines","name":"Guidelines","description":"Guidelines list and editor","urlPattern":"work/guidelines","disambiguationSelectors":[],"plugins":[]}],"devArchetypes":[]};
+    const BUNDLED_SETTINGS_DOCS = {"information-tab.md":"1.19\n## Fleet Safe UX Build\nThis is a containment userscript. It keeps FOS clipboard/autoconnect, local prompt/UX helpers, and QA shortcuts. Ops Dashboard, OpenRouter, verifier-source lookup, team/permission tools, token capture, and remote plugin loading are suspended pending investigation.\n\n## Information\nIf you still cannot find a specific codename, please use the `Feedback` tab to notify me!\n#### Environment Codenames\n| Environment Codename      | Real App Name          |\n|---------------------------|------------------------|\n| Agora                     | Reddit                 |\n| Aisle                     | Walmart                |\n| Atlas                     | Google Maps            |\n| Bay                       | Amazon                 |\n| Brass                     | Bill                   |\n| Citadel                   | Salesforce             |\n| Chorus                    | Teams                  |\n| Crate                     | Instacart              |\n| Docket                    | Dropbox                |\n| Float                     | Ramp                   |\n| Seal                      | Docusign               |\n| Foundry                   | Github                 |\n| Funnel                    | Zip                    |\n| Harbor                    | Bank of America        |\n| Jetstream                 | Google Flights         |\n| Kernel                    | Jira / RevOps          |\n| KeyRing                   | Booking                |\n| Latch Calendar/Mail/Tasks | Outlook                |\n| Ledger                    | Quickbooks             |\n| LedgerGov                 | DMV                    |\n| Lumen                     | Datadog                |\n| Medora                    | Zocdoc                 |\n| Meridian                  | Amex                   |\n| Nest                      | Zillow                 |\n| Orbit                     | PandaDoc               |\n| Portal                    | Ticketmaster           |\n| Relay                     | Hubspot                |\n| Seal                      | Docusign               |\n| Sentinel                  | Vanta                  |\n| Signal                    | Sentry                 |\n| StackLine                 | StackOverflow          |\n| Torch                     | PagerDuty              |\n| Vault                     | Confluence             |\n| Ward                      | Synk                   |\n| Yelp                      | Hearth                 |\n\n#### Guidelines\n- [General](https://www.fleetai.com/work/guidelines?doc=c007bc70-5202-4bfd-95bb-4f1699d8b9f3)\n- [Tool use](https://www.fleetai.com/work/guidelines?doc=1d4e376a-04e5-4636-93b9-faeeca44f80b)\n- [QA](https://www.fleetai.com/work/guidelines?doc=171f1c3e-3ba9-4531-a5e2-30a8f301ea43)\n- [Time submission](https://www.fleetai.com/work/guidelines?doc=f2536177-34a9-4a34-967e-0b8c374c203c)\n\n#### Community\n- [Fleet AI Official Slack](https://app.slack.com/client/T05EN36FWHY)\n- [Environment Gists](https://fleetai-env-gists.vercel.app)\n- [This Extension](https://github.com/fleet-ai-operations/fleet-ux-improvements)","features-tab.md":"1.46\n\n## Fleet Safe UX Build\nThis containment build ships only the allowlisted helpers below. Ops Dashboard, Search Chat, Diff Viewer, OpenRouter, verifier-source lookup, dashboard stats, dispute filters, and remote module loading are suspended.\n\n## Features\n\nThe extension uses an archetype-based plugin system that loads different features depending on which page you're on. Plugin configuration and versions are managed in `archetypes.json`. The lists below match plugins shipped from each archetype’s `main` folder in the production archetype set (not `dev` or `deprecated`).\n\nMany of the original modifications (such as a 3-column layout in the Kinesis task creation environments, or duplicating tools to the end of the workflow) that only users of this extension were able to enjoy are now part of the main website!\n\n### Main Dashboard\n- **Disputes Reviewed Today Breakdown**: Show today's disputes reviewed count and approved/rejected breakdown with copy and scroll warning\n\n### Tool Use Task Creation Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Creation Page (OpenClaw / Special Projects)\n*Loads when the task-creation page matches the OpenClaw / Special Projects disambiguator in `archetypes.json`.*\n- **Bug Report Readability Fix**: Makes bug report cards expandable to see full text\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Tool Favorites**: Add favorite stars to tools list\n- **JSON Editor Online**: Add button that opens JSON Editor Online in a new tab. Optionally show button on each tool result to copy output and open editor.\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **Text Sanitizer**: Adds a text sanitizer utility for quickly cleaning and transforming text\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Tool Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### Computer Use Task Creation Page\n- **Disable Prompt Text Area Autocorrect**: Disables autocorrect in the prompt text box\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **Creation Annotator Instructions**: Shows annotator instructions above the user story on computer-use creation\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default\n- **Time Remaining Chip**: Keeps the Time remaining countdown from shifting the header as digits change\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n- **Task Metadata Cache**: Saves the Task Metadata boxes (Crux, Intended outcome, Message requirements), Writer Notes and Scratchpad as you type, and refills them after a page reload or instance reset\n\n### Computer Use Task Revision Page\n- **Prompt Text Counter**: Shows a live word and character count below the prompt\n- **Scratchpad**: Adds an adjustable height scratchpad to the page\n- **Remove Textarea Gradient**: Removes the gradient fade overlay from the prompt textarea\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter in the page header\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls in the page header (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### QA Tool Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Prompt**: Add a copy button next to the Prompt label. Click copies the prompt text to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Useful Link Buttons**: Add useful link buttons to the page\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n\n### QA Computer Use Review Page\n- **\"Accept Task\" Modal Improvements**: Add a button above the optional comments box to paste a positive blurb\n- **Auto Start Recording**: Automatically clicks the \"Start Recording\" button once when it appears on the page.\n- **Copy Result Params and Inputs**: Add a button under Your Answer that copies all parameter labels and values to the clipboard\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Hide Grading Autoclick**: Automatically clicks the \"Hide Grading\" button once when it becomes available after load.\n- **\"Request Revisions\" Modal Improvements**: Guidelines, copy actions, task-only issue selection, and screenshot upload on Request Revisions\n- **User Story Markdown**: Hide native User Story bodies and show markdown-rendered blue-framed replicas\n- **Action Counter**: Persistent +/- counter beside the Verifier tab\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls beside the Verifier tab (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default\n- **Toggle Main Panels**: Hide or unhide either main pane (task detail or environment); the other pane expands to full width\n\n### Dispute Detail Page\n- **Clear Tool Search**: Adds a clear `X` button to the tool search box when it has text\n- **Copy Verifier Output**: Add a copy button after Stdout or Score; when checklist Raw Output is expanded, a copy icon beside Raw Output copies the raw pre text\n- **Dispute Screenshot Upload Improvement**: Drag & Drop/Upload plus Paste Image (clipboard API) in one row; document paste; forwards images to the hidden native file input without duplicate controls after thumbnails appear\n- **Dispute Tool Environment Gate**: Detects tool environment readiness for dispute detail pages\n- **Environment Verifier Tab**: Adds Environment | Verifier tabs on the instance status bar (beside Start Recording / Reset / Run Verifier) and shows searchable verifier source; switches only the iframe stack\n- **Tool Favorites**: Add favorite stars to tools list\n- **Tool Description Truncation**: Limits the length tool descriptions to make the tool picker more manageable\n- **Tool Results Resize Handle**: Adds a resize handle to tool result boxes so their height can be adjusted by dragging\n- **Verifier Expand Mismatch Rows**: Expands Per-Field Comparison rows that failed (red X) so Expected vs Your Answer is visible without clicking each field\n- **VM Clipboard**: Extract/Overwrite VM Clipboard controls after the Computer Use badge (shown when FOS env is ready)\n- **FOS Viewport Resize**: Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is a setting, off by default\n\n### Session Trace Review Page\n- **Auto-expand Verifier Output**: Expands the Verifier Output section on load by activating the score/timing header once (same as a user click)\n- **Remember Layout Proportions**: Saves and restores the task-stack vs trace, prompt vs comments, and transcript vs screenshot splits\n\n### Guidelines\n- **Export Guideline Markdown**: Download the open guideline as a Markdown file from the edit toolbar\n- **Guideline Theme Presets**: Apply named text themes from the edit toolbar\n\n### noVNC Instance (FOS opened directly in a tab)\n- **External VNC Helper**: Floating panel on directly-opened noVNC sessions with a clipboard bridge (Extract/Overwrite between your OS clipboard and the VM), prompt cache, and scratchpad; keyboard shortcuts keep working with the panel hidden\n- **External Env Helper**: Floating prompt cache + scratchpad panel for non-VNC external env pages\n\n### Task View\n*No production plugins are configured for this archetype.*\n"};
     const BUNDLED_PLUGIN_FACTORIES = {
         "core/main/ui-lib.js": function (PluginManager, Storage, Logger, Context, CleanupRegistry, GM_xmlhttpRequest) {
 // ui-lib.js — shared UI tokens, button styles, spinners, and copy feedback.
@@ -1587,7 +1587,7 @@ const plugin = {
     id: 'ui-lib',
     name: 'UI Lib',
     description: 'Shared buttons, segments, panels, and copy feedback',
-    _version: '3.24',
+    _version: '3.25',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -1611,13 +1611,12 @@ const plugin = {
             const styleId = fleetUiScopeStyleId(scopeSelector);
             const root = appendRoot || document;
             ensureStyles();
-            let style = (root.getElementById && root.getElementById(styleId))
+            const existing = (root.getElementById && root.getElementById(styleId))
                 || (root.querySelector && root.querySelector('#' + styleId))
                 || document.getElementById(styleId);
-            if (!style) {
-                style = document.createElement('style');
-                style.id = styleId;
-            }
+            if (existing) return;
+            const style = document.createElement('style');
+            style.id = styleId;
             style.textContent = fleetUiBtnBaseCssLines(scopeSelector + ' ').join('\n');
             const target = appendRoot || document.head || document.documentElement;
             target.appendChild(style);
@@ -1655,13 +1654,12 @@ const plugin = {
                 ? fleetUiSegmentScopeStyleId(scopeSelector)
                 : FLEET_UI_SEGMENT_STYLE_ID;
             const root = appendRoot || document;
-            let style = (root.getElementById && root.getElementById(styleId))
+            const existing = (root.getElementById && root.getElementById(styleId))
                 || (root.querySelector && root.querySelector('#' + styleId))
                 || document.getElementById(styleId);
-            if (!style) {
-                style = document.createElement('style');
-                style.id = styleId;
-            }
+            if (existing) return;
+            const style = document.createElement('style');
+            style.id = styleId;
             const prefix = scopeSelector ? scopeSelector + ' ' : '';
             style.textContent = fleetUiSegmentCssLines(prefix).join('\n');
             const target = appendRoot || document.head || document.documentElement;
@@ -7806,6 +7804,7 @@ const FOS_AUTOCONNECT_ENV_HOST = /\.env\.[^.]+(?:\.[^.]+)*\.fleetai\.com$/;
 const FOS_AUTOCONNECT_OPEN_TAB_MARKER = 'data-fleet-fos-open-tab';
 const FOS_AUTOCONNECT_OPEN_PATH_PREFIX = 'M14 4C14 3.44772';
 const FOS_AUTOCONNECT_RELOAD_DEBOUNCE_MS = 300;
+const FOS_RECONNECT_ON_FOCUS_SUBOPTION = 'reconnect-on-focus';
 
 const FosIframeAutoconnectApi = {
     id: 'fosIframeAutoconnect',
@@ -7816,9 +7815,24 @@ const FosIframeAutoconnectApi = {
             this.id = opts.pluginId;
         }
 
+        if (!this._reconnectOnFocusEnabled()) {
+            state.pendingFocusReconnect = false;
+            if (state.reloadTimer) {
+                clearTimeout(state.reloadTimer);
+                state.reloadTimer = null;
+            }
+        }
+
         this._ensureDesktopSubscription(state);
         this._ensureVisibilityListener(state);
         this._apply(state);
+    },
+
+    _reconnectOnFocusEnabled() {
+        if (typeof Storage === 'undefined' || typeof Storage.getSubOptionEnabled !== 'function') {
+            return false;
+        }
+        return Storage.getSubOptionEnabled(this.id, FOS_RECONNECT_ON_FOCUS_SUBOPTION, false) === true;
     },
 
     _apply(state) {
@@ -7855,7 +7869,11 @@ const FosIframeAutoconnectApi = {
         state.waitingFosLogged = false;
         this._patchIframeSrc(state, iframe);
         this._replaceOpenTabButton(state, iframe);
-        if (state.pendingFocusReconnect && !this._isEnvPanelCollapsed(iframe)) {
+        if (
+            state.pendingFocusReconnect &&
+            this._reconnectOnFocusEnabled() &&
+            !this._isEnvPanelCollapsed(iframe)
+        ) {
             this._reconnectIframe(state);
         }
     },
@@ -7891,11 +7909,17 @@ const FosIframeAutoconnectApi = {
                 return;
             }
             state.wasHidden = false;
+            if (!self._reconnectOnFocusEnabled()) {
+                return;
+            }
             if (state.reloadTimer) {
                 clearTimeout(state.reloadTimer);
             }
             state.reloadTimer = setTimeout(() => {
                 state.reloadTimer = null;
+                if (!self._reconnectOnFocusEnabled()) {
+                    return;
+                }
                 self._reconnectIframe(state);
             }, FOS_AUTOCONNECT_RELOAD_DEBOUNCE_MS);
         };
@@ -8095,8 +8119,12 @@ const FosIframeAutoconnectApi = {
             existing.getAttribute(FOS_AUTOCONNECT_OPEN_TAB_MARKER) === '1' &&
             existing.isConnected
         ) {
-            native.style.display = 'none';
-            native.setAttribute('aria-hidden', 'true');
+            if (native.style.display !== 'none') {
+                native.style.display = 'none';
+            }
+            if (native.getAttribute('aria-hidden') !== 'true') {
+                native.setAttribute('aria-hidden', 'true');
+            }
             state.hadOpenBtn = true;
             return;
         }
@@ -8160,8 +8188,8 @@ const plugin = {
     id: 'fosIframeAutoconnectLib',
     name: 'FOS Viewport Resize (library)',
     description:
-        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs; reconnects on tab focus unless the environment pane is hidden',
-    _version: '1.2',
+        'Resizes embedded FOS environments to the viewport. Autoconnects instances and open-in-new-tab URLs. Reloading the VM when you return to the tab is optional and off by default',
+    _version: '1.3',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -8574,7 +8602,12 @@ const PromptTextCounterApi = {
 
     syncEl(el, textarea) {
         if (!el || !textarea) return;
-        el.textContent = this.formatCounts(textarea.value);
+        const next = this.formatCounts(textarea.value);
+        // textContent always replaces the text node, even when the string matches,
+        // which the page observer treats as a new mutation.
+        if (el.textContent !== next) {
+            el.textContent = next;
+        }
     },
 
     bindInput(textarea, el) {
@@ -8654,7 +8687,7 @@ const plugin = {
     id: 'promptTextCounterLib',
     name: 'Prompt Text Counter (library)',
     description: 'Shared word and character count for editable prompt textareas',
-    _version: '1.0',
+    _version: '1.1',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -9875,7 +9908,10 @@ const ToggleMainPanelsApi = {
             slot.setAttribute('data-fleet-plugin', this.id);
             toolbar.appendChild(slot);
         }
-        slot.className = 'flex items-center justify-end shrink-0 gap-2 ml-auto';
+        const slotClass = 'flex items-center justify-end shrink-0 gap-2 ml-auto';
+        if (slot.className !== slotClass) {
+            slot.className = slotClass;
+        }
         return slot;
     },
 
@@ -9890,7 +9926,9 @@ const ToggleMainPanelsApi = {
             return;
         }
 
-        btn.classList.remove('ml-auto');
+        if (btn.classList.contains('ml-auto')) {
+            btn.classList.remove('ml-auto');
+        }
 
         const slot = this.ensureToggleSlot(toolbar);
         if (btn.parentElement !== slot) {
@@ -10027,7 +10065,9 @@ const ToggleMainPanelsApi = {
                 toolbar.closest('div.border-b') ||
                 toolbar;
         }
-        header.setAttribute('data-fleet-pane-header', 'true');
+        if (header.getAttribute('data-fleet-pane-header') !== 'true') {
+            header.setAttribute('data-fleet-pane-header', 'true');
+        }
     },
 
     ensureToggleButton(state, side, toolbar, panel) {
@@ -10170,8 +10210,14 @@ const ToggleMainPanelsApi = {
             const side = btn.getAttribute('data-fleet-pane');
             const collapsed = state.hiddenPane === side;
             const paneName = side === 'left' ? 'task detail' : 'environment';
-            btn.textContent = collapsed ? 'Unhide' : 'Hide Panel';
-            btn.title = collapsed ? 'Show the ' + paneName + ' pane' : 'Hide the ' + paneName + ' pane';
+            const label = collapsed ? 'Unhide' : 'Hide Panel';
+            const title = collapsed ? 'Show the ' + paneName + ' pane' : 'Hide the ' + paneName + ' pane';
+            if (btn.textContent !== label) {
+                btn.textContent = label;
+            }
+            if (btn.title !== title) {
+                btn.title = title;
+            }
         });
     }
 };
@@ -10181,7 +10227,7 @@ const plugin = {
     name: 'Toggle Main Panels (library)',
     description:
         'Shared Hide/Unhide for the two main panes (task detail or environment); the other pane expands to full width',
-    _version: '1.12',
+    _version: '1.13',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -10482,7 +10528,9 @@ const UserStoryMarkdownApi = {
     hideLeadingCheckmark(body) {
         const wrap = this.findLeadingCheckmark(body);
         if (!wrap) return;
-        wrap.setAttribute(CHECKMARK_MARKER, 'true');
+        if (wrap.getAttribute(CHECKMARK_MARKER) !== 'true') {
+            wrap.setAttribute(CHECKMARK_MARKER, 'true');
+        }
     },
 
     unhideLeadingCheckmark(body) {
@@ -10704,7 +10752,9 @@ const UserStoryMarkdownApi = {
     },
 
     ensureReplica(body, state, logTag) {
-        body.setAttribute(ORIGINAL_MARKER, 'true');
+        if (body.getAttribute(ORIGINAL_MARKER) !== 'true') {
+            body.setAttribute(ORIGINAL_MARKER, 'true');
+        }
         this.hideLeadingCheckmark(body);
 
         let replica = body.nextElementSibling;
@@ -10716,8 +10766,13 @@ const UserStoryMarkdownApi = {
             body.insertAdjacentElement('afterend', replica);
         }
 
-        replica.className = this.replicaClassName(body);
-        replica.setAttribute(PROSE_ATTR, '');
+        const nextClass = this.replicaClassName(body);
+        if (replica.className !== nextClass) {
+            replica.className = nextClass;
+        }
+        if (replica.getAttribute(PROSE_ATTR) !== '') {
+            replica.setAttribute(PROSE_ATTR, '');
+        }
         this.syncReplica(body, replica);
 
         let entry = state.activeByBody.get(body);
@@ -10798,7 +10853,7 @@ const plugin = {
     id: 'userStoryMarkdownLib',
     name: 'User Story Markdown (library)',
     description: 'Shared User Story markdown rendering',
-    _version: '1.10',
+    _version: '1.11',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -10979,51 +11034,70 @@ const UserStoryCollapseApi = {
         );
     },
 
+    setStyleIfChanged(el, prop, value) {
+        if (!el || !el.style || el.style[prop] === value) return;
+        el.style[prop] = value;
+    },
+
     setBodiesHidden(bodies, hidden) {
         for (const body of bodies) {
             if (hidden) {
                 if (!body.hasAttribute(SAVED_DISPLAY_ATTR)) {
                     body.setAttribute(SAVED_DISPLAY_ATTR, body.style.display || '');
                 }
-                body.style.display = 'none';
-                body.setAttribute(HIDDEN_ATTR, '1');
+                this.setStyleIfChanged(body, 'display', 'none');
+                if (body.getAttribute(HIDDEN_ATTR) !== '1') {
+                    body.setAttribute(HIDDEN_ATTR, '1');
+                }
             } else {
                 const saved = body.getAttribute(SAVED_DISPLAY_ATTR);
-                body.style.display = saved != null ? saved : '';
-                body.removeAttribute(SAVED_DISPLAY_ATTR);
-                body.removeAttribute(HIDDEN_ATTR);
+                const nextDisplay = saved != null ? saved : '';
+                this.setStyleIfChanged(body, 'display', nextDisplay);
+                if (body.hasAttribute(SAVED_DISPLAY_ATTR)) {
+                    body.removeAttribute(SAVED_DISPLAY_ATTR);
+                }
+                if (body.hasAttribute(HIDDEN_ATTR)) {
+                    body.removeAttribute(HIDDEN_ATTR);
+                }
             }
         }
     },
 
     applyHeaderLayout(headerEl) {
-        headerEl.style.display = 'flex';
-        headerEl.style.alignItems = 'center';
-        headerEl.style.justifyContent = 'space-between';
-        headerEl.style.width = '100%';
-        headerEl.style.gap = '8px';
+        this.setStyleIfChanged(headerEl, 'display', 'flex');
+        this.setStyleIfChanged(headerEl, 'alignItems', 'center');
+        this.setStyleIfChanged(headerEl, 'justifyContent', 'space-between');
+        this.setStyleIfChanged(headerEl, 'width', '100%');
+        this.setStyleIfChanged(headerEl, 'gap', '8px');
     },
 
     applyToggleChrome(btn) {
-        if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            btn.className = Context.uiLib.btnClass('basic', 'compact');
-        } else {
-            btn.className =
-                'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
+        const nextClass = (Context.uiLib && typeof Context.uiLib.btnClass === 'function')
+            ? Context.uiLib.btnClass('basic', 'compact')
+            : 'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
+        if (btn.className !== nextClass) {
+            btn.className = nextClass;
         }
-        btn.style.flexShrink = '0';
-        btn.style.marginLeft = 'auto';
-        btn.style.pointerEvents = 'auto';
-        btn.style.position = 'relative';
-        btn.style.zIndex = '2';
+        this.setStyleIfChanged(btn, 'flexShrink', '0');
+        this.setStyleIfChanged(btn, 'marginLeft', 'auto');
+        this.setStyleIfChanged(btn, 'pointerEvents', 'auto');
+        this.setStyleIfChanged(btn, 'position', 'relative');
+        this.setStyleIfChanged(btn, 'zIndex', '2');
     },
 
     syncToggleLabel(btn, hidden, kind) {
         const noun = this.sectionNoun(kind || (btn && btn.getAttribute(KIND_ATTR)) || 'story');
         const label = hidden ? 'Show' : 'Hide';
-        btn.textContent = label;
-        btn.setAttribute('aria-label', hidden ? 'Show ' + noun : 'Hide ' + noun);
-        btn.title = btn.getAttribute('aria-label');
+        const aria = hidden ? 'Show ' + noun : 'Hide ' + noun;
+        if (btn.textContent !== label) {
+            btn.textContent = label;
+        }
+        if (btn.getAttribute('aria-label') !== aria) {
+            btn.setAttribute('aria-label', aria);
+        }
+        if (btn.title !== aria) {
+            btn.title = aria;
+        }
     },
 
     findToggleInContainer(container, logTag) {
@@ -11147,7 +11221,7 @@ const plugin = {
     id: 'userStoryCollapseLib',
     name: 'User Story Collapse (library)',
     description: 'Shared Hide/Show for User Story bodies',
-    _version: '1.6',
+    _version: '1.7',
     phase: 'core',
     enabledByDefault: true,
     initialState: { registered: false },
@@ -16053,10 +16127,18 @@ const plugin = {
     id: 'compUseTaskCreationFosIframeAutoconnect',
     name: 'FOS Viewport Resize',
     description:
-        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again unless the environment pane is hidden',
-    _version: '1.2',
+        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is optional and off by default',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
+    subOptions: [
+        {
+            id: 'reconnect-on-focus',
+            name: 'Reload instance when returning to this tab',
+            description: 'Blanks and reloads the embedded VM. Off by default so a recording or in-progress session is not interrupted.',
+            enabledByDefault: false
+        }
+    ],
     initialState: {
         waitingIframeLogged: false,
         waitingFosLogged: false,
@@ -16955,10 +17037,18 @@ const plugin = {
     id: 'compUseRevisionFosIframeAutoconnect',
     name: 'FOS Viewport Resize',
     description:
-        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again unless the environment pane is hidden',
-    _version: '1.2',
+        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is optional and off by default',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
+    subOptions: [
+        {
+            id: 'reconnect-on-focus',
+            name: 'Reload instance when returning to this tab',
+            description: 'Blanks and reloads the embedded VM. Off by default so a recording or in-progress session is not interrupted.',
+            enabledByDefault: false
+        }
+    ],
     initialState: {
         waitingIframeLogged: false,
         waitingFosLogged: false,
@@ -17206,7 +17296,7 @@ const plugin = {
     name: 'Hide Verifier Output',
     description:
         'Hide/Show Verifier Output on the bottom panel',
-    _version: '1.8',
+    _version: '1.9',
     enabledByDefault: true,
     phase: 'mutation',
     initialState: {
@@ -17409,15 +17499,16 @@ const plugin = {
 
     applyToggleChrome(btn) {
         if (Context.uiLib && typeof Context.uiLib.btnClass === 'function') {
-            btn.className = Context.uiLib.btnClass('basic', 'compact');
+            const nextClass = Context.uiLib.btnClass('basic', 'compact');
+            if (btn.className !== nextClass) btn.className = nextClass;
         } else if (!btn.className) {
             btn.className =
                 'inline-flex items-center justify-center whitespace-nowrap rounded-sm font-medium h-7 text-xs pl-2 pr-2 py-1';
         }
-        btn.style.flexShrink = '0';
-        btn.style.pointerEvents = 'auto';
-        btn.style.position = 'relative';
-        btn.style.zIndex = '2';
+        if (btn.style.flexShrink !== '0') btn.style.flexShrink = '0';
+        if (btn.style.pointerEvents !== 'auto') btn.style.pointerEvents = 'auto';
+        if (btn.style.position !== 'relative') btn.style.position = 'relative';
+        if (btn.style.zIndex !== '2') btn.style.zIndex = '2';
     },
 
     ensureToggle(ctx, state) {
@@ -17481,9 +17572,9 @@ const plugin = {
 
     syncToggleLabel(btn, hidden) {
         const label = hidden ? 'Show Verifier' : 'Hide Verifier';
-        btn.textContent = label;
-        btn.setAttribute('aria-label', label);
-        btn.title = label;
+        if (btn.textContent !== label) btn.textContent = label;
+        if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+        if (btn.title !== label) btn.title = label;
     },
 
     measureHeaderPx(ctx) {
@@ -19204,10 +19295,18 @@ const plugin = {
     id: 'qaCompUseFosIframeAutoconnect',
     name: 'FOS Viewport Resize',
     description:
-        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again unless the environment pane is hidden',
-    _version: '1.2',
+        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is optional and off by default',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
+    subOptions: [
+        {
+            id: 'reconnect-on-focus',
+            name: 'Reload instance when returning to this tab',
+            description: 'Blanks and reloads the embedded VM. Off by default so a recording or in-progress session is not interrupted.',
+            enabledByDefault: false
+        }
+    ],
     initialState: {
         waitingIframeLogged: false,
         waitingFosLogged: false,
@@ -19896,10 +19995,18 @@ const plugin = {
     id: 'disputeDetailFosIframeAutoconnect',
     name: 'FOS Viewport Resize',
     description:
-        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL; reconnects when the tab is focused again unless the environment pane is hidden',
-    _version: '1.2',
+        'Resizes the embedded FOS environment to the viewport. Autoconnects the instance and open-in-new-tab URL. Reloading the VM when you return to the tab is optional and off by default',
+    _version: '1.3',
     enabledByDefault: true,
     phase: 'mutation',
+    subOptions: [
+        {
+            id: 'reconnect-on-focus',
+            name: 'Reload instance when returning to this tab',
+            description: 'Blanks and reloads the embedded VM. Off by default so a recording or in-progress session is not interrupted.',
+            enabledByDefault: false
+        }
+    ],
     initialState: {
         waitingIframeLogged: false,
         waitingFosLogged: false,
@@ -22322,6 +22429,41 @@ return plugin;
             this._items.elements = [];
             
             Logger.debug('Cleanup complete');
+        },
+
+        /**
+         * Drop registry entries whose nodes have left the document so detached
+         * subtrees can be garbage-collected during a long SPA session.
+         */
+        pruneDetached() {
+            const elements = this._items.elements;
+            let elementWrite = 0;
+            for (let i = 0; i < elements.length; i++) {
+                const el = elements[i];
+                if (el && el.isConnected) {
+                    elements[elementWrite++] = el;
+                }
+            }
+            if (elementWrite !== elements.length) {
+                elements.length = elementWrite;
+            }
+
+            const listeners = this._items.eventListeners;
+            let listenerWrite = 0;
+            for (let i = 0; i < listeners.length; i++) {
+                const entry = listeners[i];
+                const target = entry && entry.target;
+                if (target && typeof target.isConnected === 'boolean' && target.isConnected === false) {
+                    try {
+                        target.removeEventListener(entry.event, entry.handler, entry.options);
+                    } catch (_e) { /* node already gone */ }
+                    continue;
+                }
+                listeners[listenerWrite++] = entry;
+            }
+            if (listenerWrite !== listeners.length) {
+                listeners.length = listenerWrite;
+            }
         }
     };
 
@@ -23752,6 +23894,12 @@ return plugin;
     // ============= MAIN INITIALIZATION =============
     let mainObserver = null;
     let mutationRafId = null;
+    let mutationTimerId = null;
+    let pluginMutationsOpen = false;
+    let selfInducedStreak = 0;
+    let mutationThrottleLogged = false;
+    const MUTATION_LOOP_STREAK = 8;
+    const MUTATION_LOOP_THROTTLE_MS = 250;
     let corePluginsLoaded = false;
     let navigationHandlerActive = false;
     let navigationPendingUrl = null;
@@ -23759,6 +23907,59 @@ return plugin;
     let opsDashboardLoadPromise = null;
     let librariesLoadPromise = null;
     const loadedLibraryNames = new Set();
+
+    function clearMutationSchedule() {
+        if (mutationRafId !== null) {
+            cancelAnimationFrame(mutationRafId);
+            mutationRafId = null;
+        }
+        if (mutationTimerId !== null) {
+            clearTimeout(mutationTimerId);
+            mutationTimerId = null;
+        }
+    }
+
+    function flushMutationPlugins() {
+        mutationRafId = null;
+        mutationTimerId = null;
+        if (!Context.initialized) return;
+        // Stay set through the mutation-observer microtask so writes made by
+        // plugins are not scheduled as if the page itself changed.
+        pluginMutationsOpen = true;
+        try {
+            CleanupRegistry.pruneDetached();
+            PluginManager.runMutationPlugins();
+        } finally {
+            setTimeout(() => {
+                pluginMutationsOpen = false;
+            }, 0);
+        }
+    }
+
+    function scheduleMutationPlugins(fromSelf) {
+        if (!Context.initialized) return;
+        if (fromSelf) {
+            selfInducedStreak += 1;
+        } else {
+            selfInducedStreak = 0;
+            mutationThrottleLogged = false;
+        }
+        if (mutationRafId !== null || mutationTimerId !== null) return;
+
+        const throttle = fromSelf && selfInducedStreak >= MUTATION_LOOP_STREAK;
+        if (throttle) {
+            if (!mutationThrottleLogged) {
+                mutationThrottleLogged = true;
+                Logger.warn('Mutation plugins are rewriting the page in a loop; throttling runs to 4/s');
+            }
+            mutationTimerId = setTimeout(() => {
+                mutationTimerId = null;
+                mutationRafId = requestAnimationFrame(flushMutationPlugins);
+            }, MUTATION_LOOP_THROTTLE_MS);
+            return;
+        }
+        mutationRafId = requestAnimationFrame(flushMutationPlugins);
+    }
 
     async function loadMissingOpsDashboardPluginsFromConfig(configList) {
         if (!configList || configList.length === 0) return;
@@ -24032,15 +24233,10 @@ return plugin;
             // Run early plugins
             PluginManager.runEarlyPlugins();
             
-            // Set up DOM observer with rAF coalescing so rapid mutations (e.g. partial load)
-            // trigger one plugin run per frame instead of one per batch
+            // Coalesce bursts to one run per frame. If plugins keep writing the
+            // same nodes, those self-induced mutations drop to 4 runs/second.
             mainObserver = new MutationObserver(() => {
-                if (!Context.initialized) return;
-                if (mutationRafId !== null) return;
-                mutationRafId = requestAnimationFrame(() => {
-                    mutationRafId = null;
-                    PluginManager.runMutationPlugins();
-                });
+                scheduleMutationPlugins(pluginMutationsOpen);
             });
             CleanupRegistry.registerObserver(mainObserver);
             
@@ -24056,7 +24252,7 @@ return plugin;
             });
             
             // Run mutation plugins once for initial state
-            PluginManager.runMutationPlugins();
+            flushMutationPlugins();
             
             Logger.log(`Initialized for archetype: ${archetype.name} (path: "${Context.currentPath}")`);
         } catch (error) {
@@ -24168,10 +24364,10 @@ return plugin;
         // Clean up archetype plugins and resources
         Context.initialized = false;
         Context.outdatedPlugins = []; // Clear outdated plugins list on navigation
-        if (mutationRafId !== null) {
-            cancelAnimationFrame(mutationRafId);
-            mutationRafId = null;
-        }
+        selfInducedStreak = 0;
+        mutationThrottleLogged = false;
+        pluginMutationsOpen = false;
+        clearMutationSchedule();
         PluginManager.cleanupArchetypePlugins();
         CleanupRegistry.cleanup();
         
